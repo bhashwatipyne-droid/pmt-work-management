@@ -376,7 +376,7 @@ async def login(payload: LoginPayload, response: Response):
         value=token,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="none",
         max_age=ACCESS_TOKEN_HOURS * 3600,
         path="/",
     )

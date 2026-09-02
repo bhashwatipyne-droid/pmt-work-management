@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
+import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
@@ -38,6 +39,17 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
   const projectDeliverables = deliverables.filter((d) => d.project_id === item.project_id);
 
+  const sheetCell = (col) => ({
+    "data-sheet-cell": true,
+    "data-sheet-row": index,
+    "data-sheet-col": col,
+    onKeyDown: createWorksheetKeyHandler({
+      row: index,
+      col,
+      maxCol: 13,
+    }),
+  });
+
   const commit = (field, value) => {
     if (item[field] === value) return;
     onUpdate(item.id, { [field]: value });
@@ -56,6 +68,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(0)}
           data-testid={`${WORKSHEET.dateInput}-${item.id}`}
           type="date"
           value={item.work_date}
@@ -76,7 +89,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           }}
           disabled={!canEditRow}
         >
-          <SelectTrigger data-testid={`worksheet-project-select-${item.id}`} className="h-8 w-[160px]">
+          <SelectTrigger
+            {...sheetCell(1)}
+            data-testid={`worksheet-project-select-${item.id}`}
+            className="h-8 w-[160px]"
+          >
             <SelectValue placeholder="Project" />
           </SelectTrigger>
           <SelectContent>
@@ -93,7 +110,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
           disabled={!canEditRow || !item.project_id}
         >
-          <SelectTrigger data-testid={`worksheet-deliverable-select-${item.id}`} className="h-8 w-[160px]">
+          <SelectTrigger
+            {...sheetCell(2)}
+            data-testid={`worksheet-deliverable-select-${item.id}`}
+            className="h-8 w-[160px]"
+          >
             <SelectValue placeholder={item.project_id ? "Deliverable" : "—"} />
           </SelectTrigger>
           <SelectContent>
@@ -110,7 +131,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
           disabled={!canEditRow}
         >
-          <SelectTrigger data-testid={`worksheet-stage-select-${item.id}`} className="h-8 w-[110px]">
+          <SelectTrigger
+            {...sheetCell(3)}
+            data-testid={`worksheet-stage-select-${item.id}`}
+            className="h-8 w-[110px]"
+          >
             <SelectValue placeholder="Stage" />
           </SelectTrigger>
           <SelectContent>
@@ -124,6 +149,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       <TableCell>
         {canEditExtra ? (
           <Input
+            {...sheetCell(4)}
             data-testid={`${WORKSHEET.deliverableInput}-${item.id}`}
             value={local.deliverable_name}
             onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
@@ -138,6 +164,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       <TableCell>
         {canEditRow ? (
           <Input
+            {...sheetCell(5)}
             data-testid={`${WORKSHEET.deliverableLinkInput}-${item.id}`}
             value={local.deliverable_link}
             onChange={(e) => setLocal((l) => ({ ...l, deliverable_link: e.target.value }))}
@@ -156,7 +183,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       <TableCell>
         {canEditExtra ? (
           <Select value={item.deliverable_type || undefined} onValueChange={(v) => onUpdate(item.id, { deliverable_type: v })}>
-            <SelectTrigger data-testid={`${WORKSHEET.typeSelect}-${item.id}`} className="h-8 w-[150px]">
+            <SelectTrigger
+              {...sheetCell(6)}
+              data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
+              className="h-8 w-[150px]"
+            >
               <SelectValue placeholder="Type" />
             </SelectTrigger>
             <SelectContent>
@@ -172,7 +203,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       <TableCell>
         {canEditExtra ? (
           <Select value={item.work_category} onValueChange={(v) => onUpdate(item.id, { work_category: v })}>
-            <SelectTrigger data-testid={`${WORKSHEET.categorySelect}-${item.id}`} className="h-8 w-[110px]">
+            <SelectTrigger
+              {...sheetCell(7)}
+              data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
+              className="h-8 w-[110px]"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -187,6 +222,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(8)}
           data-testid={`${WORKSHEET.versionInput}-${item.id}`}
           value={local.version}
           disabled={!canEditRow}
@@ -198,6 +234,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(9)}
           data-testid={`${WORKSHEET.timeInput}-${item.id}`}
           type="number"
           min="0"
@@ -212,7 +249,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       <TableCell>
         {canEditExtra ? (
           <Select value={item.creator_id || undefined} onValueChange={(v) => onUpdate(item.id, { creator_id: v })}>
-            <SelectTrigger data-testid={`${WORKSHEET.creatorSelect}-${item.id}`} className="h-8 w-[140px]">
+            <SelectTrigger
+              {...sheetCell(10)}
+              data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
+              className="h-8 w-[140px]"
+            >
               <SelectValue placeholder="Creator" />
             </SelectTrigger>
             <SelectContent>
@@ -231,7 +272,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
             value={item.reviewer_id || NONE_VALUE}
             onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
           >
-            <SelectTrigger data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`} className="h-8 w-[140px]">
+            <SelectTrigger
+              {...sheetCell(11)}
+              data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
+              className="h-8 w-[140px]"
+            >
               <SelectValue placeholder="Reviewer" />
             </SelectTrigger>
             <SelectContent>
@@ -247,6 +292,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       </TableCell>
       <TableCell>
         <Textarea
+          {...sheetCell(12)}
           data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
           value={local.remarks}
           disabled={!canEditRow}
@@ -258,7 +304,11 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
       </TableCell>
       <TableCell>
         <Select value={item.status} onValueChange={(v) => onUpdate(item.id, { status: v })} disabled={!canEditRow}>
-          <SelectTrigger data-testid={`${WORKSHEET.statusSelect}-${item.id}`} className="h-8 w-[170px] border-none bg-transparent shadow-none p-0">
+          <SelectTrigger
+            {...sheetCell(13)}
+            data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
+            className="h-8 w-[170px] border-none bg-transparent shadow-none p-0"
+          >
             <SelectValue>
               <StatusBadge status={item.status} />
             </SelectValue>

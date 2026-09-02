@@ -89,13 +89,13 @@ export const WorkSheetToolbar = ({ filters, setFilters, options, onAddRow, canAd
       {onBulkAdd && (
         <Button
           data-testid="worksheet-bulk-add-rows-btn"
-          onClick={() => onBulkAdd(100)}
+          onClick={() => onBulkAdd(5)}
           disabled={bulkAdding}
           size="sm"
           variant="outline"
           className="ml-auto h-9"
         >
-          <Rows3 className="mr-1 h-4 w-4" /> {bulkAdding ? "Adding rows..." : "Add 100 rows below"}
+          <Rows3 className="mr-1 h-4 w-4" /> {bulkAdding ? "Adding rows..." : "Add 5 rows below"}
         </Button>
       )}
 

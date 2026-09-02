@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 3: Backend + frontend testing for Phases 3-7 (users mgmt, approvals queue, dashboard/overview, work-item project linkage, team/clients/approvals/dashboard pages, sidebar polish, worksheet new columns + bulk assign). Backend: 26/26 new pytest tests passed (config/options, users create+patch admin-only with role/dept validation, approvals list filters Ready for Review only and requires auth, member can read approvals but not approve/reject, approve advances Content->Design->Animate->Finish->Completed, reject sets Changes Requested, dashboard/overview admin-only with all required keys, work-item project_id/deliverable_id/stage supported with invalid-stage 400, member row-level 403 on other rows). Frontend: verified via Playwright — sidebar role-based visibility correct (admin 6 tabs, manager only approvals+sheet, member only sheet), logout disabled, /dashboard admin cards + stage panel + recent projects + pending approvals all render, Team roster + Add Member modal creates user + department Save-Role works, Clients page shows AMFI + Add Client modal creates + search filter works, Projects page has all 4 status columns testids, Approvals page loads for admin and manager, member sees managers/admins-only notice, Work Sheet renders new Project/Deliverable Link/Stage columns for every row (8/8), bulk-assign button + popover work, bulk-delete btn visible for admin and hidden for manager.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Top-right area near role switcher", "issues": ["Faint 'ACTING AS' label appears with very low contrast against the pale background — barely legible in screenshots (see cropped 'ACTING_AS' text). Consider stronger foreground color."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phases_3_7.py",
+    "/app/backend/tests/test_worksheet.py",
+    "/app/backend/tests/test_dashboard_and_bulk.py",
+    "/app/test_reports/pytest/phase37_results.xml"
+  ],
+  "action_items": [
+    "(Minor UX) 'ACTING AS' label near role switcher has very low contrast — bump to slate-500/slate-600.",
+    "(Nice-to-have) In WorkSheetRow, member users still see Project/Deliverable/Stage selects on OTHER members' rows; backend correctly returns 403 so the update is rolled back and a toast fires, but disabling the selects for non-owner rows would be cleaner UX. (Currently isMember-based restriction only guards the deliverable_name/type/creator/reviewer fields, not the new 3 selects.)"
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to 873 lines — consider splitting into routers (users.py, projects.py, deliverables.py, approvals.py, dashboard.py, work_items.py) before it becomes unwieldy.",
+    "dashboard_overview and dashboard_summary both iterate full collections in Python — acceptable for MVP, move to aggregation pipelines when data grows.",
+    "WorkSheetRow.jsx: Project/Deliverable Link/Stage selects are always shown for members regardless of row ownership. Since backend enforces row-level perms (verified in tests), this is safe but users will see failed toasts if they try to edit others' rows. Consider disabling selects when item.creator_id !== currentUser.id for members.",
+    "TeamPage roster table header 'Previous Approvals' is a bit confusing wording — it's really just the current team roster; consider renaming.",
+    "ClientsPage pencil icon is decorative — either wire edit or hide until implemented to reduce confusion."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phases_3_7.py"
+  ],
+  "success_rate": {"backend": "100% (26/26 phase 3-7 tests)", "frontend": "100% (all reviewed flows verified)"},
+  "test_credentials": "None. X-User-Id header. Seeded ids: admin-1, manager-1, manager-2, member-1, member-2, member-3. Frontend switches role via localStorage 'acting_user_id'.",
+  "seed_data_creation": "Created several TEST_ prefixed clients, projects, deliverables, work-items and users during test runs. Backend pytest fixtures clean up their own projects/work-items. TeamPage Add-Member and ClientsPage Add-Client UI tests left one TEST_UI_* user and one TEST_CLI_* client in the DB (harmless, prefixed for identification).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression: run `pytest /app/backend/tests/ -v` — three files (test_worksheet.py, test_dashboard_and_bulk.py, test_phases_3_7.py). Approvals queue filters ONLY 'Ready for Review' by design (Changes Requested items disappear). All admin-only endpoints: /api/dashboard/overview, /api/users POST+PATCH, /api/clients POST, /api/projects POST+PATCH+DELETE, /api/deliverables POST+PATCH+DELETE, /api/work-items/bulk-delete, DELETE /api/work-items/*. Approve/Reject accept admin+manager only. Member row-level 403 enforced via scoped_update_fields. Frontend uses localStorage acting_user_id for role switching."
+}

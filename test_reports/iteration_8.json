@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 8 - JWT httpOnly cookie auth replacement fully verified. Backend: 31/31 pytest tests passed (login/logout/session, all 6 seed users, wrong-password 401, unauth 401 on protected endpoints, role permissions still enforced correctly via JWT-derived user - admin view-only, member own-row only, manager own-department only, member cannot set Closed, everyone can view all rows). Frontend: login form + inline error + successful login for admin & member + no Acting-As UI + session persists after reload + logout returns to login page - all verified via Playwright. Sidebar shows correct user name/role at bottom (Aisha Khan admin, Sam Fernandes Member). Admin nav shows Dashboard/Projects/Team/Approvals/Clients/Work Sheet; member sees only Work Sheet. Test data (11 TEST_iter8 work items) cleaned up - 0 leftover.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/clients GET", "issue": "list_clients() is the only main resource endpoint that does NOT call get_acting_user(request) - it is publicly readable without a session. Likely oversight given every other GET requires auth. Low severity (no writes, and IDs are non-secret) but inconsistent with the request statement 'all GET/POST/PATCH endpoints require a valid session'."},
+      {"endpoint": "/api/config/options", "issue": "Also unauthenticated (returns enum lists). Probably intentional but worth flagging."},
+      {"endpoint": "backend CORS", "issue": "CORS_ORIGINS='*' in backend/.env combined with allow_credentials=True is a browser spec violation - browsers reject Access-Control-Allow-Origin:* with credentials. Works today only because frontend and backend share the same ingress host (same-origin, no CORS preflight). If ever accessed cross-origin the cookie login will silently fail. Recommend setting CORS_ORIGINS to the explicit REACT_APP_BACKEND_URL host."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_iter8.py",
+    "/app/test_reports/pytest/iter8_auth.xml"
+  ],
+  "action_items": [
+    "(Optional/minor) Add get_acting_user(request) to /api/clients GET for consistency with the stated 'all endpoints require session' contract.",
+    "(Optional/minor) Replace CORS_ORIGINS='*' with the explicit frontend origin to avoid future cross-origin cookie breakage."
+  ],
+  "critical_code_review_comments": [
+    "cookie set with secure=True + samesite='lax' + httponly=True is correct for the HTTPS preview URL. Good.",
+    "bcrypt password hashing via bcrypt.hashpw with gensalt() is correct (hash format $2b$).",
+    "seed_data() correctly only sets password_hash if missing (idempotent for existing users but will NOT rotate passwords if a demo password ever changes - fine for demo, worth noting).",
+    "JWT_SECRET is present in backend/.env; token exp=24h is reasonable for demo.",
+    "get_acting_user falls back to Authorization: Bearer header, useful for curl/tests.",
+    "No _id leakage observed in any tested response.",
+    "test_credentials.md is stale - still describes X-User-Id header/'Acting as' dropdown; the file should be updated to list the 6 email/password combos."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_iter8.py (new)"
+  ],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "100% (all 6 login flows + logout + refresh + no RoleSwitcher verified)"},
+  "test_credentials": "aisha@thefinpedia.com/admin123, rahul@thefinpedia.com/manager123, priya@thefinpedia.com/manager123, sam@thefinpedia.com/member123, neha@thefinpedia.com/member123, vikram@thefinpedia.com/member123",
+  "seed_data_creation": "Created 11 TEST_iter8_* work items during permission testing; all deleted via bulk-delete after tests (verified 0 leftover in DB).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth is now real JWT-cookie based. Use POST /api/auth/login with {email,password} to establish session (Set-Cookie access_token) OR use Authorization: Bearer <token>. requests.Session() works fine. Note /api/clients GET and /api/config/options do NOT require auth (minor inconsistency). test_credentials.md still describes the old X-User-Id mock and needs updating by the main agent.",
+  "rca of the issue": "N/A - no bugs found in this iteration"
+}

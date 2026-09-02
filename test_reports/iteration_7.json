@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend smoke test for month-filter width fix (w-[150px]->w-[170px]) and DeliverableModal label rename ('Task Name *' -> 'Name *'). Both fixes verified. Filter functionality (select month, clear) working. Role-based visibility (admin view-only, manager with Deliverable Closed + draft row + Add 100 rows, member similar) confirmed intact - no regression from iteration_6.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "test_credentials": "Mock role switcher on Work Sheet page (worksheet-role-switcher): Aisha Khan (admin), Rahul Verma (manager), Sam Fernandes (member)",
+  "seed_data_creation": "None. Verified no junk data created (modal cancelled without saving).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iteration_7 verified month-filter width fix (bounding box measured at exactly 170px) and 'Name *' label. Role visibility for close-deliverable / bulk-add / add-row remains role-scoped as designed. Iteration_6 permissions still intact.",
+  "verification_details": {
+    "month_filter_width_px": 170,
+    "filter_functionality": "18 rows -> filter 2026-09 -> 16 rows -> Clear -> 18 rows (PASS)",
+    "clear_button_conditional": "Appears when any filter active (PASS)",
+    "deliverable_modal_label": "'Name *' (no 'Task Name *' text found)",
+    "role_smoke": {
+      "admin": "no Deliverable Closed btn, no Add Row btn (view-only) - as expected",
+      "manager": "Deliverable Closed btn visible, Add 100 rows visible, draft row present at top",
+      "member": "Deliverable Closed btn visible (count=1), Add 100 rows visible (count=1)"
+    }
+  }
+}

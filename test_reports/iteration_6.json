@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 6 permissions/restrictions tested end-to-end (backend + frontend). Backend: 14/14 pytest cases pass covering admin view-only, manager same/cross department, member own-row-only, GET returns all rows for all roles, approve-deliverable stage progression, and admin deliverable edit without stage fields. Frontend: Admin toolbar hides Add/Bulk/Close-Deliverable/draft-row and every cell in every row is disabled (including checkbox and Deliverable Link renders as plain span). Manager-1 (Content) sees a solid green 'Deliverable Closed' button as the FIRST child of the toolbar; Content-created rows are editable while Design/Animation rows are disabled. Close Deliverable modal opens with Project + Deliverable selects and Close Stage button. Member-1 never sees the Close Deliverable button; can only edit own row (even other Content-dept rows are disabled). Admin Edit Deliverable modal shows Current Stage & Stage Status as read-only badges (data-testid deliverable-modal-stage-readonly and -stage-status-readonly present, editable versions absent).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Close Deliverable modal", "issues": ["A11y console warning: Missing Description or aria-describedby for DialogContent (radix dialog). Non-blocking but should be addressed by adding <DialogDescription>."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_permissions_iter6.py", "/app/test_reports/pytest/iter6_permissions.xml"],
+  "action_items": ["Optional: add DialogDescription/aria-describedby to CloseDeliverableModal to silence radix a11y warning."],
+  "critical_code_review_comments": [
+    "server.py scoped_update_fields: manager check uses 'user.department and creator_department and user.department != creator_department' — if creator_department is None (e.g. system/admin-created rows or missing user), manager is allowed to edit. Consider explicitly blocking when creator_department is None.",
+    "bulk_update_work_items silently skips items the caller can't edit (no per-item error surfaced) — UX-wise the frontend won't know which failed; acceptable for now but worth reporting.",
+    "CloseDeliverableModal uses approveDeliverable directly, which is admin/manager only — good. But member won't see the button, so no issue."
+  ],
+  "updated_files": ["/app/backend/tests/test_permissions_iter6.py"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (all permission/UI checks pass)"},
+  "test_credentials": "No auth — X-User-Id header / 'Acting As' role switcher. Users listed in /app/memory/test_credentials.md.",
+  "seed_data_creation": "Created TEST_ prefixed work items across users (manager-1, manager-2, member-1, member-2, member-3) and TEST_ projects for approve-deliverable flow. All cleaned up via bulk-delete and project DELETE at end of run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 6 permission model is stable. If touching worksheet permissions again, re-run /app/backend/tests/test_permissions_iter6.py (set REACT_APP_BACKEND_URL env var before pytest). Frontend rowCount selector `worksheet-row-` also matches nested `worksheet-row-checkbox-` — use `[data-testid^='worksheet-row-']:not([data-testid*='checkbox'])` if precise count needed."
+}

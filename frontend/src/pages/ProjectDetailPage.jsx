@@ -249,6 +249,7 @@ export default function ProjectDetailPage() {
         mode={delivModal.mode}
         projectId={projectId}
         initial={delivModal.initial}
+        currentUserId={currentUserId}
         users={users}
         deliverableTypes={deliverableTypes}
         onClose={() => setDelivModal((m) => ({ ...m, open: false }))}

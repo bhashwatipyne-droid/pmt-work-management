@@ -42,17 +42,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
 
   const setField = (field, value) => setDraft((prev) => ({ ...prev, [field]: value }));
 
-  const sheetCell = (col) => ({
-    "data-sheet-cell": true,
-    "data-sheet-row": 0,
-    "data-sheet-col": col,
-    onKeyDown: createWorksheetKeyHandler({
-      row: 0,
-      col,
-      maxCol: 13,
-    }),
-  });
-
   const isMeaningful = (d) =>
     !!(d.deliverable_name?.trim() || d.deliverable_link?.trim() || d.remarks?.trim() || d.project_id || d.deliverable_id || d.stage || (d.time_taken_minutes && Number(d.time_taken_minutes) > 0) || d.version?.trim());
 
@@ -69,7 +58,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
         ...draft,
         time_taken_minutes: draft.time_taken_minutes === "" ? 0 : Number(draft.time_taken_minutes),
       };
-      await onCreate(payload);
+      const created = await onCreate(payload);
       // reset for next entry
       setDraft(() => {
         const d = emptyDraft(options.deliverable_types?.[0]);
@@ -78,10 +67,30 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
         d.stage = localStorage.getItem("ws_last_stage") || null;
         return d;
       });
+      return created;
     } finally {
       creatingRef.current = false;
     }
   };
+
+  const sheetCell = (col) => ({
+    "data-sheet-cell": true,
+    "data-sheet-row": 0,
+    "data-sheet-col": col,
+    onKeyDown: createWorksheetKeyHandler({
+      row: 0,
+      col,
+      maxCol: 13,
+      onEnter: async ({ focusCell }) => {
+        const created = await flush();
+        if (created) {
+          requestAnimationFrame(() => {
+            focusCell(1, col);
+          });
+        }
+      },
+    }),
+  });
 
   return (
     <TableRow data-testid="worksheet-draft-row">
@@ -96,7 +105,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           type="date"
           value={draft.work_date}
           onChange={(e) => setField("work_date", e.target.value)}
-          onBlur={flush}
           className="h-8 w-[130px]"
         />
       </TableCell>
@@ -106,7 +114,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           onValueChange={(v) => {
             setField("project_id", v === NONE ? null : v);
             setField("deliverable_id", null);
-            setTimeout(flush, 0);
           }}
         >
           <SelectTrigger
@@ -127,7 +134,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           value={draft.deliverable_id || NONE}
           onValueChange={(v) => {
             setField("deliverable_id", v === NONE ? null : v);
-            setTimeout(flush, 0);
           }}
           disabled={!draft.project_id}
         >
@@ -149,7 +155,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           value={draft.stage || NONE}
           onValueChange={(v) => {
             setField("stage", v === NONE ? null : v);
-            setTimeout(flush, 0);
           }}
         >
           <SelectTrigger
@@ -171,7 +176,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           data-testid="worksheet-draft-deliverable-name"
           value={draft.deliverable_name}
           onChange={(e) => setField("deliverable_name", e.target.value)}
-          onBlur={flush}
           placeholder="Start typing to add a row…"
           className="h-8 w-[200px]"
         />
@@ -182,7 +186,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           data-testid="worksheet-draft-deliverable-link"
           value={draft.deliverable_link}
           onChange={(e) => setField("deliverable_link", e.target.value)}
-          onBlur={flush}
           placeholder="Paste drive link"
           className="h-8 w-[180px]"
         />
@@ -192,7 +195,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           value={draft.deliverable_type || NONE}
           onValueChange={(v) => {
             setField("deliverable_type", v === NONE ? "" : v);
-            setTimeout(flush, 0);
           }}
         >
           <SelectTrigger
@@ -213,7 +215,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       <TableCell>
         <Select
           value={draft.work_category}
-          onValueChange={(v) => { setField("work_category", v); setTimeout(flush, 0); }}
+          onValueChange={(v) => { setField("work_category", v); }}
         >
           <SelectTrigger
             {...sheetCell(7)}
@@ -233,7 +235,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           data-testid="worksheet-draft-version"
           value={draft.version}
           onChange={(e) => setField("version", e.target.value)}
-          onBlur={flush}
           placeholder="v1"
           className="h-8 w-[80px]"
         />
@@ -246,7 +247,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           min="0"
           value={draft.time_taken_minutes}
           onChange={(e) => setField("time_taken_minutes", e.target.value)}
-          onBlur={flush}
           placeholder="0"
           className="h-8 w-[80px]"
         />
@@ -261,7 +261,6 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           data-testid="worksheet-draft-remarks"
           value={draft.remarks}
           onChange={(e) => setField("remarks", e.target.value)}
-          onBlur={flush}
           placeholder="Notes…"
           className="h-8 min-h-8 w-[180px] resize-none"
           rows={1}
@@ -270,7 +269,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       <TableCell>
         <Select
           value={draft.status}
-          onValueChange={(v) => { setField("status", v); setTimeout(flush, 0); }}
+          onValueChange={(v) => { setField("status", v); }}
         >
           <SelectTrigger
             {...sheetCell(13)}

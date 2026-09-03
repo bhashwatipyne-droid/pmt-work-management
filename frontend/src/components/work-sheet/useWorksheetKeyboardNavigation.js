@@ -17,7 +17,10 @@ const focusCell = (row, col) => {
   const target =
     cell.querySelector("input, textarea, button, [role='combobox']") || cell;
 
-  if (target.disabled || target.getAttribute("aria-disabled") === "true") {
+  if (
+    target.disabled ||
+    target.getAttribute("aria-disabled") === "true"
+  ) {
     return false;
   }
 
@@ -76,8 +79,9 @@ export const createWorksheetKeyHandler = ({
   row,
   col,
   maxCol = 13,
+  onEnter,
 }) => {
-  return (event) => {
+  return async (event) => {
     const target = event.target;
 
     // Keep normal cursor movement while editing text.
@@ -105,24 +109,30 @@ export const createWorksheetKeyHandler = ({
 
       const direction = event.shiftKey ? -1 : 1;
 
-      if (focusNextAvailableCell(row, col, direction)) {
-        return;
-      }
+      focusNextAvailableCell(row, col, direction);
 
       return;
     }
 
-    // Enter → same column, next row.
-    // Shift+Enter → same column, previous row.
+    // Enter.
     if (event.key === "Enter") {
       event.preventDefault();
 
+      // Draft row can provide its own Enter behavior.
+      if (onEnter) {
+        await onEnter({
+          row,
+          col,
+          focusCell,
+        });
+        return;
+      }
+
+      // Existing rows → move down/up.
       const nextRow = event.shiftKey ? row - 1 : row + 1;
 
-      if (nextRow < 0) return;
-
-      if (focusCell(nextRow, col)) {
-        return;
+      if (nextRow >= 0) {
+        focusCell(nextRow, col);
       }
 
       return;

@@ -23,6 +23,7 @@ export const DeliverableModal = ({
   mode,
   projectId,
   initial,
+  currentUserId,
   users = [],
   deliverableTypes = [],
   onClose,
@@ -85,10 +86,10 @@ export const DeliverableModal = ({
       let saved;
 
       if (mode === "edit" && initial?.id) {
-        saved = await updateDeliverable(initial.id, payload);
+        saved = await updateDeliverable(currentUserId, initial.id, payload);
         toast.success("Deliverable updated");
       } else {
-        saved = await createDeliverable({
+        saved = await createDeliverable(currentUserId, {
           project_id: projectId,
           ...payload,
         });

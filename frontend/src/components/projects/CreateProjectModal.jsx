@@ -174,13 +174,17 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">POC</label>
-                <div
-                  data-testid={PROJECTS.fieldPoc}
-                  className={`${inputBase} bg-slate-50 text-slate-600`}
-                >
-                  {clients.find((c) => c.id === clientId)?.contact_person || "—"}
-                </div>
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  POC
+                </label>
+                <input
+                  type="text"
+                  value={
+                    clients.find((client) => client.id === clientId)?.contact_person || "—"
+                  }
+                  readOnly
+                  className={inputBase}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</label>

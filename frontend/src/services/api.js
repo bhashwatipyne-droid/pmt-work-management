@@ -81,6 +81,16 @@ export const deleteProject = (userId, id) =>
 export const getDeliverables = (userId, params) =>
   axios.get(`${API}/deliverables`, { headers: authHeaders(userId), params }).then((r) => r.data);
 
+export const createDeliverable = (userId, payload) =>
+  axios
+    .post(`${API}/deliverables`, payload, { headers: authHeaders(userId) })
+    .then((r) => r.data);
+
+export const updateDeliverable = (userId, id, payload) =>
+  axios
+    .patch(`${API}/deliverables/${id}`, payload, { headers: authHeaders(userId) })
+    .then((r) => r.data);
+
 // -------- Team / Users --------
 export const createUser = (userId, payload) =>
   axios.post(`${API}/users`, payload, { headers: authHeaders(userId) }).then((r) => r.data);

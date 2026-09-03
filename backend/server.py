@@ -63,7 +63,7 @@ DELIVERABLE_TYPES = [
     "Data Updation",
 ]
 WORK_CATEGORIES = ["Core", "Non-Core"]
-STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Closed"]
+STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Rework", "Closed"]
 MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
 MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link"}
 

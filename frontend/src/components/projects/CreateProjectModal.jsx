@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { X, Plus, Trash2 } from "lucide-react";
 import { PROJECTS } from "@/constants/testIds";
@@ -24,6 +24,12 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
   const [status, setStatus] = useState("Planning");
   const [deliverables, setDeliverables] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (clients.length > 0 && !clients.some((client) => client.id === clientId)) {
+      setClientId(clients[0].id);
+    }
+  }, [clients, clientId]);
 
   if (!open) return null;
 

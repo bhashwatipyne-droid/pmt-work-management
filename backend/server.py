@@ -875,7 +875,7 @@ async def get_project(project_id: str, request: Request):
 
 @api_router.post("/projects")
 async def create_project(payload: ProjectCreate, request: Request):
-    await require_admin(request)
+    user = await require_admin(request)
     if payload.status and payload.status not in PROJECT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid project status")
     client_doc = await db.clients.find_one({"id": payload.client_id}, {"_id": 0})
@@ -894,6 +894,21 @@ async def create_project(payload: ProjectCreate, request: Request):
         updated_at=ts,
     )
     await db.projects.insert_one(project.model_dump())
+    await log_activity(
+        collection_name="project_activity_log",
+        entity_id=project.id,
+        entity_field="project_id",
+        action="PROJECT_CREATED",
+        changed_by=user.id,
+        new_value={
+            "code": project.code,
+            "name": project.name,
+            "client_id": project.client_id,
+            "start_date": project.start_date,
+            "end_date": project.end_date,
+            "status": project.status,
+        },
+    )
     for d in payload.deliverables or []:
         deliv = Deliverable(
             project_id=project.id,
@@ -908,13 +923,28 @@ async def create_project(payload: ProjectCreate, request: Request):
             updated_at=ts,
         )
         await db.deliverables.insert_one(deliv.model_dump())
+        await log_activity(
+            collection_name="deliverable_activity_log",
+            entity_id=deliv.id,
+            entity_field="deliverable_id",
+            action="DELIVERABLE_CREATED",
+            changed_by=user.id,
+            new_value={
+                "name": deliv.name,
+                "type": deliv.type,
+                "project_id": deliv.project_id,
+                "owner_id": deliv.owner_id,
+                "current_stage": deliv.current_stage,
+                "stage_status": deliv.stage_status,
+            },
+        )
     p = await db.projects.find_one({"id": project.id}, {"_id": 0})
     return await _hydrate_project(p)
 
 
 @api_router.patch("/projects/{project_id}")
 async def update_project(project_id: str, payload: ProjectUpdate, request: Request):
-    await require_admin(request)
+    user = await require_admin(request)
     existing = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -922,18 +952,78 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
     if "status" in update_fields and update_fields["status"] not in PROJECT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid project status")
     update_fields["updated_at"] = now_iso()
-    await db.projects.update_one({"id": project_id}, {"$set": update_fields})
+
+    await db.projects.update_one(
+        {"id": project_id},
+        {"$set": update_fields}
+    )
+
+    # Log actual project changes
+    changed_fields = {
+        key: value
+        for key, value in update_fields.items()
+        if key != "updated_at"
+    }
+
+    old_value = {
+        key: existing.get(key)
+        for key in changed_fields
+    }
+
+    new_value = {
+        key: changed_fields[key]
+        for key in changed_fields
+    }
+
+    if changed_fields:
+        await log_activity(
+            collection_name="project_activity_log",
+            entity_id=project_id,
+            entity_field="project_id",
+            action="PROJECT_UPDATED",
+            changed_by=user.id,
+            old_value=old_value,
+            new_value=new_value,
+        )
+
     p = await db.projects.find_one({"id": project_id}, {"_id": 0})
     return await _hydrate_project(p)
 
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, request: Request):
-    await require_admin(request)
-    result = await db.projects.delete_one({"id": project_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Project not found")
+    user = await require_admin(request)
+
+    existing = await db.projects.find_one(
+        {"id": project_id},
+        {"_id": 0}
+    )
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found"
+        )
+
+    await db.projects.delete_one({"id": project_id})
     await db.deliverables.delete_many({"project_id": project_id})
+
+    await log_activity(
+        collection_name="project_activity_log",
+        entity_id=project_id,
+        entity_field="project_id",
+        action="PROJECT_DELETED",
+        changed_by=user.id,
+        old_value={
+            "code": existing.get("code"),
+            "name": existing.get("name"),
+            "client_id": existing.get("client_id"),
+            "start_date": existing.get("start_date"),
+            "end_date": existing.get("end_date"),
+            "status": existing.get("status"),
+        },
+    )
+
     return {"success": True}
 
 

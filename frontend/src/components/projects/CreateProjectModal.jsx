@@ -108,7 +108,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
     >
       <div
         data-testid={PROJECTS.modal}
-        className="my-6 w-full max-w-[1400px] overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="w-[calc(100vw-32px)] h-[calc(100vh-32px)] max-w-none overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
@@ -220,7 +220,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
                 <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="w-10 px-3 py-2">#</th>
-                    <th className="px-3 py-2">Name *</th>
+                    <th className="px-3 py-2 w-[30%]">Name *</th>
                     <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">Owner</th>
                     <th className="px-3 py-2">Start · Date & Time</th>
@@ -239,12 +239,12 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
                     deliverables.map((d, i) => (
                       <tr key={i} data-testid={`${PROJECTS.deliverableRowPrefix}-${i}`} className="border-t border-slate-100">
                         <td className="px-3 py-2 text-xs text-slate-400">{i + 1}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 w-[30%]">
                           <input
                             value={d.name}
                             onChange={(e) => updateDeliverable(i, "name", e.target.value)}
                             placeholder="Task name"
-                            className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs"
+                            className="w-full min-w-0 rounded border border-slate-200 px-2 py-1.5 text-xs"
                           />
                         </td>
                         <td className="px-3 py-2">

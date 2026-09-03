@@ -420,6 +420,7 @@ async def get_options():
 async def list_work_items(
     request: Request,
     status: Optional[str] = None,
+    stage: Optional[str] = None,
     deliverable_type: Optional[str] = None,
     work_category: Optional[str] = None,
     month: Optional[str] = None,
@@ -435,6 +436,8 @@ async def list_work_items(
         query["creator_id"] = creator_id
     if status:
         query["status"] = status
+    if stage:
+        query["stage"] = stage
     if deliverable_type:
         query["deliverable_type"] = deliverable_type
     if work_category:

@@ -9,9 +9,23 @@ const ALL_VALUE = "__all__";
 export const WorkSheetToolbar = ({ filters, setFilters, options, onAddRow, canAdd, resultCount, onBulkAdd, bulkAdding, onOpenCloseDeliverable }) => {
   const update = (key, value) => setFilters((f) => ({ ...f, [key]: value === ALL_VALUE ? "" : value }));
 
-  const clear = () => setFilters({ search: "", status: "", deliverable_type: "", work_category: "", month: "" });
+  const clear = () =>
+    setFilters({
+      search: "",
+      status: "",
+      stage: "",
+      deliverable_type: "",
+      work_category: "",
+      month: "",
+    });
 
-  const hasFilters = filters.search || filters.status || filters.deliverable_type || filters.work_category || filters.month;
+  const hasFilters =
+    filters.search ||
+    filters.status ||
+    filters.stage ||
+    filters.deliverable_type ||
+    filters.work_category ||
+    filters.month;
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-3">
@@ -42,6 +56,28 @@ export const WorkSheetToolbar = ({ filters, setFilters, options, onAddRow, canAd
           <SelectItem value={ALL_VALUE}>All statuses</SelectItem>
           {options.statuses?.map((s) => (
             <SelectItem key={s} value={s}>{s}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={filters.stage || ALL_VALUE}
+        onValueChange={(v) => update("stage", v)}
+      >
+        <SelectTrigger
+          data-testid="worksheet-stage-filter"
+          className="h-9 w-[130px]"
+        >
+          <SelectValue placeholder="Stage" />
+        </SelectTrigger>
+
+        <SelectContent>
+          <SelectItem value={ALL_VALUE}>All stages</SelectItem>
+
+          {["Content", "Design", "Animate", "Finish"].map((stage) => (
+            <SelectItem key={stage} value={stage}>
+              {stage}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>

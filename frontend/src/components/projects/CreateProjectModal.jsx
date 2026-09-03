@@ -103,12 +103,12 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
         data-testid={PROJECTS.modal}
-        className="my-10 w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="w-full h-[calc(100vh-32px)] max-w-none overflow-hidden rounded-xl bg-white shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">

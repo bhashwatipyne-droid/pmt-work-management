@@ -971,18 +971,33 @@ async def list_deliverables(
 
 @api_router.post("/deliverables", response_model=Deliverable)
 async def create_deliverable(payload: DeliverableCreate, request: Request):
-    await require_admin(request)
+    user = await require_admin(request)
     if not await db.projects.find_one({"id": payload.project_id}, {"_id": 0}):
         raise HTTPException(status_code=400, detail="Project not found")
     ts = now_iso()
     d = Deliverable(created_at=ts, updated_at=ts, **payload.model_dump())
     await db.deliverables.insert_one(d.model_dump())
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=d.id,
+        entity_field="deliverable_id",
+        action="DELIVERABLE_CREATED",
+        changed_by=user.id,
+        new_value={
+            "name": d.name,
+            "type": d.type,
+            "project_id": d.project_id,
+            "owner_id": d.owner_id,
+            "current_stage": d.current_stage,
+            "stage_status": d.stage_status,
+        },
+    )
     return d
 
 
 @api_router.patch("/deliverables/{deliverable_id}", response_model=Deliverable)
 async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, request: Request):
-    await require_admin(request)
+    user = await require_admin(request)
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")
@@ -991,8 +1006,49 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
         raise HTTPException(status_code=400, detail="Invalid stage")
     if "stage_status" in update_fields and update_fields["stage_status"] not in STAGE_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid stage status")
+
+    old_stage = existing.get("current_stage")
+    old_stage_status = existing.get("stage_status")
+
     update_fields["updated_at"] = now_iso()
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update_fields})
+
+    # Stage changed
+    if "current_stage" in update_fields and update_fields["current_stage"] != old_stage:
+        await log_activity(
+            collection_name="deliverable_activity_log",
+            entity_id=deliverable_id,
+            entity_field="deliverable_id",
+            action="DELIVERABLE_STAGE_CHANGED",
+            changed_by=user.id,
+            old_value=old_stage,
+            new_value=update_fields["current_stage"],
+        )
+
+    # Stage status changed
+    if "stage_status" in update_fields and update_fields["stage_status"] != old_stage_status:
+        await log_activity(
+            collection_name="deliverable_activity_log",
+            entity_id=deliverable_id,
+            entity_field="deliverable_id",
+            action="DELIVERABLE_STATUS_CHANGED",
+            changed_by=user.id,
+            old_value=old_stage_status,
+            new_value=update_fields["stage_status"],
+        )
+
+        # Changes Requested = rework
+        if update_fields["stage_status"] == "Changes Requested":
+            await log_activity(
+                collection_name="deliverable_activity_log",
+                entity_id=deliverable_id,
+                entity_field="deliverable_id",
+                action="DELIVERABLE_REWORKED",
+                changed_by=user.id,
+                old_value=old_stage_status,
+                new_value="Changes Requested",
+            )
+
     return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
 
 
@@ -1126,10 +1182,25 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
     update["last_review_action"] = "approved"
     update["last_reviewer_id"] = user.id
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
-    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
-
-
-@api_router.post("/deliverables/{deliverable_id}/reject")
+    updated = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=deliverable_id,
+        entity_field="deliverable_id",
+        action="DELIVERABLE_REVIEWED",
+        changed_by=user.id,
+        old_value={
+            "stage": existing.get("current_stage"),
+            "stage_status": existing.get("stage_status"),
+        },
+        new_value={
+            "stage": updated.get("current_stage"),
+            "stage_status": updated.get("stage_status"),
+            "action": "APPROVED",
+            "review_note": payload.note or "",
+        },
+    )
+    return updated
 async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
     if user.role not in ("admin", "manager"):
@@ -1145,10 +1216,34 @@ async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, req
         "last_reviewer_id": user.id,
     }
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
-    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
-
-
-# ---------------- Dashboard overview (project-centric) ----------------
+    updated = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=deliverable_id,
+        entity_field="deliverable_id",
+        action="DELIVERABLE_REVIEWED",
+        changed_by=user.id,
+        old_value={
+            "stage": existing.get("current_stage"),
+            "stage_status": existing.get("stage_status"),
+        },
+        new_value={
+            "stage": updated.get("current_stage"),
+            "stage_status": "Changes Requested",
+            "action": "REJECTED",
+            "review_note": payload.note or "",
+        },
+    )
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=deliverable_id,
+        entity_field="deliverable_id",
+        action="DELIVERABLE_REWORKED",
+        changed_by=user.id,
+        old_value=existing.get("stage_status"),
+        new_value="Changes Requested",
+    )
+    return updated
 @api_router.get("/dashboard/overview")
 async def dashboard_overview(request: Request):
     await require_admin(request)

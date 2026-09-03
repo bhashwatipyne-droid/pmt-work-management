@@ -108,7 +108,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
     >
       <div
         data-testid={PROJECTS.modal}
-        className="my-10 w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="my-6 w-full max-w-[1400px] overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
@@ -220,7 +220,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
                 <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="w-10 px-3 py-2">#</th>
-                    <th className="px-3 py-2">Task Name *</th>
+                    <th className="px-3 py-2">Name *</th>
                     <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">Owner</th>
                     <th className="px-3 py-2">Start · Date & Time</th>

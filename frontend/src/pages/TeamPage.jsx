@@ -11,6 +11,7 @@ const AddMemberModal = ({ open, onClose, onCreated, options }) => {
   const { currentUserId } = useUser();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
   const [department, setDepartment] = useState((options.departments || [])[0] || "");
   const [submitting, setSubmitting] = useState(false);
@@ -19,12 +20,23 @@ const AddMemberModal = ({ open, onClose, onCreated, options }) => {
 
   const handleSubmit = async () => {
     if (!name.trim()) return toast.error("Name required");
+    if (!email.trim()) return toast.error("Email required");
+    if (!password) return toast.error("Temporary password required");
     setSubmitting(true);
     try {
-      const created = await createUser(currentUserId, { name: name.trim(), email: email.trim(), role, department });
+      const created = await createUser(currentUserId, {
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        role,
+        department,
+      });
       toast.success(`Added ${created.name}`);
       onCreated?.(created);
-      setName(""); setEmail(""); setRole("member");
+      setName("");
+      setEmail("");
+      setPassword("");
+      setRole("member");
       onClose?.();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Failed to add");
@@ -46,6 +58,19 @@ const AddMemberModal = ({ open, onClose, onCreated, options }) => {
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Email</label>
             <input data-testid={TEAM.addModalEmail} value={email} onChange={(e) => setEmail(e.target.value)} className={inputBase} placeholder="name@example.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Temporary Password *
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={inputBase}
+              placeholder="Temporary password"
+              autoComplete="new-password"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

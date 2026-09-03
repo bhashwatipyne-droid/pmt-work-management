@@ -74,20 +74,6 @@ CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Finish", "Administration"]
 ROLES = ["admin", "manager", "member"]
 
-SEED_USERS = [
-    {"id": "admin-1", "name": "Aisha Khan", "email": "aisha@thefinpedia.com", "role": "admin", "department": "Administration", "active": True},
-    {"id": "manager-1", "name": "Rahul Verma", "email": "rahul@thefinpedia.com", "role": "manager", "department": "Content", "active": True},
-    {"id": "manager-2", "name": "Priya Nair", "email": "priya@thefinpedia.com", "role": "manager", "department": "Design", "active": True},
-    {"id": "member-1", "name": "Sam Fernandes", "email": "sam@thefinpedia.com", "role": "member", "department": "Content", "active": True},
-    {"id": "member-2", "name": "Neha Joshi", "email": "neha@thefinpedia.com", "role": "member", "department": "Design", "active": True},
-    {"id": "member-3", "name": "Vikram Singh", "email": "vikram@thefinpedia.com", "role": "member", "department": "Animation", "active": True},
-]
-
-SEED_CLIENTS = [
-    {"id": "client-amfi", "name": "AMFI", "contact_person": "Candice D'souza", "status": "Active"},
-]
-
-
 # ---------------- Models ----------------
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -101,7 +87,8 @@ class User(BaseModel):
 
 class UserCreate(BaseModel):
     name: str
-    email: Optional[str] = ""
+    email: str
+    password: str
     role: str
     department: Optional[str] = ""
     active: Optional[bool] = True
@@ -261,14 +248,6 @@ class Deliverable(BaseModel):
 # ---------------- Auth helpers ----------------
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_HOURS = 24
-DEMO_PASSWORDS = {
-    "admin-1": "admin123",
-    "manager-1": "manager123",
-    "manager-2": "manager123",
-    "member-1": "member123",
-    "member-2": "member123",
-    "member-3": "member123",
-}
 
 
 def hash_password(password: str) -> str:
@@ -890,7 +869,8 @@ async def create_user(payload: UserCreate, request: Request):
     doc = {
         "id": uid,
         "name": payload.name.strip(),
-        "email": (payload.email or "").strip(),
+        "email": payload.email.strip().lower(),
+        "password_hash": hash_password(payload.password),
         "role": payload.role,
         "department": payload.department or "",
         "active": payload.active if payload.active is not None else True,
@@ -1051,19 +1031,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-@app.on_event("startup")
-async def seed_data():
-    for u in SEED_USERS:
-        await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
-        existing = await db.users.find_one({"id": u["id"]}, {"_id": 0, "password_hash": 1})
-        if not existing or not existing.get("password_hash"):
-            demo_password = DEMO_PASSWORDS.get(u["id"])
-            if demo_password:
-                await db.users.update_one({"id": u["id"]}, {"$set": {"password_hash": hash_password(demo_password)}})
-    for c in SEED_CLIENTS:
-        await db.clients.update_one({"id": c["id"]}, {"$set": c}, upsert=True)
 
 
 @app.on_event("shutdown")

@@ -4,6 +4,7 @@ import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { Checkbox } from "../ui/checkbox";
+import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 
 const NONE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
@@ -40,6 +41,17 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
 
   const setField = (field, value) => setDraft((prev) => ({ ...prev, [field]: value }));
+
+  const sheetCell = (col) => ({
+    "data-sheet-cell": true,
+    "data-sheet-row": 0,
+    "data-sheet-col": col,
+    onKeyDown: createWorksheetKeyHandler({
+      row: 0,
+      col,
+      maxCol: 13,
+    }),
+  });
 
   const isMeaningful = (d) =>
     !!(d.deliverable_name?.trim() || d.deliverable_link?.trim() || d.remarks?.trim() || d.project_id || d.deliverable_id || d.stage || (d.time_taken_minutes && Number(d.time_taken_minutes) > 0) || d.version?.trim());
@@ -79,6 +91,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(0)}
           data-testid="worksheet-draft-date"
           type="date"
           value={draft.work_date}
@@ -96,7 +109,11 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
             setTimeout(flush, 0);
           }}
         >
-          <SelectTrigger data-testid="worksheet-draft-project" className="h-8 w-[160px]">
+          <SelectTrigger
+            {...sheetCell(1)}
+            data-testid="worksheet-draft-project"
+            className="h-8 w-[160px]"
+          >
             <SelectValue placeholder="Project" />
           </SelectTrigger>
           <SelectContent>
@@ -114,7 +131,11 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           }}
           disabled={!draft.project_id}
         >
-          <SelectTrigger data-testid="worksheet-draft-deliverable" className="h-8 w-[160px]">
+          <SelectTrigger
+            {...sheetCell(2)}
+            data-testid="worksheet-draft-deliverable"
+            className="h-8 w-[160px]"
+          >
             <SelectValue placeholder={draft.project_id ? "Deliverable" : "—"} />
           </SelectTrigger>
           <SelectContent>
@@ -131,7 +152,11 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
             setTimeout(flush, 0);
           }}
         >
-          <SelectTrigger data-testid="worksheet-draft-stage" className="h-8 w-[110px]">
+          <SelectTrigger
+            {...sheetCell(3)}
+            data-testid="worksheet-draft-stage"
+            className="h-8 w-[110px]"
+          >
             <SelectValue placeholder="Stage" />
           </SelectTrigger>
           <SelectContent>
@@ -142,6 +167,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(4)}
           data-testid="worksheet-draft-deliverable-name"
           value={draft.deliverable_name}
           onChange={(e) => setField("deliverable_name", e.target.value)}
@@ -152,6 +178,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(5)}
           data-testid="worksheet-draft-deliverable-link"
           value={draft.deliverable_link}
           onChange={(e) => setField("deliverable_link", e.target.value)}
@@ -168,7 +195,11 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
             setTimeout(flush, 0);
           }}
         >
-          <SelectTrigger data-testid="worksheet-draft-type" className="h-8 w-[220px]">
+          <SelectTrigger
+            {...sheetCell(6)}
+            data-testid="worksheet-draft-type"
+            className="h-8 w-[220px]"
+          >
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
@@ -184,7 +215,11 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           value={draft.work_category}
           onValueChange={(v) => { setField("work_category", v); setTimeout(flush, 0); }}
         >
-          <SelectTrigger data-testid="worksheet-draft-category" className="h-8 w-[110px]">
+          <SelectTrigger
+            {...sheetCell(7)}
+            data-testid="worksheet-draft-category"
+            className="h-8 w-[110px]"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -194,6 +229,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(8)}
           data-testid="worksheet-draft-version"
           value={draft.version}
           onChange={(e) => setField("version", e.target.value)}
@@ -204,6 +240,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       </TableCell>
       <TableCell>
         <Input
+          {...sheetCell(9)}
           data-testid="worksheet-draft-time"
           type="number"
           min="0"
@@ -220,6 +257,7 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
       <TableCell><span className="cell-plain block text-slate-400">—</span></TableCell>
       <TableCell>
         <Textarea
+          {...sheetCell(12)}
           data-testid="worksheet-draft-remarks"
           value={draft.remarks}
           onChange={(e) => setField("remarks", e.target.value)}
@@ -234,7 +272,11 @@ export const DraftWorkSheetRow = ({ currentUser, users, options, projects = [], 
           value={draft.status}
           onValueChange={(v) => { setField("status", v); setTimeout(flush, 0); }}
         >
-          <SelectTrigger data-testid="worksheet-draft-status" className="h-8 w-[150px]">
+          <SelectTrigger
+            {...sheetCell(13)}
+            data-testid="worksheet-draft-status"
+            className="h-8 w-[150px]"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

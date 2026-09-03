@@ -6,6 +6,7 @@ import { useUser } from "@/context/UserContext";
 import {
   getProject,
   getWorkItems,
+  getOptions,
   updateProject,
   approveDeliverable,
   rejectDeliverable,
@@ -34,16 +35,19 @@ export default function ProjectDetailPage() {
   const [workItems, setWorkItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [delivModal, setDelivModal] = useState({ open: false, mode: "add", initial: null });
+  const [deliverableTypes, setDeliverableTypes] = useState([]);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [p, w] = await Promise.all([
+      const [p, w, options] = await Promise.all([
         getProject(currentUserId, projectId),
         getWorkItems(currentUserId, { project_id: projectId }),
+        getOptions(),
       ]);
       setProject(p);
       setWorkItems(w);
+      setDeliverableTypes(options.deliverable_types || []);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Failed to load project");
     } finally { setLoading(false); }
@@ -246,6 +250,7 @@ export default function ProjectDetailPage() {
         projectId={projectId}
         initial={delivModal.initial}
         users={users}
+        deliverableTypes={deliverableTypes}
         onClose={() => setDelivModal((m) => ({ ...m, open: false }))}
         onSaved={fetchAll}
       />

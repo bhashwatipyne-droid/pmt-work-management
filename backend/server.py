@@ -204,7 +204,6 @@ class ProjectCreate(BaseModel):
     client_id: str
     start_date: str
     end_date: str
-    poc_id: Optional[str] = None
     status: Optional[str] = "Planning"
     deliverables: Optional[List[DeliverableInput]] = []
 
@@ -214,7 +213,6 @@ class ProjectUpdate(BaseModel):
     client_id: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    poc_id: Optional[str] = None
     status: Optional[str] = None
 
 
@@ -226,7 +224,6 @@ class Project(BaseModel):
     client_id: str
     start_date: str
     end_date: str
-    poc_id: Optional[str] = None
     status: str = "Planning"
     created_at: str
     updated_at: str
@@ -677,6 +674,7 @@ async def _hydrate_project(p: dict) -> dict:
         "stage_counts": stage_counts,
         "collaborator_ids": list(collaborators),
         "client_name": client_doc["name"] if client_doc else "",
+        "client_poc": client_doc.get("contact_person", "") if client_doc else "",
     }
 
 
@@ -749,7 +747,6 @@ async def create_project(payload: ProjectCreate, request: Request):
         client_id=payload.client_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
-        poc_id=payload.poc_id,
         status=payload.status or "Planning",
         created_at=ts,
         updated_at=ts,

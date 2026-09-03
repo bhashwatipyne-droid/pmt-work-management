@@ -21,7 +21,6 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
   const [clientId, setClientId] = useState(clients[0]?.id || "");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [pocId, setPocId] = useState("");
   const [status, setStatus] = useState("Planning");
   const [deliverables, setDeliverables] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -57,7 +56,6 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
     setClientId(clients[0]?.id || "");
     setStartDate("");
     setEndDate("");
-    setPocId("");
     setStatus("Planning");
     setDeliverables([]);
   };
@@ -83,7 +81,6 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
         client_id: clientId,
         start_date: startDate,
         end_date: endDate,
-        poc_id: pocId || null,
         status,
         deliverables: cleanedDeliverables,
       });
@@ -178,17 +175,12 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">POC</label>
-                <select
+                <div
                   data-testid={PROJECTS.fieldPoc}
-                  value={pocId}
-                  onChange={(e) => setPocId(e.target.value)}
-                  className={inputBase}
+                  className={`${inputBase} bg-slate-50 text-slate-600`}
                 >
-                  <option value="">—</option>
-                  {users.filter((u) => u.role !== "member").map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
-                </select>
+                  {clients.find((c) => c.id === clientId)?.contact_person || "—"}
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</label>

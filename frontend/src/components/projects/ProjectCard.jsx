@@ -16,7 +16,7 @@ const initial = (name) => (name || "?").trim().charAt(0).toUpperCase();
 
 export const ProjectCard = ({ project, users, onOpen }) => {
   const status = STATUS_COLORS[project.status] || STATUS_COLORS.Active;
-  const poc = users.find((u) => u.id === project.poc_id);
+  const poc = project.client_poc;
   const collaborators = (project.collaborator_ids || [])
     .map((id) => users.find((u) => u.id === id))
     .filter(Boolean)
@@ -44,7 +44,7 @@ export const ProjectCard = ({ project, users, onOpen }) => {
         </div>
         <div className="flex items-center gap-1.5">
           <UserIcon className="h-3.5 w-3.5" />
-          <span>{poc ? poc.name : "Unassigned"}</span>
+          <span>{poc || "Unassigned"}</span>
         </div>
       </div>
 

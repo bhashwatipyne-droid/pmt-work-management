@@ -79,7 +79,7 @@ export default function ProjectDetailPage() {
   if (loading || !project) return <div className="flex flex-1 items-center justify-center py-16 text-sm text-slate-400">Loading project…</div>;
 
   const statusColor = STATUS_COLORS[project.status] || STATUS_COLORS.Active;
-  const poc = users.find((u) => u.id === project.poc_id);
+  const poc = project.client_poc;
   const isElevated = currentUser.role !== "member";
 
   return (
@@ -96,7 +96,7 @@ export default function ProjectDetailPage() {
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">{project.name}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
             <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> {project.client_name || "—"}</span>
-            <span className="flex items-center gap-1.5"><UserIcon className="h-3.5 w-3.5" /> POC: {poc?.name || "Unassigned"}</span>
+            <span className="flex items-center gap-1.5"><UserIcon className="h-3.5 w-3.5" /> POC: {poc || "Unassigned"}</span>
             <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> {fmtDate(project.start_date)} → {fmtDate(project.end_date)}</span>
           </div>
         </div>

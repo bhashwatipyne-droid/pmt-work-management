@@ -79,6 +79,7 @@ class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     name: str
+    username: str
     role: str
     email: Optional[str] = ""
     department: Optional[str] = ""

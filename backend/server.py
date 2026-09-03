@@ -1013,6 +1013,24 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
     update_fields["updated_at"] = now_iso()
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update_fields})
 
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=deliverable_id,
+        entity_field="deliverable_id",
+        action="DELIVERABLE_UPDATED",
+        changed_by=user.id,
+        old_value={
+            key: existing.get(key)
+            for key in update_fields
+            if key != "updated_at"
+        },
+        new_value={
+            key: update_fields.get(key)
+            for key in update_fields
+            if key != "updated_at"
+        },
+    )
+
     # Stage changed
     if "current_stage" in update_fields and update_fields["current_stage"] != old_stage:
         await log_activity(

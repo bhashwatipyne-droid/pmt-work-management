@@ -4,7 +4,7 @@ import { Layers, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const { login } = useUser();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -14,10 +14,10 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await login(loginId.trim(), password);
     } catch (err) {
       const detail = err.response?.data?.detail;
-      setError(typeof detail === "string" ? detail : "Invalid email or password");
+      setError(typeof detail === "string" ? detail : "Invalid username/email or password");
     } finally {
       setSubmitting(false);
     }
@@ -41,17 +41,18 @@ export default function LoginPage() {
           className="rounded-xl border border-white/10 bg-white/[0.04] p-7 shadow-2xl backdrop-blur"
         >
           <h1 className="mb-1 text-lg font-semibold text-white">Sign in</h1>
-          <p className="mb-6 text-sm text-slate-400">Use your work email and password to continue.</p>
+          <p className="mb-6 text-sm text-slate-400">Use your username or work email and password to continue.</p>
 
-          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">Email</label>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">Username or Email</label>
           <input
-            data-testid="login-email-input"
-            type="email"
+            data-testid="login-username-input"
+            type="text"
             required
             autoFocus
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={loginId}
+            onChange={(e) => setLoginId(e.target.value)}
             placeholder="you@company.com"
+            autoComplete="username"
             className="mb-4 w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
           />
 
@@ -63,6 +64,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
+            autoComplete="current-password"
             className="mb-5 w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
           />
 

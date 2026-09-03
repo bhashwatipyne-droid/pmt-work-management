@@ -87,6 +87,7 @@ class User(BaseModel):
 
 class UserCreate(BaseModel):
     name: str
+    username: str
     email: str
     password: str
     role: str
@@ -337,16 +338,24 @@ async def root():
 
 
 class LoginPayload(BaseModel):
-    email: str
+    login: str
     password: str
 
 
 @api_router.post("/auth/login", response_model=User)
 async def login(payload: LoginPayload, response: Response):
-    email = payload.email.strip().lower()
-    doc = await db.users.find_one({"email": email}, {"_id": 0})
+    login = payload.login.strip().lower()
+    doc = await db.users.find_one(
+        {
+            "$or": [
+                {"username": login},
+                {"email": login},
+            ]
+        },
+        {"_id": 0},
+    )
     if not doc or not verify_password(payload.password, doc.get("password_hash", "")):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     if not doc.get("active", True):
         raise HTTPException(status_code=403, detail="Account deactivated")
     token = create_access_token(doc["id"])
@@ -864,12 +873,36 @@ async def create_user(payload: UserCreate, request: Request):
         raise HTTPException(status_code=400, detail="Invalid role")
     if payload.department and payload.department not in DEPARTMENTS:
         raise HTTPException(status_code=400, detail="Invalid department")
+
+    username = payload.username.strip().lower()
+    email = payload.email.strip().lower()
+
+    if not username:
+        raise HTTPException(status_code=400, detail="Username required")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="Email required")
+
+    if len(payload.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters",
+        )
+
+    existing_username = await db.users.find_one({"username": username})
+    if existing_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists",
+        )
+
     role_prefix = payload.role
     uid = f"{role_prefix}-{uuid.uuid4().hex[:6]}"
     doc = {
         "id": uid,
         "name": payload.name.strip(),
-        "email": payload.email.strip().lower(),
+        "username": username,
+        "email": email,
         "password_hash": hash_password(payload.password),
         "role": payload.role,
         "department": payload.department or "",

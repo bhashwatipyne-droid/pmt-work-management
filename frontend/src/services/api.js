@@ -9,7 +9,7 @@ const authHeaders = () => ({});
 
 export const getUsers = () => axios.get(`${API}/users`).then((r) => r.data);
 
-export const loginUser = (email, password) => axios.post(`${API}/auth/login`, { email, password }).then((r) => r.data);
+export const loginUser = (login, password) => axios.post(`${API}/auth/login`, { login, password }).then((r) => r.data);
 
 export const logoutUser = () => axios.post(`${API}/auth/logout`, {}).then((r) => r.data);
 

@@ -10,6 +10,7 @@ const inputBase = "w-full rounded-md border border-slate-200 bg-white px-3 py-2 
 const AddMemberModal = ({ open, onClose, onCreated, options }) => {
   const { currentUserId } = useUser();
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
@@ -20,12 +21,14 @@ const AddMemberModal = ({ open, onClose, onCreated, options }) => {
 
   const handleSubmit = async () => {
     if (!name.trim()) return toast.error("Name required");
+    if (!username.trim()) return toast.error("Username required");
     if (!email.trim()) return toast.error("Email required");
     if (!password) return toast.error("Temporary password required");
     setSubmitting(true);
     try {
       const created = await createUser(currentUserId, {
         name: name.trim(),
+        username: username.trim(),
         email: email.trim(),
         password,
         role,
@@ -34,6 +37,7 @@ const AddMemberModal = ({ open, onClose, onCreated, options }) => {
       toast.success(`Added ${created.name}`);
       onCreated?.(created);
       setName("");
+      setUsername("");
       setEmail("");
       setPassword("");
       setRole("member");
@@ -54,6 +58,19 @@ const AddMemberModal = ({ open, onClose, onCreated, options }) => {
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Name *</label>
             <input data-testid={TEAM.addModalName} value={name} onChange={(e) => setName(e.target.value)} className={inputBase} placeholder="Full name" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Username *
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className={inputBase}
+              placeholder="e.g. rahul"
+              autoComplete="username"
+            />
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Email</label>

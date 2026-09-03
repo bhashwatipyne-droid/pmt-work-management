@@ -291,6 +291,30 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def log_activity(
+    collection_name: str,
+    entity_id: str,
+    action: str,
+    changed_by: str,
+    old_value=None,
+    new_value=None,
+    metadata=None,
+    entity_field: str = "entity_id",
+):
+    activity = {
+        "id": str(uuid.uuid4()),
+        entity_field: entity_id,
+        "action": action,
+        "old_value": old_value,
+        "new_value": new_value,
+        "changed_by": changed_by,
+        "changed_at": now_iso(),
+        "metadata": metadata or {},
+    }
+
+    await db[collection_name].insert_one(activity)
+
+
 def gen_project_code() -> str:
     return "proj" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
 
@@ -466,16 +490,72 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
 @api_router.patch("/work-items/{item_id}", response_model=WorkItem)
 async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Request):
     user = await get_acting_user(request)
+
     existing = await db.work_items.find_one({"id": item_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Work item not found")
 
     creator_department = await get_user_department(existing.get("creator_id"))
-    update_fields = scoped_update_fields(user, existing, payload.model_dump(exclude_unset=True), creator_department)
+
+    update_fields = scoped_update_fields(
+        user,
+        existing,
+        payload.model_dump(exclude_unset=True),
+        creator_department,
+    )
+
+    # Keep the old values before updating MongoDB
+    old_status = existing.get("status")
+    old_stage = existing.get("stage")
 
     update_fields["updated_at"] = now_iso()
-    await db.work_items.update_one({"id": item_id}, {"$set": update_fields})
-    updated = await db.work_items.find_one({"id": item_id}, {"_id": 0})
+
+    await db.work_items.update_one(
+        {"id": item_id},
+        {"$set": update_fields},
+    )
+
+    # Log status changes
+    if "status" in update_fields and update_fields["status"] != old_status:
+        await log_activity(
+            collection_name="work_item_activity_log",
+            entity_id=item_id,
+            entity_field="work_item_id",
+            action="WORK_ITEM_STATUS_CHANGED",
+            changed_by=user.id,
+            old_value=old_status,
+            new_value=update_fields["status"],
+        )
+
+        # A Changes Requested status is specifically a rework event
+        if update_fields["status"] == "Changes Requested":
+            await log_activity(
+                collection_name="work_item_activity_log",
+                entity_id=item_id,
+                entity_field="work_item_id",
+                action="WORK_ITEM_REWORKED",
+                changed_by=user.id,
+                old_value=old_status,
+                new_value="Changes Requested",
+            )
+
+    # Log stage changes
+    if "stage" in update_fields and update_fields["stage"] != old_stage:
+        await log_activity(
+            collection_name="work_item_activity_log",
+            entity_id=item_id,
+            entity_field="work_item_id",
+            action="WORK_ITEM_STAGE_CHANGED",
+            changed_by=user.id,
+            old_value=old_stage,
+            new_value=update_fields["stage"],
+        )
+
+    updated = await db.work_items.find_one(
+        {"id": item_id},
+        {"_id": 0},
+    )
+
     return updated
 
 
@@ -511,18 +591,80 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
     user = await get_acting_user(request)
     raw_fields = payload.patch.model_dump(exclude_unset=True)
     updated_items = []
+
     for item_id in payload.ids:
         existing = await db.work_items.find_one({"id": item_id}, {"_id": 0})
+
         if not existing:
             continue
+
         try:
-            creator_department = await get_user_department(existing.get("creator_id"))
-            update_fields = scoped_update_fields(user, existing, dict(raw_fields), creator_department)
+            creator_department = await get_user_department(
+                existing.get("creator_id")
+            )
+
+            update_fields = scoped_update_fields(
+                user,
+                existing,
+                dict(raw_fields),
+                creator_department,
+            )
         except HTTPException:
             continue
+
+        # Keep old values before updating
+        old_status = existing.get("status")
+        old_stage = existing.get("stage")
+
         update_fields["updated_at"] = now_iso()
-        await db.work_items.update_one({"id": item_id}, {"$set": update_fields})
-        updated_items.append(await db.work_items.find_one({"id": item_id}, {"_id": 0}))
+
+        await db.work_items.update_one(
+            {"id": item_id},
+            {"$set": update_fields},
+        )
+
+        # Log status changes
+        if "status" in update_fields and update_fields["status"] != old_status:
+            await log_activity(
+                collection_name="work_item_activity_log",
+                entity_id=item_id,
+                entity_field="work_item_id",
+                action="WORK_ITEM_STATUS_CHANGED",
+                changed_by=user.id,
+                old_value=old_status,
+                new_value=update_fields["status"],
+            )
+
+            if update_fields["status"] == "Changes Requested":
+                await log_activity(
+                    collection_name="work_item_activity_log",
+                    entity_id=item_id,
+                    entity_field="work_item_id",
+                    action="WORK_ITEM_REWORKED",
+                    changed_by=user.id,
+                    old_value=old_status,
+                    new_value="Changes Requested",
+                )
+
+        # Log stage changes
+        if "stage" in update_fields and update_fields["stage"] != old_stage:
+            await log_activity(
+                collection_name="work_item_activity_log",
+                entity_id=item_id,
+                entity_field="work_item_id",
+                action="WORK_ITEM_STAGE_CHANGED",
+                changed_by=user.id,
+                old_value=old_stage,
+                new_value=update_fields["stage"],
+            )
+
+        updated_items.append(
+            await db.work_items.find_one(
+                {"id": item_id},
+                {"_id": 0},
+            )
+        )
+
     return updated_items
 
 

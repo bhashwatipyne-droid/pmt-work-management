@@ -80,7 +80,8 @@ export default function BulkReviewModal({
       await reviewWorkItem(
         itemId,
         action,
-        currentUser.id
+        currentUser.id,
+        notes[itemId] || ""
       );
 
       const message =
@@ -141,7 +142,8 @@ export default function BulkReviewModal({
           reviewWorkItem(
             id,
             "approve",
-            currentUser.id
+            currentUser.id,
+            notes[id] || ""
           )
         )
       );
@@ -196,7 +198,8 @@ export default function BulkReviewModal({
           reviewWorkItem(
             id,
             "request_changes",
-            currentUser.id
+            currentUser.id,
+            notes[id] || ""
           )
         )
       );

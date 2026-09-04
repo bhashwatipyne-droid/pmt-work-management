@@ -100,7 +100,7 @@ export default function QuickLoggerModal({
   };
 
   const addEntry = () => {
-    setEntries((prev) => [...prev, emptyEntry()]);
+    setEntries((prev) => [emptyEntry(), ...prev]);
   };
 
   const removeEntry = (index) => {
@@ -118,16 +118,25 @@ export default function QuickLoggerModal({
   };
 
   const handleSave = async () => {
-    const validEntries = entries.filter(isValid);
+    const hasAnyValue = (entry) =>
+      entry.project_id ||
+      entry.deliverable_id ||
+      entry.deliverable_name ||
+      entry.deliverable_type ||
+      entry.remarks ||
+      entry.time_taken_minutes;
 
-    if (validEntries.length !== entries.length) {
+    const filledEntries = entries.filter(hasAnyValue);
+    const invalidEntries = filledEntries.filter((entry) => !isValid(entry));
+
+    if (invalidEntries.length) {
       alert(
         "Please select a Project, Type, and Duration for every entry."
       );
       return;
     }
 
-    if (!validEntries.length) {
+    if (!filledEntries.length) {
       alert("Please add at least one entry.");
       return;
     }
@@ -137,7 +146,7 @@ export default function QuickLoggerModal({
     try {
       const today = new Date().toISOString().slice(0, 10);
 
-      const payloads = validEntries.map((entry) => ({
+      const payloads = filledEntries.map((entry) => ({
         work_date: today,
         project_id: entry.project_id || null,
         deliverable_id: entry.deliverable_id || null,
@@ -163,14 +172,15 @@ export default function QuickLoggerModal({
   };
 
   const handleKeyDown = (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      handleSave();
-    }
-
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      handleSave();
     }
   };
 
@@ -341,6 +351,20 @@ export default function QuickLoggerModal({
                           type="number"
                           min="1"
                           value={entry.time_taken_minutes}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+
+                              if (!isValid(entry)) {
+                                alert(
+                                  "Please select a Project, Type, and Duration before adding a row."
+                                );
+                                return;
+                              }
+
+                              addEntry();
+                            }
+                          }}
                           onChange={(e) =>
                             updateEntry(
                               index,
@@ -460,7 +484,7 @@ export default function QuickLoggerModal({
             className="mt-4 flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-400 hover:bg-white"
           >
             <Plus size={16} />
-            Add Row
+            Add Entry · Enter
           </button>
         </div>
 
@@ -470,7 +494,7 @@ export default function QuickLoggerModal({
             {entries.length} {entries.length === 1 ? "entry" : "entries"}
             {" · "}
             <span className="hidden sm:inline">
-              Cmd/Ctrl + Enter to save
+              Enter to add · Cmd/Ctrl + Enter to save
             </span>
           </div>
 

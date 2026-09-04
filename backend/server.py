@@ -504,6 +504,7 @@ async def review_work_item(
     item_id: str,
     action: str,
     request: Request,
+    note: str = "",
 ):
     user = await get_acting_user(request)
 
@@ -536,8 +537,10 @@ async def review_work_item(
             detail="Work item is not ready for review",
         )
 
-    # Managers can only review work explicitly assigned to them.
-    if user.role == "manager" and existing.get("reviewer_id") != user.id:
+    if (
+        user.role == "manager"
+        and existing.get("reviewer_id") != user.id
+    ):
         raise HTTPException(
             status_code=403,
             detail="This work item is not assigned to you",
@@ -551,6 +554,7 @@ async def review_work_item(
         else "Changes Requested"
     )
 
+    # Update work item status
     await db.work_items.update_one(
         {"id": item_id},
         {
@@ -561,26 +565,25 @@ async def review_work_item(
         },
     )
 
+    # Log review action + note
+    review_action = (
+        "WORK_ITEM_APPROVED"
+        if action == "approve"
+        else "WORK_ITEM_REWORKED"
+    )
+
     await log_activity(
         collection_name="work_item_activity_log",
         entity_id=item_id,
         entity_field="work_item_id",
-        action="WORK_ITEM_STATUS_CHANGED",
+        action=review_action,
         changed_by=user.id,
         old_value=old_status,
         new_value=new_status,
+        metadata={
+            "review_note": note.strip() if note else "",
+        },
     )
-
-    if new_status == "Changes Requested":
-        await log_activity(
-            collection_name="work_item_activity_log",
-            entity_id=item_id,
-            entity_field="work_item_id",
-            action="WORK_ITEM_REWORKED",
-            changed_by=user.id,
-            old_value=old_status,
-            new_value="Changes Requested",
-        )
 
     updated = await db.work_items.find_one(
         {"id": item_id},

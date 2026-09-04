@@ -15,6 +15,7 @@ import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
+import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
@@ -33,6 +34,7 @@ export default function WorkSheetPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkAdding, setBulkAdding] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   const bulkAddingRef = useRef(false);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
@@ -90,6 +92,14 @@ export default function WorkSheetPage() {
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add row");
     }
+  };
+
+  const handleQuickLoggerSave = async (payloads) => {
+    for (const payload of payloads) {
+      await createWorkItem(currentUser.id, payload);
+    }
+
+    await fetchItems();
   };
 
   const handleBulkAddRows = async (count) => {
@@ -180,7 +190,12 @@ export default function WorkSheetPage() {
         resultCount={items.length}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
-        onOpenCloseDeliverable={isManager ? () => setCloseModalOpen(true) : undefined}
+        onOpenCloseDeliverable={
+          isManager ? () => setCloseModalOpen(true) : undefined
+        }
+        onOpenQuickLogger={
+          isManager ? () => setQuickLoggerOpen(true) : undefined
+        }
       />
 
       {isManager && (
@@ -195,6 +210,16 @@ export default function WorkSheetPage() {
           }}
         />
       )}
+
+      <QuickLoggerModal
+        open={quickLoggerOpen}
+        onClose={() => setQuickLoggerOpen(false)}
+        currentUser={currentUser}
+        projects={projects}
+        deliverables={deliverables}
+        options={options}
+        onSave={handleQuickLoggerSave}
+      />
 
       {selectedIds.length > 0 && (
         <BulkActionBar

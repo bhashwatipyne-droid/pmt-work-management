@@ -1,12 +1,12 @@
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Plus, X, Rows3, CheckCircle2 } from "lucide-react";
+import { Plus, X, Rows3, CheckCircle2, Clock3 } from "lucide-react";
 import { WORKSHEET } from "@/constants/testIds";
 
 const ALL_VALUE = "__all__";
 
-export const WorkSheetToolbar = ({ filters, setFilters, options, onAddRow, canAdd, resultCount, onBulkAdd, bulkAdding, onOpenCloseDeliverable }) => {
+export const WorkSheetToolbar = ({ filters, setFilters, options, onAddRow, canAdd, resultCount, onBulkAdd, bulkAdding, onOpenCloseDeliverable, onOpenQuickLogger }) => {
   const update = (key, value) => setFilters((f) => ({ ...f, [key]: value === ALL_VALUE ? "" : value }));
 
   const clear = () =>
@@ -37,6 +37,18 @@ export const WorkSheetToolbar = ({ filters, setFilters, options, onAddRow, canAd
           className="h-9 bg-emerald-600 hover:bg-emerald-700"
         >
           <CheckCircle2 className="mr-1 h-4 w-4" /> Deliverable Closed
+        </Button>
+      )}
+
+      {onOpenQuickLogger && (
+        <Button
+          onClick={onOpenQuickLogger}
+          size="sm"
+          variant="outline"
+          className="h-9"
+        >
+          <Clock3 className="mr-2 h-4 w-4" />
+          Quick Logger
         </Button>
       )}
 

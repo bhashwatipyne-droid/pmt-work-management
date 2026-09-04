@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, MessageSquare, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import { getBulkReview, approveDeliverable, rejectDeliverable } from "@/services/api";
+import { getBulkReview, reviewWorkItem } from "@/services/api";
 import { toast } from "sonner";
 
 export default function BulkReviewModal({
@@ -62,35 +62,62 @@ export default function BulkReviewModal({
     }));
   };
 
-  const handleBulkAction = async (action) => {
+  const handleApprove = async () => {
     if (!selectedIds.length) {
-      toast.error("Select at least one deliverable");
+      toast.error("Select at least one item");
       return;
     }
 
     setActionLoading(true);
 
     try {
-      for (const id of selectedIds) {
-        const note = notes[id] || "";
-
-        if (action === "approve") {
-          await approveDeliverable(currentUser.id, id, note);
-        } else {
-          await rejectDeliverable(currentUser.id, id, note);
-        }
-      }
-
-      toast.success(
-        `${selectedIds.length} deliverable${
-          selectedIds.length === 1 ? "" : "s"
-        } ${action === "approve" ? "approved" : "sent back"}`
+      await Promise.all(
+        selectedIds.map((id) =>
+          reviewWorkItem(id, "approve", currentUser.id)
+        )
       );
 
+      toast.success(
+        `${selectedIds.length} item${selectedIds.length === 1 ? "" : "s"} approved`
+      );
+
+      setSelectedIds([]);
       await fetchItems();
-    } catch (e) {
+    } catch (error) {
+      console.error("Failed to approve work items:", error);
       toast.error(
-        e.response?.data?.detail || "Could not complete bulk review"
+        error.response?.data?.detail || "Could not complete bulk review"
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRequestChanges = async () => {
+    if (!selectedIds.length) {
+      toast.error("Select at least one item");
+      return;
+    }
+
+    setActionLoading(true);
+
+    try {
+      await Promise.all(
+        selectedIds.map((id) =>
+          reviewWorkItem(id, "request_changes", currentUser.id)
+        )
+      );
+
+      toast.success(
+        `${selectedIds.length} item${selectedIds.length === 1 ? "" : "s"} sent back`
+      );
+
+      setSelectedIds([]);
+      await fetchItems();
+    } catch (error) {
+      console.error("Failed to request changes:", error);
+      toast.error(
+        error.response?.data?.detail || "Could not complete bulk review"
       );
     } finally {
       setActionLoading(false);
@@ -136,7 +163,7 @@ export default function BulkReviewModal({
               size="sm"
               variant="outline"
               disabled={!selectedIds.length || actionLoading}
-              onClick={() => handleBulkAction("reject")}
+              onClick={handleRequestChanges}
             >
               <XCircle className="mr-1.5 h-4 w-4" />
               Request Changes
@@ -146,7 +173,7 @@ export default function BulkReviewModal({
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700"
               disabled={!selectedIds.length || actionLoading}
-              onClick={() => handleBulkAction("approve")}
+              onClick={handleApprove}
             >
               <CheckCircle2 className="mr-1.5 h-4 w-4" />
               Approve Selected

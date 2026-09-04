@@ -267,7 +267,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         )}
       </TableCell>
       <TableCell>
-        {canEditExtra ? (
+        {canEditRow ? (
           <Select
             value={item.reviewer_id || NONE_VALUE}
             onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}

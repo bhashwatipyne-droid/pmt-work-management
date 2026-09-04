@@ -1542,42 +1542,34 @@ def _next_stage(stage: str) -> Optional[str]:
 
 @api_router.get("/bulk-review")
 async def list_bulk_review(request: Request):
-    """Deliverables ready for review, scoped to the manager's department/stage."""
+    """Work items assigned to the logged-in manager and ready for review."""
     user = await get_acting_user(request)
 
-    stage_by_department = {
-        "Content": "Content",
-        "Design": "Design",
-        "Animation": "Animate",
-        "Finish": "Finish",
-    }
-
-    if user.role == "admin":
-        query = {
-            "stage_status": "Ready for Review"
-        }
-    elif user.role == "manager":
-        stage = stage_by_department.get(user.department)
-
-        if not stage:
-            return []
-
-        query = {
-            "stage_status": "Ready for Review",
-            "current_stage": stage,
-        }
-    else:
+    if user.role not in ("admin", "manager"):
         raise HTTPException(
             status_code=403,
             detail="Only admin or manager can access bulk review"
         )
 
-    delivs = await db.deliverables.find(
+    query = {
+        "status": "Ready for Review"
+    }
+
+    # Managers only see work explicitly assigned to them.
+    # Admins can see all ready-for-review work.
+    if user.role == "manager":
+        query["reviewer_id"] = user.id
+
+    items = await db.work_items.find(
         query,
         {"_id": 0}
     ).sort("updated_at", -1).to_list(500)
 
-    project_ids = list({d["project_id"] for d in delivs})
+    project_ids = list({
+        item["project_id"]
+        for item in items
+        if item.get("project_id")
+    })
 
     projects = {
         p["id"]: p
@@ -1605,17 +1597,19 @@ async def list_bulk_review(request: Request):
 
     result = []
 
-    for d in delivs:
-        p = projects.get(d["project_id"]) or {}
-        owner = users.get(d.get("owner_id") or "") or {}
-        client = clients.get(p.get("client_id") or "") or {}
+    for item in items:
+        project = projects.get(item.get("project_id") or "") or {}
+        creator = users.get(item.get("creator_id") or "") or {}
+        reviewer = users.get(item.get("reviewer_id") or "") or {}
+        client = clients.get(project.get("client_id") or "") or {}
 
         result.append({
-            **d,
-            "project_name": p.get("name", ""),
-            "project_code": p.get("code", ""),
+            **item,
+            "project_name": project.get("name", ""),
+            "project_code": project.get("code", ""),
             "client_name": client.get("name", ""),
-            "owner_name": owner.get("name", "Unassigned"),
+            "creator_name": creator.get("name", "Unknown"),
+            "reviewer_name": reviewer.get("name", "Unassigned"),
         })
 
     return result

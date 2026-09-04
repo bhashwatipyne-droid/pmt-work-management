@@ -125,6 +125,16 @@ export const getApprovals = (userId) =>
 export const getBulkReview = (userId) =>
   axios.get(`${API}/bulk-review`, { headers: authHeaders(userId) }).then((r) => r.data);
 
+export const reviewWorkItem = (itemId, action, userId) =>
+  axios.post(
+    `${API}/work-items/${itemId}/review`,
+    null,
+    {
+      params: { action },
+      headers: authHeaders(userId),
+    }
+  ).then((r) => r.data);
+
 export const approveDeliverable = (userId, id, note = "") =>
   axios.post(`${API}/deliverables/${id}/approve`, { note }, { headers: authHeaders(userId) }).then((r) => r.data);
 

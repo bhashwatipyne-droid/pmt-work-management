@@ -181,13 +181,19 @@ class Client(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: f"client-{uuid.uuid4().hex[:8]}")
     name: str
+    # Legacy field - kept temporarily for backward compatibility
     contact_person: str = ""
+    # New multiple-contact structure
+    contact_persons: List[dict] = Field(default_factory=list)
     status: str = "Active"
 
 
 class ClientCreate(BaseModel):
     name: str
+    # Legacy field - kept temporarily for backward compatibility
     contact_person: Optional[str] = ""
+    # New multiple-contact structure
+    contact_persons: Optional[List[dict]] = Field(default_factory=list)
     status: Optional[str] = "Active"
 
 
@@ -202,6 +208,8 @@ class DeliverableInput(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     client_id: str
+    # Selected contact person for this project
+    poc_id: Optional[str] = None
     start_date: str
     end_date: str
     status: Optional[str] = "Planning"
@@ -211,6 +219,8 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     client_id: Optional[str] = None
+    # Selected contact person for this project
+    poc_id: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     status: Optional[str] = None
@@ -222,6 +232,8 @@ class Project(BaseModel):
     code: str
     name: str
     client_id: str
+    # Selected contact person for this project
+    poc_id: Optional[str] = None
     start_date: str
     end_date: str
     status: str = "Planning"
@@ -752,6 +764,46 @@ async def dashboard_attention_items(request: Request):
     return items
 
 
+async def migrate_client_contacts():
+    """
+    Migrate existing single contact_person values into contact_persons.
+    Safe to run multiple times.
+    """
+    clients = await db.clients.find(
+        {},
+        {"_id": 0}
+    ).to_list(1000)
+
+    for client in clients:
+        existing_contacts = client.get("contact_persons") or []
+
+        # Already migrated
+        if existing_contacts:
+            continue
+
+        legacy_contact = (client.get("contact_person") or "").strip()
+
+        if not legacy_contact:
+            continue
+
+        contact = {
+            "id": f"contact-{uuid.uuid4().hex[:8]}",
+            "name": legacy_contact,
+            "email": "",
+            "phone": "",
+            "designation": "",
+        }
+
+        await db.clients.update_one(
+            {"id": client["id"]},
+            {
+                "$set": {
+                    "contact_persons": [contact]
+                }
+            }
+        )
+
+
 # ---------------- Clients ----------------
 @api_router.get("/clients", response_model=List[Client])
 async def list_clients(request: Request):
@@ -769,7 +821,10 @@ async def create_client(payload: ClientCreate, request: Request):
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = None
+    # Legacy field - kept temporarily for backward compatibility
     contact_person: Optional[str] = None
+    # New multiple-contact structure
+    contact_persons: Optional[List[dict]] = None
     status: Optional[str] = None
 
 
@@ -784,6 +839,193 @@ async def update_client(client_id: str, payload: ClientUpdate, request: Request)
         raise HTTPException(status_code=400, detail="Invalid client status")
     await db.clients.update_one({"id": client_id}, {"$set": update_fields})
     return Client(**{**existing, **update_fields})
+
+
+class ContactPersonCreate(BaseModel):
+    name: str
+    email: Optional[str] = ""
+    phone: Optional[str] = ""
+    designation: Optional[str] = ""
+
+
+class ContactPersonUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    designation: Optional[str] = None
+
+
+@api_router.post("/clients/{client_id}/contacts")
+async def create_contact_person(
+    client_id: str,
+    payload: ContactPersonCreate,
+    request: Request
+):
+    await require_admin(request)
+
+    client = await db.clients.find_one(
+        {"id": client_id},
+        {"_id": 0}
+    )
+
+    if not client:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found"
+        )
+
+    if not payload.name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Contact name is required"
+        )
+
+    contact = {
+        "id": f"contact-{uuid.uuid4().hex[:8]}",
+        "name": payload.name.strip(),
+        "email": (payload.email or "").strip(),
+        "phone": (payload.phone or "").strip(),
+        "designation": (payload.designation or "").strip(),
+    }
+
+    existing_contacts = client.get("contact_persons") or []
+
+    await db.clients.update_one(
+        {"id": client_id},
+        {
+            "$push": {
+                "contact_persons": contact
+            }
+        }
+    )
+
+    return contact
+
+
+@api_router.patch("/clients/{client_id}/contacts/{contact_id}")
+async def update_contact_person(
+    client_id: str,
+    contact_id: str,
+    payload: ContactPersonUpdate,
+    request: Request
+):
+    await require_admin(request)
+
+    client = await db.clients.find_one(
+        {"id": client_id},
+        {"_id": 0}
+    )
+
+    if not client:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found"
+        )
+
+    contacts = client.get("contact_persons") or []
+
+    contact = next(
+        (c for c in contacts if c.get("id") == contact_id),
+        None
+    )
+
+    if not contact:
+        raise HTTPException(
+            status_code=404,
+            detail="Contact person not found"
+        )
+
+    update_fields = payload.model_dump(exclude_unset=True)
+
+    if "name" in update_fields:
+        if not update_fields["name"].strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Contact name is required"
+            )
+        update_fields["name"] = update_fields["name"].strip()
+
+    for field in ["email", "phone", "designation"]:
+        if field in update_fields and update_fields[field] is not None:
+            update_fields[field] = update_fields[field].strip()
+
+    for field, value in update_fields.items():
+        await db.clients.update_one(
+            {
+                "id": client_id,
+                "contact_persons.id": contact_id
+            },
+            {
+                "$set": {
+                    f"contact_persons.$.{field}": value
+                }
+            }
+        )
+
+    updated_client = await db.clients.find_one(
+        {"id": client_id},
+        {"_id": 0}
+    )
+
+    updated_contact = next(
+        c for c in updated_client.get("contact_persons", [])
+        if c.get("id") == contact_id
+    )
+
+    return updated_contact
+
+
+@api_router.delete("/clients/{client_id}/contacts/{contact_id}")
+async def delete_contact_person(
+    client_id: str,
+    contact_id: str,
+    request: Request
+):
+    await require_admin(request)
+
+    client = await db.clients.find_one(
+        {"id": client_id},
+        {"_id": 0}
+    )
+
+    if not client:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found"
+        )
+
+    contacts = client.get("contact_persons") or []
+
+    if not any(c.get("id") == contact_id for c in contacts):
+        raise HTTPException(
+            status_code=404,
+            detail="Contact person not found"
+        )
+
+    # Don't allow deletion if a project is currently using this POC.
+    project_using_contact = await db.projects.find_one(
+        {"poc_id": contact_id},
+        {"_id": 0}
+    )
+
+    if project_using_contact:
+        raise HTTPException(
+            status_code=400,
+            detail="This contact is assigned to a project. Reassign the project before deleting the contact."
+        )
+
+    await db.clients.update_one(
+        {"id": client_id},
+        {
+            "$pull": {
+                "contact_persons": {
+                    "id": contact_id
+                }
+            }
+        }
+    )
+
+    return {"message": "Contact person deleted"}
 
 
 # ---------------- Projects ----------------
@@ -816,7 +1058,17 @@ async def _hydrate_project(p: dict) -> dict:
         "stage_counts": stage_counts,
         "collaborator_ids": list(collaborators),
         "client_name": client_doc["name"] if client_doc else "",
-        "client_poc": client_doc.get("contact_person", "") if client_doc else "",
+        "client_poc": (
+            next(
+                (
+                    c.get("name", "")
+                    for c in (client_doc.get("contact_persons") or [])
+                    if c.get("id") == p.get("poc_id")
+                ),
+                client_doc.get("contact_person", "")
+            )
+            if client_doc else ""
+        ),
     }
 
 
@@ -881,12 +1133,23 @@ async def create_project(payload: ProjectCreate, request: Request):
     client_doc = await db.clients.find_one({"id": payload.client_id}, {"_id": 0})
     if not client_doc:
         raise HTTPException(status_code=400, detail="Client not found")
+
+    # Validate that the selected POC belongs to this client
+    if payload.poc_id:
+        client_contacts = client_doc.get("contact_persons") or []
+        if not any(c.get("id") == payload.poc_id for c in client_contacts):
+            raise HTTPException(
+                status_code=400,
+                detail="Selected POC does not belong to this client"
+            )
+
     ts = now_iso()
     code = await _generate_unique_project_code()
     project = Project(
         code=code,
         name=payload.name,
         client_id=payload.client_id,
+        poc_id=payload.poc_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
         status=payload.status or "Planning",
@@ -904,6 +1167,7 @@ async def create_project(payload: ProjectCreate, request: Request):
             "code": project.code,
             "name": project.name,
             "client_id": project.client_id,
+            "poc_id": project.poc_id,
             "start_date": project.start_date,
             "end_date": project.end_date,
             "status": project.status,
@@ -949,8 +1213,44 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
     if not existing:
         raise HTTPException(status_code=404, detail="Project not found")
     update_fields = payload.model_dump(exclude_unset=True)
+
     if "status" in update_fields and update_fields["status"] not in PROJECT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid project status")
+
+    # Validate POC against the project's client
+    if "poc_id" in update_fields and update_fields["poc_id"]:
+        client_id = update_fields.get("client_id", existing.get("client_id"))
+
+        client_doc = await db.clients.find_one(
+            {"id": client_id},
+            {"_id": 0}
+        )
+
+        if not client_doc:
+            raise HTTPException(
+                status_code=400,
+                detail="Client not found"
+            )
+
+        client_contacts = client_doc.get("contact_persons") or []
+
+        if not any(
+            c.get("id") == update_fields["poc_id"]
+            for c in client_contacts
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Selected POC does not belong to this client"
+            )
+
+    # If the client changes without a new POC, clear the old POC
+    if (
+        "client_id" in update_fields
+        and "poc_id" not in update_fields
+        and update_fields["client_id"] != existing.get("client_id")
+    ):
+        update_fields["poc_id"] = None
+
     update_fields["updated_at"] = now_iso()
 
     await db.projects.update_one(
@@ -1309,6 +1609,9 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
         },
     )
     return updated
+
+
+@api_router.post("/deliverables/{deliverable_id}/reject")
 async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
     if user.role not in ("admin", "manager"):

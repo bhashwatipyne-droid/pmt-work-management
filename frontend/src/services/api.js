@@ -58,6 +58,26 @@ export const createClient = (userId, payload) =>
 export const updateClient = (userId, id, payload) =>
   axios.patch(`${API}/clients/${id}`, payload, { headers: authHeaders(userId) }).then((r) => r.data);
 
+export const createContact = (userId, clientId, payload) =>
+  axios.post(
+    `${API}/clients/${clientId}/contacts`,
+    payload,
+    { headers: authHeaders(userId) }
+  ).then((r) => r.data);
+
+export const updateContact = (userId, clientId, contactId, payload) =>
+  axios.patch(
+    `${API}/clients/${clientId}/contacts/${contactId}`,
+    payload,
+    { headers: authHeaders(userId) }
+  ).then((r) => r.data);
+
+export const deleteContact = (userId, clientId, contactId) =>
+  axios.delete(
+    `${API}/clients/${clientId}/contacts/${contactId}`,
+    { headers: authHeaders(userId) }
+  ).then((r) => r.data);
+
 // -------- Projects --------
 export const getProjects = (userId, params) =>
   axios.get(`${API}/projects`, { headers: authHeaders(userId), params }).then((r) => r.data);

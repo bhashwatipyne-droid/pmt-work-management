@@ -499,6 +499,97 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
     return item
 
 
+@api_router.post("/work-items/{item_id}/review", response_model=WorkItem)
+async def review_work_item(
+    item_id: str,
+    action: str,
+    request: Request,
+):
+    user = await get_acting_user(request)
+
+    if user.role not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin or manager can review work items",
+        )
+
+    if action not in ("approve", "request_changes"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid review action",
+        )
+
+    existing = await db.work_items.find_one(
+        {"id": item_id},
+        {"_id": 0},
+    )
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Work item not found",
+        )
+
+    if existing.get("status") != "Ready for Review":
+        raise HTTPException(
+            status_code=400,
+            detail="Work item is not ready for review",
+        )
+
+    # Managers can only review work explicitly assigned to them.
+    if user.role == "manager" and existing.get("reviewer_id") != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="This work item is not assigned to you",
+        )
+
+    old_status = existing.get("status")
+
+    new_status = (
+        "Closed"
+        if action == "approve"
+        else "Changes Requested"
+    )
+
+    await db.work_items.update_one(
+        {"id": item_id},
+        {
+            "$set": {
+                "status": new_status,
+                "updated_at": now_iso(),
+            }
+        },
+    )
+
+    await log_activity(
+        collection_name="work_item_activity_log",
+        entity_id=item_id,
+        entity_field="work_item_id",
+        action="WORK_ITEM_STATUS_CHANGED",
+        changed_by=user.id,
+        old_value=old_status,
+        new_value=new_status,
+    )
+
+    if new_status == "Changes Requested":
+        await log_activity(
+            collection_name="work_item_activity_log",
+            entity_id=item_id,
+            entity_field="work_item_id",
+            action="WORK_ITEM_REWORKED",
+            changed_by=user.id,
+            old_value=old_status,
+            new_value="Changes Requested",
+        )
+
+    updated = await db.work_items.find_one(
+        {"id": item_id},
+        {"_id": 0},
+    )
+
+    return updated
+
+
 @api_router.patch("/work-items/{item_id}", response_model=WorkItem)
 async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Request):
     user = await get_acting_user(request)

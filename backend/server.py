@@ -475,7 +475,7 @@ async def list_work_items(
             {"deliverable_name": {"$regex": search, "$options": "i"}},
             {"remarks": {"$regex": search, "$options": "i"}},
         ]
-    items = await db.work_items.find(query, {"_id": 0}).sort("work_date", -1).to_list(5000)
+    items = await db.work_items.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
     return items
 
 
@@ -675,7 +675,6 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
     tpl = (payload.template or WorkItemCreate()).model_dump()
     work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     month = work_date[:7]
-    ts = now_iso()
     docs = []
     for _ in range(payload.count):
         data = dict(tpl)
@@ -685,6 +684,7 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
             data["manager_id"] = None
         else:
             data["creator_id"] = data.get("creator_id") or user.id
+        ts = now_iso()
         item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
         docs.append(item.model_dump())
     if docs:

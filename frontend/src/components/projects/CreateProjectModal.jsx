@@ -19,6 +19,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
   const { currentUserId } = useUser();
   const [name, setName] = useState("");
   const [clientId, setClientId] = useState(clients[0]?.id || "");
+  const [pocId, setPocId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState("Planning");
@@ -30,6 +31,12 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
       setClientId(clients[0].id);
     }
   }, [clients, clientId]);
+
+  const selectedClient = clients.find(
+    (client) => client.id === clientId
+  );
+
+  const availablePocs = selectedClient?.contact_persons || [];
 
   if (!open) return null;
 
@@ -60,6 +67,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
   const reset = () => {
     setName("");
     setClientId(clients[0]?.id || "");
+    setPocId("");
     setStartDate("");
     setEndDate("");
     setStatus("Planning");
@@ -85,6 +93,7 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
       const created = await createProject(currentUserId, {
         name: name.trim(),
         client_id: clientId,
+        poc_id: pocId || null,
         start_date: startDate,
         end_date: endDate,
         status,
@@ -151,7 +160,10 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
                 <select
                   data-testid={PROJECTS.fieldClient}
                   value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
+                  onChange={(e) => {
+                    setClientId(e.target.value);
+                    setPocId("");
+                  }}
                   className={inputBase}
                 >
                   {clients.map((c) => (
@@ -180,17 +192,23 @@ export const CreateProjectModal = ({ open, onClose, onCreated, clients, users, d
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   POC
                 </label>
-                <input
-                  type="text"
-                  value={
-                    clients.find((client) => client.id === clientId)?.contact_person || "—"
-                  }
-                  readOnly
+
+                <select
+                  value={pocId}
+                  onChange={(e) => setPocId(e.target.value)}
                   className={inputBase}
-                />
+                >
+                  <option value="">No POC selected</option>
+
+                  {availablePocs.map((contact) => (
+                    <option key={contact.id} value={contact.id}>
+                      {contact.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</label>

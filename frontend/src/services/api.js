@@ -122,6 +122,9 @@ export const updateUser = (userId, id, payload) =>
 export const getApprovals = (userId) =>
   axios.get(`${API}/approvals`, { headers: authHeaders(userId) }).then((r) => r.data);
 
+export const getBulkReview = (userId) =>
+  axios.get(`${API}/bulk-review`, { headers: authHeaders(userId) }).then((r) => r.data);
+
 export const approveDeliverable = (userId, id, note = "") =>
   axios.post(`${API}/deliverables/${id}/approve`, { note }, { headers: authHeaders(userId) }).then((r) => r.data);
 

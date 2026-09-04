@@ -16,6 +16,7 @@ import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
+import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
@@ -35,6 +36,7 @@ export default function WorkSheetPage() {
   const [bulkAdding, setBulkAdding] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
+  const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
   const bulkAddingRef = useRef(false);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
@@ -196,6 +198,9 @@ export default function WorkSheetPage() {
         onOpenQuickLogger={
           isManager ? () => setQuickLoggerOpen(true) : undefined
         }
+        onOpenBulkReview={
+          isManager ? () => setBulkReviewOpen(true) : undefined
+        }
       />
 
       {isManager && (
@@ -219,6 +224,12 @@ export default function WorkSheetPage() {
         deliverables={deliverables}
         options={options}
         onSave={handleQuickLoggerSave}
+      />
+
+      <BulkReviewModal
+        open={bulkReviewOpen}
+        onClose={() => setBulkReviewOpen(false)}
+        currentUser={currentUser}
       />
 
       {selectedIds.length > 0 && (

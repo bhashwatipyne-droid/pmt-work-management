@@ -1540,6 +1540,87 @@ def _next_stage(stage: str) -> Optional[str]:
         return None
 
 
+@api_router.get("/bulk-review")
+async def list_bulk_review(request: Request):
+    """Deliverables ready for review, scoped to the manager's department/stage."""
+    user = await get_acting_user(request)
+
+    stage_by_department = {
+        "Content": "Content",
+        "Design": "Design",
+        "Animation": "Animate",
+        "Finish": "Finish",
+    }
+
+    if user.role == "admin":
+        query = {
+            "stage_status": "Ready for Review"
+        }
+    elif user.role == "manager":
+        stage = stage_by_department.get(user.department)
+
+        if not stage:
+            return []
+
+        query = {
+            "stage_status": "Ready for Review",
+            "current_stage": stage,
+        }
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin or manager can access bulk review"
+        )
+
+    delivs = await db.deliverables.find(
+        query,
+        {"_id": 0}
+    ).sort("updated_at", -1).to_list(500)
+
+    project_ids = list({d["project_id"] for d in delivs})
+
+    projects = {
+        p["id"]: p
+        for p in await db.projects.find(
+            {"id": {"$in": project_ids}},
+            {"_id": 0}
+        ).to_list(500)
+    }
+
+    users = {
+        u["id"]: u
+        for u in await db.users.find(
+            {},
+            {"_id": 0}
+        ).to_list(500)
+    }
+
+    clients = {
+        c["id"]: c
+        for c in await db.clients.find(
+            {},
+            {"_id": 0}
+        ).to_list(500)
+    }
+
+    result = []
+
+    for d in delivs:
+        p = projects.get(d["project_id"]) or {}
+        owner = users.get(d.get("owner_id") or "") or {}
+        client = clients.get(p.get("client_id") or "") or {}
+
+        result.append({
+            **d,
+            "project_name": p.get("name", ""),
+            "project_code": p.get("code", ""),
+            "client_name": client.get("name", ""),
+            "owner_name": owner.get("name", "Unassigned"),
+        })
+
+    return result
+
+
 @api_router.get("/approvals")
 async def list_approvals(request: Request):
     """Deliverables waiting for review, hydrated with project + owner details."""

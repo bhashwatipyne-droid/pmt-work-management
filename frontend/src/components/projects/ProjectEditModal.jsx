@@ -10,6 +10,7 @@ const ProjectEditModal = ({
 }) => {
   const [name, setName] = useState("");
   const [clientId, setClientId] = useState("");
+  const [pocId, setPocId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [saving, setSaving] = useState(false);
@@ -20,6 +21,7 @@ const ProjectEditModal = ({
 
     setName(project.name || "");
     setClientId(project.client_id || "");
+    setPocId(project.poc_id || "");
     setStartDate(project.start_date || "");
     setEndDate(project.end_date || "");
     setError("");
@@ -31,7 +33,7 @@ const ProjectEditModal = ({
     (client) => client.id === clientId
   );
 
-  const poc = selectedClient?.contact_person || "—";
+  const availablePocs = selectedClient?.contact_persons || [];
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -56,6 +58,7 @@ const ProjectEditModal = ({
       await onSaved({
         name: name.trim(),
         client_id: clientId,
+        poc_id: pocId || null,
         start_date: startDate || null,
         end_date: endDate || null,
       });
@@ -131,7 +134,10 @@ const ProjectEditModal = ({
 
               <select
                 value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
+                onChange={(e) => {
+                  setClientId(e.target.value);
+                  setPocId("");
+                }}
                 disabled={saving}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500"
               >
@@ -150,16 +156,20 @@ const ProjectEditModal = ({
                 POC
               </label>
 
-              <input
-                type="text"
-                value={poc}
-                readOnly
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600"
-              />
+              <select
+                value={pocId}
+                onChange={(e) => setPocId(e.target.value)}
+                disabled={saving}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500"
+              >
+                <option value="">No POC selected</option>
 
-              <p className="mt-1 text-xs text-gray-400">
-                POC is derived from the selected client.
-              </p>
+                {availablePocs.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

@@ -25,7 +25,6 @@ export const WorkSheetToolbar = ({
     setFilters({
       search: "",
       status: "",
-      stage: "",
       deliverable_type: "",
       work_category: "",
       month: "",
@@ -34,7 +33,6 @@ export const WorkSheetToolbar = ({
   const hasFilters =
     filters.search ||
     filters.status ||
-    filters.stage ||
     filters.deliverable_type ||
     filters.work_category ||
     filters.month;
@@ -92,28 +90,6 @@ export const WorkSheetToolbar = ({
           <SelectItem value={ALL_VALUE}>All statuses</SelectItem>
           {options.statuses?.map((s) => (
             <SelectItem key={s} value={s}>{s}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={filters.stage || ALL_VALUE}
-        onValueChange={(v) => update("stage", v)}
-      >
-        <SelectTrigger
-          data-testid="worksheet-stage-filter"
-          className="h-9 w-[130px]"
-        >
-          <SelectValue placeholder="Stage" />
-        </SelectTrigger>
-
-        <SelectContent>
-          <SelectItem value={ALL_VALUE}>All stages</SelectItem>
-
-          {["Content", "Design", "Animate", "Finish"].map((stage) => (
-            <SelectItem key={stage} value={stage}>
-              {stage}
-            </SelectItem>
           ))}
         </SelectContent>
       </Select>

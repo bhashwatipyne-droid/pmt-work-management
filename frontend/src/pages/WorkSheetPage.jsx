@@ -12,6 +12,7 @@ import {
   getDeliverables,
 } from "@/services/api";
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
+import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
 import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
@@ -23,10 +24,17 @@ import { canEditWorkItem } from "@/lib/worksheetPermissions";
 
 const emptyFilters = { search: "", status: "", deliverable_type: "", work_category: "", month: "" };
 const LS = { project: "ws_last_project_id", deliverable: "ws_last_deliverable_id", stage: "ws_last_stage" };
+const DEPARTMENT_TO_STAGE = {
+  Content: "Content",
+  Design: "Design",
+  Animation: "Animate",
+  Finish: "Finish",
+};
 
 export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
   const [items, setItems] = useState([]);
+  const [activeSheet, setActiveSheet] = useState("Master");
   const [options, setOptions] = useState({});
   const [projects, setProjects] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
@@ -53,7 +61,10 @@ export default function WorkSheetPage() {
   const fetchItems = () => {
     if (!currentUser) return;
     setLoading(true);
-    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+    const params = {
+      ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)),
+      ...(activeSheet !== "Master" ? { stage: activeSheet } : {}),
+    };
     getWorkItems(currentUser.id, params)
       .then(setItems)
       .catch(() => toast.error("Could not load work items"))
@@ -64,7 +75,7 @@ export default function WorkSheetPage() {
     fetchItems();
     setSelectedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, filters]);
+  }, [currentUser, filters, activeSheet]);
 
   const handleAddRow = async () => {
     try {
@@ -76,21 +87,13 @@ export default function WorkSheetPage() {
         status: "Not Started",
         project_id: localStorage.getItem(LS.project) || null,
         deliverable_id: localStorage.getItem(LS.deliverable) || null,
-        stage: localStorage.getItem(LS.stage) || null,
+        stage:
+          activeSheet === "Master"
+            ? (DEPARTMENT_TO_STAGE[currentUser.department] || null)
+            : activeSheet,
       });
-      setItems((prev) => [created, ...prev]);
+      setItems((prev) => [...prev, created]);
       toast.success("Row added");
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Could not add row");
-    }
-  };
-
-  const handleCreateFromDraft = async (payload) => {
-    try {
-      const created = await createWorkItem(currentUser.id, payload);
-      setItems((prev) => [created, ...prev]);
-      toast.success("Row added");
-      return created;
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add row");
     }
@@ -109,9 +112,16 @@ export default function WorkSheetPage() {
     bulkAddingRef.current = true;
     setBulkAdding(true);
     try {
-      // Empty rows only — no sticky context, no project/deliverable/stage prefill
-      const created = await bulkCreateWorkItems(currentUser.id, count, {});
-      setItems((prev) => [...created, ...prev]);
+      const stage =
+        activeSheet === "Master"
+          ? (DEPARTMENT_TO_STAGE[currentUser.department] || null)
+          : activeSheet;
+      const created = await bulkCreateWorkItems(
+        currentUser.id,
+        count,
+        { stage }
+      );
+      setItems((prev) => [...prev, ...created]);
       toast.success(`${created.length} rows added`);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add rows");
@@ -203,6 +213,11 @@ export default function WorkSheetPage() {
         }
       />
 
+      <WorkSheetTabs
+        activeSheet={activeSheet}
+        onChange={setActiveSheet}
+      />
+
       {isManager && (
         <CloseDeliverableModal
           open={closeModalOpen}
@@ -259,7 +274,6 @@ export default function WorkSheetPage() {
           projects={projects}
           deliverables={deliverables}
           onUpdate={handleUpdate}
-          onCreate={handleCreateFromDraft}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}

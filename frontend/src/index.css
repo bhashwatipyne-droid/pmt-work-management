@@ -109,14 +109,6 @@ code {
 .sheet-mode tbody tr:hover td:not(.row-num):not(.checkbox-cell) {
     background: #f8fafc;
 }
-.sheet-mode tbody tr[data-testid="worksheet-draft-row"] td:not(.row-num):not(.checkbox-cell) {
-    background: #ecfdf5;
-}
-.sheet-mode tbody tr[data-testid="worksheet-draft-row"] td.row-num {
-    background: #d1fae5;
-    color: #065f46;
-    font-weight: 600;
-}
 /* Status badge in cell */
 .sheet-mode td .cell-plain {
     padding: 4px 8px;
@@ -214,13 +206,13 @@ code {
         border-right-width: inherit;
         border-top-width: inherit;
         border-bottom-width: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
         border-left-color: inherit;
         border-right-color: inherit;
         border-top-color: inherit;
         border-bottom-color: inherit;
+        border-left-style: inherit;
+        border-right-style: inherit;
+        border-top-style: inherit;
+        border-bottom-style: inherit;
     }
 }

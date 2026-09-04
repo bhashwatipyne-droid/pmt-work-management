@@ -191,7 +191,7 @@ export default function QuickLoggerModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onKeyDown={handleKeyDown}
     >
-      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+      <div className="flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>

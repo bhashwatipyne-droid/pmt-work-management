@@ -10,9 +10,11 @@ import {
   updateProject,
   approveDeliverable,
   rejectDeliverable,
+  getClients,
 } from "@/services/api";
 import { STAGE_COLORS, STATUS_COLORS, PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
 import { DeliverableModal } from "@/components/projects/DeliverableModal";
+import ProjectEditModal from "@/components/projects/ProjectEditModal";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -36,18 +38,22 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [delivModal, setDelivModal] = useState({ open: false, mode: "add", initial: null });
   const [deliverableTypes, setDeliverableTypes] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [editProjectOpen, setEditProjectOpen] = useState(false);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [p, w, options] = await Promise.all([
+      const [p, w, options, clientsData] = await Promise.all([
         getProject(currentUserId, projectId),
         getWorkItems(currentUserId, { project_id: projectId }),
         getOptions(),
+        getClients(),
       ]);
       setProject(p);
       setWorkItems(w);
       setDeliverableTypes(options.deliverable_types || []);
+      setClients(clientsData || []);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Failed to load project");
     } finally { setLoading(false); }
@@ -66,6 +72,11 @@ export default function ProjectDetailPage() {
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Update failed");
     }
+  };
+
+  const handleProjectEditSave = async (updates) => {
+    await updateProject(currentUserId, projectId, updates);
+    await fetchAll();
   };
 
   const decide = async (deliverableId, action) => {
@@ -104,18 +115,29 @@ export default function ProjectDetailPage() {
             <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> {fmtDate(project.start_date)} → {fmtDate(project.end_date)}</span>
           </div>
         </div>
-        {isElevated && currentUser.role === "admin" ? (
-          <select
-            data-testid="project-detail-status-select"
-            value={project.status}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${statusColor.badge}`}
-          >
-            {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        ) : (
-          <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusColor.badge}`}>{project.status}</span>
-        )}
+        <div className="flex items-center gap-3">
+          {currentUser.role === "admin" && (
+            <button
+              type="button"
+              onClick={() => setEditProjectOpen(true)}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Edit Project
+            </button>
+          )}
+          {isElevated && currentUser.role === "admin" ? (
+            <select
+              data-testid="project-detail-status-select"
+              value={project.status}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${statusColor.badge}`}
+            >
+              {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusColor.badge}`}>{project.status}</span>
+          )}
+        </div>
       </div>
 
       {/* Metric strip */}
@@ -254,6 +276,15 @@ export default function ProjectDetailPage() {
         deliverableTypes={deliverableTypes}
         onClose={() => setDelivModal((m) => ({ ...m, open: false }))}
         onSaved={fetchAll}
+      />
+
+      <ProjectEditModal
+        open={editProjectOpen}
+        onClose={() => setEditProjectOpen(false)}
+        onSaved={handleProjectEditSave}
+        project={project}
+        clients={clients}
+        currentUserId={currentUserId}
       />
     </div>
   );

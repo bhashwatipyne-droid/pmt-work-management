@@ -1,7 +1,7 @@
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Plus, X, Rows3, CheckCircle2, Clock3, ClipboardCheck } from "lucide-react";
+import { Plus, X, Rows3, CheckCircle2, Clock3, ClipboardCheck, History } from "lucide-react";
 import { WORKSHEET } from "@/constants/testIds";
 
 const ALL_VALUE = "__all__";
@@ -18,6 +18,7 @@ export const WorkSheetToolbar = ({
   onOpenCloseDeliverable,
   onOpenQuickLogger,
   onOpenBulkReview,
+  onOpenHistory,
 }) => {
   const update = (key, value) => setFilters((f) => ({ ...f, [key]: value === ALL_VALUE ? "" : value }));
 
@@ -72,6 +73,18 @@ export const WorkSheetToolbar = ({
           <ClipboardCheck className="mr-2 h-4 w-4" />
           Bulk Review
         </Button>
+      )}
+
+      {onOpenHistory && (
+        <button
+          type="button"
+          title="Version history"
+          aria-label="Version history"
+          onClick={onOpenHistory}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <History className="h-4 w-4" />
+        </button>
       )}
 
       <Input

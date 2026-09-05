@@ -125,12 +125,23 @@ export const getApprovals = (userId) =>
 export const getBulkReview = (userId) =>
   axios.get(`${API}/bulk-review`, { headers: authHeaders(userId) }).then((r) => r.data);
 
-export const reviewWorkItem = (itemId, action, userId) =>
+export const getWorkItemHistory = (stage) =>
+  axios.get(`${API}/work-items/history`, { params: { stage } }).then((r) => r.data);
+
+export const reviewWorkItem = (
+  itemId,
+  action,
+  userId,
+  note = ""
+) =>
   axios.post(
     `${API}/work-items/${itemId}/review`,
     null,
     {
-      params: { action },
+      params: {
+        action,
+        note,
+      },
       headers: authHeaders(userId),
     }
   ).then((r) => r.data);

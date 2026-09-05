@@ -828,6 +828,99 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
     ]
 
 
+@api_router.get("/work-items/history")
+async def get_work_items_history(
+    request: Request,
+    stage: Optional[str] = None,
+):
+    await get_acting_user(request)
+
+    # Master = all work-item history.
+    # Other sheets = history for work items currently in that stage.
+    work_item_query = {}
+
+    if stage and stage != "Master":
+        work_item_query["stage"] = stage
+
+    # Get the work items that belong to this sheet.
+    work_items = await db.work_items.find(
+        work_item_query,
+        {
+            "_id": 0,
+            "id": 1,
+            "deliverable_name": 1,
+            "stage": 1,
+        },
+    ).to_list(5000)
+
+    if not work_items:
+        return []
+
+    work_item_ids = [item["id"] for item in work_items]
+
+    work_item_map = {
+        item["id"]: item
+        for item in work_items
+    }
+
+    # Get activity logs for those work items.
+    logs = await db.work_item_activity_log.find(
+        {
+            "work_item_id": {
+                "$in": work_item_ids,
+            }
+        },
+        {"_id": 0},
+    ).sort(
+        "changed_at",
+        -1,
+    ).to_list(5000)
+
+    # Resolve user names so frontend doesn't need to make
+    # a separate request for every history entry.
+    user_ids = list({
+        log.get("changed_by")
+        for log in logs
+        if log.get("changed_by")
+    })
+
+    users = await db.users.find(
+        {"id": {"$in": user_ids}},
+        {
+            "_id": 0,
+            "id": 1,
+            "name": 1,
+        },
+    ).to_list(1000)
+
+    user_map = {
+        user["id"]: user["name"]
+        for user in users
+    }
+
+    history = []
+
+    for log in logs:
+        work_item = work_item_map.get(
+            log.get("work_item_id"),
+            {},
+        )
+
+        history.append({
+            **log,
+            "changed_by_name": user_map.get(
+                log.get("changed_by"),
+                "Unknown user",
+            ),
+            "work_item_name": work_item.get(
+                "deliverable_name",
+                "",
+            ),
+        })
+
+    return history
+
+
 @api_router.post("/work-items/bulk-delete")
 async def bulk_delete_work_items(payload: BulkDeletePayload, request: Request):
     await require_admin(request)

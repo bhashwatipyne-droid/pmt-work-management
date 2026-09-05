@@ -18,6 +18,8 @@ import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
 import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
+import { History } from "lucide-react";
+import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
@@ -45,6 +47,7 @@ export default function WorkSheetPage() {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const bulkAddingRef = useRef(false);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
@@ -299,6 +302,7 @@ export default function WorkSheetPage() {
         onOpenBulkReview={
           isManager ? () => setBulkReviewOpen(true) : undefined
         }
+        onOpenHistory={() => setHistoryOpen(true)}
       />
 
       <WorkSheetTabs
@@ -333,6 +337,12 @@ export default function WorkSheetPage() {
         open={bulkReviewOpen}
         onClose={() => setBulkReviewOpen(false)}
         currentUser={currentUser}
+      />
+
+      <WorkSheetHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        stage={activeSheet}
       />
 
       {selectedIds.length > 0 && (

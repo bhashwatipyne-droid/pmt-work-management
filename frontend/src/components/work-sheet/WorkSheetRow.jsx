@@ -29,6 +29,7 @@ export const WorkSheetRow = ({
   onFillStart,
   onFillHover,
   onFillEnd,
+  selection,
 }) => {
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
@@ -77,13 +78,23 @@ export const WorkSheetRow = ({
   const isCellActive = (col) =>
     activeCell?.row === index && activeCell?.col === col;
 
+  const isCellInFillRange = (col) => {
+    if (!selection) return false;
+
+    return (
+      selection.col === col &&
+      index >= Math.min(selection.startRow, selection.endRow) &&
+      index <= Math.max(selection.startRow, selection.endRow)
+    );
+  };
+
   const renderFillHandle = (col) => {
     if (!isCellActive(col) || !canEditRow) return null;
 
     return (
       <span
         className="sheet-fill-handle"
-        onMouseDown={(e) => {
+        onPointerDown={(e) => {
           e.preventDefault();
           e.stopPropagation();
           onFillStart?.({ row: index, col });
@@ -95,13 +106,18 @@ export const WorkSheetRow = ({
   return (
     <TableRow
       data-testid={`worksheet-row-${item.id}`}
+      onPointerEnter={() => {
+        if (fillState) {
+          onFillHover?.(index);
+        }
+      }}
       onMouseEnter={() => {
-        if (fillState?.dragging) {
+        if (fillState) {
           onFillHover?.(index);
         }
       }}
       onMouseUp={() => {
-        if (fillState?.dragging) {
+        if (fillState) {
           onFillEnd?.();
         }
       }}
@@ -115,7 +131,13 @@ export const WorkSheetRow = ({
           onCheckedChange={() => onToggleSelect(item.id)}
         />
       </TableCell>
-      <TableCell className={isCellActive(0) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(0) && "sheet-cell-active",
+          isCellInFillRange(0) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Input
           {...sheetCell(0)}
           data-testid={`${WORKSHEET.dateInput}-${item.id}`}
@@ -128,7 +150,13 @@ export const WorkSheetRow = ({
 
         {renderFillHandle(0)}
       </TableCell>
-      <TableCell className={isCellActive(1) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(1) && "sheet-cell-active",
+          isCellInFillRange(1) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Select
           value={item.project_id || NONE_VALUE}
           onValueChange={(v) => {
@@ -156,7 +184,13 @@ export const WorkSheetRow = ({
         </Select>
         {renderFillHandle(1)}
       </TableCell>
-      <TableCell className={isCellActive(2) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(2) && "sheet-cell-active",
+          isCellInFillRange(2) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Select
           value={item.deliverable_id || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
@@ -178,7 +212,13 @@ export const WorkSheetRow = ({
         </Select>
         {renderFillHandle(2)}
       </TableCell>
-      <TableCell className={isCellActive(3) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(3) && "sheet-cell-active",
+          isCellInFillRange(3) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Select
           value={item.stage || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
@@ -200,7 +240,13 @@ export const WorkSheetRow = ({
         </Select>
         {renderFillHandle(3)}
       </TableCell>
-      <TableCell className={isCellActive(4) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(4) && "sheet-cell-active",
+          isCellInFillRange(4) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditExtra ? (
           <Input
             {...sheetCell(4)}
@@ -216,7 +262,13 @@ export const WorkSheetRow = ({
         )}
         {renderFillHandle(4)}
       </TableCell>
-      <TableCell className={isCellActive(5) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(5) && "sheet-cell-active",
+          isCellInFillRange(5) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditRow ? (
           <Input
             {...sheetCell(5)}
@@ -236,7 +288,13 @@ export const WorkSheetRow = ({
         )}
         {renderFillHandle(5)}
       </TableCell>
-      <TableCell className={isCellActive(6) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(6) && "sheet-cell-active",
+          isCellInFillRange(6) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditExtra ? (
           <Select value={item.deliverable_type || undefined} onValueChange={(v) => onUpdate(item.id, { deliverable_type: v })}>
             <SelectTrigger
@@ -257,7 +315,13 @@ export const WorkSheetRow = ({
         )}
         {renderFillHandle(6)}
       </TableCell>
-      <TableCell className={isCellActive(7) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(7) && "sheet-cell-active",
+          isCellInFillRange(7) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditExtra ? (
           <Select value={item.work_category} onValueChange={(v) => onUpdate(item.id, { work_category: v })}>
             <SelectTrigger
@@ -278,7 +342,13 @@ export const WorkSheetRow = ({
         )}
         {renderFillHandle(7)}
       </TableCell>
-      <TableCell className={isCellActive(8) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(8) && "sheet-cell-active",
+          isCellInFillRange(8) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Input
           {...sheetCell(8)}
           data-testid={`${WORKSHEET.versionInput}-${item.id}`}
@@ -291,7 +361,13 @@ export const WorkSheetRow = ({
         />
         {renderFillHandle(8)}
       </TableCell>
-      <TableCell className={isCellActive(9) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(9) && "sheet-cell-active",
+          isCellInFillRange(9) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Input
           {...sheetCell(9)}
           data-testid={`${WORKSHEET.timeInput}-${item.id}`}
@@ -306,7 +382,13 @@ export const WorkSheetRow = ({
         />
         {renderFillHandle(9)}
       </TableCell>
-      <TableCell className={isCellActive(10) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(10) && "sheet-cell-active",
+          isCellInFillRange(10) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditExtra ? (
           <Select value={item.creator_id || undefined} onValueChange={(v) => onUpdate(item.id, { creator_id: v })}>
             <SelectTrigger
@@ -327,7 +409,13 @@ export const WorkSheetRow = ({
         )}
         {renderFillHandle(10)}
       </TableCell>
-      <TableCell className={isCellActive(11) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(11) && "sheet-cell-active",
+          isCellInFillRange(11) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditRow ? (
           <Select
             value={item.reviewer_id || NONE_VALUE}
@@ -352,7 +440,13 @@ export const WorkSheetRow = ({
         )}
         {renderFillHandle(11)}
       </TableCell>
-      <TableCell className={isCellActive(12) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(12) && "sheet-cell-active",
+          isCellInFillRange(12) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Textarea
           {...sheetCell(12)}
           data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
@@ -365,7 +459,13 @@ export const WorkSheetRow = ({
         />
         {renderFillHandle(12)}
       </TableCell>
-      <TableCell className={isCellActive(13) ? "sheet-cell-selected" : ""}>
+      <TableCell className={[
+          "sheet-cell",
+          isCellActive(13) && "sheet-cell-active",
+          isCellInFillRange(13) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Select value={item.status} onValueChange={(v) => onUpdate(item.id, { status: v })} disabled={!canEditRow}>
           <SelectTrigger
             {...sheetCell(13)}

@@ -132,42 +132,103 @@ export default function WorkSheetPage() {
   };
 
   const handleUpdate = async (id, patch) => {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    // Sticky context — persist last used project/deliverable/stage
-    if (patch.project_id !== undefined) localStorage.setItem(LS.project, patch.project_id || "");
-    if (patch.deliverable_id !== undefined) localStorage.setItem(LS.deliverable, patch.deliverable_id || "");
-    if (patch.stage !== undefined) localStorage.setItem(LS.stage, patch.stage || "");
+    const previous = items.find((item) => item.id === id);
+
+    // Optimistic update — exactly one React state update.
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, ...patch } : item
+      )
+    );
+
+    if (patch.project_id !== undefined) {
+      localStorage.setItem(LS.project, patch.project_id || "");
+    }
+
+    if (patch.deliverable_id !== undefined) {
+      localStorage.setItem(
+        LS.deliverable,
+        patch.deliverable_id || ""
+      );
+    }
+
+    if (patch.stage !== undefined) {
+      localStorage.setItem(LS.stage, patch.stage || "");
+    }
+
     try {
-      const updated = await updateWorkItem(currentUser.id, id, patch);
-      setItems((prev) => prev.map((it) => (it.id === id ? updated : it)));
+      await updateWorkItem(currentUser.id, id, patch);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Update failed");
-      fetchItems();
+      // Revert only this row if persistence fails.
+      if (previous) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === id ? previous : item
+          )
+        );
+      }
+
+      toast.error(
+        e.response?.data?.detail || "Update failed"
+      );
     }
   };
 
-  const handleFill = async (ids, field, value) => {
-    if (!ids.length || !field) return;
+  const handleFill = async (targetIds, field, value) => {
+    if (!targetIds.length || !field) return;
+
+    const previous = items
+      .filter((item) => targetIds.includes(item.id))
+      .map((item) => ({
+        id: item.id,
+        value: item[field],
+      }));
+
+    // Optimistic UI update.
+    setItems((prev) =>
+      prev.map((item) =>
+        targetIds.includes(item.id)
+          ? { ...item, [field]: value }
+          : item
+      )
+    );
 
     try {
       const updated = await bulkUpdateWorkItems(
         currentUser.id,
-        ids,
+        targetIds,
         { [field]: value }
       );
 
-      const byId = Object.fromEntries(
+      const updatedById = Object.fromEntries(
         updated.map((item) => [item.id, item])
       );
 
       setItems((prev) =>
-        prev.map((item) => byId[item.id] || item)
+        prev.map((item) =>
+          updatedById[item.id] || item
+        )
+      );
+    } catch (e) {
+      // Revert only affected cells.
+      setItems((prev) =>
+        prev.map((item) => {
+          const original = previous.find(
+            (entry) => entry.id === item.id
+          );
+
+          if (!original) return item;
+
+          return {
+            ...item,
+            [field]: original.value,
+          };
+        })
       );
 
-      return updated;
-    } catch (e) {
       toast.error(
-        e.response?.data?.detail || "Fill operation failed"
+        e.response?.data?.detail ||
+          "Could not fill cells"
       );
       throw e;
     }

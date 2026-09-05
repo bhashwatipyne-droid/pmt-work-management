@@ -146,6 +146,33 @@ export default function WorkSheetPage() {
     }
   };
 
+  const handleFill = async (ids, field, value) => {
+    if (!ids.length || !field) return;
+
+    try {
+      const updated = await bulkUpdateWorkItems(
+        currentUser.id,
+        ids,
+        { [field]: value }
+      );
+
+      const byId = Object.fromEntries(
+        updated.map((item) => [item.id, item])
+      );
+
+      setItems((prev) =>
+        prev.map((item) => byId[item.id] || item)
+      );
+
+      return updated;
+    } catch (e) {
+      toast.error(
+        e.response?.data?.detail || "Fill operation failed"
+      );
+      throw e;
+    }
+  };
+
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
   const toggleSelectAll = () => {
     const editableIds = items.filter((it) => canEditWorkItem(currentUser, it, users)).map((it) => it.id);
@@ -274,6 +301,7 @@ export default function WorkSheetPage() {
           projects={projects}
           deliverables={deliverables}
           onUpdate={handleUpdate}
+          onFill={handleFill}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}

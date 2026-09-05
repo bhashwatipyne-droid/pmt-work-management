@@ -1,4 +1,4 @@
- import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -15,6 +15,7 @@ export const WorkSheetTable = ({
   projects,
   deliverables,
   onUpdate,
+  onFill,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll
@@ -22,29 +23,32 @@ export const WorkSheetTable = ({
   const [activeCell, setActiveCell] = useState(null);
   const [fillState, setFillState] = useState(null);
 
-  useEffect(() => {
-    if (!fillState) return;
-
-    const handleMouseUp = () => {
-      setFillState((current) => {
-        if (!current) return null;
-
-        return {
-          ...current,
-          dragging: false,
-        };
-      });
-    };
-
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => window.removeEventListener("mouseup", handleMouseUp);
-  }, [fillState]);
+  const FILL_FIELDS = {
+    0: "work_date",
+    1: "project_id",
+    2: "deliverable_id",
+    3: "stage",
+    4: "deliverable_name",
+    5: "deliverable_link",
+    6: "deliverable_type",
+    7: "work_category",
+    8: "version",
+    9: "time_taken_minutes",
+    10: "creator_id",
+    11: "reviewer_id",
+    12: "remarks",
+    13: "status",
+  };
 
   const handleFillStart = ({ row, col }) => {
+    const sourceItem = items[row - 1];
+
+    if (!sourceItem) return;
+
     setFillState({
       sourceRow: row,
       col,
-      targetRow: row,
+      sourceItemId: sourceItem.id,
       dragging: true,
     });
   };
@@ -60,51 +64,42 @@ export const WorkSheetTable = ({
     });
   };
 
-  const handleFillEnd = () => {
-    setFillState((current) => {
-      if (!current?.dragging) return null;
+  const handleFillEnd = async () => {
+    if (!fillState?.dragging) {
+      setFillState(null);
+      return;
+    }
 
-      const { sourceRow, targetRow, col } = current;
+    const {
+      sourceRow,
+      targetRow,
+      col,
+      sourceItemId,
+    } = fillState;
 
-      if (targetRow <= sourceRow) return null;
+    setFillState(null);
 
-      const sourceItem = items[sourceRow - 1];
+    if (!targetRow || targetRow <= sourceRow) return;
 
-      if (!sourceItem) return null;
+    const field = FILL_FIELDS[col];
 
-      const fieldMap = {
-        0: "work_date",
-        1: "project_id",
-        2: "deliverable_id",
-        3: "stage",
-        4: "deliverable_name",
-        5: "deliverable_link",
-        6: "deliverable_type",
-        7: "work_category",
-        8: "version",
-        9: "time_taken_minutes",
-        10: "creator_id",
-        11: "reviewer_id",
-        12: "remarks",
-        13: "status",
-      };
+    if (!field) return;
 
-      const field = fieldMap[col];
+    const sourceItem = items.find(
+      (item) => item.id === sourceItemId
+    );
 
-      if (!field) return null;
+    if (!sourceItem) return;
 
-      const value = sourceItem[field];
+    const value = sourceItem[field];
 
-      items
-        .slice(sourceRow, targetRow)
-        .forEach((targetItem) => {
-          onUpdate(targetItem.id, {
-            [field]: value,
-          });
-        });
+    const targetIds = items
+      .slice(sourceRow, targetRow)
+      .map((item) => item.id);
 
-      return null;
-    });
+    if (!targetIds.length) return;
+
+    await onFill(targetIds, field, value);
   };
 
   const isAdmin = currentUser.role === "admin";

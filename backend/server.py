@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import UpdateOne
 import os
 import certifi
 import logging
@@ -695,20 +696,46 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
 @api_router.post("/work-items/bulk-update", response_model=List[WorkItem])
 async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
     user = await get_acting_user(request)
+
+    if not payload.ids:
+        return []
+
     raw_fields = payload.patch.model_dump(exclude_unset=True)
-    updated_items = []
+
+    if not raw_fields:
+        return []
+
+    # Admins are view-only.
+    if user.role == "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admins have view-only access to the Work Sheet",
+        )
+
+    # Fetch all requested items in one query.
+    existing_items = await db.work_items.find(
+        {"id": {"$in": payload.ids}},
+        {"_id": 0},
+    ).to_list(len(payload.ids))
+
+    existing_by_id = {item["id"]: item for item in existing_items}
+
+    operations = []
+    activity_logs = []
 
     for item_id in payload.ids:
-        existing = await db.work_items.find_one({"id": item_id}, {"_id": 0})
+        existing = existing_by_id.get(item_id)
 
+        # Keep the same tolerant behavior as the existing bulk endpoint:
+        # skip missing / unauthorized rows rather than failing the whole operation.
         if not existing:
             continue
 
-        try:
-            creator_department = await get_user_department(
-                existing.get("creator_id")
-            )
+        creator_department = await get_user_department(
+            existing.get("creator_id")
+        )
 
+        try:
             update_fields = scoped_update_fields(
                 user,
                 existing,
@@ -718,60 +745,87 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
         except HTTPException:
             continue
 
-        # Keep old values before updating
+        if not update_fields:
+            continue
+
         old_status = existing.get("status")
         old_stage = existing.get("stage")
 
         update_fields["updated_at"] = now_iso()
 
-        await db.work_items.update_one(
-            {"id": item_id},
-            {"$set": update_fields},
+        operations.append(
+            UpdateOne(
+                {"id": item_id},
+                {"$set": update_fields},
+            )
         )
 
-        # Log status changes
-        if "status" in update_fields and update_fields["status"] != old_status:
-            await log_activity(
-                collection_name="work_item_activity_log",
-                entity_id=item_id,
-                entity_field="work_item_id",
-                action="WORK_ITEM_STATUS_CHANGED",
-                changed_by=user.id,
-                old_value=old_status,
-                new_value=update_fields["status"],
-            )
+        if (
+            "status" in update_fields
+            and update_fields["status"] != old_status
+        ):
+            activity_logs.append({
+                "id": str(uuid.uuid4()),
+                "work_item_id": item_id,
+                "action": "WORK_ITEM_STATUS_CHANGED",
+                "old_value": old_status,
+                "new_value": update_fields["status"],
+                "changed_by": user.id,
+                "changed_at": now_iso(),
+                "metadata": {},
+            })
 
             if update_fields["status"] == "Changes Requested":
-                await log_activity(
-                    collection_name="work_item_activity_log",
-                    entity_id=item_id,
-                    entity_field="work_item_id",
-                    action="WORK_ITEM_REWORKED",
-                    changed_by=user.id,
-                    old_value=old_status,
-                    new_value="Changes Requested",
-                )
+                activity_logs.append({
+                    "id": str(uuid.uuid4()),
+                    "work_item_id": item_id,
+                    "action": "WORK_ITEM_REWORKED",
+                    "old_value": old_status,
+                    "new_value": "Changes Requested",
+                    "changed_by": user.id,
+                    "changed_at": now_iso(),
+                    "metadata": {},
+                })
 
-        # Log stage changes
-        if "stage" in update_fields and update_fields["stage"] != old_stage:
-            await log_activity(
-                collection_name="work_item_activity_log",
-                entity_id=item_id,
-                entity_field="work_item_id",
-                action="WORK_ITEM_STAGE_CHANGED",
-                changed_by=user.id,
-                old_value=old_stage,
-                new_value=update_fields["stage"],
-            )
+        if (
+            "stage" in update_fields
+            and update_fields["stage"] != old_stage
+        ):
+            activity_logs.append({
+                "id": str(uuid.uuid4()),
+                "work_item_id": item_id,
+                "action": "WORK_ITEM_STAGE_CHANGED",
+                "old_value": old_stage,
+                "new_value": update_fields["stage"],
+                "changed_by": user.id,
+                "changed_at": now_iso(),
+                "metadata": {},
+            })
 
-        updated_items.append(
-            await db.work_items.find_one(
-                {"id": item_id},
-                {"_id": 0},
-            )
-        )
+    if not operations:
+        return []
 
-    return updated_items
+    # ONE MongoDB bulk write.
+    await db.work_items.bulk_write(operations)
+
+    # ONE activity-log bulk insert instead of one insert per row.
+    if activity_logs:
+        await db.work_item_activity_log.insert_many(activity_logs)
+
+    # ONE query to return all updated rows.
+    updated_items = await db.work_items.find(
+        {"id": {"$in": [op._filter["id"] for op in operations]}},
+        {"_id": 0},
+    ).to_list(len(operations))
+
+    # Preserve the order requested by the frontend.
+    updated_by_id = {item["id"]: item for item in updated_items}
+
+    return [
+        updated_by_id[item_id]
+        for item_id in payload.ids
+        if item_id in updated_by_id
+    ]
 
 
 @api_router.post("/work-items/bulk-delete")

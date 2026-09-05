@@ -297,7 +297,18 @@ export const WorkSheetRow = ({
           .filter(Boolean)
           .join(" ")}>
         {canEditExtra ? (
-          <Select value={item.deliverable_type || undefined} onValueChange={(v) => onUpdate(item.id, { deliverable_type: v })}>
+          <Select
+            value={item.deliverable_type || undefined}
+            onValueChange={(v) => {
+              const category =
+                options.deliverable_type_categories?.[v] || "";
+
+              onUpdate(item.id, {
+                deliverable_type: v,
+                work_category: category,
+              });
+            }}
+          >
             <SelectTrigger
               {...sheetCell(6)}
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
@@ -323,24 +334,12 @@ export const WorkSheetRow = ({
         ]
           .filter(Boolean)
           .join(" ")}>
-        {canEditExtra ? (
-          <Select value={item.work_category} onValueChange={(v) => onUpdate(item.id, { work_category: v })}>
-            <SelectTrigger
-              {...sheetCell(7)}
-              data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
-              className="h-8 w-[110px]"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {options.work_categories?.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <span className="cell-plain block">{item.work_category}</span>
-        )}
+        <span
+          data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
+          className="cell-plain block"
+        >
+          {item.work_category || "—"}
+        </span>
         {renderFillHandle(7)}
       </TableCell>
       <TableCell className={[

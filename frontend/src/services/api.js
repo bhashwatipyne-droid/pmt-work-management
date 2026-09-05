@@ -58,6 +58,11 @@ export const createClient = (userId, payload) =>
 export const updateClient = (userId, id, payload) =>
   axios.patch(`${API}/clients/${id}`, payload, { headers: authHeaders(userId) }).then((r) => r.data);
 
+export const deleteClient = (userId, id) =>
+  axios.delete(`${API}/clients/${id}`, {
+    headers: authHeaders(userId),
+  }).then((r) => r.data);
+
 export const createContact = (userId, clientId, payload) =>
   axios.post(
     `${API}/clients/${clientId}/contacts`,
@@ -109,6 +114,13 @@ export const createDeliverable = (userId, payload) =>
 export const updateDeliverable = (userId, id, payload) =>
   axios
     .patch(`${API}/deliverables/${id}`, payload, { headers: authHeaders(userId) })
+    .then((r) => r.data);
+
+export const deleteDeliverable = (userId, id) =>
+  axios
+    .delete(`${API}/deliverables/${id}`, {
+      headers: authHeaders(userId),
+    })
     .then((r) => r.data);
 
 // -------- Team / Users --------

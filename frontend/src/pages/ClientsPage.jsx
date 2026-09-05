@@ -19,7 +19,9 @@ import {
   createContact,
   updateContact,
   deleteContact,
+  deleteClient,
 } from "@/services/api";
+import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { CLIENTS } from "@/constants/testIds";
 
 const inputBase =
@@ -236,8 +238,9 @@ const ClientModal = ({
   const [status, setStatus] = useState("Active");
   const [contacts, setContacts] = useState([]);
   const [editingContactId, setEditingContactId] = useState(null);
-  const [deletedContactIds, setDeletedContactIds] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteContactTarget, setDeleteContactTarget] = useState(null);
+  const [deletingContact, setDeletingContact] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -251,7 +254,6 @@ const ClientModal = ({
 
     setContacts(existingContacts);
     setEditingContactId(null);
-    setDeletedContactIds([]);
   }, [open, initial]);
 
   if (!open) return null;
@@ -274,20 +276,53 @@ const ClientModal = ({
   };
 
   const removeContact = (contact) => {
-    if (!contact.isDraft && contact.id) {
-      setDeletedContactIds((prev) =>
-        prev.includes(contact.id)
-          ? prev
-          : [...prev, contact.id]
+    if (!contact?.id) return;
+
+    // Draft contacts have never been saved, so remove locally.
+    if (contact.isDraft) {
+      setContacts((prev) =>
+        prev.filter((item) => item.id !== contact.id)
       );
+
+      if (editingContactId === contact.id) {
+        setEditingContactId(null);
+      }
+
+      return;
     }
 
-    setContacts((prev) =>
-      prev.filter((item) => item.id !== contact.id)
-    );
+    setDeleteContactTarget(contact);
+  };
 
-    if (editingContactId === contact.id) {
-      setEditingContactId(null);
+  const handleContactDelete = async () => {
+    if (!deleteContactTarget?.id) return;
+
+    setDeletingContact(true);
+
+    try {
+      await deleteContact(
+        currentUserId,
+        initial.id,
+        deleteContactTarget.id
+      );
+
+      setContacts((prev) =>
+        prev.filter((item) => item.id !== deleteContactTarget.id)
+      );
+
+      if (editingContactId === deleteContactTarget.id) {
+        setEditingContactId(null);
+      }
+
+      toast.success("Contact deleted");
+      setDeleteContactTarget(null);
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail ||
+          "Could not delete contact"
+      );
+    } finally {
+      setDeletingContact(false);
     }
   };
 
@@ -355,17 +390,6 @@ const ClientModal = ({
         );
 
         /*
-         * Delete contacts removed by the user.
-         */
-        for (const contactId of deletedContactIds) {
-          await deleteContact(
-            currentUserId,
-            initial.id,
-            contactId
-          );
-        }
-
-        /*
          * Update existing contacts and create new contacts.
          */
         for (const contact of contacts) {
@@ -417,7 +441,11 @@ const ClientModal = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:p-6"
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <div
         data-testid={
@@ -632,6 +660,21 @@ const ClientModal = ({
           </button>
         </div>
       </div>
+
+      <ConfirmDeleteModal
+        open={!!deleteContactTarget}
+        onClose={() => {
+          if (!deletingContact) {
+            setDeleteContactTarget(null);
+          }
+        }}
+        onConfirm={handleContactDelete}
+        title="Delete this contact?"
+        description={`"${deleteContactTarget?.name || "This contact"}" will be permanently deleted.`}
+        warning="If this contact is currently assigned to a project, the deletion will be blocked."
+        confirmLabel="Delete Contact"
+        loading={deletingContact}
+      />
     </div>
   );
 };
@@ -653,6 +696,9 @@ export default function ClientsPage() {
     initial: null,
   });
 
+  const [deleteClientTarget, setDeleteClientTarget] = useState(null);
+  const [deletingClient, setDeletingClient] = useState(false);
+
   const fetchAll = async () => {
     try {
       const [c, p] = await Promise.all([
@@ -665,6 +711,30 @@ export default function ClientsPage() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to load clients");
+    }
+  };
+
+  const handleClientDelete = async () => {
+    if (!deleteClientTarget?.id) return;
+
+    setDeletingClient(true);
+
+    try {
+      await deleteClient(
+        currentUserId,
+        deleteClientTarget.id
+      );
+
+      toast.success("Client deleted");
+      setDeleteClientTarget(null);
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail ||
+          "Could not delete client"
+      );
+    } finally {
+      setDeletingClient(false);
     }
   };
 
@@ -828,20 +898,32 @@ export default function ClientsPage() {
                   </td>
 
                   <td className="px-4 py-3">
-                    <button
-                      data-testid={`clients-edit-btn-${client.id}`}
-                      onClick={() =>
-                        setModal({
-                          open: true,
-                          mode: "edit",
-                          initial: client,
-                        })
-                      }
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-                      title="Edit client"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        data-testid={`clients-edit-btn-${client.id}`}
+                        onClick={() =>
+                          setModal({
+                            open: true,
+                            mode: "edit",
+                            initial: client,
+                          })
+                        }
+                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                        title="Edit client"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setDeleteClientTarget(client)}
+                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200"
+                        title="Delete client"
+                        aria-label="Delete client"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -861,6 +943,21 @@ export default function ClientsPage() {
           }))
         }
         onSaved={fetchAll}
+      />
+
+      <ConfirmDeleteModal
+        open={!!deleteClientTarget}
+        onClose={() => {
+          if (!deletingClient) {
+            setDeleteClientTarget(null);
+          }
+        }}
+        onConfirm={handleClientDelete}
+        title="Delete this client?"
+        description={`"${deleteClientTarget?.name || "This client"}" will be permanently deleted.`}
+        warning="A client with active projects cannot be deleted. Completed-project history will be preserved."
+        confirmLabel="Delete Client"
+        loading={deletingClient}
       />
     </div>
   );

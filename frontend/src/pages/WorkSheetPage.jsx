@@ -5,6 +5,7 @@ import {
   bulkUpdateWorkItems,
   bulkCreateWorkItems,
   createWorkItem,
+  deleteWorkItem,
   getOptions,
   getWorkItems,
   updateWorkItem,
@@ -14,6 +15,7 @@ import {
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
 import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
+import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
@@ -48,6 +50,8 @@ export default function WorkSheetPage() {
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const bulkAddingRef = useRef(false);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
@@ -177,6 +181,27 @@ export default function WorkSheetPage() {
       toast.error(
         e.response?.data?.detail || "Update failed"
       );
+    }
+  };
+
+  const handleDelete = async (item) => {
+    if (!item?.id) return;
+
+    setDeleting(true);
+
+    try {
+      await deleteWorkItem(currentUser.id, item.id);
+
+      setItems((prev) => prev.filter((row) => row.id !== item.id));
+
+      toast.success("Entry deleted");
+      setDeleteTarget(null);
+    } catch (e) {
+      toast.error(
+        e.response?.data?.detail || "Could not delete entry"
+      );
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -375,12 +400,28 @@ export default function WorkSheetPage() {
           projects={projects}
           deliverables={deliverables}
           onUpdate={handleUpdate}
+          onDelete={setDeleteTarget}
           onFill={handleFill}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
         />
       )}
+
+      <ConfirmDeleteModal
+        open={!!deleteTarget}
+        onClose={() => {
+          if (!deleting) {
+            setDeleteTarget(null);
+          }
+        }}
+        onConfirm={() => handleDelete(deleteTarget)}
+        title="Delete this work entry?"
+        description="This work entry will be permanently removed."
+        warning="This action cannot be undone."
+        confirmLabel="Delete Entry"
+        loading={deleting}
+      />
     </div>
   );
 }

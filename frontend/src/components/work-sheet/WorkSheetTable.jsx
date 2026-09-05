@@ -47,6 +47,7 @@ export const WorkSheetTable = ({
   projects,
   deliverables,
   onUpdate,
+  onDelete,
   onFill,
   selectedIds,
   onToggleSelect,
@@ -278,6 +279,7 @@ export const WorkSheetTable = ({
                 projects={projects}
                 deliverables={deliverables}
                 onUpdate={onUpdate}
+                onDelete={onDelete}
                 selected={selectedIds.includes(item.id)}
                 onToggleSelect={onToggleSelect}
               />

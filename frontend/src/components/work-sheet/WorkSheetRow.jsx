@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -21,6 +22,7 @@ export const WorkSheetRow = ({
   projects = [],
   deliverables = [],
   onUpdate,
+  onDelete,
   selected,
   onToggleSelect,
   activeCell,
@@ -485,6 +487,20 @@ export const WorkSheetRow = ({
           </SelectContent>
         </Select>
         {renderFillHandle(13)}
+      </TableCell>
+
+      <TableCell className="sheet-cell w-[52px] text-center">
+        {canEditRow && (
+          <button
+            type="button"
+            onClick={() => onDelete?.(item)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            title="Delete entry"
+            aria-label="Delete entry"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </TableCell>
     </TableRow>
   );

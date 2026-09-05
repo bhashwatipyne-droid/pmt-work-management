@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { X } from "lucide-react";
+import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 
 import {
   createDeliverable,
   updateDeliverable,
+  deleteDeliverable,
 } from "@/services/api";
 
 const emptyDeliverable = {
@@ -36,6 +38,8 @@ export const DeliverableModal = ({
     useState(emptyDeliverable);
 
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -128,6 +132,27 @@ export const DeliverableModal = ({
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!initial?.id) return;
+
+    setDeleting(true);
+
+    try {
+      await deleteDeliverable(currentUserId, initial.id);
+
+      toast.success("Deliverable deleted");
+      onSaved?.({ deleted: true, id: initial.id });
+      onClose?.();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail ||
+          "Could not delete deliverable"
+      );
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -318,32 +343,60 @@ export const DeliverableModal = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-white px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:opacity-60"
-          >
-            Cancel
-          </button>
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-white px-6 py-4">
+          {isEdit && (
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              disabled={saving || deleting}
+              className="rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Delete Deliverable
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={saving}
-            className="rounded-lg bg-[#2b2bb5] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]"
-          >
-            {saving
-              ? isEdit
-                ? "Saving..."
-                : "Adding..."
-              : isEdit
-                ? "Save Changes"
-                : "Add Deliverable"}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              className="rounded-lg bg-[#2b2bb5] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]"
+            >
+              {saving
+                ? isEdit
+                  ? "Saving..."
+                  : "Adding..."
+                : isEdit
+                  ? "Save Changes"
+                  : "Add Deliverable"}
+            </button>
+          </div>
         </div>
       </div>
+
+      <ConfirmDeleteModal
+        open={deleteOpen}
+        onClose={() => {
+          if (!deleting) {
+            setDeleteOpen(false);
+          }
+        }}
+        onConfirm={handleDelete}
+        title="Delete this deliverable?"
+        description={`"${deliverable.name || initial?.name || "This deliverable"}" will be permanently deleted.`}
+        warning="Any historical work entries linked to this deliverable will be preserved."
+        confirmLabel="Delete Deliverable"
+        loading={deleting}
+      />
     </div>
   );
 };

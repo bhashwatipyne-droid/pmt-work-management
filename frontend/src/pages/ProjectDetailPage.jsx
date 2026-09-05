@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Building2,
@@ -16,6 +16,7 @@ import {
   getWorkItems,
   getOptions,
   updateProject,
+  deleteProject,
   approveDeliverable,
   rejectDeliverable,
   getClients,
@@ -28,6 +29,7 @@ import {
 } from "@/constants/projectPalette";
 import { DeliverableModal } from "@/components/projects/DeliverableModal";
 import ProjectEditModal from "@/components/projects/ProjectEditModal";
+import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -65,6 +67,7 @@ const stageStatusBadge = (s) => {
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const {
     currentUser,
     currentUserId,
@@ -83,6 +86,8 @@ export default function ProjectDetailPage() {
   const [deliverableTypes, setDeliverableTypes] = useState([]);
   const [clients, setClients] = useState([]);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -148,6 +153,23 @@ export default function ProjectDetailPage() {
     );
 
     await fetchAll();
+  };
+
+  const handleProjectDelete = async () => {
+    setDeletingProject(true);
+
+    try {
+      await deleteProject(currentUserId, projectId);
+
+      toast.success("Project deleted");
+      navigate("/projects");
+    } catch (e) {
+      toast.error(
+        e.response?.data?.detail || "Could not delete project"
+      );
+    } finally {
+      setDeletingProject(false);
+    }
   };
 
   const decide = async (deliverableId, action) => {
@@ -248,6 +270,16 @@ export default function ProjectDetailPage() {
               className="inline-flex h-10 items-center rounded-lg border border-border bg-white px-4 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
             >
               Edit Project
+            </button>
+          )}
+
+          {currentUser?.role !== "member" && (
+            <button
+              type="button"
+              onClick={() => setDeleteProjectOpen(true)}
+              className="inline-flex h-10 items-center rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200"
+            >
+              Delete Project
             </button>
           )}
 
@@ -568,6 +600,21 @@ export default function ProjectDetailPage() {
         project={project}
         clients={clients}
         currentUserId={currentUserId}
+      />
+
+      <ConfirmDeleteModal
+        open={deleteProjectOpen}
+        onClose={() => {
+          if (!deletingProject) {
+            setDeleteProjectOpen(false);
+          }
+        }}
+        onConfirm={handleProjectDelete}
+        title="Delete this project?"
+        description={`"${project.name}" will be permanently deleted.`}
+        warning="Its deliverables will also be deleted, but all historical work entries will be preserved."
+        confirmLabel="Delete Project"
+        loading={deletingProject}
       />
     </div>
   );

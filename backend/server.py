@@ -405,6 +405,16 @@ async def require_admin(request: Request) -> User:
     return user
 
 
+async def require_manager_or_admin(request: Request) -> User:
+    user = await get_acting_user(request)
+    if user.role not in {"admin", "manager"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Manager or admin access required"
+        )
+    return user
+
+
 async def get_user_department(user_id: Optional[str]) -> Optional[str]:
     if not user_id:
         return None
@@ -977,10 +987,58 @@ async def bulk_delete_work_items(payload: BulkDeletePayload, request: Request):
 
 @api_router.delete("/work-items/{item_id}")
 async def delete_work_item(item_id: str, request: Request):
-    await require_admin(request)
-    result = await db.work_items.delete_one({"id": item_id})
+    user = await get_acting_user(request)
+
+    existing = await db.work_items.find_one(
+        {"id": item_id},
+        {"_id": 0}
+    )
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Work item not found"
+        )
+
+    # Members can only delete their own entries.
+    if user.role == "member":
+        if existing.get("creator_id") != user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only delete your own work items"
+            )
+
+    # Managers can delete entries logged by their department.
+    elif user.role == "manager":
+        creator_department = await get_user_department(
+            existing.get("creator_id")
+        )
+
+        if creator_department != user.department:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only delete work items logged by your own department"
+            )
+
+    result = await db.work_items.delete_one(
+        {"id": item_id}
+    )
+
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Work item not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Work item not found"
+        )
+
+    await log_activity(
+        collection_name="work_item_activity_log",
+        entity_id=item_id,
+        entity_field="work_item_id",
+        action="WORK_ITEM_DELETED",
+        changed_by=user.id,
+        old_value=existing,
+    )
+
     return {"success": True}
 
 
@@ -1127,6 +1185,77 @@ async def update_client(client_id: str, payload: ClientUpdate, request: Request)
         raise HTTPException(status_code=400, detail="Invalid client status")
     await db.clients.update_one({"id": client_id}, {"$set": update_fields})
     return Client(**{**existing, **update_fields})
+
+
+@api_router.delete("/clients/{client_id}")
+async def delete_client(
+    client_id: str,
+    request: Request
+):
+    user = await require_admin(request)
+
+    client = await db.clients.find_one(
+        {"id": client_id},
+        {"_id": 0}
+    )
+
+    if not client:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found"
+        )
+
+    # Do not allow deletion while the client has active projects.
+    active_projects = await db.projects.find(
+        {
+            "client_id": client_id,
+            "status": {"$ne": "Completed"},
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "name": 1,
+            "code": 1,
+            "status": 1,
+        },
+    ).to_list(100)
+
+    if active_projects:
+        raise HTTPException(
+            status_code=400,
+            detail="This client has active projects. Complete them before deleting the client."
+        )
+
+    # Preserve completed projects and ALL historical work entries.
+    # Only detach completed projects from this client.
+    await db.projects.update_many(
+        {"client_id": client_id},
+        {
+            "$set": {
+                "client_id": None,
+                "poc_id": None,
+            }
+        },
+    )
+
+    await db.clients.delete_one(
+        {"id": client_id}
+    )
+
+    await log_activity(
+        collection_name="project_activity_log",
+        entity_id=client_id,
+        entity_field="client_id",
+        action="CLIENT_DELETED",
+        changed_by=user.id,
+        old_value={
+            "name": client.get("name"),
+            "status": client.get("status"),
+            "contact_persons": client.get("contact_persons") or [],
+        },
+    )
+
+    return {"success": True}
 
 
 class ContactPersonCreate(BaseModel):
@@ -1580,7 +1709,7 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, request: Request):
-    user = await require_admin(request)
+    user = await require_manager_or_admin(request)
 
     existing = await db.projects.find_one(
         {"id": project_id},
@@ -1592,6 +1721,19 @@ async def delete_project(project_id: str, request: Request):
             status_code=404,
             detail="Project not found"
         )
+
+    # Preserve historical work entries.
+    # Remove their references to this project/deliverables,
+    # but NEVER delete the work entries themselves.
+    await db.work_items.update_many(
+        {"project_id": project_id},
+        {
+            "$set": {
+                "project_id": None,
+                "deliverable_id": None,
+            }
+        },
+    )
 
     await db.projects.delete_one({"id": project_id})
     await db.deliverables.delete_many({"project_id": project_id})
@@ -1749,11 +1891,47 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
 
 
 @api_router.delete("/deliverables/{deliverable_id}")
-async def delete_deliverable(deliverable_id: str, request: Request):
-    await require_admin(request)
-    result = await db.deliverables.delete_one({"id": deliverable_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Deliverable not found")
+async def delete_deliverable(
+    deliverable_id: str,
+    request: Request
+):
+    user = await require_manager_or_admin(request)
+
+    existing = await db.deliverables.find_one(
+        {"id": deliverable_id},
+        {"_id": 0}
+    )
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Deliverable not found"
+        )
+
+    # Preserve historical work entries.
+    # Only remove their relationship to this deliverable.
+    await db.work_items.update_many(
+        {"deliverable_id": deliverable_id},
+        {
+            "$set": {
+                "deliverable_id": None
+            }
+        },
+    )
+
+    await db.deliverables.delete_one(
+        {"id": deliverable_id}
+    )
+
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=deliverable_id,
+        entity_field="deliverable_id",
+        action="DELIVERABLE_DELETED",
+        changed_by=user.id,
+        old_value=existing,
+    )
+
     return {"success": True}
 
 

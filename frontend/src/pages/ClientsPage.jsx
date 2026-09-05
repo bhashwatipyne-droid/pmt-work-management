@@ -23,13 +23,13 @@ import {
 import { CLIENTS } from "@/constants/testIds";
 
 const inputBase =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100";
+  "w-full rounded-lg border border-input bg-white px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20 disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButton =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60";
+  "inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:cursor-not-allowed disabled:opacity-60";
 
 const primaryButton =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2b2bb5] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]";
 
 const getInitials = (name = "") => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -59,10 +59,10 @@ const ContactCard = ({
 }) => {
   if (editing) {
     return (
-      <div className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-4">
+      <div className="rounded-xl border border-[#dcdcf8] bg-[#f0f0fd]/50 p-4">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f0f0fd] text-xs font-semibold text-[#2b2bb5]">
               {getInitials(contact.name)}
             </div>
             <div>
@@ -155,9 +155,9 @@ const ContactCard = ({
   }
 
   return (
-    <div className="group rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300">
+    <div className="group rounded-xl border border-border bg-white p-4 transition-shadow hover:border-slate-300 hover:shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-sm font-bold text-indigo-600">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd] text-sm font-semibold text-[#2b2bb5]">
           {getInitials(contact.name)}
         </div>
 
@@ -416,7 +416,7 @@ const ClientModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:p-6"
       onClick={onClose}
     >
       <div
@@ -425,17 +425,17 @@ const ClientModal = ({
             ? "clients-edit-modal"
             : CLIENTS.addModal
         }
-        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-start justify-between border-b border-slate-100 px-7 py-5">
+        <div className="flex shrink-0 items-start justify-between border-b border-border px-7 py-5">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
               {title}
             </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               {subtitle}
             </p>
           </div>
@@ -452,13 +452,13 @@ const ClientModal = ({
         {/* Main content */}
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[0.9fr_1.35fr]">
           {/* LEFT — CLIENT DETAILS */}
-          <div className="border-b border-slate-100 p-7 lg:border-b-0 lg:border-r">
+          <div className="border-b border-border p-7 lg:border-b-0 lg:border-r">
             <div className="mb-6">
-              <h3 className="text-base font-bold text-slate-900">
+              <h3 className="text-sm font-semibold text-foreground">
                 Client details
               </h3>
 
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Basic information about this client.
               </p>
             </div>
@@ -505,11 +505,11 @@ const ClientModal = ({
           <div className="min-h-0 p-7">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 className="text-sm font-semibold text-foreground">
                   Contacts / Points of Contact
                 </h3>
 
-                <p className="mt-1 max-w-lg text-xs text-slate-500">
+                <p className="mt-1 max-w-lg text-xs text-muted-foreground">
                   Add key people from the client's team. You can
                   add multiple contacts.
                 </p>
@@ -598,7 +598,7 @@ const ClientModal = ({
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-7 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-[#f7f9fc] px-7 py-4">
           <button
             data-testid={
               mode === "edit"
@@ -723,24 +723,24 @@ export default function ClientsPage() {
   return (
     <div
       data-testid={CLIENTS.page}
-      className="flex-1 overflow-auto px-8 py-6"
+      className="flex-1 overflow-auto bg-[#f7f9fc] px-6 py-6 lg:px-8"
     >
       {/* PAGE HEADER */}
-      <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Clients
         </h1>
 
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
             <input
               data-testid={CLIENTS.searchInput}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search clients..."
-              className="w-56 rounded-lg border border-slate-200 bg-white py-2.5 pl-8 pr-3 text-sm"
+              className="w-56 rounded-lg border border-input bg-white py-2.5 pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/20"
             />
           </div>
 
@@ -753,7 +753,7 @@ export default function ClientsPage() {
                 initial: null,
               })
             }
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            className={primaryButton}
           >
             <Plus className="h-4 w-4" />
             Add Client
@@ -762,10 +762,10 @@ export default function ClientsPage() {
       </div>
 
       {/* CLIENT TABLE */}
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <tr className="border-b border-border bg-[#f7f9fc] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <th className="px-4 py-3">
                 Client Name
               </th>
@@ -801,7 +801,7 @@ export default function ClientsPage() {
                 <tr
                   key={client.id}
                   data-testid={`${CLIENTS.rowPrefix}-${client.id}`}
-                  className="border-b border-slate-50 last:border-0 hover:bg-slate-50"
+                  className="border-b border-border last:border-0 transition-colors hover:bg-[#fafbff]"
                 >
                   <td className="px-4 py-3 font-semibold text-slate-900">
                     {client.name}
@@ -817,10 +817,10 @@ export default function ClientsPage() {
 
                   <td className="px-4 py-3">
                     <span
-                      className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
                         client.status === "Inactive"
                           ? "bg-slate-100 text-slate-500"
-                          : "bg-emerald-100 text-emerald-700"
+                          : "bg-green-50 text-green-700"
                       }`}
                     >
                       {client.status || "Active"}
@@ -837,7 +837,7 @@ export default function ClientsPage() {
                           initial: client,
                         })
                       }
-                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
                       title="Edit client"
                     >
                       <Pencil className="h-3.5 w-3.5" />

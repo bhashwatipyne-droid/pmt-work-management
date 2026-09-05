@@ -16,7 +16,10 @@ const emptyDeliverable = {
 };
 
 const inputBase =
-  "w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100";
+  "w-full rounded-lg border border-input bg-white px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20";
+
+const labelBase =
+  "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
 
 export const DeliverableModal = ({
   open,
@@ -29,7 +32,9 @@ export const DeliverableModal = ({
   onClose,
   onSaved,
 }) => {
-  const [deliverable, setDeliverable] = useState(emptyDeliverable);
+  const [deliverable, setDeliverable] =
+    useState(emptyDeliverable);
+
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -61,15 +66,20 @@ export const DeliverableModal = ({
 
   const handleSubmit = async () => {
     if (!deliverable.name.trim()) {
-      return toast.error("Deliverable name is required");
+      return toast.error(
+        "Deliverable name is required"
+      );
     }
 
     if (
       deliverable.start_dt &&
       deliverable.end_dt &&
-      deliverable.end_dt < deliverable.start_dt
+      deliverable.end_dt <
+        deliverable.start_dt
     ) {
-      return toast.error("End date-time must be after start date-time");
+      return toast.error(
+        "End date-time must be after start date-time"
+      );
     }
 
     setSaving(true);
@@ -86,13 +96,22 @@ export const DeliverableModal = ({
       let saved;
 
       if (mode === "edit" && initial?.id) {
-        saved = await updateDeliverable(currentUserId, initial.id, payload);
+        saved = await updateDeliverable(
+          currentUserId,
+          initial.id,
+          payload
+        );
+
         toast.success("Deliverable updated");
       } else {
-        saved = await createDeliverable(currentUserId, {
-          project_id: projectId,
-          ...payload,
-        });
+        saved = await createDeliverable(
+          currentUserId,
+          {
+            project_id: projectId,
+            ...payload,
+          }
+        );
+
         toast.success("Deliverable added");
       }
 
@@ -101,7 +120,11 @@ export const DeliverableModal = ({
     } catch (err) {
       toast.error(
         err?.response?.data?.detail ||
-          `Failed to ${mode === "edit" ? "update" : "add"} deliverable`
+          `Failed to ${
+            mode === "edit"
+              ? "update"
+              : "add"
+          } deliverable`
       );
     } finally {
       setSaving(false);
@@ -112,20 +135,23 @@ export const DeliverableModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:p-6"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
+        <div className="flex items-start justify-between border-b border-border px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">
-              {isEdit ? "Edit Deliverable" : "Add Deliverable"}
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              {isEdit
+                ? "Edit Deliverable"
+                : "Add Deliverable"}
             </h2>
-            <p className="mt-0.5 text-sm text-slate-500">
+
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {isEdit
                 ? "Update the deliverable details and schedule."
                 : "Add a deliverable and schedule its timeline."}
@@ -133,22 +159,24 @@ export const DeliverableModal = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            disabled={saving}
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:opacity-50"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Form */}
-        <div className="px-6 py-5">
-          <div className="rounded-xl border border-slate-200 p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
+        <div className="bg-[#f7f9fc] px-6 py-5">
+          <div className="rounded-xl border border-border bg-white p-5">
+            <div className="mb-5 flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0fd] text-xs font-semibold text-[#1a1a8a]">
                 1
               </span>
 
-              <h3 className="text-sm font-semibold text-slate-900">
+              <h3 className="text-sm font-semibold text-foreground">
                 Deliverable Details
               </h3>
             </div>
@@ -156,56 +184,84 @@ export const DeliverableModal = ({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Name */}
               <div className="md:col-span-2">
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <label className={labelBase}>
                   Task Name *
                 </label>
 
                 <input
                   type="text"
                   value={deliverable.name}
-                  onChange={(e) => updateField("name", e.target.value)}
+                  onChange={(e) =>
+                    updateField(
+                      "name",
+                      e.target.value
+                    )
+                  }
                   placeholder="e.g. Diwali SIP Reel"
                   className={inputBase}
                   autoFocus
+                  disabled={saving}
                 />
               </div>
 
               {/* Type */}
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <label className={labelBase}>
                   Type
                 </label>
 
                 <select
                   value={deliverable.type}
-                  onChange={(e) => updateField("type", e.target.value)}
+                  onChange={(e) =>
+                    updateField(
+                      "type",
+                      e.target.value
+                    )
+                  }
                   className={inputBase}
+                  disabled={saving}
                 >
                   <option value="">—</option>
 
-                  {deliverableTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
+                  {deliverableTypes.map(
+                    (type) => (
+                      <option
+                        key={type}
+                        value={type}
+                      >
+                        {type}
+                      </option>
+                    )
+                  )}
                 </select>
               </div>
 
               {/* Owner */}
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <label className={labelBase}>
                   Owner
                 </label>
 
                 <select
                   value={deliverable.owner_id}
-                  onChange={(e) => updateField("owner_id", e.target.value)}
+                  onChange={(e) =>
+                    updateField(
+                      "owner_id",
+                      e.target.value
+                    )
+                  }
                   className={inputBase}
+                  disabled={saving}
                 >
-                  <option value="">Unassigned</option>
+                  <option value="">
+                    Unassigned
+                  </option>
 
                   {users.map((user) => (
-                    <option key={user.id} value={user.id}>
+                    <option
+                      key={user.id}
+                      value={user.id}
+                    >
                       {user.name}
                     </option>
                   ))}
@@ -214,54 +270,69 @@ export const DeliverableModal = ({
 
               {/* Start */}
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <label className={labelBase}>
                   Start · Date & Time
                 </label>
 
                 <input
                   type="datetime-local"
                   value={deliverable.start_dt}
-                  onChange={(e) => updateField("start_dt", e.target.value)}
+                  onChange={(e) =>
+                    updateField(
+                      "start_dt",
+                      e.target.value
+                    )
+                  }
                   className={inputBase}
+                  disabled={saving}
                 />
               </div>
 
               {/* End */}
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <label className={labelBase}>
                   End · Date & Time
                 </label>
 
                 <input
                   type="datetime-local"
                   value={deliverable.end_dt}
-                  onChange={(e) => updateField("end_dt", e.target.value)}
+                  onChange={(e) =>
+                    updateField(
+                      "end_dt",
+                      e.target.value
+                    )
+                  }
                   className={inputBase}
+                  disabled={saving}
                 />
               </div>
             </div>
           </div>
 
-          <p className="mt-3 text-[11px] text-slate-400">
-            Start and end date-time are used for the Content → Design → Animate
-            → Finish stage timeline.
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Start and end date-time are used for the
+            Content → Design → Animate → Finish stage
+            timeline.
           </p>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-white px-6 py-4">
           <button
+            type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:opacity-60"
           >
             Cancel
           </button>
 
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={saving}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+            className="rounded-lg bg-[#2b2bb5] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]"
           >
             {saving
               ? isEdit

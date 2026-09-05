@@ -18,10 +18,10 @@ import { useUser } from "@/context/UserContext";
 import { LAYOUT } from "@/constants/testIds";
 
 const navItemClass = ({ isActive }) =>
-  `flex items-center rounded-md py-2.5 text-sm font-medium transition-colors ${
+  `flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors ${
     isActive
-      ? "bg-white/[0.06] text-indigo-300"
-      : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-100"
+      ? "bg-white text-[#1a1a8a] shadow-sm"
+      : "text-slate-300 hover:bg-white/10 hover:text-white"
   }`;
 
 export const Sidebar = () => {
@@ -50,7 +50,7 @@ export const Sidebar = () => {
 
   return (
     <aside
-      className={`relative flex flex-shrink-0 flex-col bg-[#0b1e39] px-4 py-5 transition-[width] duration-200 ${
+      className={`relative flex flex-shrink-0 flex-col bg-[#10172a] border-r border-white/10 px-4 py-5 transition-all duration-200 ${
         collapsed ? "w-20" : "w-60"
       }`}
     >
@@ -187,7 +187,7 @@ export const Sidebar = () => {
       </nav>
 
       {/* User */}
-      <div className="mt-auto pt-6">
+      <div className="mt-auto border-t border-white/10 pt-6">
         {currentUser && (
           <div
             data-testid={LAYOUT.sidebarUserInfo}
@@ -204,10 +204,10 @@ export const Sidebar = () => {
 
             {!collapsed && (
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white">
+                <div className="truncate text-sm font-medium text-white">
                   {currentUser.name}
                 </div>
-                <div className="truncate text-[11px] capitalize text-slate-400">
+                <div className="truncate text-xs capitalize text-slate-400">
                   {currentUser.role}
                 </div>
               </div>

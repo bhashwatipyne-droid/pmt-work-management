@@ -33,17 +33,32 @@ export const AppLayout = ({ children }) => {
   const initials = getInitials(currentUser?.name);
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-[#f7f9fc]">
       <Sidebar />
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-          <span className="text-sm text-slate-500">{crumb}</span>
+        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
+          {/* Page title */}
+          <span className="text-sm font-semibold text-slate-800">
+            {crumb}
+          </span>
 
+          {/* Header actions */}
           <div className="flex items-center gap-2">
             <button
+              type="button"
               data-testid="topbar-notifications"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200"
+              className={[
+                "flex h-9 w-9 items-center justify-center",
+                "rounded-lg",
+                "text-slate-500",
+                "transition-colors",
+                "hover:bg-[#f0f0fd]",
+                "hover:text-[#1a1a8a]",
+                "focus:outline-none",
+                "focus:ring-[3px]",
+                "focus:ring-[#2b2bb5]/20",
+              ].join(" ")}
               aria-label="Notifications"
             >
               <Bell className="h-4 w-4" />
@@ -53,9 +68,24 @@ export const AppLayout = ({ children }) => {
               type="button"
               aria-label="User profile"
               title={currentUser?.name || "Profile"}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-700 text-xs font-semibold text-white transition-colors hover:bg-teal-800"
+              className={[
+                "flex h-9 w-9 items-center justify-center",
+                "rounded-full",
+                "bg-[#f0f0fd]",
+                "text-xs font-semibold",
+                "text-[#1a1a8a]",
+                "transition-colors",
+                "hover:bg-[#dcdcf8]",
+                "focus:outline-none",
+                "focus:ring-[3px]",
+                "focus:ring-[#2b2bb5]/20",
+              ].join(" ")}
             >
-              {currentUser?.name ? initials : <User className="h-4 w-4" />}
+              {currentUser?.name ? (
+                initials
+              ) : (
+                <User className="h-4 w-4" />
+              )}
             </button>
           </div>
         </header>

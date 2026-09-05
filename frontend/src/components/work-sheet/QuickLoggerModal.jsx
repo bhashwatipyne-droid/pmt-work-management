@@ -15,7 +15,7 @@ const emptyEntry = () => ({
   deliverable_id: "",
   deliverable_name: "",
   deliverable_type: "",
-  work_category: "Core",
+  work_category: "",
   remarks: "",
   time_taken_minutes: "",
 });
@@ -49,6 +49,8 @@ export default function QuickLoggerModal({
     "";
 
   const deliverableTypes = options.deliverable_types || [];
+  const deliverableTypeCategories =
+    options.deliverable_type_categories || {};
 
   useEffect(() => {
     if (open) {
@@ -155,7 +157,8 @@ export default function QuickLoggerModal({
         deliverable_id: entry.deliverable_id || null,
         deliverable_name: entry.deliverable_name || "",
         deliverable_type: entry.deliverable_type,
-        work_category: "Core",
+        work_category:
+          deliverableTypeCategories[entry.deliverable_type] || "",
         stage: stage || null,
         remarks: entry.remarks || "",
         time_taken_minutes: Number(entry.time_taken_minutes),
@@ -332,13 +335,18 @@ export default function QuickLoggerModal({
 
                       <select
                         value={entry.deliverable_type}
-                        onChange={(e) =>
+                        onChange={(e) => {
                           updateEntry(
                             index,
                             "deliverable_type",
                             e.target.value
-                          )
-                        }
+                          );
+                          updateEntry(
+                            index,
+                            "work_category",
+                            deliverableTypeCategories[e.target.value] || ""
+                          );
+                        }}
                         className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
                       >
                         <option value="">Select type</option>
@@ -386,7 +394,7 @@ export default function QuickLoggerModal({
                             )
                           }
                           placeholder="Minutes"
-                          className="h-10 w-full rounded-lg border border-input bg-card pl-10 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
+                          className="h-10 w-full rounded-lg border border-input bg-card pl-10 pr-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
                         />
                       </div>
                     </div>
@@ -437,7 +445,9 @@ export default function QuickLoggerModal({
 
                       <input
                         type="text"
-                        value="Core"
+                        value={
+                          deliverableTypeCategories[entry.deliverable_type] || ""
+                        }
                         disabled
                         className="h-10 w-full rounded-lg border border-border bg-muted px-3 text-sm text-muted-foreground"
                       />

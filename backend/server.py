@@ -33,18 +33,14 @@ api_router = APIRouter(prefix="/api")
 
 # ---------------- Constants ----------------
 DELIVERABLE_TYPES = [
-    "Internal Meets & Discussions",
-    "Client Meets & Discussions",
+    # Core
     "Other Initiatives",
-    "Manager: Team Reviews / Feedback",
-    "Freelance: Reviews / Feedback",
-    "Campaign Ideation Plan",
+    "Client Meets & Discussions",
+    "Team Reviews and Feedback",
+    "Campaign Ideation Plan (Includes Keywords)",
     "Campaign Ideation Plan (Quantitative Analysis)",
     "Campaign Ideation Plan (Content Peer Analysis)",
-    "Campaign Ideation Plan (Keywords / Key Visual Taglines)",
-    "Internal Feedback Implementation",
-    "External Feedback Implementation",
-    "Internal Review (Design / Animation Team)",
+    "Campaign Ideation Plan (Key Visuals / Taglines)",
     "Teaser",
     "Minimalist",
     "Emailers",
@@ -62,8 +58,58 @@ DELIVERABLE_TYPES = [
     "Data Research and Analysis (SMI)",
     "Data Research and Analysis (Web)",
     "Data Updation",
+
+    # Non-Core
+    "Project Briefing",
+    "Campaign Ideation Discussions",
+    "Clarity / Query / Doubt / Feedback Discussions",
+    "Core Team / Content Team / CEO Discussions",
+    "Trainings / Committee / Reviews Meetings",
+    "SOP and Process Improvements - Documentation",
+    "Hiring and Interviews",
+    "Follow Up (Over 10-15 mins)",
 ]
+
 WORK_CATEGORIES = ["Core", "Non-Core"]
+
+DELIVERABLE_TYPE_CATEGORIES = {
+    # Core
+    "Other Initiatives": "Core",
+    "Client Meets & Discussions": "Core",
+    "Team Reviews and Feedback": "Core",
+    "Campaign Ideation Plan (Includes Keywords)": "Core",
+    "Campaign Ideation Plan (Quantitative Analysis)": "Core",
+    "Campaign Ideation Plan (Content Peer Analysis)": "Core",
+    "Campaign Ideation Plan (Key Visuals / Taglines)": "Core",
+    "Teaser": "Core",
+    "Minimalist": "Core",
+    "Emailers": "Core",
+    "Newsletters": "Core",
+    "Carousel": "Core",
+    "Infographic": "Core",
+    "Brochure": "Core",
+    "Booklet": "Core",
+    "Presentation (PPT) - Per Slide": "Core",
+    "Typeform / Polls / Quiz": "Core",
+    "Collateral": "Core",
+    "GIF": "Core",
+    "Reel / Short Video": "Core",
+    "Long Video": "Core",
+    "Data Research and Analysis (SMI)": "Core",
+    "Data Research and Analysis (Web)": "Core",
+    "Data Updation": "Core",
+
+    # Non-Core
+    "Project Briefing": "Non-Core",
+    "Campaign Ideation Discussions": "Non-Core",
+    "Clarity / Query / Doubt / Feedback Discussions": "Non-Core",
+    "Core Team / Content Team / CEO Discussions": "Non-Core",
+    "Trainings / Committee / Reviews Meetings": "Non-Core",
+    "SOP and Process Improvements - Documentation": "Non-Core",
+    "Hiring and Interviews": "Non-Core",
+    "Follow Up (Over 10-15 mins)": "Non-Core",
+}
+
 STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Rework", "Closed"]
 MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
 MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link"}
@@ -427,6 +473,7 @@ async def list_users(request: Request):
 async def get_options():
     return {
         "deliverable_types": DELIVERABLE_TYPES,
+        "deliverable_type_categories": DELIVERABLE_TYPE_CATEGORIES,
         "work_categories": WORK_CATEGORIES,
         "statuses": STATUSES,
         "member_forward_statuses": MEMBER_FORWARD_STATUSES,

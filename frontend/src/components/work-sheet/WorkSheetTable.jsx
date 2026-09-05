@@ -1,3 +1,4 @@
+ import { useState, useEffect } from "react";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -18,6 +19,94 @@ export const WorkSheetTable = ({
   onToggleSelect,
   onToggleSelectAll
 }) => {
+  const [activeCell, setActiveCell] = useState(null);
+  const [fillState, setFillState] = useState(null);
+
+  useEffect(() => {
+    if (!fillState) return;
+
+    const handleMouseUp = () => {
+      setFillState((current) => {
+        if (!current) return null;
+
+        return {
+          ...current,
+          dragging: false,
+        };
+      });
+    };
+
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [fillState]);
+
+  const handleFillStart = ({ row, col }) => {
+    setFillState({
+      sourceRow: row,
+      col,
+      targetRow: row,
+      dragging: true,
+    });
+  };
+
+  const handleFillHover = (row) => {
+    setFillState((current) => {
+      if (!current?.dragging) return current;
+
+      return {
+        ...current,
+        targetRow: row,
+      };
+    });
+  };
+
+  const handleFillEnd = () => {
+    setFillState((current) => {
+      if (!current?.dragging) return null;
+
+      const { sourceRow, targetRow, col } = current;
+
+      if (targetRow <= sourceRow) return null;
+
+      const sourceItem = items[sourceRow - 1];
+
+      if (!sourceItem) return null;
+
+      const fieldMap = {
+        0: "work_date",
+        1: "project_id",
+        2: "deliverable_id",
+        3: "stage",
+        4: "deliverable_name",
+        5: "deliverable_link",
+        6: "deliverable_type",
+        7: "work_category",
+        8: "version",
+        9: "time_taken_minutes",
+        10: "creator_id",
+        11: "reviewer_id",
+        12: "remarks",
+        13: "status",
+      };
+
+      const field = fieldMap[col];
+
+      if (!field) return null;
+
+      const value = sourceItem[field];
+
+      items
+        .slice(sourceRow, targetRow)
+        .forEach((targetItem) => {
+          onUpdate(targetItem.id, {
+            [field]: value,
+          });
+        });
+
+      return null;
+    });
+  };
+
   const isAdmin = currentUser.role === "admin";
   const editableItems = items.filter((it) => canEditWorkItem(currentUser, it, users));
   const allSelected = editableItems.length > 0 && selectedIds.length === editableItems.length;
@@ -54,6 +143,12 @@ export const WorkSheetTable = ({
             items.map((item, idx) => (
               <WorkSheetRow
                 key={item.id}
+                activeCell={activeCell}
+                onCellSelect={setActiveCell}
+                fillState={fillState}
+                onFillStart={handleFillStart}
+                onFillHover={handleFillHover}
+                onFillEnd={handleFillEnd}
                 item={item}
                 index={idx + 1}
                 currentUser={currentUser}

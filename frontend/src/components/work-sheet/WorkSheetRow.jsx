@@ -12,7 +12,24 @@ import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
 
-export const WorkSheetRow = ({ item, index, currentUser, users, options, projects = [], deliverables = [], onUpdate, selected, onToggleSelect }) => {
+export const WorkSheetRow = ({
+  item,
+  index,
+  currentUser,
+  users,
+  options,
+  projects = [],
+  deliverables = [],
+  onUpdate,
+  selected,
+  onToggleSelect,
+  activeCell,
+  onCellSelect,
+  fillState,
+  onFillStart,
+  onFillHover,
+  onFillEnd,
+}) => {
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
   const canEditRow = canEditWorkItem(currentUser, item, users);
@@ -43,6 +60,8 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
     "data-sheet-cell": true,
     "data-sheet-row": index,
     "data-sheet-col": col,
+    onMouseDown: () => onCellSelect?.({ row: index, col }),
+    onFocus: () => onCellSelect?.({ row: index, col }),
     onKeyDown: createWorksheetKeyHandler({
       row: index,
       col,
@@ -55,8 +74,38 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
     onUpdate(item.id, { [field]: value });
   };
 
+  const isCellActive = (col) =>
+    activeCell?.row === index && activeCell?.col === col;
+
+  const renderFillHandle = (col) => {
+    if (!isCellActive(col) || !canEditRow) return null;
+
+    return (
+      <span
+        className="sheet-fill-handle"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onFillStart?.({ row: index, col });
+        }}
+      />
+    );
+  };
+
   return (
-    <TableRow data-testid={`worksheet-row-${item.id}`}>
+    <TableRow
+      data-testid={`worksheet-row-${item.id}`}
+      onMouseEnter={() => {
+        if (fillState?.dragging) {
+          onFillHover?.(index);
+        }
+      }}
+      onMouseUp={() => {
+        if (fillState?.dragging) {
+          onFillEnd?.();
+        }
+      }}
+    >
       <TableCell className="row-num">{index}</TableCell>
       <TableCell className="checkbox-cell">
         <Checkbox
@@ -66,7 +115,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           onCheckedChange={() => onToggleSelect(item.id)}
         />
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(0) ? "sheet-cell-selected" : ""}>
         <Input
           {...sheetCell(0)}
           data-testid={`${WORKSHEET.dateInput}-${item.id}`}
@@ -76,8 +125,10 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           onChange={(e) => onUpdate(item.id, { work_date: e.target.value })}
           className="h-8 w-[130px]"
         />
+
+        {renderFillHandle(0)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(1) ? "sheet-cell-selected" : ""}>
         <Select
           value={item.project_id || NONE_VALUE}
           onValueChange={(v) => {
@@ -103,8 +154,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
             ))}
           </SelectContent>
         </Select>
+        {renderFillHandle(1)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(2) ? "sheet-cell-selected" : ""}>
         <Select
           value={item.deliverable_id || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
@@ -124,8 +176,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
             ))}
           </SelectContent>
         </Select>
+        {renderFillHandle(2)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(3) ? "sheet-cell-selected" : ""}>
         <Select
           value={item.stage || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
@@ -145,8 +198,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
             ))}
           </SelectContent>
         </Select>
+        {renderFillHandle(3)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(4) ? "sheet-cell-selected" : ""}>
         {canEditExtra ? (
           <Input
             {...sheetCell(4)}
@@ -160,8 +214,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         ) : (
           <span className="cell-plain block">{item.deliverable_name || "—"}</span>
         )}
+        {renderFillHandle(4)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(5) ? "sheet-cell-selected" : ""}>
         {canEditRow ? (
           <Input
             {...sheetCell(5)}
@@ -179,8 +234,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         ) : (
           <span className="cell-plain block">—</span>
         )}
+        {renderFillHandle(5)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(6) ? "sheet-cell-selected" : ""}>
         {canEditExtra ? (
           <Select value={item.deliverable_type || undefined} onValueChange={(v) => onUpdate(item.id, { deliverable_type: v })}>
             <SelectTrigger
@@ -199,8 +255,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         ) : (
           <span className="cell-plain block">{item.deliverable_type || "—"}</span>
         )}
+        {renderFillHandle(6)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(7) ? "sheet-cell-selected" : ""}>
         {canEditExtra ? (
           <Select value={item.work_category} onValueChange={(v) => onUpdate(item.id, { work_category: v })}>
             <SelectTrigger
@@ -219,8 +276,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         ) : (
           <span className="cell-plain block">{item.work_category}</span>
         )}
+        {renderFillHandle(7)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(8) ? "sheet-cell-selected" : ""}>
         <Input
           {...sheetCell(8)}
           data-testid={`${WORKSHEET.versionInput}-${item.id}`}
@@ -231,8 +289,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           className="h-8 w-[80px]"
           placeholder="v1"
         />
+        {renderFillHandle(8)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(9) ? "sheet-cell-selected" : ""}>
         <Input
           {...sheetCell(9)}
           data-testid={`${WORKSHEET.timeInput}-${item.id}`}
@@ -245,8 +304,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           onBlur={() => commit("time_taken_minutes", Number(local.time_taken_minutes) || 0)}
           className="h-8 w-[80px]"
         />
+        {renderFillHandle(9)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(10) ? "sheet-cell-selected" : ""}>
         {canEditExtra ? (
           <Select value={item.creator_id || undefined} onValueChange={(v) => onUpdate(item.id, { creator_id: v })}>
             <SelectTrigger
@@ -265,8 +325,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         ) : (
           <span className="cell-plain block">{nameOf(item.creator_id)}</span>
         )}
+        {renderFillHandle(10)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(11) ? "sheet-cell-selected" : ""}>
         {canEditRow ? (
           <Select
             value={item.reviewer_id || NONE_VALUE}
@@ -289,8 +350,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
         ) : (
           <span className="cell-plain block">{item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}</span>
         )}
+        {renderFillHandle(11)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(12) ? "sheet-cell-selected" : ""}>
         <Textarea
           {...sheetCell(12)}
           data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
@@ -301,8 +363,9 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
           className="min-h-[32px] h-8 w-[200px] resize-none py-1.5"
           rows={1}
         />
+        {renderFillHandle(12)}
       </TableCell>
-      <TableCell>
+      <TableCell className={isCellActive(13) ? "sheet-cell-selected" : ""}>
         <Select value={item.status} onValueChange={(v) => onUpdate(item.id, { status: v })} disabled={!canEditRow}>
           <SelectTrigger
             {...sheetCell(13)}
@@ -321,6 +384,7 @@ export const WorkSheetRow = ({ item, index, currentUser, users, options, project
             ))}
           </SelectContent>
         </Select>
+        {renderFillHandle(13)}
       </TableCell>
     </TableRow>
   );

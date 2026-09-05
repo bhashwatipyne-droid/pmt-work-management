@@ -82,11 +82,14 @@ export default function WorkSheetPage() {
 
   const handleAddRow = async () => {
     try {
+      const defaultType = options.deliverable_types?.[0] || "";
       const created = await createWorkItem(currentUser.id, {
         work_date: new Date().toISOString().slice(0, 10),
         deliverable_name: "",
-        deliverable_type: options.deliverable_types?.[0] || "",
-        work_category: "Core",
+        deliverable_type: defaultType,
+        work_category:
+          options.deliverable_type_categories?.[defaultType] || "",
+        creator_id: currentUser.id,
         status: "Not Started",
         project_id: localStorage.getItem(LS.project) || null,
         deliverable_id: localStorage.getItem(LS.deliverable) || null,

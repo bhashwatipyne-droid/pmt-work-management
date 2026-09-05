@@ -297,10 +297,10 @@ export default function WorkSheetPage() {
           isManager ? () => setCloseModalOpen(true) : undefined
         }
         onOpenQuickLogger={
-          isManager ? () => setQuickLoggerOpen(true) : undefined
+          isManager || isAdmin ? () => setQuickLoggerOpen(true) : undefined
         }
         onOpenBulkReview={
-          isManager ? () => setBulkReviewOpen(true) : undefined
+          isManager || isAdmin ? () => setBulkReviewOpen(true) : undefined
         }
         onOpenHistory={() => setHistoryOpen(true)}
       />

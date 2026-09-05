@@ -81,10 +81,7 @@ export const Sidebar = () => {
 
         {!collapsed && (
           <div className="text-[15px] font-semibold tracking-tight text-white">
-            PMT{" "}
-            <span className="font-normal text-slate-400">
-              Prototype
-            </span>
+            PMT
           </div>
         )}
       </div>

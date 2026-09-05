@@ -239,42 +239,50 @@ export default function BulkReviewModal({
     selectedIds.length === items.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 p-4">
-      <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-xl bg-background shadow-xl">
+    <div className="fixed inset-0 z-50 bg-slate-950/50 p-4 backdrop-blur-[1px]">
+      <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-5 py-4">
+        <div className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold">
-              Bulk Review
-            </h2>
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f0f0fd]">
+                <CheckCircle2 className="h-4 w-4 text-[#2b2bb5]" />
+              </div>
 
-            <p className="text-sm text-muted-foreground">
+              <h2 className="text-lg font-semibold text-foreground">
+                Bulk Review
+              </h2>
+            </div>
+
+            <p className="mt-1 text-xs text-muted-foreground">
               {items.length} item
               {items.length === 1 ? "" : "s"} waiting for review
             </p>
           </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
+          <button
+            type="button"
             onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <XCircle className="h-5 w-5" />
-          </Button>
+          </button>
         </div>
 
         {/* Bulk actions */}
         {items.length > 0 && (
-          <div className="flex items-center justify-between border-b bg-muted/30 px-5 py-3">
-            <label className="flex items-center gap-2 text-sm font-medium">
+          <div className="flex items-center justify-between border-b border-border bg-[#f7f9fc] px-6 py-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
               <input
                 type="checkbox"
                 checked={allSelected}
                 onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-border accent-[#2b2bb5]"
               />
 
-              Select all
+              <span>Select all</span>
 
               {selectedIds.length > 0 && (
                 <span className="font-normal text-muted-foreground">
@@ -299,7 +307,7 @@ export default function BulkReviewModal({
 
               <Button
                 size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="border border-[#16a34a] bg-[#16a34a] text-white hover:bg-[#15803d]"
                 disabled={
                   !selectedIds.length ||
                   Object.keys(actionLoading).length > 0
@@ -314,82 +322,90 @@ export default function BulkReviewModal({
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto bg-[#f7f9fc] p-5">
           {loading ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Loading deliverables...
+            <div className="flex h-full items-center justify-center">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin text-[#2b2bb5]" />
+                Loading deliverables...
+              </div>
             </div>
           ) : items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <CheckCircle2 className="mb-3 h-10 w-10 text-emerald-600" />
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#f0f0fd]">
+                <CheckCircle2 className="h-6 w-6 text-[#2b2bb5]" />
+              </div>
 
-              <p className="font-medium">
+              <p className="text-sm font-semibold text-foreground">
                 Nothing waiting for review
               </p>
 
-              <p className="mt-1 text-sm text-muted-foreground">
-                All deliverables for your stage are currently cleared.
+              <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
+                All deliverables for your stage are currently
+                cleared.
               </p>
             </div>
           ) : (
             <div className="space-y-3">
-
               {items.map((item) => {
                 const rowLoading =
                   actionLoading[item.id];
 
+                const selected = selectedIds.includes(item.id);
+
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-lg border bg-card p-4 transition ${
-                      selectedIds.includes(item.id)
-                        ? "border-primary bg-primary/5"
-                        : ""
-                    }`}
+                    className={[
+                      "rounded-xl border bg-card p-4 transition-all",
+                      selected
+                        ? "border-[#2b2bb5] bg-[#f0f0fd]/40 shadow-sm"
+                        : "border-border hover:shadow-sm",
+                    ].join(" ")}
                   >
                     <div className="flex items-start gap-3">
-
                       {/* Checkbox */}
                       <input
                         type="checkbox"
-                        checked={selectedIds.includes(item.id)}
+                        checked={selected}
                         onChange={() =>
                           toggleSelect(item.id)
                         }
                         disabled={!!rowLoading}
-                        className="mt-1"
+                        className="mt-1 h-4 w-4 rounded border-border accent-[#2b2bb5]"
                       />
 
                       <div className="min-w-0 flex-1">
-
                         {/* Main row */}
                         <div className="flex items-start justify-between gap-6">
-
                           <div className="min-w-0">
-                            <h3 className="font-medium">
+                            <h3 className="text-sm font-semibold text-foreground">
                               {item.name}
                             </h3>
 
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            <p className="mt-1 text-xs text-muted-foreground">
                               {item.project_code
                                 ? `${item.project_code} · `
                                 : ""}
                               {item.project_name}
                             </p>
 
-                            <p className="text-sm text-muted-foreground">
+                            <p className="mt-0.5 text-xs text-muted-foreground">
                               Client:{" "}
-                              {item.client_name || "—"}{" "}
-                              · Owner:{" "}
-                              {item.owner_name ||
-                                "Unassigned"}
+                              <span className="text-foreground/80">
+                                {item.client_name || "—"}
+                              </span>
+                              {" · "}
+                              Owner:{" "}
+                              <span className="text-foreground/80">
+                                {item.owner_name ||
+                                  "Unassigned"}
+                              </span>
                             </p>
                           </div>
 
                           <div className="flex shrink-0 items-center gap-2">
-
-                            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
                               Ready for Review
                             </span>
 
@@ -417,7 +433,7 @@ export default function BulkReviewModal({
 
                             <Button
                               size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700"
+                              className="border border-[#16a34a] bg-[#16a34a] text-white hover:bg-[#15803d]"
                               disabled={!!rowLoading}
                               onClick={() =>
                                 handleSingleAction(
@@ -426,8 +442,7 @@ export default function BulkReviewModal({
                                 )
                               }
                             >
-                              {rowLoading ===
-                              "approve" ? (
+                              {rowLoading === "approve" ? (
                                 <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
                               ) : (
                                 <CheckCircle2 className="mr-1.5 h-4 w-4" />
@@ -439,8 +454,8 @@ export default function BulkReviewModal({
                         </div>
 
                         {/* Review note */}
-                        <div className="mt-3">
-                          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <div className="mt-4">
+                          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             <MessageSquare className="h-3.5 w-3.5" />
                             Review note
                           </div>
@@ -454,17 +469,15 @@ export default function BulkReviewModal({
                               )
                             }
                             placeholder="Optional note..."
-                            className="min-h-[60px]"
+                            className="min-h-[64px] bg-card"
                             disabled={!!rowLoading}
                           />
                         </div>
-
                       </div>
                     </div>
                   </div>
                 );
               })}
-
             </div>
           )}
         </div>

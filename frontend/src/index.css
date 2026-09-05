@@ -2,247 +2,255 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
+@layer base {
+  :root {
+    /* ─────────────────────────────────────────
+       Mint Design System — Foundations
+       ───────────────────────────────────────── */
+
+    /* Brand */
+    --mint-brand-50: #f0f0fd;
+    --mint-brand-100: #dcdcf8;
+    --mint-brand-500: #2b2bb5;
+    --mint-brand-700: #1a1a8a;
+
+    /* Neutrals */
+    --mint-neutral-50: #f7f9fc;
+    --mint-disabled: #c8d5ee;
+
+    /* Semantic */
+    --mint-success: #16a34a;
+    --mint-error: #dc2626;
+    --mint-warning: #d97706;
+    --mint-info: #2563eb;
+
+    /* ─────────────────────────────────────────
+       shadcn / Tailwind semantic tokens
+       ───────────────────────────────────────── */
+
+    --background: 210 33% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Mint Brand 500 — #2b2bb5 */
+    --primary: 240 61% 44%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Neutral secondary */
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Mint Brand 50 — #f0f0fd */
+    --accent: 240 69% 96%;
+    --accent-foreground: 240 68% 32%;
+
+    /* Muted */
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    /* Semantic destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders / inputs */
+    --border: 214 20% 88%;
+    --input: 214 20% 82%;
+
+    /* Mint Brand 500 */
+    --ring: 240 61% 44%;
+
+    /* Radius — Mint uses compact rounded controls */
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+      BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
     margin: 0;
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    min-width: 320px;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
 
-code {
-    font-family:
-        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
-}
+@layer components {
+  /* Shared Mint surface */
+  .mint-card {
+    @apply rounded-lg border bg-card;
+  }
 
-/* ---------- Work Sheet: Google Sheets look ---------- */
-.sheet-mode {
-    background: #fff;
-}
-.sheet-mode table {
-    border-collapse: collapse;
-    font-size: 12px;
-}
-.sheet-mode th,
-.sheet-mode td {
-    border: 1px solid #d0d7de;
-    padding: 0 !important;
-    height: 30px;
-    vertical-align: middle;
-}
-.sheet-mode thead th {
-    background: #dcfce7;
-    color: #14532d;
-    font-weight: 700;
-    padding: 6px 8px !important;
-    text-align: center;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    height: 34px;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-.sheet-mode thead th.row-num-head {
-    background: #f1f5f9;
-    color: #64748b;
-    min-width: 44px;
-    width: 44px;
-}
-.sheet-mode td.row-num {
-    background: #f8fafc;
-    color: #64748b;
-    font-size: 11px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    min-width: 44px;
-    width: 44px;
-    padding: 0 6px !important;
-    user-select: none;
-}
-.sheet-mode td.checkbox-cell {
-    background: #f8fafc;
-    text-align: center;
-    padding: 0 !important;
-    width: 34px;
-    min-width: 34px;
-}
-.sheet-mode td.checkbox-cell > * {
-    margin: 0 auto;
-}
-.sheet-mode td > input,
-.sheet-mode td > textarea {
-    border: 0 !important;
-    background: transparent !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    height: 30px !important;
-    min-height: 30px !important;
-    width: 100% !important;
-    padding: 4px 8px !important;
-    font-size: 12px !important;
-}
-.sheet-mode td > textarea {
-    resize: none;
-    line-height: 22px;
-    overflow: hidden;
-}
-.sheet-mode td button[role="combobox"] {
-    border: 0 !important;
-    background: transparent !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    height: 30px !important;
-    width: 100% !important;
-    padding: 4px 8px !important;
-    justify-content: space-between !important;
-    font-size: 12px !important;
-}
-.sheet-mode td:focus-within {
-    outline: 2px solid #2563eb;
-    outline-offset: -2px;
-    background: #fff;
-}
-.sheet-mode tbody tr:hover td:not(.row-num):not(.checkbox-cell) {
-    background: #f8fafc;
-}
-.sheet-mode .sheet-cell {
+  /* Shared section heading */
+  .mint-section-title {
+    @apply text-sm font-semibold text-foreground;
+  }
+
+  /* Shared muted helper text */
+  .mint-helper-text {
+    @apply text-xs text-muted-foreground;
+  }
+
+  /* ─────────────────────────────────────────
+     Work Sheet — spreadsheet cell treatment
+     ───────────────────────────────────────── */
+
+  .sheet-cell {
     position: relative;
-}
-.sheet-mode .sheet-cell-active {
-    outline: 2px solid #2563eb !important;
-    outline-offset: -2px;
-    z-index: 3;
-}
-.sheet-mode .sheet-cell-fill-range {
-    background: rgba(37, 99, 235, 0.08);
-    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.35);
-}
-.sheet-mode .sheet-fill-handle {
+    height: 40px;
+    padding: 4px 8px;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #eef0f4;
+    background: #ffffff;
+    vertical-align: middle;
+  }
+
+  .sheet-cell:hover {
+    background: #fafbff;
+  }
+
+  .sheet-cell-active {
+    background: #ffffff;
+    box-shadow: inset 0 0 0 2px #2b2bb5;
+    z-index: 2;
+  }
+
+  .sheet-cell-fill-range {
+    background: #f0f0fd;
+  }
+
+  .sheet-cell-fill-range.sheet-cell-active {
+    background: #f0f0fd;
+    box-shadow: inset 0 0 0 2px #2b2bb5;
+  }
+
+  .sheet-fill-handle {
     position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    background: #2b2bb5;
+    border: 1px solid #ffffff;
+    cursor: crosshair;
+    z-index: 5;
+  }
+
+  .sheet-fill-handle:hover {
+    width: 9px;
+    height: 9px;
     right: -4px;
     bottom: -4px;
-    width: 8px;
-    height: 8px;
-    background: #2563eb;
-    border: 1px solid white;
-    border-radius: 1px;
-    cursor: crosshair;
-    z-index: 20;
-}
-.sheet-mode .sheet-fill-handle:hover {
-    width: 10px;
-    height: 10px;
-    right: -5px;
-    bottom: -5px;
-}
-/* Status badge in cell */
-.sheet-mode td .cell-plain {
-    padding: 4px 8px;
-    font-size: 12px;
-    color: #475569;
-    white-space: nowrap;
+  }
+
+  .cell-plain {
+    display: block;
     overflow: hidden;
+    max-width: 100%;
+    white-space: nowrap;
     text-overflow: ellipsis;
-}
+    color: #334155;
+    font-size: 13px;
+    line-height: 32px;
+  }
 
+  .row-num {
+    width: 44px;
+    min-width: 44px;
+    padding: 0 8px;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #eef0f4;
+    background: #f7f9fc;
+    color: #94a3b8;
+    font-size: 11px;
+    text-align: center;
+    vertical-align: middle;
+  }
 
-@layer base {
-    :root {
-        --background: 210 25% 97%;
-        --foreground: 222 47% 11%;
-        --card: 0 0% 100%;
-        --card-foreground: 222 47% 11%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 222 47% 11%;
-        --primary: 173 62% 30%;
-        --primary-foreground: 0 0% 100%;
-        --secondary: 210 20% 93%;
-        --secondary-foreground: 222 47% 11%;
-        --muted: 210 20% 94%;
-        --muted-foreground: 215 16% 42%;
-        --accent: 173 40% 90%;
-        --accent-foreground: 173 70% 20%;
-        --destructive: 0 72% 51%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 214 20% 87%;
-        --input: 214 20% 87%;
-        --ring: 173 62% 35%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.6rem;
-    }
-    .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
-}
+  .sheet-mode tbody tr:hover .row-num {
+    color: #64748b;
+  }
 
-@layer base {
-    * {
-        @apply border-border;
-    }
-    body {
-        @apply bg-background text-foreground;
-    }
-}
+  .sheet-mode tbody tr:hover {
+    background: #fafbff;
+  }
 
-@layer base {
-    [data-debug-wrapper="true"] {
-        display: contents !important;
-    }
+  .sheet-mode .sheet-cell > input,
+  .sheet-mode .sheet-cell > textarea,
+  .sheet-mode .sheet-cell > button {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
 
-    [data-debug-wrapper="true"] > * {
-        margin-left: inherit;
-        margin-right: inherit;
-        margin-top: inherit;
-        margin-bottom: inherit;
-        padding-left: inherit;
-        padding-right: inherit;
-        padding-top: inherit;
-        padding-bottom: inherit;
-        column-gap: inherit;
-        row-gap: inherit;
-        gap: inherit;
-        border-left-width: inherit;
-        border-right-width: inherit;
-        border-top-width: inherit;
-        border-bottom-width: inherit;
-        border-left-color: inherit;
-        border-right-color: inherit;
-        border-top-color: inherit;
-        border-bottom-color: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
-    }
+  .sheet-mode .sheet-cell > input:hover,
+  .sheet-mode .sheet-cell > textarea:hover,
+  .sheet-mode .sheet-cell > button:hover {
+    border-color: #dcdcf8;
+    background: #fafbff;
+  }
+
+  .sheet-mode .sheet-cell-active > input,
+  .sheet-mode .sheet-cell-active > textarea,
+  .sheet-mode .sheet-cell-active > button {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .sheet-mode .sheet-cell-active > input:focus,
+  .sheet-mode .sheet-cell-active > textarea:focus,
+  .sheet-mode .sheet-cell-active > button:focus {
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .sheet-mode .sheet-cell > input:disabled,
+  .sheet-mode .sheet-cell > textarea:disabled,
+  .sheet-mode .sheet-cell > button:disabled {
+    opacity: 1;
+    cursor: default;
+    color: #475569;
+  }
+
+  .sheet-mode .sheet-cell > textarea {
+    line-height: 20px;
+  }
+
+  .sheet-mode .sheet-cell a {
+    color: #2b2bb5;
+    text-decoration: none;
+  }
+
+  .sheet-mode .sheet-cell a:hover {
+    color: #1a1a8a;
+    text-decoration: underline;
+  }
+
+  /* Keep status badges visually distinct from editable controls */
+  .sheet-mode .sheet-cell:last-child > button {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .sheet-mode .sheet-cell:last-child > button:hover {
+    background: transparent;
+  }
 }

@@ -5,7 +5,22 @@ import { WorkSheetRow } from "./WorkSheetRow";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 
-const COLUMNS = ["Date", "Project", "Deliverable", "Stage", "Deliverable Name", "Deliverable Link", "Type", "Category", "Version", "Time (min)", "Creator", "Reviewer", "Remarks", "Status"];
+const COLUMNS = [
+  "Date",
+  "Project",
+  "Deliverable",
+  "Stage",
+  "Deliverable Name",
+  "Deliverable Link",
+  "Type",
+  "Category",
+  "Version",
+  "Time (min)",
+  "Creator",
+  "Reviewer",
+  "Remarks",
+  "Status",
+];
 
 const FILL_FIELDS = {
   0: "work_date",
@@ -35,7 +50,7 @@ export const WorkSheetTable = ({
   onFill,
   selectedIds,
   onToggleSelect,
-  onToggleSelectAll
+  onToggleSelectAll,
 }) => {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -172,17 +187,32 @@ export const WorkSheetTable = ({
   }, [isFilling, fillState]);
 
   const isAdmin = currentUser.role === "admin";
-  const editableItems = items.filter((it) => canEditWorkItem(currentUser, it, users));
-  const allSelected = editableItems.length > 0 && selectedIds.length === editableItems.length;
-  const totalCols = COLUMNS.length + 2; // #, checkbox, cols
+  const editableItems = items.filter((it) =>
+    canEditWorkItem(currentUser, it, users)
+  );
+  const allSelected =
+    editableItems.length > 0 &&
+    selectedIds.length === editableItems.length;
+
+  const totalCols = COLUMNS.length + 2;
 
   return (
-    <div className="flex-1 overflow-auto sheet-mode">
-      <Table data-testid={WORKSHEET.table}>
+    <div className="flex-1 overflow-auto bg-white sheet-mode">
+      <Table
+        data-testid={WORKSHEET.table}
+        className="min-w-max border-collapse"
+      >
         <TableHeader>
-          <TableRow>
-            <TableHead className="row-num-head">#</TableHead>
-            <TableHead className="checkbox-cell">
+          <TableRow className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]">
+            <TableHead
+              className="row-num-head h-10 border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            >
+              #
+            </TableHead>
+
+            <TableHead
+              className="checkbox-cell h-10 border-r border-slate-200 px-3"
+            >
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
@@ -190,17 +220,43 @@ export const WorkSheetTable = ({
                 disabled={editableItems.length === 0}
               />
             </TableHead>
+
             {COLUMNS.map((c) => (
-              <TableHead key={c}>{c}</TableHead>
+              <TableHead
+                key={c}
+                className={[
+                  "h-10",
+                  "border-r border-slate-200",
+                  "px-3",
+                  "whitespace-nowrap",
+                  "text-[11px]",
+                  "font-semibold",
+                  "uppercase",
+                  "tracking-wide",
+                  "text-slate-500",
+                ].join(" ")}
+              >
+                {c}
+              </TableHead>
             ))}
           </TableRow>
         </TableHeader>
+
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <td colSpan={totalCols} data-testid={WORKSHEET.emptyState} className="py-16 text-center">
-                <p className="text-sm font-medium text-slate-700">No work items yet</p>
-                <p className="text-xs text-slate-500">Add a row to start logging work.</p>
+              <td
+                colSpan={totalCols}
+                data-testid={WORKSHEET.emptyState}
+                className="py-16 text-center"
+              >
+                <p className="text-sm font-medium text-slate-700">
+                  No work items yet
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Add a row to start logging work.
+                </p>
               </td>
             </TableRow>
           ) : (

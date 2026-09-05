@@ -106,6 +106,7 @@ export const WorkSheetRow = ({
   return (
     <TableRow
       data-testid={`worksheet-row-${item.id}`}
+      className="group"
       onPointerEnter={() => {
         if (fillState) {
           onFillHover?.(index);

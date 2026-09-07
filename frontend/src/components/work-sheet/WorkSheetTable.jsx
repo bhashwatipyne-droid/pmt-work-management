@@ -5,7 +5,6 @@ import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table"
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
 import { WORKSHEET } from "@/constants/testIds";
-import { canEditWorkItem } from "@/lib/worksheetPermissions";
 
 const COLUMNS = [
   "Date",
@@ -385,14 +384,14 @@ export const WorkSheetTable = ({
     (sortedTableItems.length - visibleEnd) * ROW_HEIGHT
   );
 
-  const isAdmin = currentUser.role === "admin";
-  const editableItems = useMemo(
-    () => items.filter((item) => canEditWorkItem(currentUser, item, users)),
-    [items, currentUser, users]
+  const allVisibleIds = useMemo(
+    () => sortedTableItems.map((item) => item.id),
+    [sortedTableItems]
   );
 
   const allSelected =
-    editableItems.length > 0 && selectedIds.length === editableItems.length;
+    allVisibleIds.length > 0 &&
+    allVisibleIds.every((id) => selectedSet.has(id));
 
   const totalCols = COLUMNS.length + 3; // #, checkbox, Actions
 
@@ -417,7 +416,7 @@ export const WorkSheetTable = ({
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
                 onCheckedChange={onToggleSelectAll}
-                disabled={editableItems.length === 0}
+                disabled={allVisibleIds.length === 0}
               />
             </TableHead>
 
@@ -560,19 +559,9 @@ export const WorkSheetTable = ({
                           : [...current, rowId]
                       );
 
-                      // NOTE: onToggleSelect in the current WorkSheetPage
-                      // implementation only accepts a single `id` argument
-                      // (it flips selection state rather than setting it
-                      // explicitly). Passing a second `false` argument here
-                      // is a no-op today — if the row was already selected,
-                      // calling onToggleSelect(rowId) will toggle it OFF as
-                      // intended, but if it was NOT selected, this call does
-                      // nothing (which is fine, since an unselected row has
-                      // nothing to clear). This only becomes a real problem
-                      // if onToggleSelect's signature changes to something
-                      // that doesn't toggle. Flagging per your note — not
-                      // touching WorkSheetPage.jsx yet.
-                      onToggleSelect(rowId, false);
+                      if (selectedSet.has(rowId)) {
+                        onToggleSelect(rowId);
+                      }
                     }}
                   />
                 );

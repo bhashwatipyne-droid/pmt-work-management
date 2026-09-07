@@ -25,7 +25,6 @@ import { History } from "lucide-react";
 import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
-import { canEditWorkItem } from "@/lib/worksheetPermissions";
 
 const emptyFilters = {
   search: "",
@@ -63,6 +62,7 @@ export default function WorkSheetPage() {
   const [deliverables, setDeliverables] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkAdding, setBulkAdding] = useState(false);
@@ -148,6 +148,17 @@ export default function WorkSheetPage() {
     setSelectedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, filters, activeSheet]);
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const dateA = a.work_date || "";
+      const dateB = b.work_date || "";
+
+      return sortDirection === "desc"
+        ? dateB.localeCompare(dateA)
+        : dateA.localeCompare(dateB);
+    });
+  }, [items, sortDirection]);
 
   const activeFilterCount =
     Number(Boolean(filters.date_from || filters.date_to)) +
@@ -350,9 +361,24 @@ export default function WorkSheetPage() {
 
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
   const toggleSelectAll = () => {
-    const editableIds = items.filter((it) => canEditWorkItem(currentUser, it, users)).map((it) => it.id);
-    setSelectedIds((prev) => (prev.length === editableIds.length ? [] : editableIds));
+    const visibleIds = items.map((item) => item.id);
+
+    setSelectedIds((prev) => {
+      const allSelected =
+        visibleIds.length > 0 &&
+        visibleIds.every((id) => prev.includes(id));
+
+      if (allSelected) {
+        return prev.filter((id) => !visibleIds.includes(id));
+      }
+
+      return [...new Set([...prev, ...visibleIds])];
+    });
   };
+
+  const handleDateSort = useCallback(() => {
+    setSortDirection((current) => (current === "desc" ? "asc" : "desc"));
+  }, []);
 
   const handleBulkStatus = async (status) => {
     try {
@@ -489,7 +515,7 @@ export default function WorkSheetPage() {
         </div>
       ) : (
         <WorkSheetTable
-          items={items}
+          items={sortedItems}
           currentUser={currentUser}
           users={users}
           options={options}
@@ -501,6 +527,8 @@ export default function WorkSheetPage() {
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
+          onDateSort={handleDateSort}
+          sortDirection={sortDirection}
         />
       )}
 

@@ -36,6 +36,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onFillHover,
     onFillEnd,
     selection,
+    hiddenColumns = [],
   } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
@@ -64,6 +65,30 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
   const projectDeliverables = deliverablesByProject[item.project_id] || [];
+
+  const isColumnHidden = (column) =>
+    hiddenColumns.includes(column);
+
+  const COLUMN_NAMES = {
+    0: "Date",
+    1: "Project",
+    2: "Deliverable",
+    3: "Stage",
+    4: "Deliverable Name",
+    5: "Deliverable Link",
+    6: "Type",
+    7: "Category",
+    8: "Version",
+    9: "Time (min)",
+    10: "Creator",
+    11: "Reviewer",
+    12: "Remarks",
+    13: "Status",
+  };
+
+  const cellStyle = (col) => ({
+    display: isColumnHidden(COLUMN_NAMES[col]) ? "none" : undefined,
+  });
 
   // Lazy dropdown lists (below) only mount SelectItems for the open dropdown,
   // which keeps 700+ project/deliverable options from turning into tens of
@@ -157,7 +182,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           onCheckedChange={() => onToggleSelect(item.id)}
         />
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(0)}
+        className={[
           "sheet-cell",
           isCellActive(0) && "sheet-cell-active",
           isCellInFillRange(0) && "sheet-cell-fill-range",
@@ -176,7 +203,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
         {renderFillHandle(0)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(1)}
+        className={[
           "sheet-cell",
           isCellActive(1) && "sheet-cell-active",
           isCellInFillRange(1) && "sheet-cell-fill-range",
@@ -214,7 +243,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         </Select>
         {renderFillHandle(1)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(2)}
+        className={[
           "sheet-cell",
           isCellActive(2) && "sheet-cell-active",
           isCellInFillRange(2) && "sheet-cell-fill-range",
@@ -246,7 +277,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         </Select>
         {renderFillHandle(2)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(3)}
+        className={[
           "sheet-cell",
           isCellActive(3) && "sheet-cell-active",
           isCellInFillRange(3) && "sheet-cell-fill-range",
@@ -276,7 +309,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         </Select>
         {renderFillHandle(3)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(4)}
+        className={[
           "sheet-cell",
           isCellActive(4) && "sheet-cell-active",
           isCellInFillRange(4) && "sheet-cell-fill-range",
@@ -298,7 +333,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(4)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(5)}
+        className={[
           "sheet-cell",
           isCellActive(5) && "sheet-cell-active",
           isCellInFillRange(5) && "sheet-cell-fill-range",
@@ -324,7 +361,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(5)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(6)}
+        className={[
           "sheet-cell",
           isCellActive(6) && "sheet-cell-active",
           isCellInFillRange(6) && "sheet-cell-fill-range",
@@ -366,7 +405,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(6)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(7)}
+        className={[
           "sheet-cell",
           isCellActive(7) && "sheet-cell-active",
           isCellInFillRange(7) && "sheet-cell-fill-range",
@@ -381,7 +422,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         </span>
         {renderFillHandle(7)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(8)}
+        className={[
           "sheet-cell",
           isCellActive(8) && "sheet-cell-active",
           isCellInFillRange(8) && "sheet-cell-fill-range",
@@ -400,7 +443,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
         {renderFillHandle(8)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(9)}
+        className={[
           "sheet-cell",
           isCellActive(9) && "sheet-cell-active",
           isCellInFillRange(9) && "sheet-cell-fill-range",
@@ -421,7 +466,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
         {renderFillHandle(9)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(10)}
+        className={[
           "sheet-cell",
           isCellActive(10) && "sheet-cell-active",
           isCellInFillRange(10) && "sheet-cell-fill-range",
@@ -455,7 +502,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(10)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(11)}
+        className={[
           "sheet-cell",
           isCellActive(11) && "sheet-cell-active",
           isCellInFillRange(11) && "sheet-cell-fill-range",
@@ -490,7 +539,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(11)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(12)}
+        className={[
           "sheet-cell",
           isCellActive(12) && "sheet-cell-active",
           isCellInFillRange(12) && "sheet-cell-fill-range",
@@ -509,7 +560,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
         {renderFillHandle(12)}
       </TableCell>
-      <TableCell className={[
+      <TableCell
+        style={cellStyle(13)}
+        className={[
           "sheet-cell",
           isCellActive(13) && "sheet-cell-active",
           isCellInFillRange(13) && "sheet-cell-fill-range",

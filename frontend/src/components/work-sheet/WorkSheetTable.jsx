@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ } from "lucide-react";
+import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -40,6 +41,23 @@ const FILL_FIELDS = {
   13: "status",
 };
 
+const COLUMN_FIELDS = {
+  Date: "work_date",
+  Project: "project_id",
+  Deliverable: "deliverable_id",
+  Stage: "stage",
+  "Deliverable Name": "deliverable_name",
+  "Deliverable Link": "deliverable_link",
+  Type: "deliverable_type",
+  Category: "work_category",
+  Version: "version",
+  "Time (min)": "time_taken_minutes",
+  Creator: "creator_id",
+  Reviewer: "reviewer_id",
+  Remarks: "remarks",
+  Status: "status",
+};
+
 // The worksheet is intentionally virtualized without adding a new dependency.
 // Only the visible rows + a small overscan buffer are mounted in the DOM.
 const ROW_HEIGHT = 40;
@@ -54,8 +72,6 @@ export const WorkSheetTable = ({
   projects,
   deliverables,
   onUpdate,
-  onDateSort,
-  sortDirection,
   onDelete,
   onFill,
   selectedIds,
@@ -64,15 +80,35 @@ export const WorkSheetTable = ({
 }) => {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [columnSort, setColumnSort] = useState({
+    key: null,
+    direction: "asc",
+  });
+  const [hiddenColumns, setHiddenColumns] = useState(() => {
+    try {
+      const saved = localStorage.getItem("worksheet_hidden_columns");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [fillState, setFillState] = useState(null);
   const [isFilling, setIsFilling] = useState(false);
 
   const scrollRef = useRef(null);
   const fillStateRef = useRef(null);
   const itemsRef = useRef(items);
+  const sortedItemsRef = useRef(items);
   const onFillRef = useRef(onFill);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "worksheet_hidden_columns",
+      JSON.stringify(hiddenColumns)
+    );
+  }, [hiddenColumns]);
 
   // Pre-index data once instead of doing a full .filter() inside every row.
   const deliverablesByProject = useMemo(() => {
@@ -113,10 +149,74 @@ export const WorkSheetTable = ({
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
+  const getSortValue = useCallback(
+    (item, column) => {
+      const field = COLUMN_FIELDS[column];
+
+      if (!field) return "";
+
+      let value = item[field];
+
+      if (column === "Project") {
+        value = projects.find((p) => p.id === item.project_id)?.name || "";
+      }
+
+      if (column === "Deliverable") {
+        value =
+          deliverables.find((d) => d.id === item.deliverable_id)?.name || "";
+      }
+
+      if (column === "Creator") {
+        value = usersById[item.creator_id]?.name || "";
+      }
+
+      if (column === "Reviewer") {
+        value = usersById[item.reviewer_id]?.name || "";
+      }
+
+      if (value === null || value === undefined) return "";
+
+      return value;
+    },
+    [projects, deliverables, usersById]
+  );
+
+  const sortedTableItems = useMemo(() => {
+    if (!columnSort.key) {
+      return items;
+    }
+
+    const sorted = [...items];
+
+    sorted.sort((a, b) => {
+      const aValue = getSortValue(a, columnSort.key);
+      const bValue = getSortValue(b, columnSort.key);
+
+      if (typeof aValue === "number" && typeof bValue === "number") {
+        return columnSort.direction === "asc"
+          ? aValue - bValue
+          : bValue - aValue;
+      }
+
+      return columnSort.direction === "asc"
+        ? String(aValue).localeCompare(String(bValue), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          })
+        : String(bValue).localeCompare(String(aValue), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+    });
+
+    return sorted;
+  }, [items, columnSort, getSortValue]);
+
   useEffect(() => {
     itemsRef.current = items;
+    sortedItemsRef.current = sortedTableItems;
     onFillRef.current = onFill;
-  }, [items, onFill]);
+  }, [items, sortedTableItems, onFill]);
 
   const handleCellSelect = useCallback(({ row, col }) => {
     setActiveCell({ row, col });
@@ -174,7 +274,7 @@ export const WorkSheetTable = ({
     if (!current || current.targetRow <= current.sourceRow) return;
 
     const field = FILL_FIELDS[current.sourceCol];
-    const currentItems = itemsRef.current;
+    const currentItems = sortedItemsRef.current;
     const sourceItem = currentItems[current.sourceRow - 1];
 
     if (!field || !sourceItem) return;
@@ -254,15 +354,15 @@ export const WorkSheetTable = ({
   );
 
   const visibleEnd = Math.min(
-    items.length,
+    sortedTableItems.length,
     Math.ceil((bodyScrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
   );
 
-  const visibleItems = items.slice(visibleStart, visibleEnd);
+  const visibleItems = sortedTableItems.slice(visibleStart, visibleEnd);
   const topSpacerHeight = visibleStart * ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(
     0,
-    (items.length - visibleEnd) * ROW_HEIGHT
+    (sortedTableItems.length - visibleEnd) * ROW_HEIGHT
   );
 
   const isAdmin = currentUser.role === "admin";
@@ -301,35 +401,76 @@ export const WorkSheetTable = ({
               />
             </TableHead>
 
-            {COLUMNS.map((column) => (
-              <TableHead
-                key={column}
-                className="h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
-              >
-                {column === "Date" ? (
-                  <button
-                    type="button"
-                    onClick={onDateSort}
-                    className="inline-flex items-center gap-1.5 rounded px-1 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                    title={
-                      sortDirection === "desc"
-                        ? "Sort oldest to newest"
-                        : "Sort newest to oldest"
-                    }
-                  >
-                    <span>Date</span>
+            {COLUMNS.map((column) => {
+              const isHidden = hiddenColumns.includes(column);
+              const isSorted = columnSort.key === column;
 
-                    {sortDirection === "desc" ? (
-                      <ArrowDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                ) : (
-                  column
-                )}
-              </TableHead>
-            ))}
+              return (
+                <TableHead
+                  key={column}
+                  style={{ display: isHidden ? "none" : undefined }}
+                  className="h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setColumnSort((current) => {
+                          if (current.key !== column) {
+                            return {
+                              key: column,
+                              direction: "asc",
+                            };
+                          }
+
+                          return {
+                            key: column,
+                            direction:
+                              current.direction === "asc" ? "desc" : "asc",
+                          };
+                        });
+                      }}
+                      className="inline-flex min-w-0 items-center gap-1 rounded px-1 py-1 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      <span className="truncate">{column}</span>
+
+                      {isSorted &&
+                        (columnSort.direction === "asc" ? (
+                          <ArrowUpAZ className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <ArrowDownAZ className="h-3.5 w-3.5 shrink-0" />
+                        ))}
+                    </button>
+
+                    <WorksheetColumnMenu
+                      column={column}
+                      onSortAsc={() =>
+                        setColumnSort({
+                          key: column,
+                          direction: "asc",
+                        })
+                      }
+                      onSortDesc={() =>
+                        setColumnSort({
+                          key: column,
+                          direction: "desc",
+                        })
+                      }
+                      onFilter={() => {
+                        // We'll wire this to the global filter panel next.
+                      }}
+                      onHide={() =>
+                        setHiddenColumns((current) =>
+                          current.includes(column)
+                            ? current
+                            : [...current, column]
+                        )
+                      }
+                    />
+                  </div>
+                </TableHead>
+              );
+            })}
 
             <TableHead className="h-10 w-[52px] border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Actions
@@ -338,7 +479,7 @@ export const WorkSheetTable = ({
         </TableHeader>
 
         <TableBody>
-          {items.length === 0 ? (
+          {sortedTableItems.length === 0 ? (
             <TableRow>
               <td
                 colSpan={totalCols}
@@ -389,6 +530,7 @@ export const WorkSheetTable = ({
                     deliverablesByProject={deliverablesByProject}
                     onUpdate={onUpdate}
                     onDelete={onDelete}
+                    hiddenColumns={hiddenColumns}
                     selected={selectedSet.has(item.id)}
                     onToggleSelect={onToggleSelect}
                   />

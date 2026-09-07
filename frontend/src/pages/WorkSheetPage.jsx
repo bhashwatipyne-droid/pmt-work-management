@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "@/context/UserContext";
 import {
   bulkDeleteWorkItems,
@@ -43,6 +43,7 @@ export default function WorkSheetPage() {
   const [projects, setProjects] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
+  const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkAdding, setBulkAdding] = useState(false);
@@ -89,6 +90,17 @@ export default function WorkSheetPage() {
     setSelectedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, filters, activeSheet]);
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const dateA = a.work_date || "";
+      const dateB = b.work_date || "";
+
+      return sortDirection === "desc"
+        ? dateB.localeCompare(dateA)
+        : dateA.localeCompare(dateB);
+    });
+  }, [items, sortDirection]);
 
   const handleAddRow = async () => {
     try {
@@ -284,6 +296,10 @@ export default function WorkSheetPage() {
     setSelectedIds((prev) => (prev.length === editableIds.length ? [] : editableIds));
   };
 
+  const handleDateSort = useCallback(() => {
+    setSortDirection((current) => (current === "desc" ? "asc" : "desc"));
+  }, []);
+
   const handleBulkStatus = async (status) => {
     try {
       const updated = await bulkUpdateWorkItems(currentUser.id, selectedIds, { status });
@@ -406,7 +422,7 @@ export default function WorkSheetPage() {
         </div>
       ) : (
         <WorkSheetTable
-          items={items}
+          items={sortedItems}
           currentUser={currentUser}
           users={users}
           options={options}
@@ -418,6 +434,8 @@ export default function WorkSheetPage() {
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
+          onDateSort={handleDateSort}
+          sortDirection={sortDirection}
         />
       )}
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -53,6 +54,8 @@ export const WorkSheetTable = ({
   projects,
   deliverables,
   onUpdate,
+  onDateSort,
+  sortDirection,
   onDelete,
   onFill,
   selectedIds,
@@ -303,7 +306,28 @@ export const WorkSheetTable = ({
                 key={column}
                 className="h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
               >
-                {column}
+                {column === "Date" ? (
+                  <button
+                    type="button"
+                    onClick={onDateSort}
+                    className="inline-flex items-center gap-1.5 rounded px-1 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                    title={
+                      sortDirection === "desc"
+                        ? "Sort oldest to newest"
+                        : "Sort newest to oldest"
+                    }
+                  >
+                    <span>Date</span>
+
+                    {sortDirection === "desc" ? (
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                ) : (
+                  column
+                )}
               </TableHead>
             ))}
 

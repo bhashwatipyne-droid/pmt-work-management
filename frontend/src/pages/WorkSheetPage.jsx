@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@/context/UserContext";
 import {
   bulkDeleteWorkItems,
@@ -53,8 +53,13 @@ export default function WorkSheetPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const bulkAddingRef = useRef(false);
+  const itemsRef = useRef(items);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   useEffect(() => { getOptions().then(setOptions); }, []);
 
@@ -141,8 +146,12 @@ export default function WorkSheetPage() {
     }
   };
 
-  const handleUpdate = async (id, patch) => {
-    const previous = items.find((item) => item.id === id);
+  // Wrapped in useCallback so its reference is stable across WorkSheetPage
+  // re-renders (which happen on every edit via setItems). Reads the revert
+  // snapshot from itemsRef instead of closing over `items`, so `items` can
+  // safely stay out of the dependency array.
+  const handleUpdate = useCallback(async (id, patch) => {
+    const previous = itemsRef.current.find((item) => item.id === id);
 
     // Optimistic update — exactly one React state update.
     setItems((prev) =>
@@ -182,7 +191,7 @@ export default function WorkSheetPage() {
         e.response?.data?.detail || "Update failed"
       );
     }
-  };
+  }, [currentUser]);
 
   const handleDelete = async (item) => {
     if (!item?.id) return;
@@ -205,10 +214,13 @@ export default function WorkSheetPage() {
     }
   };
 
-  const handleFill = async (targetIds, field, value) => {
+  // Wrapped in useCallback for the same reason as handleUpdate — stable
+  // identity, snapshot read from itemsRef rather than the closed-over
+  // `items` state.
+  const handleFill = useCallback(async (targetIds, field, value) => {
     if (!targetIds.length || !field) return;
 
-    const previous = items
+    const previous = itemsRef.current
       .filter((item) => targetIds.includes(item.id))
       .map((item) => ({
         id: item.id,
@@ -263,7 +275,7 @@ export default function WorkSheetPage() {
       );
       throw e;
     }
-  };
+  }, [currentUser]);
 
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
   const toggleSelectAll = () => {

@@ -40,6 +40,8 @@ export const WorkSheetRow = memo(function WorkSheetRow({
   const isElevated = !isMember;
   const canEditRow = canEditWorkItem(currentUser, item, users);
   const canEditExtra = isElevated && canEditRow;
+  const [openSelect, setOpenSelect] = useState(null);
+
   const [local, setLocal] = useState({
     deliverable_name: item.deliverable_name,
     deliverable_link: item.deliverable_link,
@@ -61,6 +63,23 @@ export const WorkSheetRow = memo(function WorkSheetRow({
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
   const projectDeliverables = deliverablesByProject[item.project_id] || [];
+
+  // Lazy dropdown lists (below) only mount SelectItems for the open dropdown,
+  // which keeps 700+ project/deliverable options from turning into tens of
+  // thousands of React elements across all mounted rows. But Radix's
+  // SelectValue normally resolves its displayed text by finding the matching
+  // SelectItem in the tree — if that item was never mounted (row never
+  // opened, or scrolled out and remounted by virtualization), it silently
+  // falls back to the placeholder instead of showing the saved value. So for
+  // every lazy dropdown we pass the label to SelectValue explicitly instead
+  // of relying on that lookup.
+  const projectName = item.project_id
+    ? projects.find((p) => p.id === item.project_id)?.name
+    : undefined;
+
+  const deliverableName = item.deliverable_id
+    ? projectDeliverables.find((d) => d.id === item.deliverable_id)?.name
+    : undefined;
 
   const sheetCell = (col) => ({
     "data-sheet-cell": true,
@@ -164,6 +183,8 @@ export const WorkSheetRow = memo(function WorkSheetRow({
           .filter(Boolean)
           .join(" ")}>
         <Select
+          open={openSelect === "project"}
+          onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
           value={item.project_id || NONE_VALUE}
           onValueChange={(v) => {
             const nextId = v === NONE_VALUE ? null : v;
@@ -179,11 +200,13 @@ export const WorkSheetRow = memo(function WorkSheetRow({
             data-testid={`worksheet-project-select-${item.id}`}
             className="h-8 w-[160px]"
           >
-            <SelectValue placeholder="Project" />
+            <SelectValue placeholder="Project">
+              {item.project_id ? (projectName ?? "Project") : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {projects.map((p) => (
+            {openSelect === "project" && projects.map((p) => (
               <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
             ))}
           </SelectContent>
@@ -198,6 +221,8 @@ export const WorkSheetRow = memo(function WorkSheetRow({
           .filter(Boolean)
           .join(" ")}>
         <Select
+          open={openSelect === "deliverable"}
+          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
           value={item.deliverable_id || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
           disabled={!canEditRow || !item.project_id}
@@ -207,11 +232,13 @@ export const WorkSheetRow = memo(function WorkSheetRow({
             data-testid={`worksheet-deliverable-select-${item.id}`}
             className="h-8 w-[160px]"
           >
-            <SelectValue placeholder={item.project_id ? "Deliverable" : "—"} />
+            <SelectValue placeholder={item.project_id ? "Deliverable" : "—"}>
+              {item.deliverable_id ? (deliverableName ?? "Deliverable") : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {projectDeliverables.map((d) => (
+            {openSelect === "deliverable" && projectDeliverables.map((d) => (
               <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
             ))}
           </SelectContent>
@@ -226,6 +253,8 @@ export const WorkSheetRow = memo(function WorkSheetRow({
           .filter(Boolean)
           .join(" ")}>
         <Select
+          open={openSelect === "stage"}
+          onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
           value={item.stage || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
           disabled={!canEditRow}
@@ -303,6 +332,8 @@ export const WorkSheetRow = memo(function WorkSheetRow({
           .join(" ")}>
         {canEditExtra ? (
           <Select
+            open={openSelect === "type"}
+            onOpenChange={(open) => setOpenSelect(open ? "type" : null)}
             value={item.deliverable_type || undefined}
             onValueChange={(v) => {
               const category =
@@ -319,10 +350,12 @@ export const WorkSheetRow = memo(function WorkSheetRow({
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
               className="h-8 w-[150px]"
             >
-              <SelectValue placeholder="Type" />
+              <SelectValue placeholder="Type">
+                {item.deliverable_type || undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {options.deliverable_types?.map((t) => (
+              {openSelect === "type" && options.deliverable_types?.map((t) => (
                 <SelectItem key={t} value={t}>{t}</SelectItem>
               ))}
             </SelectContent>
@@ -395,16 +428,23 @@ export const WorkSheetRow = memo(function WorkSheetRow({
           .filter(Boolean)
           .join(" ")}>
         {canEditExtra ? (
-          <Select value={item.creator_id || undefined} onValueChange={(v) => onUpdate(item.id, { creator_id: v })}>
+          <Select
+            open={openSelect === "creator"}
+            onOpenChange={(open) => setOpenSelect(open ? "creator" : null)}
+            value={item.creator_id || undefined}
+            onValueChange={(v) => onUpdate(item.id, { creator_id: v })}
+          >
             <SelectTrigger
               {...sheetCell(10)}
               data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
               className="h-8 w-[140px]"
             >
-              <SelectValue placeholder="Creator" />
+              <SelectValue placeholder="Creator">
+                {item.creator_id ? nameOf(item.creator_id) : undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {nonAdminUsers.map((u) => (
+              {openSelect === "creator" && nonAdminUsers.map((u) => (
                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
               ))}
             </SelectContent>
@@ -423,6 +463,8 @@ export const WorkSheetRow = memo(function WorkSheetRow({
           .join(" ")}>
         {canEditRow ? (
           <Select
+            open={openSelect === "reviewer"}
+            onOpenChange={(open) => setOpenSelect(open ? "reviewer" : null)}
             value={item.reviewer_id || NONE_VALUE}
             onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
           >
@@ -431,11 +473,13 @@ export const WorkSheetRow = memo(function WorkSheetRow({
               data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
               className="h-8 w-[140px]"
             >
-              <SelectValue placeholder="Reviewer" />
+              <SelectValue placeholder="Reviewer">
+                {item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE_VALUE}>Unassigned</SelectItem>
-              {reviewerUsers.map((u) => (
+              {openSelect === "reviewer" && reviewerUsers.map((u) => (
                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
               ))}
             </SelectContent>
@@ -471,7 +515,13 @@ export const WorkSheetRow = memo(function WorkSheetRow({
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Select value={item.status} onValueChange={(v) => onUpdate(item.id, { status: v })} disabled={!canEditRow}>
+        <Select
+          open={openSelect === "status"}
+          onOpenChange={(open) => setOpenSelect(open ? "status" : null)}
+          value={item.status}
+          onValueChange={(v) => onUpdate(item.id, { status: v })}
+          disabled={!canEditRow}
+        >
           <SelectTrigger
             {...sheetCell(13)}
             data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
@@ -482,7 +532,7 @@ export const WorkSheetRow = memo(function WorkSheetRow({
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {options.statuses?.map((s) => (
+            {openSelect === "status" && options.statuses?.map((s) => (
               <SelectItem key={s} value={s} disabled={!allowedStatuses?.includes(s)}>
                 {s}
               </SelectItem>

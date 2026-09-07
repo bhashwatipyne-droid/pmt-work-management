@@ -9,7 +9,6 @@ import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
-import { cn } from "@/lib/utils";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
@@ -158,12 +157,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   return (
     <TableRow
       data-testid={`worksheet-row-${item.id}`}
-      className={cn(
-        "group",
+      className={
         selected
-          ? "bg-blue-50 hover:bg-blue-100"
-          : "hover:bg-slate-50"
-      )}
+          ? "group bg-blue-50 hover:bg-blue-100 [&>td]:!bg-blue-50"
+          : "group hover:bg-slate-50"
+      }
       onPointerEnter={() => {
         if (fillState) {
           onFillHover?.(index);
@@ -181,16 +179,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       }}
     >
       <TableCell
-        className={`row-num cursor-pointer select-none text-center ${
-          selected
-            ? "bg-blue-100 text-blue-700 font-semibold"
-            : "text-slate-500"
+        className={`row-num cursor-pointer select-none ${
+          selected ? "bg-blue-100 text-blue-700 font-semibold" : ""
         }`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleSelect(item.id);
-        }}
-        title={selected ? "Deselect row" : "Select row"}
+        onClick={() => onToggleSelect(item.id)}
       >
         {index}
       </TableCell>

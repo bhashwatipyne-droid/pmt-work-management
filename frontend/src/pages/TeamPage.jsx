@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Pencil } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
 import {
@@ -13,9 +13,6 @@ import { TEAM } from "@/constants/testIds";
 
 const inputBase =
   "w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20";
-
-const smallSelectBase =
-  "rounded-md border border-input bg-white px-2.5 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15";
 
 const labelBase =
   "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
@@ -253,6 +250,272 @@ const AddMemberModal = ({
   );
 };
 
+const EditMemberModal = ({
+  member,
+  onClose,
+  onSaved,
+  options,
+}) => {
+  const { currentUserId } = useUser();
+
+  const [name, setName] = useState(member?.name || "");
+  const [username, setUsername] = useState(
+    member?.username || ""
+  );
+  const [email, setEmail] = useState(
+    member?.email || ""
+  );
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState(
+    member?.role || "member"
+  );
+  const [department, setDepartment] = useState(
+    member?.department || ""
+  );
+  const [active, setActive] = useState(
+    member?.active !== false
+  );
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!member) return null;
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      return toast.error("Name required");
+    }
+
+    if (!username.trim()) {
+      return toast.error("Username required");
+    }
+
+    if (!email.trim()) {
+      return toast.error("Email required");
+    }
+
+    if (password && password.length < 8) {
+      return toast.error(
+        "Password must be at least 8 characters"
+      );
+    }
+
+    setSubmitting(true);
+
+    try {
+      const payload = {
+        name: name.trim(),
+        username: username.trim(),
+        email: email.trim(),
+        role,
+        department,
+        active,
+      };
+
+      if (password) {
+        payload.password = password;
+      }
+
+      const updated = await updateUser(
+        currentUserId,
+        member.id,
+        payload
+      );
+
+      onSaved?.(updated);
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail ||
+          "Failed to update team member"
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">
+              Edit Team Member
+            </h2>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Update account and access details.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Name
+            </label>
+
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={inputBase}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Username
+            </label>
+
+            <input
+              value={username}
+              onChange={(e) =>
+                setUsername(e.target.value)
+              }
+              className={inputBase}
+              autoComplete="username"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Email
+            </label>
+
+            <input
+              type="email"
+              value={email}
+              onChange={(e) =>
+                setEmail(e.target.value)
+              }
+              className={inputBase}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Password
+            </label>
+
+            <input
+              type="password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
+              className={inputBase}
+              placeholder="Leave blank to keep current password"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Role
+              </label>
+
+              <select
+                value={role}
+                onChange={(e) =>
+                  setRole(e.target.value)
+                }
+                className={inputBase}
+              >
+                {(options.roles || [
+                  "admin",
+                  "manager",
+                  "member",
+                ]).map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Department
+              </label>
+
+              <select
+                value={department}
+                onChange={(e) =>
+                  setDepartment(e.target.value)
+                }
+                className={inputBase}
+              >
+                {(options.departments || []).map(
+                  (d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Status
+            </label>
+
+            <select
+              value={active ? "active" : "inactive"}
+              onChange={(e) =>
+                setActive(e.target.value === "active")
+              }
+              className={inputBase}
+            >
+              <option value="active">
+                Active
+              </option>
+
+              <option value="inactive">
+                Inactive
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {submitting
+              ? "Saving..."
+              : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function TeamPage() {
   const {
     currentUser,
@@ -265,8 +528,8 @@ export default function TeamPage() {
     departments: [],
     roles: [],
   });
-  const [pending, setPending] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
 
   const fetchAll = async () => {
     const [u, o] = await Promise.all([
@@ -284,47 +547,17 @@ export default function TeamPage() {
     }
   }, [currentUser?.role]);
 
-  const setField = (id, key, value) =>
-    setPending((prev) => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        [key]: value,
-      },
-    }));
+  const handleEditSave = async (updatedMember) => {
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === updatedMember.id
+          ? updatedMember
+          : m
+      )
+    );
 
-  const handleSave = async (member) => {
-    const patch = pending[member.id] || {};
-
-    if (Object.keys(patch).length === 0) {
-      return toast("Nothing to save");
-    }
-
-    try {
-      const updated = await updateUser(
-        currentUserId,
-        member.id,
-        patch
-      );
-
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.id === member.id ? updated : m
-        )
-      );
-
-      setPending((prev) => {
-        const n = { ...prev };
-        delete n[member.id];
-        return n;
-      });
-
-      toast.success(`Saved ${updated.name}`);
-    } catch (err) {
-      toast.error(
-        err?.response?.data?.detail || "Save failed"
-      );
-    }
+    setEditingMember(null);
+    toast.success(`Saved ${updatedMember.name}`);
   };
 
   const roster = useMemo(
@@ -416,124 +649,61 @@ export default function TeamPage() {
           >
             <thead>
               <tr className="border-b border-border bg-[#f7f9fc] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-3">
-                  Name
-                </th>
-
-                <th className="px-3 py-3">
-                  Email ID
-                </th>
-
-                <th className="px-3 py-3">
-                  Department
-                </th>
-
-                <th className="px-3 py-3">
-                  Role
-                </th>
-
-                <th className="px-3 py-3">
-                  Status
-                </th>
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Username</th>
+                <th className="py-2 pr-4">Email ID</th>
+                <th className="py-2 pr-4">Department</th>
+                <th className="py-2 pr-4">Role</th>
+                <th className="py-2 pr-4">Status</th>
               </tr>
             </thead>
 
             <tbody>
               {roster.map((m) => {
-                const p = pending[m.id] || {};
-                const dept =
-                  p.department ?? (m.department || "");
-                const role = p.role ?? m.role;
-                const dirty = Object.keys(p).length > 0;
-
                 return (
                   <tr
                     key={m.id}
                     data-testid={`${TEAM.rowPrefix}-${m.id}`}
                     className="border-b border-border last:border-0 transition-colors hover:bg-[#fafbff]"
                   >
-                    <td className="px-3 py-3.5">
-                      <div className="font-medium text-foreground">
-                        {m.name}
-                      </div>
+                    <td className="py-3 pr-4 font-semibold text-slate-900">
+                      {m.name}
                     </td>
 
-                    <td className="px-3 py-3.5 text-sm text-muted-foreground">
+                    <td className="py-3 pr-4 text-slate-600">
+                      {m.username || "—"}
+                    </td>
+
+                    <td className="py-3 pr-4 text-sm text-muted-foreground">
                       {m.email || "—"}
                     </td>
 
-                    <td className="px-3 py-3.5">
-                      <select
-                        data-testid={`${TEAM.deptSelectPrefix}-${m.id}`}
-                        value={dept}
-                        onChange={(e) =>
-                          setField(
-                            m.id,
-                            "department",
-                            e.target.value
-                          )
-                        }
-                        className={smallSelectBase}
-                      >
-                        <option value="">—</option>
-
-                        {(options.departments || []).map(
-                          (d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          )
-                        )}
-                      </select>
+                    <td className="py-3 pr-4 text-sm text-slate-600">
+                      {m.department || "—"}
                     </td>
 
-                    <td className="px-3 py-3.5">
-                      <select
-                        data-testid={`${TEAM.roleSelectPrefix}-${m.id}`}
-                        value={role}
-                        onChange={(e) =>
-                          setField(
-                            m.id,
-                            "role",
-                            e.target.value
-                          )
-                        }
-                        className={`${smallSelectBase} capitalize`}
-                      >
-                        {(
-                          options.roles || [
-                            "manager",
-                            "member",
-                          ]
-                        ).map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
+                    <td className="py-3 pr-4 text-sm capitalize text-slate-600">
+                      {m.role}
                     </td>
 
-                    <td className="px-3 py-3.5">
+                    <td className="py-3 pr-4">
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          data-testid={`${TEAM.saveRolePrefix}-${m.id}`}
-                          onClick={() => handleSave(m)}
-                          disabled={!dirty}
-                          className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => setEditingMember(m)}
+                          className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
-                          Save Role
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
                         </button>
 
                         <span
                           data-testid={`${TEAM.activeBadgePrefix}-${m.id}`}
-                          className={[
-                            "rounded-md px-2 py-1",
-                            "text-[10px] font-semibold uppercase tracking-wide",
+                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                             m.active === false
                               ? "bg-slate-100 text-slate-500"
-                              : "bg-green-50 text-green-700",
-                          ].join(" ")}
+                              : "bg-emerald-100 text-emerald-700"
+                          }`}
                         >
                           {m.active === false
                             ? "Inactive"
@@ -553,6 +723,13 @@ export default function TeamPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onCreated={fetchAll}
+        options={options}
+      />
+
+      <EditMemberModal
+        member={editingMember}
+        onClose={() => setEditingMember(null)}
+        onSaved={handleEditSave}
         options={options}
       />
     </div>

@@ -38,6 +38,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onFillEnd,
     selection,
     hiddenColumns = [],
+    onHideRow,
   } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
@@ -180,12 +181,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       }}
     >
       <TableCell
-        className={cn(
-          "row-num-cell cursor-pointer select-none text-center",
+        className={`row-num cursor-pointer select-none text-center ${
           selected
             ? "bg-blue-100 text-blue-700 font-semibold"
             : "text-slate-500"
-        )}
+        }`}
         onClick={(event) => {
           event.stopPropagation();
           onToggleSelect(item.id);
@@ -198,7 +198,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         <Checkbox
           data-testid={`worksheet-row-checkbox-${item.id}`}
           checked={selected}
-          disabled={!canEditRow}
           onCheckedChange={() => onToggleSelect(item.id)}
         />
       </TableCell>

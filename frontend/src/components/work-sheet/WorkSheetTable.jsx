@@ -92,6 +92,14 @@ export const WorkSheetTable = ({
       return [];
     }
   });
+  const [hiddenRows, setHiddenRows] = useState(() => {
+    try {
+      const saved = localStorage.getItem("worksheet_hidden_rows");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [fillState, setFillState] = useState(null);
   const [isFilling, setIsFilling] = useState(false);
 
@@ -109,6 +117,13 @@ export const WorkSheetTable = ({
       JSON.stringify(hiddenColumns)
     );
   }, [hiddenColumns]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "worksheet_hidden_rows",
+      JSON.stringify(hiddenRows)
+    );
+  }, [hiddenRows]);
 
   // Pre-index data once instead of doing a full .filter() inside every row.
   const deliverablesByProject = useMemo(() => {
@@ -181,12 +196,17 @@ export const WorkSheetTable = ({
     [projects, deliverables, usersById]
   );
 
+  const visibleTableItems = useMemo(() => {
+    const hiddenSet = new Set(hiddenRows);
+    return items.filter((item) => !hiddenSet.has(item.id));
+  }, [items, hiddenRows]);
+
   const sortedTableItems = useMemo(() => {
     if (!columnSort.key) {
-      return items;
+      return visibleTableItems;
     }
 
-    const sorted = [...items];
+    const sorted = [...visibleTableItems];
 
     sorted.sort((a, b) => {
       const aValue = getSortValue(a, columnSort.key);
@@ -210,7 +230,7 @@ export const WorkSheetTable = ({
     });
 
     return sorted;
-  }, [items, columnSort, getSortValue]);
+  }, [visibleTableItems, columnSort, getSortValue]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -533,6 +553,27 @@ export const WorkSheetTable = ({
                     hiddenColumns={hiddenColumns}
                     selected={selectedSet.has(item.id)}
                     onToggleSelect={onToggleSelect}
+                    onHideRow={(rowId) => {
+                      setHiddenRows((current) =>
+                        current.includes(rowId)
+                          ? current
+                          : [...current, rowId]
+                      );
+
+                      // NOTE: onToggleSelect in the current WorkSheetPage
+                      // implementation only accepts a single `id` argument
+                      // (it flips selection state rather than setting it
+                      // explicitly). Passing a second `false` argument here
+                      // is a no-op today — if the row was already selected,
+                      // calling onToggleSelect(rowId) will toggle it OFF as
+                      // intended, but if it was NOT selected, this call does
+                      // nothing (which is fine, since an unselected row has
+                      // nothing to clear). This only becomes a real problem
+                      // if onToggleSelect's signature changes to something
+                      // that doesn't toggle. Flagging per your note — not
+                      // touching WorkSheetPage.jsx yet.
+                      onToggleSelect(rowId, false);
+                    }}
                   />
                 );
               })}

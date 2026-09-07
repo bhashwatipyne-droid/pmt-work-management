@@ -1458,35 +1458,120 @@ async def _generate_unique_project_code() -> str:
     return gen_project_code()
 
 
-async def _hydrate_project(p: dict) -> dict:
-    """Attach deliverables + derived fields onto a raw project doc."""
-    delivs = await db.deliverables.find({"project_id": p["id"]}, {"_id": 0}).to_list(1000)
-    stage_counts = {s: 0 for s in STAGES}
-    collaborators = set()
-    for d in delivs:
-        stage_counts[d.get("current_stage", "Content")] = stage_counts.get(d.get("current_stage", "Content"), 0) + 1
-        if d.get("owner_id"):
-            collaborators.add(d["owner_id"])
-    client_doc = await db.clients.find_one({"id": p.get("client_id")}, {"_id": 0})
-    return {
-        **p,
-        "deliverables": delivs,
-        "deliverables_count": len(delivs),
-        "stage_counts": stage_counts,
-        "collaborator_ids": list(collaborators),
-        "client_name": client_doc["name"] if client_doc else "",
-        "client_poc": (
-            next(
+async def _hydrate_projects(projects: list[dict]) -> list[dict]:
+    """
+    Hydrate multiple projects using batched MongoDB queries.
+
+    Instead of:
+        1 query per project for deliverables
+        1 query per project for client
+
+    this performs:
+        1 query for all deliverables
+        1 query for all clients
+    """
+
+    if not projects:
+        return []
+
+    project_ids = [p["id"] for p in projects if p.get("id")]
+    client_ids = [p["client_id"] for p in projects if p.get("client_id")]
+
+    # Fetch all deliverables for all projects in ONE query
+    deliverables = await db.deliverables.find(
+        {"project_id": {"$in": project_ids}},
+        {"_id": 0},
+    ).to_list(5000)
+
+    # Fetch all clients in ONE query
+    clients = await db.clients.find(
+        {"id": {"$in": client_ids}},
+        {"_id": 0},
+    ).to_list(1000)
+
+    # Index deliverables by project
+    deliverables_by_project = {}
+
+    for d in deliverables:
+        project_id = d.get("project_id")
+
+        if not project_id:
+            continue
+
+        deliverables_by_project.setdefault(project_id, []).append(d)
+
+    # Index clients by id
+    clients_by_id = {
+        client.get("id"): client
+        for client in clients
+        if client.get("id")
+    }
+
+    hydrated = []
+
+    for p in projects:
+        project_id = p.get("id")
+        client_doc = clients_by_id.get(p.get("client_id"))
+
+        project_deliverables = deliverables_by_project.get(
+            project_id,
+            [],
+        )
+
+        stage_counts = {s: 0 for s in STAGES}
+        collaborators = set()
+
+        for d in project_deliverables:
+            stage = d.get("current_stage", "Content")
+
+            stage_counts[stage] = stage_counts.get(stage, 0) + 1
+
+            if d.get("owner_id"):
+                collaborators.add(d["owner_id"])
+
+        # Resolve client POC.
+        # Keep the existing fallback behaviour:
+        # selected contact person -> client's default contact_person.
+        client_poc = ""
+
+        if client_doc:
+            client_poc = next(
                 (
                     c.get("name", "")
                     for c in (client_doc.get("contact_persons") or [])
                     if c.get("id") == p.get("poc_id")
                 ),
-                client_doc.get("contact_person", "")
+                client_doc.get("contact_person", ""),
             )
-            if client_doc else ""
-        ),
-    }
+
+        hydrated.append(
+            {
+                **p,
+                "deliverables": project_deliverables,
+                "deliverables_count": len(project_deliverables),
+                "stage_counts": stage_counts,
+                "collaborator_ids": list(collaborators),
+                "client_name": (
+                    client_doc.get("name", "")
+                    if client_doc
+                    else ""
+                ),
+                "client_poc": client_poc,
+            }
+        )
+
+    return hydrated
+
+
+async def _hydrate_project(p: dict) -> dict:
+    """
+    Hydrate a single project.
+
+    Used by the project detail endpoint.
+    """
+    hydrated = await _hydrate_projects([p])
+
+    return hydrated[0] if hydrated else p
 
 
 @api_router.get("/projects")
@@ -1496,16 +1581,24 @@ async def list_projects(
     search: Optional[str] = None,
 ):
     await get_acting_user(request)
+
     query = {}
+
     if status:
         query["status"] = status
+
     if search:
         query["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
             {"code": {"$regex": search, "$options": "i"}},
         ]
-    projects = await db.projects.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    return [await _hydrate_project(p) for p in projects]
+
+    projects = await db.projects.find(
+        query,
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(1000)
+
+    return await _hydrate_projects(projects)
 
 
 @api_router.get("/projects/metrics")

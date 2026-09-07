@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -39,6 +39,12 @@ const FILL_FIELDS = {
   13: "status",
 };
 
+// The worksheet is intentionally virtualized without adding a new dependency.
+// Only the visible rows + a small overscan buffer are mounted in the DOM.
+const ROW_HEIGHT = 40;
+const HEADER_HEIGHT = 40;
+const OVERSCAN = 20;
+
 export const WorkSheetTable = ({
   items,
   currentUser,
@@ -58,103 +64,135 @@ export const WorkSheetTable = ({
   const [fillState, setFillState] = useState(null);
   const [isFilling, setIsFilling] = useState(false);
 
-  const handleCellSelect = ({ row, col }) => {
+  const scrollRef = useRef(null);
+  const fillStateRef = useRef(null);
+  const itemsRef = useRef(items);
+  const onFillRef = useRef(onFill);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+
+  // Pre-index data once instead of doing a full .filter() inside every row.
+  const deliverablesByProject = useMemo(() => {
+    const map = {};
+
+    for (const deliverable of deliverables || []) {
+      if (!deliverable.project_id) continue;
+
+      if (!map[deliverable.project_id]) {
+        map[deliverable.project_id] = [];
+      }
+
+      map[deliverable.project_id].push(deliverable);
+    }
+
+    return map;
+  }, [deliverables]);
+
+  const usersById = useMemo(() => {
+    const map = {};
+
+    for (const user of users || []) {
+      map[user.id] = user;
+    }
+
+    return map;
+  }, [users]);
+
+  const nonAdminUsers = useMemo(
+    () => (users || []).filter((user) => user.role !== "admin"),
+    [users]
+  );
+
+  const reviewerUsers = useMemo(
+    () => (users || []).filter((user) => user.role !== "member"),
+    [users]
+  );
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+    onFillRef.current = onFill;
+  }, [items, onFill]);
+
+  const handleCellSelect = useCallback(({ row, col }) => {
     setActiveCell({ row, col });
     setSelection({
       startRow: row,
       endRow: row,
       col,
     });
-  };
+  }, []);
 
-  const handleFillStart = ({ row, col }) => {
-    setIsFilling(true);
-
-    setFillState({
+  const handleFillStart = useCallback(({ row, col }) => {
+    const next = {
       sourceRow: row,
       sourceCol: col,
       targetRow: row,
-    });
+    };
+
+    fillStateRef.current = next;
+    setIsFilling(true);
+    setFillState(next);
 
     setSelection({
       startRow: row,
       endRow: row,
       col,
     });
-  };
+  }, []);
 
-  const handleFillHover = (row) => {
-    if (!isFilling || !fillState) return;
+  const handleFillHover = useCallback((row) => {
+    const current = fillStateRef.current;
+    if (!current) return;
 
-    setFillState((prev) => ({
-      ...prev,
+    const next = {
+      ...current,
       targetRow: row,
-    }));
+    };
 
-    setSelection({
-      startRow: fillState.sourceRow,
-      endRow: row,
-      col: fillState.sourceCol,
+    fillStateRef.current = next;
+    setFillState(next);
+
+    setSelection((prev) => {
+      if (!prev) return prev;
+      return { ...prev, endRow: row };
     });
-  };
+  }, []);
 
-  const handleFillEnd = async () => {
-    if (!isFilling || !fillState) {
-      setIsFilling(false);
-      return;
-    }
+  const handleFillEnd = useCallback(async () => {
+    const current = fillStateRef.current;
 
-    const {
-      sourceRow,
-      sourceCol,
-      targetRow,
-    } = fillState;
-
+    fillStateRef.current = null;
     setIsFilling(false);
     setFillState(null);
+    setSelection(null);
 
-    if (targetRow <= sourceRow) {
-      setSelection(null);
-      return;
-    }
+    if (!current || current.targetRow <= current.sourceRow) return;
 
-    const field = FILL_FIELDS[sourceCol];
+    const field = FILL_FIELDS[current.sourceCol];
+    const currentItems = itemsRef.current;
+    const sourceItem = currentItems[current.sourceRow - 1];
 
-    if (!field) {
-      setSelection(null);
-      return;
-    }
-
-    // `sourceRow`/`targetRow` follow the 1-based `index` convention used
-    // throughout WorkSheetRow (index = idx + 1), so the source item sits
-    // at items[sourceRow - 1] and the fill target range is items[sourceRow..targetRow).
-    const sourceItem = items[sourceRow - 1];
-
-    if (!sourceItem) {
-      setSelection(null);
-      return;
-    }
+    if (!field || !sourceItem) return;
 
     const value = sourceItem[field];
-
-    const targetIds = items
-      .slice(sourceRow, targetRow)
+    const targetIds = currentItems
+      .slice(current.sourceRow, current.targetRow)
       .map((item) => item.id);
 
-    if (!targetIds.length) {
-      setSelection(null);
-      return;
+    if (!targetIds.length) return;
+
+    try {
+      await onFillRef.current(targetIds, field, value);
+    } catch {
+      // onFill is responsible for displaying the persistence error.
     }
+  }, []);
 
-    await onFill(targetIds, field, value);
-
-    setSelection(null);
-  };
-
-  // Global pointer tracking while a fill drag is active — far more
-  // reliable than relying solely on per-row onPointerEnter/onMouseUp.
+  // Global pointer tracking while a fill drag is active.
   useEffect(() => {
-    if (!isFilling) return;
+    if (!isFilling) return undefined;
 
     const handlePointerMove = (event) => {
       const element = document.elementFromPoint(
@@ -163,11 +201,9 @@ export const WorkSheetTable = ({
       );
 
       const cell = element?.closest("[data-sheet-cell]");
-
       if (!cell) return;
 
       const row = Number(cell.getAttribute("data-sheet-row"));
-
       if (Number.isNaN(row)) return;
 
       handleFillHover(row);
@@ -184,36 +220,76 @@ export const WorkSheetTable = ({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFilling, fillState]);
+  }, [isFilling, handleFillHover, handleFillEnd]);
+
+  // Measure the scroll viewport so the number of mounted rows stays small.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+
+    const updateViewport = () => {
+      setViewportHeight(Math.max(200, element.clientHeight));
+    };
+
+    updateViewport();
+
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const handleScroll = useCallback((event) => {
+    setScrollTop(event.currentTarget.scrollTop);
+  }, []);
+
+  const bodyScrollTop = Math.max(0, scrollTop - HEADER_HEIGHT);
+
+  const visibleStart = Math.max(
+    0,
+    Math.floor(bodyScrollTop / ROW_HEIGHT) - OVERSCAN
+  );
+
+  const visibleEnd = Math.min(
+    items.length,
+    Math.ceil((bodyScrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
+  );
+
+  const visibleItems = items.slice(visibleStart, visibleEnd);
+  const topSpacerHeight = visibleStart * ROW_HEIGHT;
+  const bottomSpacerHeight = Math.max(
+    0,
+    (items.length - visibleEnd) * ROW_HEIGHT
+  );
 
   const isAdmin = currentUser.role === "admin";
-  const editableItems = items.filter((it) =>
-    canEditWorkItem(currentUser, it, users)
+  const editableItems = useMemo(
+    () => items.filter((item) => canEditWorkItem(currentUser, item, users)),
+    [items, currentUser, users]
   );
+
   const allSelected =
-    editableItems.length > 0 &&
-    selectedIds.length === editableItems.length;
+    editableItems.length > 0 && selectedIds.length === editableItems.length;
 
   const totalCols = COLUMNS.length + 2;
 
   return (
-    <div className="flex-1 overflow-auto bg-white sheet-mode">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-auto bg-white sheet-mode"
+    >
       <Table
         data-testid={WORKSHEET.table}
         className="min-w-max border-collapse"
       >
         <TableHeader>
           <TableRow className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]">
-            <TableHead
-              className="row-num-head h-10 border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500"
-            >
+            <TableHead className="row-num-head h-10 border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               #
             </TableHead>
 
-            <TableHead
-              className="checkbox-cell h-10 border-r border-slate-200 px-3"
-            >
+            <TableHead className="checkbox-cell h-10 border-r border-slate-200 px-3">
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
@@ -222,22 +298,12 @@ export const WorkSheetTable = ({
               />
             </TableHead>
 
-            {COLUMNS.map((c) => (
+            {COLUMNS.map((column) => (
               <TableHead
-                key={c}
-                className={[
-                  "h-10",
-                  "border-r border-slate-200",
-                  "px-3",
-                  "whitespace-nowrap",
-                  "text-[11px]",
-                  "font-semibold",
-                  "uppercase",
-                  "tracking-wide",
-                  "text-slate-500",
-                ].join(" ")}
+                key={column}
+                className="h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
               >
-                {c}
+                {column}
               </TableHead>
             ))}
           </TableRow>
@@ -254,36 +320,62 @@ export const WorkSheetTable = ({
                 <p className="text-sm font-medium text-slate-700">
                   No work items yet
                 </p>
-
                 <p className="mt-1 text-xs text-slate-500">
                   Add a row to start logging work.
                 </p>
               </td>
             </TableRow>
           ) : (
-            items.map((item, idx) => (
-              <WorkSheetRow
-                key={item.id}
-                activeCell={activeCell}
-                selection={selection}
-                fillState={fillState}
-                onCellSelect={handleCellSelect}
-                onFillStart={handleFillStart}
-                onFillHover={handleFillHover}
-                onFillEnd={handleFillEnd}
-                item={item}
-                index={idx + 1}
-                currentUser={currentUser}
-                users={users}
-                options={options}
-                projects={projects}
-                deliverables={deliverables}
-                onUpdate={onUpdate}
-                onDelete={onDelete}
-                selected={selectedIds.includes(item.id)}
-                onToggleSelect={onToggleSelect}
-              />
-            ))
+            <>
+              {topSpacerHeight > 0 && (
+                <TableRow aria-hidden="true">
+                  <td
+                    colSpan={totalCols}
+                    style={{ height: topSpacerHeight, padding: 0 }}
+                  />
+                </TableRow>
+              )}
+
+              {visibleItems.map((item, localIndex) => {
+                const index = visibleStart + localIndex + 1;
+
+                return (
+                  <WorkSheetRow
+                    key={item.id}
+                    activeCell={activeCell}
+                    selection={selection}
+                    fillState={fillState}
+                    onCellSelect={handleCellSelect}
+                    onFillStart={handleFillStart}
+                    onFillHover={handleFillHover}
+                    onFillEnd={handleFillEnd}
+                    item={item}
+                    index={index}
+                    currentUser={currentUser}
+                    users={users}
+                    usersById={usersById}
+                    nonAdminUsers={nonAdminUsers}
+                    reviewerUsers={reviewerUsers}
+                    options={options}
+                    projects={projects}
+                    deliverablesByProject={deliverablesByProject}
+                    onUpdate={onUpdate}
+                    onDelete={onDelete}
+                    selected={selectedSet.has(item.id)}
+                    onToggleSelect={onToggleSelect}
+                  />
+                );
+              })}
+
+              {bottomSpacerHeight > 0 && (
+                <TableRow aria-hidden="true">
+                  <td
+                    colSpan={totalCols}
+                    style={{ height: bottomSpacerHeight, padding: 0 }}
+                  />
+                </TableRow>
+              )}
+            </>
           )}
         </TableBody>
       </Table>

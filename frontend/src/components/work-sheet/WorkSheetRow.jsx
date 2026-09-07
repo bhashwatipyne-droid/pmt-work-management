@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -13,14 +13,17 @@ import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
 
-export const WorkSheetRow = ({
+export const WorkSheetRow = memo(function WorkSheetRow({
   item,
   index,
   currentUser,
   users,
+  usersById = {},
+  nonAdminUsers = [],
+  reviewerUsers = [],
   options,
   projects = [],
-  deliverables = [],
+  deliverablesByProject = {},
   onUpdate,
   onDelete,
   selected,
@@ -55,9 +58,9 @@ export const WorkSheetRow = ({
     });
   }, [item.updated_at]);
 
-  const nameOf = (id) => users.find((u) => u.id === id)?.name || "Unassigned";
+  const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
-  const projectDeliverables = deliverables.filter((d) => d.project_id === item.project_id);
+  const projectDeliverables = deliverablesByProject[item.project_id] || [];
 
   const sheetCell = (col) => ({
     "data-sheet-cell": true,
@@ -401,7 +404,7 @@ export const WorkSheetRow = ({
               <SelectValue placeholder="Creator" />
             </SelectTrigger>
             <SelectContent>
-              {users.filter((u) => u.role !== "admin").map((u) => (
+              {nonAdminUsers.map((u) => (
                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
               ))}
             </SelectContent>
@@ -432,7 +435,7 @@ export const WorkSheetRow = ({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE_VALUE}>Unassigned</SelectItem>
-              {users.filter((u) => u.role !== "member").map((u) => (
+              {reviewerUsers.map((u) => (
                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
               ))}
             </SelectContent>
@@ -504,4 +507,4 @@ export const WorkSheetRow = ({
       </TableCell>
     </TableRow>
   );
-};
+});

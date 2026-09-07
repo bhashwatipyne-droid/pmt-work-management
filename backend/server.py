@@ -566,10 +566,10 @@ async def review_work_item(
 ):
     user = await get_acting_user(request)
 
-    if user.role not in ("admin", "manager"):
+    if user.role != "manager":
         raise HTTPException(
             status_code=403,
-            detail="Only admin or manager can review work items",
+            detail="Only manager can review work items",
         )
 
     if action not in ("approve", "request_changes"):

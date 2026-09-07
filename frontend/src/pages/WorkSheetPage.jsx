@@ -56,6 +56,7 @@ export default function WorkSheetPage() {
   const itemsRef = useRef(items);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
+  const isMember = currentUser?.role === "member";
 
   useEffect(() => {
     itemsRef.current = items;
@@ -337,10 +338,10 @@ export default function WorkSheetPage() {
           isManager ? () => setCloseModalOpen(true) : undefined
         }
         onOpenQuickLogger={
-          isManager || isAdmin ? () => setQuickLoggerOpen(true) : undefined
+          isManager || isMember ? () => setQuickLoggerOpen(true) : undefined
         }
         onOpenBulkReview={
-          isManager || isAdmin ? () => setBulkReviewOpen(true) : undefined
+          isManager ? () => setBulkReviewOpen(true) : undefined
         }
         onOpenHistory={() => setHistoryOpen(true)}
       />

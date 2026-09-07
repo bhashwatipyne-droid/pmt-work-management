@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
+import asyncio
 import os
 import certifi
 import logging
@@ -2485,39 +2486,122 @@ async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, req
 @api_router.get("/dashboard/overview")
 async def dashboard_overview(request: Request):
     await require_admin(request)
-    projects = await db.projects.find({}, {"_id": 0}).to_list(1000)
-    deliverables = await db.deliverables.find({}, {"_id": 0}).to_list(5000)
-    work_items = await db.work_items.find({}, {"_id": 0}).to_list(10000)
+
     today = datetime.now(timezone.utc).date()
     week_end = today + timedelta(days=7)
-    project_status_counts = {s: 0 for s in PROJECT_STATUSES}
-    for p in projects:
-        project_status_counts[p.get("status", "Planning")] = project_status_counts.get(p.get("status", "Planning"), 0) + 1
-    deliv_stage_counts = {s: 0 for s in STAGES}
-    for d in deliverables:
-        deliv_stage_counts[d.get("current_stage", "Content")] = deliv_stage_counts.get(d.get("current_stage", "Content"), 0) + 1
-    needs_review = sum(1 for d in deliverables if d.get("stage_status") in ("Ready for Review", "Changes Requested"))
-    due_this_week = 0
-    for p in projects:
-        try:
-            d = datetime.fromisoformat(p.get("end_date")).date()
-            if today <= d <= week_end and p.get("status") != "Completed":
-                due_this_week += 1
-        except (ValueError, TypeError):
-            continue
-    total_minutes = sum(w.get("time_taken_minutes", 0) or 0 for w in work_items)
+
+    # Run independent MongoDB operations concurrently.
+    project_status_task = db.projects.aggregate([
+        {
+            "$group": {
+                "_id": "$status",
+                "count": {"$sum": 1}
+            }
+        }
+    ]).to_list(None)
+
+    deliverable_stage_task = db.deliverables.aggregate([
+        {
+            "$group": {
+                "_id": "$current_stage",
+                "count": {"$sum": 1}
+            }
+        }
+    ]).to_list(None)
+
+    deliverable_review_task = db.deliverables.count_documents({
+        "stage_status": {
+            "$in": ["Ready for Review", "Changes Requested"]
+        }
+    })
+
+    project_due_task = db.projects.count_documents({
+        "end_date": {
+            "$gte": today.isoformat(),
+            "$lte": week_end.isoformat()
+        },
+        "status": {
+            "$ne": "Completed"
+        }
+    })
+
+    total_projects_task = db.projects.count_documents({})
+    total_deliverables_task = db.deliverables.count_documents({})
+    total_work_items_task = db.work_items.count_documents({})
+
+    work_item_hours_task = db.work_items.aggregate([
+        {
+            "$group": {
+                "_id": None,
+                "total_minutes": {
+                    "$sum": {
+                        "$ifNull": ["$time_taken_minutes", 0]
+                    }
+                }
+            }
+        }
+    ]).to_list(1)
+
+    (
+        project_status_rows,
+        deliverable_stage_rows,
+        needs_review,
+        due_this_week,
+        total_projects,
+        total_deliverables,
+        total_work_items,
+        work_item_hours_rows,
+    ) = await asyncio.gather(
+        project_status_task,
+        deliverable_stage_task,
+        deliverable_review_task,
+        project_due_task,
+        total_projects_task,
+        total_deliverables_task,
+        total_work_items_task,
+        work_item_hours_task,
+    )
+
+    # Preserve the existing response shape.
+    project_status_counts = {
+        s: 0 for s in PROJECT_STATUSES
+    }
+
+    for row in project_status_rows:
+        status = row.get("_id") or "Planning"
+        project_status_counts[status] = row["count"]
+
+    deliv_stage_counts = {
+        s: 0 for s in STAGES
+    }
+
+    for row in deliverable_stage_rows:
+        stage = row.get("_id") or "Content"
+        deliv_stage_counts[stage] = row["count"]
+
+    total_minutes = 0
+
+    if work_item_hours_rows:
+        total_minutes = work_item_hours_rows[0].get(
+            "total_minutes", 0
+        ) or 0
+
     return {
         "active_projects": project_status_counts.get("Active", 0),
         "in_rework": project_status_counts.get("In Rework", 0),
         "completed_projects": project_status_counts.get("Completed", 0),
         "planning_projects": project_status_counts.get("Planning", 0),
-        "total_projects": len(projects),
-        "total_deliverables": len(deliverables),
+
+        "total_projects": total_projects,
+        "total_deliverables": total_deliverables,
+
         "deliv_stage_counts": deliv_stage_counts,
         "needs_review": needs_review,
         "due_this_week": due_this_week,
+
         "total_hours_logged": round(total_minutes / 60, 1),
-        "total_work_items": len(work_items),
+        "total_work_items": total_work_items,
+
         "project_status_counts": project_status_counts,
     }
 

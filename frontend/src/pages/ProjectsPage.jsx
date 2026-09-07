@@ -71,17 +71,23 @@ export default function ProjectsPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    return projects.filter((p) => {
-      if (statusFilter && p.status !== statusFilter) return false;
+    return projects
+      .filter((p) => {
+        if (statusFilter && p.status !== statusFilter) return false;
 
-      if (!q) return true;
+        if (!q) return true;
 
-      return (
-        p.name.toLowerCase().includes(q) ||
-        p.code.toLowerCase().includes(q) ||
-        (p.client_name || "").toLowerCase().includes(q)
-      );
-    });
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.code.toLowerCase().includes(q) ||
+          (p.client_name || "").toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.start_date || 0).getTime();
+        const dateB = new Date(b.start_date || 0).getTime();
+        return dateB - dateA;
+      });
   }, [projects, search, statusFilter]);
 
   const byStatus = useMemo(() => {
@@ -90,7 +96,9 @@ export default function ProjectsPage() {
     );
 
     filtered.forEach((p) => {
-      (map[p.status] || map.Active).push(p);
+      if (map[p.status]) {
+        map[p.status].push(p);
+      }
     });
 
     return map;
@@ -260,16 +268,18 @@ export default function ProjectsPage() {
           </p>
         </div>
       ) : view === "chart" ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {PROJECT_STATUSES.map((s) => (
-            <KanbanColumn
-              key={s}
-              status={s}
-              projects={byStatus[s]}
-              users={users}
-              onOpenProject={(p) => navigate(`/projects/${p.id}`)}
-            />
-          ))}
+        <div className="overflow-x-auto pb-4">
+          <div className="grid min-w-[1680px] grid-cols-6 gap-4">
+            {PROJECT_STATUSES.map((s) => (
+              <KanbanColumn
+                key={s}
+                status={s}
+                projects={byStatus[s]}
+                users={users}
+                onOpenProject={(p) => navigate(`/projects/${p.id}`)}
+              />
+            ))}
+          </div>
         </div>
       ) : (
         <ProjectListTable

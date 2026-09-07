@@ -44,7 +44,7 @@ export const ProjectListTable = ({
       <tbody>
         {projects.map((p) => {
           const c =
-            STATUS_COLORS[p.status] || STATUS_COLORS.Active;
+            STATUS_COLORS[p.status] || STATUS_COLORS["On Hold"];
 
           const collaborators = (p.collaborator_ids || [])
             .map((id) => users.find((u) => u.id === id))

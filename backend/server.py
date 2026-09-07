@@ -499,41 +499,90 @@ async def get_options():
 @api_router.get("/work-items", response_model=List[WorkItem])
 async def list_work_items(
     request: Request,
-    status: Optional[str] = None,
-    stage: Optional[str] = None,
-    deliverable_type: Optional[str] = None,
-    work_category: Optional[str] = None,
+    status: Optional[List[str]] = None,
+    stage: Optional[List[str]] = None,
+    deliverable_type: Optional[List[str]] = None,
+    work_category: Optional[List[str]] = None,
     month: Optional[str] = None,
     search: Optional[str] = None,
-    creator_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    deliverable_id: Optional[str] = None,
+
+    creator_id: Optional[List[str]] = None,
+    reviewer_id: Optional[List[str]] = None,
+    project_id: Optional[List[str]] = None,
+    deliverable_id: Optional[List[str]] = None,
+
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ):
     await get_acting_user(request)
+
     query = {}
-    # Everyone can see everyone's rows; only editing is restricted by role/department.
+
+    # Multi-select filters
     if creator_id:
-        query["creator_id"] = creator_id
+        query["creator_id"] = {"$in": creator_id}
+
+    if reviewer_id:
+        query["reviewer_id"] = {"$in": reviewer_id}
+
     if status:
-        query["status"] = status
+        query["status"] = {"$in": status}
+
     if stage:
-        query["stage"] = stage
+        query["stage"] = {"$in": stage}
+
     if deliverable_type:
-        query["deliverable_type"] = deliverable_type
+        query["deliverable_type"] = {"$in": deliverable_type}
+
     if work_category:
-        query["work_category"] = work_category
+        query["work_category"] = {"$in": work_category}
+
+    if project_id:
+        query["project_id"] = {"$in": project_id}
+
+    if deliverable_id:
+        query["deliverable_id"] = {"$in": deliverable_id}
+
+    # Date range
+    if date_from or date_to:
+        date_query = {}
+
+        if date_from:
+            date_query["$gte"] = date_from
+
+        if date_to:
+            date_query["$lte"] = date_to
+
+        query["work_date"] = date_query
+
+    # Existing month filter
     if month:
         query["month"] = month
-    if project_id:
-        query["project_id"] = project_id
-    if deliverable_id:
-        query["deliverable_id"] = deliverable_id
+
+    # Existing search
     if search:
         query["$or"] = [
-            {"deliverable_name": {"$regex": search, "$options": "i"}},
-            {"remarks": {"$regex": search, "$options": "i"}},
+            {
+                "deliverable_name": {
+                    "$regex": search,
+                    "$options": "i",
+                }
+            },
+            {
+                "remarks": {
+                    "$regex": search,
+                    "$options": "i",
+                }
+            },
         ]
-    items = await db.work_items.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
+
+    items = (
+        await db.work_items
+        .find(query, {"_id": 0})
+        .sort("work_date", -1)
+        .to_list(5000)
+    )
+
     return items
 
 

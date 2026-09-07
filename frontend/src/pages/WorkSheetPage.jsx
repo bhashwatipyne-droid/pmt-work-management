@@ -15,6 +15,7 @@ import {
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
 import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
+import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
@@ -26,7 +27,25 @@ import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 
-const emptyFilters = { search: "", status: "", deliverable_type: "", work_category: "", month: "" };
+const emptyFilters = {
+  search: "",
+  status: "",
+  deliverable_type: "",
+  work_category: "",
+  month: "",
+
+  date_from: "",
+  date_to: "",
+
+  project_ids: [],
+  deliverable_ids: [],
+  stages: [],
+  deliverable_types: [],
+  work_categories: [],
+  creator_ids: [],
+  reviewer_ids: [],
+  statuses: [],
+};
 const LS = { project: "ws_last_project_id", deliverable: "ws_last_deliverable_id", stage: "ws_last_stage" };
 const DEPARTMENT_TO_STAGE = {
   Content: "Content",
@@ -43,6 +62,7 @@ export default function WorkSheetPage() {
   const [projects, setProjects] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -75,10 +95,49 @@ export default function WorkSheetPage() {
   const fetchItems = () => {
     if (!currentUser) return;
     setLoading(true);
+
     const params = {
-      ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)),
-      ...(activeSheet !== "Master" ? { stage: activeSheet } : {}),
+      search: filters.search || undefined,
+      month: filters.month || undefined,
+
+      date_from: filters.date_from || undefined,
+      date_to: filters.date_to || undefined,
+
+      project_id: filters.project_ids?.length
+        ? filters.project_ids
+        : undefined,
+
+      deliverable_id: filters.deliverable_ids?.length
+        ? filters.deliverable_ids
+        : undefined,
+
+      stage: filters.stages?.length
+        ? filters.stages
+        : activeSheet !== "Master"
+        ? [activeSheet]
+        : undefined,
+
+      deliverable_type: filters.deliverable_types?.length
+        ? filters.deliverable_types
+        : undefined,
+
+      work_category: filters.work_categories?.length
+        ? filters.work_categories
+        : undefined,
+
+      creator_id: filters.creator_ids?.length
+        ? filters.creator_ids
+        : undefined,
+
+      reviewer_id: filters.reviewer_ids?.length
+        ? filters.reviewer_ids
+        : undefined,
+
+      status: filters.statuses?.length
+        ? filters.statuses
+        : undefined,
     };
+
     getWorkItems(currentUser.id, params)
       .then(setItems)
       .catch(() => toast.error("Could not load work items"))
@@ -101,6 +160,17 @@ export default function WorkSheetPage() {
         : dateA.localeCompare(dateB);
     });
   }, [items, sortDirection]);
+
+  const activeFilterCount =
+    Number(Boolean(filters.date_from || filters.date_to)) +
+    (filters.project_ids?.length || 0) +
+    (filters.deliverable_ids?.length || 0) +
+    (filters.stages?.length || 0) +
+    (filters.deliverable_types?.length || 0) +
+    (filters.work_categories?.length || 0) +
+    (filters.creator_ids?.length || 0) +
+    (filters.reviewer_ids?.length || 0) +
+    (filters.statuses?.length || 0);
 
   const handleAddRow = async () => {
     try {
@@ -345,6 +415,8 @@ export default function WorkSheetPage() {
         filters={filters}
         setFilters={setFilters}
         options={options}
+        onOpenFilters={() => setFiltersOpen(true)}
+        activeFilterCount={activeFilterCount}
         onAddRow={handleAddRow}
         canAdd={false}
         resultCount={items.length}
@@ -360,6 +432,17 @@ export default function WorkSheetPage() {
           isManager ? () => setBulkReviewOpen(true) : undefined
         }
         onOpenHistory={() => setHistoryOpen(true)}
+      />
+
+      <WorksheetFilterPanel
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        filters={filters}
+        setFilters={setFilters}
+        options={options}
+        projects={projects}
+        deliverables={deliverables}
+        users={users}
       />
 
       <WorkSheetTabs

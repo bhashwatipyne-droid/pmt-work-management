@@ -7,6 +7,30 @@ axios.defaults.withCredentials = true;
 
 const authHeaders = () => ({});
 
+const serializeQueryParams = (params = {}) => {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== null && item !== "") {
+          searchParams.append(key, item);
+        }
+      });
+
+      return;
+    }
+
+    searchParams.append(key, value);
+  });
+
+  return searchParams.toString();
+};
+
 export const getUsers = () => axios.get(`${API}/users`).then((r) => r.data);
 
 export const loginUser = (login, password) => axios.post(`${API}/auth/login`, { login, password }).then((r) => r.data);
@@ -18,8 +42,14 @@ export const getMe = () => axios.get(`${API}/auth/me`).then((r) => r.data);
 export const getOptions = () => axios.get(`${API}/config/options`).then((r) => r.data);
 
 // -------- Work items --------
-export const getWorkItems = (userId, params) =>
-  axios.get(`${API}/work-items`, { headers: authHeaders(userId), params }).then((r) => r.data);
+export const getWorkItems = (userId, params = {}) =>
+  axios
+    .get(`${API}/work-items`, {
+      headers: authHeaders(userId),
+      params,
+      paramsSerializer: serializeQueryParams,
+    })
+    .then((r) => r.data);
 
 export const createWorkItem = (userId, payload) =>
   axios.post(`${API}/work-items`, payload, { headers: authHeaders(userId) }).then((r) => r.data);

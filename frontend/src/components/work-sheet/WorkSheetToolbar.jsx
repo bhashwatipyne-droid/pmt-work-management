@@ -1,30 +1,23 @@
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
-import {
   Plus,
-  X,
   Rows3,
   CheckCircle2,
   Clock3,
   ClipboardCheck,
   History,
+  SlidersHorizontal,
   Search,
 } from "lucide-react";
 import { WORKSHEET } from "@/constants/testIds";
-
-const ALL_VALUE = "__all__";
 
 export const WorkSheetToolbar = ({
   filters,
   setFilters,
   options,
+  onOpenFilters,
+  activeFilterCount = 0,
   onAddRow,
   canAdd,
   resultCount,
@@ -35,28 +28,6 @@ export const WorkSheetToolbar = ({
   onOpenBulkReview,
   onOpenHistory,
 }) => {
-  const update = (key, value) =>
-    setFilters((f) => ({
-      ...f,
-      [key]: value === ALL_VALUE ? "" : value,
-    }));
-
-  const clear = () =>
-    setFilters({
-      search: "",
-      status: "",
-      deliverable_type: "",
-      work_category: "",
-      month: "",
-    });
-
-  const hasFilters =
-    filters.search ||
-    filters.status ||
-    filters.deliverable_type ||
-    filters.work_category ||
-    filters.month;
-
   return (
     <div className="border-b border-border bg-card">
       {/* ACTIONS ROW */}
@@ -119,97 +90,31 @@ export const WorkSheetToolbar = ({
             data-testid={WORKSHEET.searchInput}
             placeholder="Search deliverable or remarks..."
             value={filters.search}
-            onChange={(e) => update("search", e.target.value)}
+            onChange={(e) =>
+              setFilters((f) => ({
+                ...f,
+                search: e.target.value,
+              }))
+            }
             className="h-9 w-64 pl-9"
           />
         </div>
 
-        <Select
-          value={filters.status || ALL_VALUE}
-          onValueChange={(v) => update("status", v)}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9"
+          onClick={onOpenFilters}
         >
-          <SelectTrigger
-            data-testid={WORKSHEET.statusFilter}
-            className="h-9 w-[150px]"
-          >
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-
-          <SelectContent>
-            <SelectItem value={ALL_VALUE}>All statuses</SelectItem>
-
-            {options.statuses?.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={filters.deliverable_type || ALL_VALUE}
-          onValueChange={(v) => update("deliverable_type", v)}
-        >
-          <SelectTrigger
-            data-testid={WORKSHEET.typeFilter}
-            className="h-9 w-[150px]"
-          >
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-
-          <SelectContent>
-            <SelectItem value={ALL_VALUE}>All types</SelectItem>
-
-            {options.deliverable_types?.map((t) => (
-              <SelectItem key={t} value={t}>
-                {t}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={filters.work_category || ALL_VALUE}
-          onValueChange={(v) => update("work_category", v)}
-        >
-          <SelectTrigger
-            data-testid={WORKSHEET.categoryFilter}
-            className="h-9 w-[150px]"
-          >
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-
-          <SelectContent>
-            <SelectItem value={ALL_VALUE}>All categories</SelectItem>
-
-            {options.work_categories?.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Input
-          data-testid={WORKSHEET.monthFilter}
-          type="month"
-          value={filters.month}
-          onChange={(e) => update("month", e.target.value)}
-          className="h-9 w-[170px]"
-        />
-
-        {hasFilters && (
-          <Button
-            data-testid={WORKSHEET.clearFiltersBtn}
-            variant="ghost"
-            size="sm"
-            className="h-9"
-            onClick={clear}
-          >
-            <X className="mr-1 h-3.5 w-3.5" />
-            Clear
-          </Button>
-        )}
+          <SlidersHorizontal className="mr-1.5 h-4 w-4" />
+          Filter
+          {activeFilterCount > 0 && (
+            <span className="ml-1.5 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              {activeFilterCount}
+            </span>
+          )}
+        </Button>
 
         <span className="ml-1 text-xs text-muted-foreground">
           {resultCount} row{resultCount === 1 ? "" : "s"}

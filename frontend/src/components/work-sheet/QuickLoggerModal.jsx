@@ -83,6 +83,7 @@ export default function QuickLoggerModal({
   const [showRemark, setShowRemark] = useState(false);
   const inputRef = useRef(null);
   const suggestionRefs = useRef([]);
+  const committingRef = useRef(false);
 
   const stage =
     STAGE_BY_DEPARTMENT[currentUser?.department] ||
@@ -180,6 +181,7 @@ export default function QuickLoggerModal({
     setSaving(false);
     setError("");
     setShowRemark(false);
+    committingRef.current = false;
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
@@ -280,6 +282,10 @@ export default function QuickLoggerModal({
   };
 
   const commitDraft = () => {
+    // Guard against the same entry being committed twice in a row —
+    // e.g. if a key event fires again before React has cleared the input.
+    if (committingRef.current) return false;
+
     const entry = buildEntry();
 
     if (!entry) {
@@ -295,12 +301,17 @@ export default function QuickLoggerModal({
       return false;
     }
 
+    committingRef.current = true;
+
     setSavedEntries((prev) => [entry, ...prev]);
     setDraft(emptyDraft());
     setSuggestions([]);
     setShowRemark(false);
     setError("");
-    requestAnimationFrame(() => inputRef.current?.focus());
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      committingRef.current = false;
+    });
     return true;
   };
 
@@ -356,9 +367,29 @@ export default function QuickLoggerModal({
   };
 
   const handleKeyDown = (event) => {
+    // Ignore OS/browser key auto-repeat entirely. Without this, holding
+    // Enter even slightly longer than a tap can fire multiple keydown
+    // events before React finishes clearing the input, which was
+    // committing the same entry twice.
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
+      return;
+    }
+
+    // Check Cmd/Ctrl+Enter BEFORE the plain Enter branch below.
+    // Previously the plain `event.key === "Enter"` check matched and
+    // returned first regardless of modifier keys, so Cmd/Ctrl+Enter could
+    // never reach handleSave() — it silently called commitDraft() instead,
+    // which is also part of what produced unexpected duplicate entries.
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      handleSave();
       return;
     }
 
@@ -403,11 +434,6 @@ export default function QuickLoggerModal({
           : "Enter a valid Duration, such as 45m or 1h."
       );
       return;
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      handleSave();
     }
   };
 

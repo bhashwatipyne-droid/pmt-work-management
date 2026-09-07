@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownAZ, ArrowUpAZ } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  ChevronsLeftRight,
+} from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
@@ -195,17 +199,17 @@ export const WorkSheetTable = ({
     [projects, deliverables, usersById]
   );
 
-  const visibleTableItems = useMemo(() => {
-    const hiddenSet = new Set(hiddenRows);
-    return items.filter((item) => !hiddenSet.has(item.id));
-  }, [items, hiddenRows]);
+  const hiddenRowSet = useMemo(
+    () => new Set(hiddenRows),
+    [hiddenRows]
+  );
 
-  const sortedTableItems = useMemo(() => {
+  const sortedAllTableItems = useMemo(() => {
     if (!columnSort.key) {
-      return visibleTableItems;
+      return items;
     }
 
-    const sorted = [...visibleTableItems];
+    const sorted = [...items];
 
     sorted.sort((a, b) => {
       const aValue = getSortValue(a, columnSort.key);
@@ -229,7 +233,47 @@ export const WorkSheetTable = ({
     });
 
     return sorted;
-  }, [visibleTableItems, columnSort, getSortValue]);
+  }, [items, columnSort, getSortValue]);
+
+  const visibleTableItems = useMemo(
+    () =>
+      sortedAllTableItems.filter(
+        (item) => !hiddenRowSet.has(item.id)
+      ),
+    [sortedAllTableItems, hiddenRowSet]
+  );
+
+  const sortedTableItems = visibleTableItems;
+
+  // Tracks which hidden rows sit immediately before each visible row.
+  const hiddenRowsBeforeById = useMemo(() => {
+    const result = {};
+    let pendingHiddenRows = [];
+
+    for (const item of sortedAllTableItems) {
+      if (hiddenRowSet.has(item.id)) {
+        pendingHiddenRows.push(item.id);
+        continue;
+      }
+
+      result[item.id] = pendingHiddenRows;
+      pendingHiddenRows = [];
+    }
+
+    result.__trailing__ = pendingHiddenRows;
+
+    return result;
+  }, [sortedAllTableItems, hiddenRowSet]);
+
+  const displayRowNumberById = useMemo(() => {
+    const result = {};
+
+    sortedAllTableItems.forEach((item, index) => {
+      result[item.id] = index + 1;
+    });
+
+    return result;
+  }, [sortedAllTableItems]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -395,6 +439,48 @@ export const WorkSheetTable = ({
 
   const totalCols = COLUMNS.length + 3; // #, checkbox, Actions
 
+  const getHiddenColumnsAfter = (columnIndex) => {
+    const hidden = [];
+
+    for (let i = columnIndex + 1; i < COLUMNS.length; i += 1) {
+      if (!hiddenColumns.includes(COLUMNS[i])) {
+        break;
+      }
+
+      hidden.push(COLUMNS[i]);
+    }
+
+    return hidden;
+  };
+
+  const getHiddenColumnsFromStart = () => {
+    const hidden = [];
+
+    for (const column of COLUMNS) {
+      if (!hiddenColumns.includes(column)) {
+        break;
+      }
+
+      hidden.push(column);
+    }
+
+    return hidden;
+  };
+
+  const restoreHiddenColumns = (columns) => {
+    setHiddenColumns((current) =>
+      current.filter((column) => !columns.includes(column))
+    );
+  };
+
+  const restoreHiddenRows = (rowIds) => {
+    if (!rowIds?.length) return;
+
+    setHiddenRows((current) =>
+      current.filter((id) => !rowIds.includes(id))
+    );
+  };
+
   return (
     <div
       ref={scrollRef}
@@ -411,24 +497,45 @@ export const WorkSheetTable = ({
               #
             </TableHead>
 
-            <TableHead className="checkbox-cell h-10 border-r border-slate-200 px-3">
+            <TableHead className="checkbox-cell relative h-10 border-r border-slate-200 px-3">
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
                 onCheckedChange={onToggleSelectAll}
                 disabled={allVisibleIds.length === 0}
               />
+
+              {getHiddenColumnsFromStart().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    restoreHiddenColumns(getHiddenColumnsFromStart())
+                  }
+                  className="absolute -right-2 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
+                  title={`Show ${getHiddenColumnsFromStart().length} hidden column${
+                    getHiddenColumnsFromStart().length === 1 ? "" : "s"
+                  }`}
+                  aria-label="Show hidden columns"
+                >
+                  <ChevronsLeftRight className="h-3 w-3" />
+                </button>
+              )}
             </TableHead>
 
-            {COLUMNS.map((column) => {
+            {COLUMNS.map((column, columnIndex) => {
               const isHidden = hiddenColumns.includes(column);
+
+              if (isHidden) {
+                return null;
+              }
+
               const isSorted = columnSort.key === column;
+              const hiddenAfter = getHiddenColumnsAfter(columnIndex);
 
               return (
                 <TableHead
                   key={column}
-                  style={{ display: isHidden ? "none" : undefined }}
-                  className="h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                  className="relative h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <button
@@ -445,7 +552,9 @@ export const WorkSheetTable = ({
                           return {
                             key: column,
                             direction:
-                              current.direction === "asc" ? "desc" : "asc",
+                              current.direction === "asc"
+                                ? "desc"
+                                : "asc",
                           };
                         });
                       }}
@@ -487,6 +596,20 @@ export const WorkSheetTable = ({
                       }
                     />
                   </div>
+
+                  {hiddenAfter.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => restoreHiddenColumns(hiddenAfter)}
+                      className="absolute -right-2 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
+                      title={`Show ${hiddenAfter.length} hidden column${
+                        hiddenAfter.length === 1 ? "" : "s"
+                      }`}
+                      aria-label="Show hidden columns"
+                    >
+                      <ChevronsLeftRight className="h-3 w-3" />
+                    </button>
+                  )}
                 </TableHead>
               );
             })}
@@ -552,6 +675,14 @@ export const WorkSheetTable = ({
                     hiddenColumns={hiddenColumns}
                     selected={selectedSet.has(item.id)}
                     onToggleSelect={onToggleSelect}
+                    displayRowNumber={displayRowNumberById[item.id]}
+                    hiddenRowIdsBefore={hiddenRowsBeforeById[item.id] || []}
+                    hiddenRowIdsAfter={
+                      item.id === sortedTableItems[sortedTableItems.length - 1]?.id
+                        ? hiddenRowsBeforeById.__trailing__ || []
+                        : []
+                    }
+                    onUnhideRows={restoreHiddenRows}
                     onHideRow={(rowId) => {
                       setHiddenRows((current) =>
                         current.includes(rowId)

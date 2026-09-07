@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, ChevronsUpDown } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -38,6 +38,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     selection,
     hiddenColumns = [],
     onHideRow,
+    hiddenRowIdsBefore = [],
+    hiddenRowIdsAfter = [],
+    displayRowNumber,
+    onUnhideRows,
   } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
@@ -179,12 +183,48 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       }}
     >
       <TableCell
-        className={`row-num cursor-pointer select-none ${
-          selected ? "bg-blue-100 text-blue-700 font-semibold" : ""
+        className={`row-num relative cursor-pointer select-none ${
+          selected
+            ? "bg-blue-100 font-semibold text-blue-700"
+            : ""
         }`}
         onClick={() => onToggleSelect(item.id)}
       >
-        {index}
+        {hiddenRowIdsBefore.length > 0 && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUnhideRows?.(hiddenRowIdsBefore);
+            }}
+            className="absolute -top-2 left-1/2 z-30 flex h-4 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
+            title={`Show ${hiddenRowIdsBefore.length} hidden row${
+              hiddenRowIdsBefore.length === 1 ? "" : "s"
+            }`}
+            aria-label="Show hidden rows"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+          </button>
+        )}
+
+        {displayRowNumber ?? index}
+
+        {hiddenRowIdsAfter.length > 0 && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUnhideRows?.(hiddenRowIdsAfter);
+            }}
+            className="absolute -bottom-2 left-1/2 z-30 flex h-4 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
+            title={`Show ${hiddenRowIdsAfter.length} hidden row${
+              hiddenRowIdsAfter.length === 1 ? "" : "s"
+            }`}
+            aria-label="Show hidden rows"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+          </button>
+        )}
       </TableCell>
       <TableCell className="checkbox-cell">
         <Checkbox

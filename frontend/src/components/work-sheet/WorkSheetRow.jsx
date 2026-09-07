@@ -13,29 +13,30 @@ import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
 
-export const WorkSheetRow = memo(function WorkSheetRow({
-  item,
-  index,
-  currentUser,
-  users,
-  usersById = {},
-  nonAdminUsers = [],
-  reviewerUsers = [],
-  options,
-  projects = [],
-  deliverablesByProject = {},
-  onUpdate,
-  onDelete,
-  selected,
-  onToggleSelect,
-  activeCell,
-  onCellSelect,
-  fillState,
-  onFillStart,
-  onFillHover,
-  onFillEnd,
-  selection,
-}) => {
+export const WorkSheetRow = memo(function WorkSheetRow(props) {
+  const {
+    item,
+    index,
+    currentUser,
+    users,
+    usersById = {},
+    nonAdminUsers = [],
+    reviewerUsers = [],
+    options,
+    projects = [],
+    deliverablesByProject = {},
+    onUpdate,
+    onDelete,
+    selected,
+    onToggleSelect,
+    activeCell,
+    onCellSelect,
+    fillState,
+    onFillStart,
+    onFillHover,
+    onFillEnd,
+    selection,
+  } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
   const canEditRow = canEditWorkItem(currentUser, item, users);

@@ -100,9 +100,19 @@ export const BulkActionBar = ({
         </Button>
 
         {currentUser.role === "admin" && (
-          <Button data-testid="worksheet-bulk-delete-btn" size="sm" variant="ghost" className="h-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={onDelete}>
-            <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete selected
-          </Button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            title={`Delete ${selectedCount} selected row${
+              selectedCount === 1 ? "" : "s"
+            }`}
+            aria-label={`Delete ${selectedCount} selected row${
+              selectedCount === 1 ? "" : "s"
+            }`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         )}
 
         <Button data-testid="worksheet-bulk-clear-btn" size="sm" variant="ghost" className="ml-auto h-8" onClick={onClear}>

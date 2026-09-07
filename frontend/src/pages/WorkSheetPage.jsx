@@ -79,6 +79,7 @@ export default function WorkSheetPage() {
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const bulkAddingRef = useRef(false);
   const itemsRef = useRef(items);
@@ -428,14 +429,40 @@ export default function WorkSheetPage() {
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
+    if (!selectedIds.length) return;
+    setBulkDeleteConfirmOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!selectedIds.length) return;
+
+    setDeleting(true);
+
     try {
-      const { deleted_count } = await bulkDeleteWorkItems(currentUser.id, selectedIds);
-      setItems((prev) => prev.filter((it) => !selectedIds.includes(it.id)));
-      toast.success(`Deleted ${deleted_count} row${deleted_count === 1 ? "" : "s"}`);
+      const idsToDelete = [...selectedIds];
+
+      const { deleted_count } = await bulkDeleteWorkItems(
+        currentUser.id,
+        idsToDelete
+      );
+
+      setItems((prev) =>
+        prev.filter((item) => !idsToDelete.includes(item.id))
+      );
+
+      toast.success(
+        `Deleted ${deleted_count} row${deleted_count === 1 ? "" : "s"}`
+      );
+
       setSelectedIds([]);
+      setBulkDeleteConfirmOpen(false);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Bulk delete failed");
+      toast.error(
+        e.response?.data?.detail || "Bulk delete failed"
+      );
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -571,6 +598,25 @@ export default function WorkSheetPage() {
         description="This work entry will be permanently removed."
         warning="This action cannot be undone."
         confirmLabel="Delete Entry"
+        loading={deleting}
+      />
+
+      <ConfirmDeleteModal
+        open={bulkDeleteConfirmOpen}
+        onClose={() => {
+          if (!deleting) {
+            setBulkDeleteConfirmOpen(false);
+          }
+        }}
+        onConfirm={confirmBulkDelete}
+        title={`Delete ${selectedIds.length} selected row${
+          selectedIds.length === 1 ? "" : "s"
+        }?`}
+        description={`These ${selectedIds.length} selected work entr${
+          selectedIds.length === 1 ? "y" : "ies"
+        } will be permanently removed.`}
+        warning="This action cannot be undone."
+        confirmLabel="Delete Rows"
         loading={deleting}
       />
     </div>

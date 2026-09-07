@@ -80,6 +80,8 @@ export const WorkSheetTable = ({
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
+  hiddenRows,
+  setHiddenRows,
 }) => {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -90,14 +92,6 @@ export const WorkSheetTable = ({
   const [hiddenColumns, setHiddenColumns] = useState(() => {
     try {
       const saved = localStorage.getItem("worksheet_hidden_columns");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [hiddenRows, setHiddenRows] = useState(() => {
-    try {
-      const saved = localStorage.getItem("worksheet_hidden_rows");
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -120,13 +114,6 @@ export const WorkSheetTable = ({
       JSON.stringify(hiddenColumns)
     );
   }, [hiddenColumns]);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "worksheet_hidden_rows",
-      JSON.stringify(hiddenRows)
-    );
-  }, [hiddenRows]);
 
   // Pre-index data once instead of doing a full .filter() inside every row.
   const deliverablesByProject = useMemo(() => {

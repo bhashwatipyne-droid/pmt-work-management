@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Trash2, X, Link2 } from "lucide-react";
+import { Trash2, X, Link2, EyeOff } from "lucide-react";
 
 const STAGES = ["Content", "Design", "Animate", "Finish"];
 const NONE = "__none__";
@@ -51,7 +51,18 @@ const BulkAssignPopover = ({ projects, deliverables, onApply, onClose }) => {
   );
 };
 
-export const BulkActionBar = ({ selectedCount, currentUser, options, projects = [], deliverables = [], onApplyStatus, onApplyAssign, onDelete, onClear }) => {
+export const BulkActionBar = ({
+  selectedCount,
+  currentUser,
+  options,
+  projects = [],
+  deliverables = [],
+  onApplyStatus,
+  onApplyAssign,
+  onHideRows,
+  onDelete,
+  onClear,
+}) => {
   const [status, setStatus] = useState("");
   const [showAssign, setShowAssign] = useState(false);
   const allowedStatuses = currentUser.role === "member" ? options.member_forward_statuses : options.statuses;
@@ -76,6 +87,16 @@ export const BulkActionBar = ({ selectedCount, currentUser, options, projects = 
 
         <Button data-testid="worksheet-bulk-assign-btn" size="sm" variant="outline" className="h-8" onClick={() => setShowAssign((v) => !v)}>
           <Link2 className="mr-1 h-3.5 w-3.5" /> Assign to Project…
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onHideRows}
+          className="h-8 gap-1.5 border-slate-300 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        >
+          <EyeOff className="h-3.5 w-3.5" />
+          Hide Rows
         </Button>
 
         {currentUser.role === "admin" && (

@@ -65,6 +65,14 @@ export default function WorkSheetPage() {
   const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [hiddenRows, setHiddenRows] = useState(() => {
+    try {
+      const saved = localStorage.getItem("worksheet_hidden_rows");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [bulkAdding, setBulkAdding] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
@@ -81,6 +89,13 @@ export default function WorkSheetPage() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "worksheet_hidden_rows",
+      JSON.stringify(hiddenRows)
+    );
+  }, [hiddenRows]);
 
   useEffect(() => { getOptions().then(setOptions); }, []);
 
@@ -360,6 +375,15 @@ export default function WorkSheetPage() {
   }, [currentUser]);
 
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+  const handleHideRows = () => {
+    if (!selectedIds.length) return;
+
+    setHiddenRows((current) => [
+      ...new Set([...current, ...selectedIds]),
+    ]);
+
+    setSelectedIds([]);
+  };
   const toggleSelectAll = () => {
     const visibleIds = items.map((item) => item.id);
 
@@ -504,6 +528,7 @@ export default function WorkSheetPage() {
           deliverables={deliverables}
           onApplyStatus={handleBulkStatus}
           onApplyAssign={handleBulkAssign}
+          onHideRows={handleHideRows}
           onDelete={handleBulkDelete}
           onClear={() => setSelectedIds([])}
         />
@@ -529,6 +554,8 @@ export default function WorkSheetPage() {
           onToggleSelectAll={toggleSelectAll}
           onDateSort={handleDateSort}
           sortDirection={sortDirection}
+          hiddenRows={hiddenRows}
+          setHiddenRows={setHiddenRows}
         />
       )}
 

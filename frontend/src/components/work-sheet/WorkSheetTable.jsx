@@ -271,7 +271,7 @@ export const WorkSheetTable = ({
   const allSelected =
     editableItems.length > 0 && selectedIds.length === editableItems.length;
 
-  const totalCols = COLUMNS.length + 2;
+  const totalCols = COLUMNS.length + 3; // #, checkbox, Actions
 
   return (
     <div
@@ -306,6 +306,10 @@ export const WorkSheetTable = ({
                 {column}
               </TableHead>
             ))}
+
+            <TableHead className="h-10 w-[52px] border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Actions
+            </TableHead>
           </TableRow>
         </TableHeader>
 

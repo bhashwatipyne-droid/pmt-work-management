@@ -1161,7 +1161,9 @@ async def dashboard_attention_items(request: Request):
 
 async def migrate_client_contacts():
     """
-    Migrate existing single contact_person values into contact_persons.
+    Ensure all clients use the contact_persons structure
+    and that every contact has a stable ID.
+
     Safe to run multiple times.
     """
     clients = await db.clients.find(
@@ -1172,11 +1174,39 @@ async def migrate_client_contacts():
     for client in clients:
         existing_contacts = client.get("contact_persons") or []
 
-        # Already migrated
+        # Existing contact_persons may have been imported without IDs.
+        # Add IDs only where they are missing.
         if existing_contacts:
+            normalized_contacts = []
+            changed = False
+
+            for contact in existing_contacts:
+                normalized_contact = dict(contact)
+
+                if not normalized_contact.get("id"):
+                    normalized_contact["id"] = (
+                        f"contact-{uuid.uuid4().hex[:8]}"
+                    )
+                    changed = True
+
+                normalized_contacts.append(normalized_contact)
+
+            if changed:
+                await db.clients.update_one(
+                    {"id": client["id"]},
+                    {
+                        "$set": {
+                            "contact_persons": normalized_contacts
+                        }
+                    }
+                )
+
             continue
 
-        legacy_contact = (client.get("contact_person") or "").strip()
+        # Legacy single-contact field.
+        legacy_contact = (
+            client.get("contact_person") or ""
+        ).strip()
 
         if not legacy_contact:
             continue
@@ -2393,6 +2423,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def run_startup_migrations():
+    await migrate_client_contacts()
 
 
 @app.on_event("shutdown")

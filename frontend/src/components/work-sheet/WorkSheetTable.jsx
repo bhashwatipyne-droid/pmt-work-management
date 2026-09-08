@@ -13,6 +13,7 @@ import { WORKSHEET } from "@/constants/testIds";
 
 const COLUMNS = [
   "Date",
+  "Client",
   "Project",
   "Deliverable",
   "Stage",
@@ -30,23 +31,25 @@ const COLUMNS = [
 
 const FILL_FIELDS = {
   0: "work_date",
-  1: "project_id",
-  2: "deliverable_id",
-  3: "stage",
-  4: "deliverable_name",
-  5: "deliverable_link",
-  6: "deliverable_type",
-  7: "work_category",
-  8: "version",
-  9: "time_taken_minutes",
-  10: "creator_id",
-  11: "reviewer_id",
-  12: "remarks",
-  13: "status",
+  1: "client_id",
+  2: "project_id",
+  3: "deliverable_id",
+  4: "stage",
+  5: "deliverable_name",
+  6: "deliverable_link",
+  7: "deliverable_type",
+  8: "work_category",
+  9: "version",
+  10: "time_taken_minutes",
+  11: "creator_id",
+  12: "reviewer_id",
+  13: "remarks",
+  14: "status",
 };
 
 const COLUMN_FIELDS = {
   Date: "work_date",
+  Client: "client_id",
   Project: "project_id",
   Deliverable: "deliverable_id",
   Stage: "stage",
@@ -75,6 +78,7 @@ export const WorkSheetTable = ({
   options,
   projects,
   deliverables,
+  clients = [],
   onUpdate,
   onDelete,
   onFill,
@@ -165,6 +169,12 @@ export const WorkSheetTable = ({
 
       let value = item[field];
 
+      if (column === "Client") {
+        const project = projects.find((p) => p.id === item.project_id);
+        const clientId = item.client_id || project?.client_id;
+        value = clients.find((c) => c.id === clientId)?.name || "";
+      }
+
       if (column === "Project") {
         value = projects.find((p) => p.id === item.project_id)?.name || "";
       }
@@ -186,7 +196,7 @@ export const WorkSheetTable = ({
 
       return value;
     },
-    [projects, deliverables, usersById]
+    [clients, projects, deliverables, usersById]
   );
 
   const hiddenRowSet = useMemo(
@@ -707,6 +717,7 @@ export const WorkSheetTable = ({
                     nonAdminUsers={nonAdminUsers}
                     reviewerUsers={reviewerUsers}
                     options={options}
+                    clients={clients}
                     projects={projects}
                     deliverablesByProject={deliverablesByProject}
                     onUpdate={onUpdate}

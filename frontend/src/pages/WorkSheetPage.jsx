@@ -9,6 +9,7 @@ import {
   getOptions,
   getWorkItems,
   updateWorkItem,
+  getClients,
   getProjects,
   getDeliverables,
 } from "@/services/api";
@@ -45,7 +46,7 @@ const emptyFilters = {
   reviewer_ids: [],
   statuses: [],
 };
-const LS = { project: "ws_last_project_id", deliverable: "ws_last_deliverable_id", stage: "ws_last_stage" };
+const LS = { client: "ws_last_client_id", project: "ws_last_project_id", deliverable: "ws_last_deliverable_id", stage: "ws_last_stage" };
 const DEPARTMENT_TO_STAGE = {
   Content: "Content",
   Design: "Design",
@@ -58,10 +59,12 @@ export default function WorkSheetPage() {
   const [items, setItems] = useState([]);
   const [activeSheet, setActiveSheet] = useState("Master");
   const [options, setOptions] = useState({});
+  const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
-  // Filters are scoped to each worksheet tab. A filter applied on Master
-  // should not leak into Content, Design, Animation, or Finish.
+
+  // Filters are scoped to each worksheet tab so a filter applied on one
+  // sheet does not leak into another sheet.
   const [filtersBySheet, setFiltersBySheet] = useState(() => {
     const createFilters = () => ({
       ...emptyFilters,
@@ -145,8 +148,8 @@ export default function WorkSheetPage() {
 
   useEffect(() => {
     if (!currentUserId) return;
-    Promise.all([getProjects(currentUserId), getDeliverables(currentUserId)])
-      .then(([p, d]) => { setProjects(p); setDeliverables(d); })
+    Promise.all([getClients(), getProjects(currentUserId), getDeliverables(currentUserId)])
+      .then(([c, p, d]) => { setClients(c); setProjects(p); setDeliverables(d); })
       .catch(() => {});
   }, [currentUserId]);
 
@@ -276,6 +279,7 @@ export default function WorkSheetPage() {
           options.deliverable_type_categories?.[defaultType] || "",
         creator_id: currentUser.id,
         status: "Not Started",
+        client_id: localStorage.getItem(LS.client) || null,
         project_id: localStorage.getItem(LS.project) || null,
         deliverable_id: localStorage.getItem(LS.deliverable) || null,
         stage:
@@ -649,6 +653,7 @@ export default function WorkSheetPage() {
           currentUser={currentUser}
           users={users}
           options={options}
+          clients={clients}
           projects={projects}
           deliverables={deliverables}
           onUpdate={handleUpdate}

@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import { Trash2, ChevronsUpDown } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -23,6 +23,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     nonAdminUsers = [],
     reviewerUsers = [],
     options,
+    clients = [],
     projects = [],
     deliverablesByProject = {},
     onUpdate,
@@ -37,15 +38,18 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onFillEnd,
     selection,
     hiddenColumns = [],
-    onHideRow,
-    hiddenRowIdsBefore = [],
-    hiddenRowIdsAfter = [],
-    displayRowNumber,
-    onUnhideRows,
   } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
-  const canEditRow = canEditWorkItem(currentUser, item, users);
+  const memberStage = {
+    Content: "Content",
+    Design: "Design",
+    Animation: "Animate",
+    Finish: "Finish",
+  }[currentUser.department];
+  const canEditRow = isMember
+    ? (!item.stage || item.stage === memberStage)
+    : canEditWorkItem(currentUser, item, users);
   const canEditExtra = isElevated && canEditRow;
   const [openSelect, setOpenSelect] = useState(null);
 
@@ -69,26 +73,37 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
+  const project = item.project_id
+    ? projects.find((p) => p.id === item.project_id)
+    : undefined;
+  const effectiveClientId = item.client_id || project?.client_id || undefined;
+  const projectOptions = effectiveClientId
+    ? projects.filter((p) => p.client_id === effectiveClientId)
+    : projects;
   const projectDeliverables = deliverablesByProject[item.project_id] || [];
+  const clientName = effectiveClientId
+    ? clients.find((c) => c.id === effectiveClientId)?.name
+    : undefined;
 
   const isColumnHidden = (column) =>
     hiddenColumns.includes(column);
 
   const COLUMN_NAMES = {
     0: "Date",
-    1: "Project",
-    2: "Deliverable",
-    3: "Stage",
-    4: "Deliverable Name",
-    5: "Deliverable Link",
-    6: "Type",
-    7: "Category",
-    8: "Version",
-    9: "Time (min)",
-    10: "Creator",
-    11: "Reviewer",
-    12: "Remarks",
-    13: "Status",
+    1: "Client",
+    2: "Project",
+    3: "Deliverable",
+    4: "Stage",
+    5: "Deliverable Name",
+    6: "Deliverable Link",
+    7: "Type",
+    8: "Category",
+    9: "Version",
+    10: "Time (min)",
+    11: "Creator",
+    12: "Reviewer",
+    13: "Remarks",
+    14: "Status",
   };
 
   const cellStyle = (col) => ({
@@ -121,7 +136,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onKeyDown: createWorksheetKeyHandler({
       row: index,
       col,
-      maxCol: 13,
+      maxCol: 14,
     }),
   });
 
@@ -161,11 +176,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   return (
     <TableRow
       data-testid={`worksheet-row-${item.id}`}
-      className={
-        selected
-          ? "group bg-blue-50 hover:bg-blue-100 [&>td]:!bg-blue-50"
-          : "group hover:bg-slate-50"
-      }
+      className="group"
       onPointerEnter={() => {
         if (fillState) {
           onFillHover?.(index);
@@ -182,54 +193,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         }
       }}
     >
-      <TableCell
-        className={`row-num relative cursor-pointer select-none ${
-          selected
-            ? "bg-blue-100 font-semibold text-blue-700"
-            : ""
-        }`}
-        onClick={() => onToggleSelect(item.id)}
-      >
-        {hiddenRowIdsBefore.length > 0 && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onUnhideRows?.(hiddenRowIdsBefore);
-            }}
-            className="absolute -top-2 left-1/2 z-30 flex h-4 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
-            title={`Show ${hiddenRowIdsBefore.length} hidden row${
-              hiddenRowIdsBefore.length === 1 ? "" : "s"
-            }`}
-            aria-label="Show hidden rows"
-          >
-            <ChevronsUpDown className="h-3 w-3" />
-          </button>
-        )}
-
-        {displayRowNumber ?? index}
-
-        {hiddenRowIdsAfter.length > 0 && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onUnhideRows?.(hiddenRowIdsAfter);
-            }}
-            className="absolute -bottom-2 left-1/2 z-30 flex h-4 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
-            title={`Show ${hiddenRowIdsAfter.length} hidden row${
-              hiddenRowIdsAfter.length === 1 ? "" : "s"
-            }`}
-            aria-label="Show hidden rows"
-          >
-            <ChevronsUpDown className="h-3 w-3" />
-          </button>
-        )}
-      </TableCell>
+      <TableCell className="row-num">{index}</TableCell>
       <TableCell className="checkbox-cell">
         <Checkbox
           data-testid={`worksheet-row-checkbox-${item.id}`}
           checked={selected}
+          disabled={!canEditRow}
           onCheckedChange={() => onToggleSelect(item.id)}
         />
       </TableCell>
@@ -262,33 +231,42 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           isCellInFillRange(1) && "sheet-cell-fill-range",
         ]
           .filter(Boolean)
-          .join(" ")}>
+          .join(" ")}
+      >
         <Select
-          open={openSelect === "project"}
-          onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
-          value={item.project_id || NONE_VALUE}
+          open={openSelect === "client"}
+          onOpenChange={(open) => setOpenSelect(open ? "client" : null)}
+          value={effectiveClientId || NONE_VALUE}
           onValueChange={(v) => {
-            const nextId = v === NONE_VALUE ? null : v;
-            const patch = { project_id: nextId };
-            // clear deliverable if switching project
-            if (nextId !== item.project_id) patch.deliverable_id = null;
-            onUpdate(item.id, patch);
+            const nextClientId = v === NONE_VALUE ? null : v;
+            onUpdate(item.id, {
+              client_id: nextClientId,
+              project_id: null,
+              deliverable_id: null,
+            });
+            if (nextClientId) {
+              localStorage.setItem("ws_last_client_id", nextClientId);
+            } else {
+              localStorage.removeItem("ws_last_client_id");
+            }
+            localStorage.removeItem("ws_last_project_id");
+            localStorage.removeItem("ws_last_deliverable_id");
           }}
           disabled={!canEditRow}
         >
           <SelectTrigger
             {...sheetCell(1)}
-            data-testid={`worksheet-project-select-${item.id}`}
-            className="h-8 w-[160px]"
+            data-testid={`worksheet-client-select-${item.id}`}
+            className="h-8 w-[150px]"
           >
-            <SelectValue placeholder="Project">
-              {item.project_id ? (projectName ?? "Project") : undefined}
+            <SelectValue placeholder="Client">
+              {effectiveClientId ? (clientName ?? "Client") : undefined}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {openSelect === "project" && projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            {openSelect === "client" && clients.map((client) => (
+              <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -304,25 +282,35 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}>
         <Select
-          open={openSelect === "deliverable"}
-          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
-          value={item.deliverable_id || NONE_VALUE}
-          onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
-          disabled={!canEditRow || !item.project_id}
+          open={openSelect === "project"}
+          onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
+          value={item.project_id || NONE_VALUE}
+          onValueChange={(v) => {
+            const nextId = v === NONE_VALUE ? null : v;
+            const selectedProject = projects.find((p) => p.id === nextId);
+            const patch = {
+              project_id: nextId,
+              client_id: selectedProject?.client_id || effectiveClientId || null,
+            };
+            // clear deliverable if switching project
+            if (nextId !== item.project_id) patch.deliverable_id = null;
+            onUpdate(item.id, patch);
+          }}
+          disabled={!canEditRow}
         >
           <SelectTrigger
             {...sheetCell(2)}
-            data-testid={`worksheet-deliverable-select-${item.id}`}
+            data-testid={`worksheet-project-select-${item.id}`}
             className="h-8 w-[160px]"
           >
-            <SelectValue placeholder={item.project_id ? "Deliverable" : "—"}>
-              {item.deliverable_id ? (deliverableName ?? "Deliverable") : undefined}
+            <SelectValue placeholder="Project">
+              {item.project_id ? (projectName ?? "Project") : undefined}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {openSelect === "deliverable" && projectDeliverables.map((d) => (
-              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+            {openSelect === "project" && projectOptions.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -338,23 +326,25 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}>
         <Select
-          open={openSelect === "stage"}
-          onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
-          value={item.stage || NONE_VALUE}
-          onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
-          disabled={!canEditRow}
+          open={openSelect === "deliverable"}
+          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
+          value={item.deliverable_id || NONE_VALUE}
+          onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
+          disabled={!canEditRow || !item.project_id}
         >
           <SelectTrigger
             {...sheetCell(3)}
-            data-testid={`worksheet-stage-select-${item.id}`}
-            className="h-8 w-[110px]"
+            data-testid={`worksheet-deliverable-select-${item.id}`}
+            className="h-8 w-[160px]"
           >
-            <SelectValue placeholder="Stage" />
+            <SelectValue placeholder={item.project_id ? "Deliverable" : "—"}>
+              {item.deliverable_id ? (deliverableName ?? "Deliverable") : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {STAGES.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
+            {openSelect === "deliverable" && projectDeliverables.map((d) => (
+              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -369,19 +359,27 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        {canEditExtra ? (
-          <Input
+        <Select
+          open={openSelect === "stage"}
+          onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
+          value={item.stage || NONE_VALUE}
+          onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
+          disabled={!canEditRow}
+        >
+          <SelectTrigger
             {...sheetCell(4)}
-            data-testid={`${WORKSHEET.deliverableInput}-${item.id}`}
-            value={local.deliverable_name}
-            onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
-            onBlur={() => commit("deliverable_name", local.deliverable_name)}
-            className="h-8 w-[180px]"
-            placeholder="Deliverable name"
-          />
-        ) : (
-          <span className="cell-plain block">{item.deliverable_name || "—"}</span>
-        )}
+            data-testid={`worksheet-stage-select-${item.id}`}
+            className="h-8 w-[110px]"
+          >
+            <SelectValue placeholder="Stage" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE_VALUE}>—</SelectItem>
+            {STAGES.map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {renderFillHandle(4)}
       </TableCell>
       <TableCell
@@ -396,6 +394,30 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         {canEditRow ? (
           <Input
             {...sheetCell(5)}
+            data-testid={`${WORKSHEET.deliverableInput}-${item.id}`}
+            value={local.deliverable_name}
+            onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
+            onBlur={() => commit("deliverable_name", local.deliverable_name)}
+            className="h-8 w-[180px]"
+            placeholder="Deliverable name"
+          />
+        ) : (
+          <span className="cell-plain block">{item.deliverable_name || "—"}</span>
+        )}
+        {renderFillHandle(5)}
+      </TableCell>
+      <TableCell
+        style={cellStyle(6)}
+        className={[
+          "sheet-cell",
+          isCellActive(6) && "sheet-cell-active",
+          isCellInFillRange(6) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        {canEditRow ? (
+          <Input
+            {...sheetCell(6)}
             data-testid={`${WORKSHEET.deliverableLinkInput}-${item.id}`}
             value={local.deliverable_link}
             onChange={(e) => setLocal((l) => ({ ...l, deliverable_link: e.target.value }))}
@@ -410,14 +432,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ) : (
           <span className="cell-plain block">—</span>
         )}
-        {renderFillHandle(5)}
+        {renderFillHandle(6)}
       </TableCell>
       <TableCell
-        style={cellStyle(6)}
+        style={cellStyle(7)}
         className={[
           "sheet-cell",
-          isCellActive(6) && "sheet-cell-active",
-          isCellInFillRange(6) && "sheet-cell-fill-range",
+          isCellActive(7) && "sheet-cell-active",
+          isCellInFillRange(7) && "sheet-cell-fill-range",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -437,7 +459,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             }}
           >
             <SelectTrigger
-              {...sheetCell(6)}
+              {...sheetCell(7)}
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
               className="h-8 w-[150px]"
             >
@@ -454,23 +476,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ) : (
           <span className="cell-plain block">{item.deliverable_type || "—"}</span>
         )}
-        {renderFillHandle(6)}
-      </TableCell>
-      <TableCell
-        style={cellStyle(7)}
-        className={[
-          "sheet-cell",
-          isCellActive(7) && "sheet-cell-active",
-          isCellInFillRange(7) && "sheet-cell-fill-range",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
-        <span
-          data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
-          className="cell-plain block"
-        >
-          {item.work_category || "—"}
-        </span>
         {renderFillHandle(7)}
       </TableCell>
       <TableCell
@@ -482,16 +487,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Input
-          {...sheetCell(8)}
-          data-testid={`${WORKSHEET.versionInput}-${item.id}`}
-          value={local.version}
-          disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, version: e.target.value }))}
-          onBlur={() => commit("version", local.version)}
-          className="h-8 w-[80px]"
-          placeholder="v1"
-        />
+        <span
+          data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
+          className="cell-plain block"
+        >
+          {item.work_category || "—"}
+        </span>
         {renderFillHandle(8)}
       </TableCell>
       <TableCell
@@ -505,15 +506,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .join(" ")}>
         <Input
           {...sheetCell(9)}
-          data-testid={`${WORKSHEET.timeInput}-${item.id}`}
-          type="number"
-          min="0"
-          step="5"
-          value={local.time_taken_minutes}
+          data-testid={`${WORKSHEET.versionInput}-${item.id}`}
+          value={local.version}
           disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
-          onBlur={() => commit("time_taken_minutes", Number(local.time_taken_minutes) || 0)}
+          onChange={(e) => setLocal((l) => ({ ...l, version: e.target.value }))}
+          onBlur={() => commit("version", local.version)}
           className="h-8 w-[80px]"
+          placeholder="v1"
         />
         {renderFillHandle(9)}
       </TableCell>
@@ -526,6 +525,29 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
+        <Input
+          {...sheetCell(10)}
+          data-testid={`${WORKSHEET.timeInput}-${item.id}`}
+          type="number"
+          min="0"
+          step="5"
+          value={local.time_taken_minutes}
+          disabled={!canEditRow}
+          onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
+          onBlur={() => commit("time_taken_minutes", Number(local.time_taken_minutes) || 0)}
+          className="h-8 w-[80px]"
+        />
+        {renderFillHandle(10)}
+      </TableCell>
+      <TableCell
+        style={cellStyle(11)}
+        className={[
+          "sheet-cell",
+          isCellActive(11) && "sheet-cell-active",
+          isCellInFillRange(11) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         {canEditExtra ? (
           <Select
             open={openSelect === "creator"}
@@ -534,7 +556,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             onValueChange={(v) => onUpdate(item.id, { creator_id: v })}
           >
             <SelectTrigger
-              {...sheetCell(10)}
+              {...sheetCell(11)}
               data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
               className="h-8 w-[140px]"
             >
@@ -551,14 +573,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ) : (
           <span className="cell-plain block">{nameOf(item.creator_id)}</span>
         )}
-        {renderFillHandle(10)}
+        {renderFillHandle(11)}
       </TableCell>
       <TableCell
-        style={cellStyle(11)}
+        style={cellStyle(12)}
         className={[
           "sheet-cell",
-          isCellActive(11) && "sheet-cell-active",
-          isCellInFillRange(11) && "sheet-cell-fill-range",
+          isCellActive(12) && "sheet-cell-active",
+          isCellInFillRange(12) && "sheet-cell-fill-range",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -570,7 +592,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
           >
             <SelectTrigger
-              {...sheetCell(11)}
+              {...sheetCell(12)}
               data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
               className="h-8 w-[140px]"
             >
@@ -588,27 +610,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ) : (
           <span className="cell-plain block">{item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}</span>
         )}
-        {renderFillHandle(11)}
-      </TableCell>
-      <TableCell
-        style={cellStyle(12)}
-        className={[
-          "sheet-cell",
-          isCellActive(12) && "sheet-cell-active",
-          isCellInFillRange(12) && "sheet-cell-fill-range",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
-        <Textarea
-          {...sheetCell(12)}
-          data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
-          value={local.remarks}
-          disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
-          onBlur={() => commit("remarks", local.remarks)}
-          className="min-h-[32px] h-8 w-[200px] resize-none py-1.5"
-          rows={1}
-        />
         {renderFillHandle(12)}
       </TableCell>
       <TableCell
@@ -620,6 +621,27 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
+        <Textarea
+          {...sheetCell(13)}
+          data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
+          value={local.remarks}
+          disabled={!canEditRow}
+          onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
+          onBlur={() => commit("remarks", local.remarks)}
+          className="min-h-[32px] h-8 w-[200px] resize-none py-1.5"
+          rows={1}
+        />
+        {renderFillHandle(13)}
+      </TableCell>
+      <TableCell
+        style={cellStyle(14)}
+        className={[
+          "sheet-cell",
+          isCellActive(14) && "sheet-cell-active",
+          isCellInFillRange(14) && "sheet-cell-fill-range",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
         <Select
           open={openSelect === "status"}
           onOpenChange={(open) => setOpenSelect(open ? "status" : null)}
@@ -628,7 +650,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
         >
           <SelectTrigger
-            {...sheetCell(13)}
+            {...sheetCell(14)}
             data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
             className="h-8 w-[170px] border-none bg-transparent shadow-none p-0"
           >
@@ -644,7 +666,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             ))}
           </SelectContent>
         </Select>
-        {renderFillHandle(13)}
+        {renderFillHandle(14)}
       </TableCell>
 
       <TableCell className="sheet-cell w-[52px] text-center">

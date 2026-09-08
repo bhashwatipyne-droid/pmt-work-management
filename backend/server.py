@@ -113,7 +113,7 @@ DELIVERABLE_TYPE_CATEGORIES = {
 
 STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Rework", "Closed"]
 MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
-MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link"}
+MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link"}
 
 PROJECT_STATUSES = ["Planning", "Active", "In Rework", "Completed"]
 STAGES = ["Content", "Design", "Animate", "Finish"]
@@ -168,6 +168,7 @@ class WorkItem(BaseModel):
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
+    client_id: Optional[str] = None
     project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
     stage: Optional[str] = None
@@ -188,6 +189,7 @@ class WorkItemCreate(BaseModel):
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
+    client_id: Optional[str] = None
     project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
     stage: Optional[str] = None
@@ -206,6 +208,7 @@ class WorkItemUpdate(BaseModel):
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
+    client_id: Optional[str] = None
     project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
     stage: Optional[str] = None
@@ -381,19 +384,46 @@ def gen_project_code() -> str:
     return "proj" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
 
 
-def scoped_update_fields(user: User, existing: dict, update_fields: dict, creator_department: Optional[str] = None) -> dict:
+async def scoped_update_fields(user: User, existing: dict, update_fields: dict, creator_department: Optional[str] = None) -> dict:
     """Apply role-based restrictions to a raw update payload. Raises HTTPException on violation."""
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
     if user.role == "member":
-        if existing.get("creator_id") != user.id:
-            raise HTTPException(status_code=403, detail="You can only edit your own work items")
+        # Members share rows within their department/stage. Creator ownership is
+        # not used as an edit lock; Add 5 Rows creates shared team rows.
+        department_stage = {
+            "Content": "Content",
+            "Design": "Design",
+            "Animation": "Animate",
+            "Finish": "Finish",
+        }.get(user.department)
+        if existing.get("stage") and department_stage and existing.get("stage") != department_stage:
+            raise HTTPException(status_code=403, detail="You can only edit work items in your department")
         update_fields = {k: v for k, v in update_fields.items() if k in MEMBER_EDITABLE_FIELDS}
+        if "stage" in update_fields and department_stage and update_fields["stage"] != department_stage:
+            raise HTTPException(status_code=403, detail="Members can only assign work to their department")
         if "status" in update_fields and update_fields["status"] not in MEMBER_FORWARD_STATUSES:
             raise HTTPException(status_code=403, detail="Members cannot set this status")
     elif user.role == "manager":
         if not creator_department or creator_department != user.department:
             raise HTTPException(status_code=403, detail="You can only edit work items logged by your own department")
+    if "client_id" in update_fields and update_fields["client_id"]:
+        client = await db.clients.find_one({"id": update_fields["client_id"]}, {"_id": 0, "id": 1})
+        if not client:
+            raise HTTPException(status_code=400, detail="Invalid client")
+
+    if "project_id" in update_fields and update_fields["project_id"]:
+        project = await db.projects.find_one(
+            {"id": update_fields["project_id"]},
+            {"_id": 0, "client_id": 1},
+        )
+        if not project:
+            raise HTTPException(status_code=400, detail="Invalid project")
+        project_client_id = project.get("client_id")
+        if update_fields.get("client_id") and update_fields["client_id"] != project_client_id:
+            raise HTTPException(status_code=400, detail="Project does not belong to selected client")
+        update_fields["client_id"] = project_client_id
+
     if "work_date" in update_fields and update_fields["work_date"]:
         update_fields["month"] = update_fields["work_date"][:7]
     if "stage" in update_fields and update_fields["stage"] and update_fields["stage"] not in STAGES:
@@ -436,12 +466,6 @@ class LoginPayload(BaseModel):
     password: str
 
 
-class ProfileUpdatePayload(BaseModel):
-    username: Optional[str] = None
-    current_password: Optional[str] = None
-    new_password: Optional[str] = None
-
-
 @api_router.post("/auth/login", response_model=User)
 async def login(payload: LoginPayload, response: Response):
     login = payload.login.strip().lower()
@@ -480,44 +504,6 @@ async def logout(response: Response):
 @api_router.get("/auth/me", response_model=User)
 async def me(request: Request):
     return await get_acting_user(request)
-
-
-@api_router.patch("/auth/profile", response_model=User)
-async def update_profile(payload: ProfileUpdatePayload, request: Request):
-    user = await get_acting_user(request)
-    update_fields = {}
-
-    if payload.username is not None:
-        username = payload.username.strip().lower()
-        if not username:
-            raise HTTPException(status_code=400, detail="Username required")
-
-        existing_username = await db.users.find_one(
-            {"username": username, "id": {"$ne": user.id}},
-            {"_id": 0, "id": 1},
-        )
-        if existing_username:
-            raise HTTPException(status_code=400, detail="Username already exists")
-
-        update_fields["username"] = username
-
-    changing_password = payload.new_password is not None
-    if changing_password:
-        if not payload.current_password:
-            raise HTTPException(status_code=400, detail="Current password is required")
-        existing = await db.users.find_one({"id": user.id}, {"_id": 0, "password_hash": 1})
-        if not existing or not verify_password(payload.current_password, existing.get("password_hash", "")):
-            raise HTTPException(status_code=400, detail="Current password is incorrect")
-        if len(payload.new_password) < 8:
-            raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
-        update_fields["password_hash"] = hash_password(payload.new_password)
-
-    if not update_fields:
-        raise HTTPException(status_code=400, detail="No changes provided")
-
-    await db.users.update_one({"id": user.id}, {"$set": update_fields})
-    updated = await db.users.find_one({"id": user.id}, {"_id": 0})
-    return User(**updated)
 
 
 @api_router.get("/users", response_model=List[User])
@@ -647,6 +633,23 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
         data["manager_id"] = None
     else:
         data["creator_id"] = data.get("creator_id") or user.id
+
+    if data.get("client_id"):
+        client = await db.clients.find_one({"id": data["client_id"]}, {"_id": 0, "id": 1})
+        if not client:
+            raise HTTPException(status_code=400, detail="Invalid client")
+
+    if data.get("project_id"):
+        project = await db.projects.find_one(
+            {"id": data["project_id"]},
+            {"_id": 0, "client_id": 1},
+        )
+        if not project:
+            raise HTTPException(status_code=400, detail="Invalid project")
+        if data.get("client_id") and data["client_id"] != project.get("client_id"):
+            raise HTTPException(status_code=400, detail="Project does not belong to selected client")
+        data["client_id"] = project.get("client_id")
+
     ts = now_iso()
     item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
     await db.work_items.insert_one(item.model_dump())
@@ -757,7 +760,7 @@ async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Reque
 
     creator_department = await get_user_department(existing.get("creator_id"))
 
-    update_fields = scoped_update_fields(
+    update_fields = await scoped_update_fields(
         user,
         existing,
         payload.model_dump(exclude_unset=True),
@@ -827,6 +830,23 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
     if payload.count < 1 or payload.count > 500:
         raise HTTPException(status_code=400, detail="count must be between 1 and 500")
     tpl = (payload.template or WorkItemCreate()).model_dump()
+
+    if tpl.get("client_id"):
+        client = await db.clients.find_one({"id": tpl["client_id"]}, {"_id": 0, "id": 1})
+        if not client:
+            raise HTTPException(status_code=400, detail="Invalid client")
+
+    if tpl.get("project_id"):
+        project = await db.projects.find_one(
+            {"id": tpl["project_id"]},
+            {"_id": 0, "client_id": 1},
+        )
+        if not project:
+            raise HTTPException(status_code=400, detail="Invalid project")
+        if tpl.get("client_id") and tpl["client_id"] != project.get("client_id"):
+            raise HTTPException(status_code=400, detail="Project does not belong to selected client")
+        tpl["client_id"] = project.get("client_id")
+
     work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     month = work_date[:7]
     docs = []
@@ -889,7 +909,7 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
         )
 
         try:
-            update_fields = scoped_update_fields(
+            update_fields = await scoped_update_fields(
                 user,
                 existing,
                 dict(raw_fields),

@@ -109,10 +109,40 @@ export const createWorksheetKeyHandler = ({
       target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement
     ) {
-      if (
-        ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
-      ) {
+      if (event.key === "Home" || event.key === "End") {
         return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        // Only some input types support selectionStart/selectionEnd —
+        // "date" and "number" throw on access instead of returning a
+        // value, so treat those as "always native" (their own arrow-key
+        // behavior — moving between date segments, nudging a number —
+        // matters more than cell nav there).
+        const supportsSelection =
+          target instanceof HTMLTextAreaElement ||
+          !["date", "number"].includes(target.type);
+
+        if (!supportsSelection) {
+          return;
+        }
+
+        const atStart =
+          target.selectionStart === 0 && target.selectionEnd === 0;
+        const atEnd =
+          target.selectionStart === target.value.length &&
+          target.selectionEnd === target.value.length;
+        const wantsCellNav =
+          (event.key === "ArrowLeft" && atStart) ||
+          (event.key === "ArrowRight" && atEnd);
+
+        // Cursor is mid-text (or a range is selected) → let it move/
+        // collapse normally instead of jumping to another cell.
+        if (!wantsCellNav) {
+          return;
+        }
+        // At the boundary already → fall through to cell navigation
+        // below, same as pressing Left/Right on an empty/unfocused cell.
       }
 
       if (

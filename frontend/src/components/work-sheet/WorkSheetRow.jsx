@@ -826,7 +826,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   return (
     <TableRow
       data-testid={`worksheet-row-${item.id}`}
-      className={`group ${isRowDragging ? "opacity-60" : ""}`}
+      className={`group ${isRowDragging ? "opacity-60" : ""} ${
+        selected ? "sheet-row-selected" : ""
+      }`}
       style={{
         display: "grid",
         gridTemplateColumns: buildGridTemplateColumns(visibleColumns),

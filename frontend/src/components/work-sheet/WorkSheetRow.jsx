@@ -9,27 +9,10 @@ import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
+import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
-
-const COLUMN_WIDTHS = {
-  Date: "105px",
-  Client: "135px",
-  Project: "145px",
-  Deliverable: "145px",
-  Stage: "95px",
-  "Deliverable Name": "180px",
-  "Deliverable Link": "165px",
-  Type: "130px",
-  Category: "120px",
-  Version: "70px",
-  "Time (min)": "75px",
-  Creator: "120px",
-  Reviewer: "120px",
-  Remarks: "170px",
-  Status: "140px",
-};
 
 export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const {
@@ -791,9 +774,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       className={`group ${isRowDragging ? "opacity-60" : ""}`}
       style={{
         display: "grid",
-        gridTemplateColumns: `44px 44px ${visibleColumns
-          .map((column) => COLUMN_WIDTHS[column] || "150px")
-          .join(" ")} 52px`,
+        gridTemplateColumns: buildGridTemplateColumns(visibleColumns),
         minWidth: "max-content",
       }}
       onDragOver={(event) => onRowDragOver?.(event, item.id)}

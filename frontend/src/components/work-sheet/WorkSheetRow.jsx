@@ -5,6 +5,7 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
+import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
@@ -803,6 +804,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             label: status,
             disabled: !allowedStatuses?.includes(status),
           }))}
+          renderValue={(_option, value) =>
+            value && value !== NONE_VALUE ? (
+              <StatusBadge status={value} />
+            ) : (
+              "Status"
+            )
+          }
           placeholder="Status"
           searchPlaceholder="Type status..."
           emptyText="No statuses found"

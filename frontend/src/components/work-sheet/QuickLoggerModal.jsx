@@ -12,6 +12,7 @@ const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
 
 const emptyDraft = () => ({
   text: "",
+  client_id: "",
   project_id: "",
   deliverable_id: "",
   deliverable_type: "",
@@ -71,6 +72,7 @@ export default function QuickLoggerModal({
   currentUser,
   projects = [],
   deliverables = [],
+  clients = [],
   options = {},
   onSave,
 }) {
@@ -99,6 +101,11 @@ export default function QuickLoggerModal({
     [projects]
   );
 
+  const clientMap = useMemo(
+    () => new Map(clients.map((c) => [c.id, c])),
+    [clients]
+  );
+
   const deliverablesByProject = useMemo(() => {
     const map = new Map();
     deliverables.forEach((d) => {
@@ -113,20 +120,38 @@ export default function QuickLoggerModal({
   const parts = useMemo(() => {
     const values = draft.text.split("/");
     return {
-      project: (values[0] || "").trim(),
-      deliverable: (values[1] || "").trim(),
-      type: (values[2] || "").trim(),
-      duration: (values[3] || "").trim(),
+      client: (values[0] || "").trim(),
+      project: (values[1] || "").trim(),
+      deliverable: (values[2] || "").trim(),
+      type: (values[3] || "").trim(),
+      duration: (values[4] || "").trim(),
     };
   }, [draft.text]);
+
+  const resolvedClient = useMemo(() => {
+    if (draft.client_id) return clientMap.get(draft.client_id) || null;
+    return (
+      clients.find((c) => normalise(c.name) === normalise(parts.client)) ||
+      null
+    );
+  }, [draft.client_id, clientMap, clients, parts.client]);
+
+  const clientProjects = useMemo(
+    () =>
+      resolvedClient
+        ? projects.filter((p) => p.client_id === resolvedClient.id)
+        : [],
+    [projects, resolvedClient]
+  );
 
   const resolvedProject = useMemo(() => {
     if (draft.project_id) return projectMap.get(draft.project_id) || null;
     return (
-      projects.find((p) => normalise(p.name) === normalise(parts.project)) ||
-      null
+      clientProjects.find(
+        (p) => normalise(p.name) === normalise(parts.project)
+      ) || null
     );
-  }, [draft.project_id, projectMap, projects, parts.project]);
+  }, [draft.project_id, projectMap, clientProjects, parts.project]);
 
   const projectDeliverables = useMemo(
     () => (resolvedProject ? deliverablesByProject.get(resolvedProject.id) || [] : []),
@@ -164,13 +189,21 @@ export default function QuickLoggerModal({
   );
 
   const currentStep = useMemo(() => {
-    if (!draft.text.trim()) return "project";
+    if (!draft.text.trim()) return "client";
+    if (!resolvedClient) return "client";
     if (!resolvedProject) return "project";
     if (!resolvedDeliverable) return "deliverable";
     if (!resolvedType) return "type";
     if (!parsedDuration || parsedDuration <= 0) return "duration";
     return "complete";
-  }, [draft.text, parsedDuration, resolvedDeliverable, resolvedProject, resolvedType]);
+  }, [
+    draft.text,
+    parsedDuration,
+    resolvedClient,
+    resolvedDeliverable,
+    resolvedProject,
+    resolvedType,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -189,8 +222,10 @@ export default function QuickLoggerModal({
     const step = currentStep;
     let next = [];
 
-    if (step === "project") {
-      next = fuzzyMatches(projects, parts.project, (p) => p.name);
+    if (step === "client") {
+      next = fuzzyMatches(clients, parts.client, (c) => c.name);
+    } else if (step === "project") {
+      next = fuzzyMatches(clientProjects, parts.project, (p) => p.name);
     } else if (step === "deliverable") {
       next = fuzzyMatches(
         projectDeliverables,
@@ -205,12 +240,14 @@ export default function QuickLoggerModal({
     setHighlightedIndex(0);
   }, [
     currentStep,
+    clientProjects,
+    clients,
     deliverableTypes,
+    parts.client,
     parts.deliverable,
     parts.project,
     parts.type,
     projectDeliverables,
-    projects,
   ]);
 
   useEffect(() => {
@@ -225,13 +262,22 @@ export default function QuickLoggerModal({
   };
 
   const selectSuggestion = (item) => {
-    if (currentStep === "project") {
+    if (currentStep === "client") {
+      updateDraft({
+        client_id: item.id,
+        project_id: "",
+        deliverable_id: "",
+        deliverable_type: "",
+        time_taken_minutes: "",
+        text: `${item.name} / `,
+      });
+    } else if (currentStep === "project") {
       updateDraft({
         project_id: item.id,
         deliverable_id: "",
         deliverable_type: "",
         time_taken_minutes: "",
-        text: `${item.name} / `,
+        text: `${parts.client} / ${item.name} / `,
       });
     } else if (currentStep === "deliverable") {
       const name = item.name || item.deliverable_name || "";
@@ -239,13 +285,13 @@ export default function QuickLoggerModal({
         deliverable_id: item.id,
         deliverable_type: "",
         time_taken_minutes: "",
-        text: `${parts.project} / ${name} / `,
+        text: `${parts.client} / ${parts.project} / ${name} / `,
       });
     } else if (currentStep === "type") {
       updateDraft({
         deliverable_type: item,
         time_taken_minutes: "",
-        text: `${parts.project} / ${parts.deliverable} / ${item} / `,
+        text: `${parts.client} / ${parts.project} / ${parts.deliverable} / ${item} / `,
       });
     }
 
@@ -255,6 +301,7 @@ export default function QuickLoggerModal({
 
   const buildEntry = () => {
     if (
+      !resolvedClient ||
       !resolvedProject ||
       !resolvedDeliverable ||
       !resolvedType ||
@@ -266,6 +313,7 @@ export default function QuickLoggerModal({
 
     return {
       text: draft.text.trim(),
+      client_id: resolvedClient.id,
       project_id: resolvedProject.id,
       deliverable_id: resolvedDeliverable.id,
       deliverable_name:
@@ -290,7 +338,9 @@ export default function QuickLoggerModal({
 
     if (!entry) {
       setError(
-        currentStep === "project"
+        currentStep === "client"
+          ? "Select a Client first."
+          : currentStep === "project"
           ? "Select a Project first."
           : currentStep === "deliverable"
           ? "Select a Deliverable for this Project."
@@ -339,6 +389,7 @@ export default function QuickLoggerModal({
 
       const payloads = entriesToSave.map((entry) => ({
         work_date: today,
+        client_id: entry.client_id,
         project_id: entry.project_id,
         deliverable_id: entry.deliverable_id,
         deliverable_name: entry.deliverable_name || "",
@@ -425,7 +476,9 @@ export default function QuickLoggerModal({
       }
 
       setError(
-        currentStep === "project"
+        currentStep === "client"
+          ? "Select a Client first."
+          : currentStep === "project"
           ? "Select a Project first."
           : currentStep === "deliverable"
           ? "Select a Deliverable for this Project."
@@ -438,7 +491,7 @@ export default function QuickLoggerModal({
   };
 
   const setQuickDuration = (minutes) => {
-    const value = `${parts.project} / ${parts.deliverable} / ${parts.type} / ${formatDuration(minutes)}`;
+    const value = `${parts.client} / ${parts.project} / ${parts.deliverable} / ${parts.type} / ${formatDuration(minutes)}`;
     updateDraft({
       text: value,
       time_taken_minutes: minutes,
@@ -487,7 +540,7 @@ export default function QuickLoggerModal({
                     New work entry
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    Project / Deliverable / Type / Time
+                    Client / Project / Deliverable / Type / Time
                   </div>
                 </div>
                 {draft.text && (
@@ -507,6 +560,7 @@ export default function QuickLoggerModal({
                   onChange={(event) =>
                     updateDraft({
                       text: event.target.value,
+                      client_id: "",
                       project_id: "",
                       deliverable_id: "",
                       deliverable_type: "",
@@ -514,7 +568,7 @@ export default function QuickLoggerModal({
                     })
                   }
                   onKeyDown={handleKeyDown}
-                  placeholder="The Last Mile / Rushing Waters / Carousel / 45m"
+                  placeholder="Acme Corp / The Last Mile / Rushing Waters / Carousel / 45m"
                   autoComplete="off"
                   spellCheck="false"
                   className="h-14 w-full rounded-xl border border-input bg-card px-4 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
@@ -524,7 +578,9 @@ export default function QuickLoggerModal({
                 {suggestions.length > 0 && (
                   <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
                     <div className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {currentStep === "project"
+                      {currentStep === "client"
+                        ? "Clients"
+                        : currentStep === "project"
                         ? "Projects"
                         : currentStep === "deliverable"
                         ? "Deliverables"
@@ -573,6 +629,7 @@ export default function QuickLoggerModal({
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
+                  ["Client", resolvedClient?.name],
                   ["Project", resolvedProject?.name],
                   [
                     "Deliverable",
@@ -671,6 +728,7 @@ export default function QuickLoggerModal({
                         <Check className="h-3.5 w-3.5 text-[#2b2bb5]" />
                       </div>
                       <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                        {clientMap.get(entry.client_id)?.name} /{" "}
                         {projectMap.get(entry.project_id)?.name} /{" "}
                         {entry.deliverable_name} / {entry.deliverable_type}
                       </div>

@@ -612,6 +612,7 @@ export default function WorkSheetPage() {
         currentUser={currentUser}
         projects={projects}
         deliverables={deliverables}
+        clients={clients}
         options={options}
         onSave={handleQuickLoggerSave}
       />

@@ -60,7 +60,50 @@ export default function WorkSheetPage() {
   const [options, setOptions] = useState({});
   const [projects, setProjects] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
-  const [filters, setFilters] = useState(emptyFilters);
+  // Filters are scoped to each worksheet tab. A filter applied on Master
+  // should not leak into Content, Design, Animation, or Finish.
+  const [filtersBySheet, setFiltersBySheet] = useState(() => {
+    const createFilters = () => ({
+      ...emptyFilters,
+      project_ids: [],
+      deliverable_ids: [],
+      stages: [],
+      deliverable_types: [],
+      work_categories: [],
+      creator_ids: [],
+      reviewer_ids: [],
+      statuses: [],
+    });
+
+    return {
+      Master: createFilters(),
+      Content: createFilters(),
+      Design: createFilters(),
+      Animation: createFilters(),
+      Finish: createFilters(),
+    };
+  });
+
+  const filters = filtersBySheet[activeSheet] || emptyFilters;
+
+  const setFilters = useCallback(
+    (nextFilters) => {
+      setFiltersBySheet((current) => {
+        const currentSheetFilters = current[activeSheet] || emptyFilters;
+        const resolvedFilters =
+          typeof nextFilters === "function"
+            ? nextFilters(currentSheetFilters)
+            : nextFilters;
+
+        return {
+          ...current,
+          [activeSheet]: resolvedFilters,
+        };
+      });
+    },
+    [activeSheet]
+  );
+
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);

@@ -466,6 +466,11 @@ export default function WorkSheetPage() {
   }, [currentUser]);
 
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+
+  // Used by the worksheet's checkbox Shift+Down/Up bulk-select: replaces
+  // the selection outright with the anchor-to-target range, same as a
+  // spreadsheet's row-header drag/shift-click.
+  const handleSelectRange = (ids) => setSelectedIds(ids);
   const handleHideRows = () => {
     if (!selectedIds.length) return;
 
@@ -735,6 +740,7 @@ export default function WorkSheetPage() {
           onOpenFilters={() => setFiltersOpen(true)}
           onAddRow={isAdmin ? undefined : handleAddRow}
           addingRow={addingRow}
+          onSelectRange={handleSelectRange}
           sheetKey={activeSheet}
         />
       )}

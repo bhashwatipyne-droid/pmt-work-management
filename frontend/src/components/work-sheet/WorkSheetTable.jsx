@@ -1104,10 +1104,10 @@ export const WorkSheetTable = ({
                     <button
                       type="button"
                       onClick={(event) => event.stopPropagation()}
-                      className="flex min-w-0 flex-1 items-center justify-start rounded px-0 py-0.5 text-left hover:text-slate-800"
+                      className="flex min-w-0 flex-1 items-center justify-start overflow-hidden rounded px-0 py-0.5 text-left hover:text-slate-800"
                       title={column}
                     >
-                      <span className="min-w-0 whitespace-nowrap">{column}</span>
+                      <span className="min-w-0 truncate">{column}</span>
                     </button>
 
                     <button

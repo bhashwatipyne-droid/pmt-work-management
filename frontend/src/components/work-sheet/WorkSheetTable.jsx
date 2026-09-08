@@ -82,6 +82,7 @@ export const WorkSheetTable = ({
   onToggleSelectAll,
   hiddenRows,
   setHiddenRows,
+  onOpenFilters,
 }) => {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -572,7 +573,7 @@ export const WorkSheetTable = ({
                         })
                       }
                       onFilter={() => {
-                        // We'll wire this to the global filter panel next.
+                        onOpenFilters?.();
                       }}
                       onHide={() =>
                         setHiddenColumns((current) =>

@@ -126,6 +126,8 @@ export default function WorkSheetPage() {
         ? filters.deliverable_ids
         : undefined,
 
+      // Master can use the Stage filter. Department sheets are hard-scoped
+      // to their own stage and ignore any Stage selection from the filter panel.
       stage:
         activeSheet === "Master"
           ? (filters.stages?.length ? filters.stages : undefined)
@@ -153,7 +155,21 @@ export default function WorkSheetPage() {
     };
 
     getWorkItems(currentUser.id, params)
-      .then(setItems)
+      .then((data) => {
+        const rows = Array.isArray(data) ? data : [];
+        const sheetStage =
+          activeSheet === "Master"
+            ? null
+            : DEPARTMENT_TO_STAGE[activeSheet] || activeSheet;
+
+        // Defensive client-side guard. This makes it impossible for a Design
+        // row to render in Content even if the deployed API ignores the stage query.
+        setItems(
+          sheetStage
+            ? rows.filter((item) => item.stage === sheetStage)
+            : rows
+        );
+      })
       .catch(() => toast.error("Could not load work items"))
       .finally(() => setLoading(false));
   };
@@ -582,6 +598,7 @@ export default function WorkSheetPage() {
           sortDirection={sortDirection}
           hiddenRows={hiddenRows}
           setHiddenRows={setHiddenRows}
+          onOpenFilters={() => setFiltersOpen(true)}
         />
       )}
 

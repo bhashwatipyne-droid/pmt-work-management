@@ -11,10 +11,14 @@ const EMPTY = {
   month: "",
   date_from: "",
   date_to: "",
-  project_id: "",
-  deliverable_id: "",
-  creator_id: "",
-  reviewer_id: "",
+  project_ids: [],
+  deliverable_ids: [],
+  stages: [],
+  deliverable_types: [],
+  work_categories: [],
+  creator_ids: [],
+  reviewer_ids: [],
+  statuses: [],
 };
 
 const MultiSelect = ({

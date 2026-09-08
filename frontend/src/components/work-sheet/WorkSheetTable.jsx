@@ -630,11 +630,11 @@ export const WorkSheetTable = ({
             className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
             style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
           >
-            <TableHead className="row-num-head h-10 border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: 1 }}>
+            <TableHead className="row-num-head flex h-10 items-center justify-center border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: 1 }}>
               #
             </TableHead>
 
-            <TableHead className="checkbox-cell relative h-10 border-r border-slate-200 px-3" style={{ gridColumn: 2 }}>
+            <TableHead className="checkbox-cell relative flex h-10 items-center border-r border-slate-200 px-3" style={{ gridColumn: 2 }}>
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
@@ -671,7 +671,7 @@ export const WorkSheetTable = ({
               return (
                 <TableHead
                   key={column}
-                  className={`group relative h-10 min-w-0 whitespace-nowrap border-r border-slate-200 px-1 text-[12px] font-semibold text-slate-600 ${
+                  className={`group relative flex h-10 min-w-0 items-center whitespace-nowrap border-r border-slate-200 px-1 text-[12px] font-semibold text-slate-600 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
@@ -770,7 +770,7 @@ export const WorkSheetTable = ({
               );
             })}
 
-            <TableHead className="h-10 w-[52px] border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: visibleColumns.length + 3 }}>
+            <TableHead className="flex h-10 w-[52px] items-center justify-center border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: visibleColumns.length + 3 }}>
               Actions
             </TableHead>
           </TableRow>

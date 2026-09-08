@@ -149,6 +149,28 @@
     box-shadow: inset 0 0 0 2px #2b2bb5;
   }
 
+  /* Checkbox-selected row. Each cell has its own opaque background (see
+     .sheet-cell above), so highlighting the row itself does nothing
+     visually unless the cells' own backgrounds are tinted too. */
+  .sheet-row-selected .sheet-cell,
+  .sheet-row-selected .row-num,
+  .sheet-row-selected .checkbox-cell {
+    background: #eef6ff;
+  }
+
+  /* A cell can be both in a selected row AND the active/fill/range cell
+     at the same time — those states take priority over the plain row
+     tint so the user can still see which cell they're on. */
+  .sheet-row-selected .sheet-cell-active {
+    background: #ffffff;
+    box-shadow: inset 0 0 0 2px #2b2bb5;
+  }
+
+  .sheet-row-selected .sheet-cell-fill-range,
+  .sheet-row-selected .sheet-cell-range-select {
+    background: #f0f0fd;
+  }
+
   .sheet-fill-handle {
     position: absolute;
     right: -3px;

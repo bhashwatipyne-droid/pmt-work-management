@@ -153,6 +153,16 @@ export const createWorksheetKeyHandler = ({
       // side effect to trigger the blur-based commit.
       if (isTextEditable) {
         target.blur();
+
+        // Shift+Arrow deliberately never moves focus elsewhere (only the
+        // highlighted range grows/shrinks) — but blur() alone drops focus
+        // out of the field entirely with nothing to replace it, which
+        // kills every subsequent keydown in the sheet until the user
+        // clicks back in manually. Re-focus the same field immediately
+        // so the commit still happens but focus never actually leaves.
+        if (event.shiftKey) {
+          target.focus();
+        }
       }
 
       const jumpToEdge = event.ctrlKey || event.metaKey;

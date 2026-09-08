@@ -1,4 +1,4 @@
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, User } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
@@ -11,6 +11,7 @@ const CRUMBS = {
   "/team": "Team",
   "/approvals": "Approvals",
   "/clients": "Clients",
+  "/profile": "Profile & Account",
 };
 
 const getInitials = (name) => {
@@ -27,6 +28,7 @@ const getInitials = (name) => {
 
 export const AppLayout = ({ children }) => {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { currentUser } = useUser();
 
   const crumb = CRUMBS[pathname] || "PMT";
@@ -68,6 +70,7 @@ export const AppLayout = ({ children }) => {
               type="button"
               aria-label="User profile"
               title={currentUser?.name || "Profile"}
+              onClick={() => navigate("/profile")}
               className={[
                 "flex h-9 w-9 items-center justify-center",
                 "rounded-full",

@@ -436,6 +436,12 @@ class LoginPayload(BaseModel):
     password: str
 
 
+class ProfileUpdatePayload(BaseModel):
+    username: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+
 @api_router.post("/auth/login", response_model=User)
 async def login(payload: LoginPayload, response: Response):
     login = payload.login.strip().lower()
@@ -474,6 +480,44 @@ async def logout(response: Response):
 @api_router.get("/auth/me", response_model=User)
 async def me(request: Request):
     return await get_acting_user(request)
+
+
+@api_router.patch("/auth/profile", response_model=User)
+async def update_profile(payload: ProfileUpdatePayload, request: Request):
+    user = await get_acting_user(request)
+    update_fields = {}
+
+    if payload.username is not None:
+        username = payload.username.strip().lower()
+        if not username:
+            raise HTTPException(status_code=400, detail="Username required")
+
+        existing_username = await db.users.find_one(
+            {"username": username, "id": {"$ne": user.id}},
+            {"_id": 0, "id": 1},
+        )
+        if existing_username:
+            raise HTTPException(status_code=400, detail="Username already exists")
+
+        update_fields["username"] = username
+
+    changing_password = payload.new_password is not None
+    if changing_password:
+        if not payload.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required")
+        existing = await db.users.find_one({"id": user.id}, {"_id": 0, "password_hash": 1})
+        if not existing or not verify_password(payload.current_password, existing.get("password_hash", "")):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        if len(payload.new_password) < 8:
+            raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+        update_fields["password_hash"] = hash_password(payload.new_password)
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    await db.users.update_one({"id": user.id}, {"$set": update_fields})
+    updated = await db.users.find_one({"id": user.id}, {"_id": 0})
+    return User(**updated)
 
 
 @api_router.get("/users", response_model=List[User])

@@ -11,6 +11,7 @@ import ProjectDetailPage from "@/pages/ProjectDetailPage";
 import TeamPage from "@/pages/TeamPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";
 import ClientsPage from "@/pages/ClientsPage";
+import ProfilePage from "@/pages/ProfilePage";
 import { Loader2 } from "lucide-react";
 
 function AppShell() {
@@ -34,10 +35,14 @@ function AppShell() {
         <Route path="/" element={<WorkSheetPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+        <Route
+          path="/projects/:projectId"
+          element={<ProjectDetailPage />}
+        />
         <Route path="/team" element={<TeamPage />} />
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/clients" element={<ClientsPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
       </Routes>
     </AppLayout>
   );

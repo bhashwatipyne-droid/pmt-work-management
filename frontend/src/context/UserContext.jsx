@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { getUsers, getMe, loginUser, logoutUser } from "@/services/api";
+import { getUsers, getMe, loginUser, logoutUser, updateProfile } from "@/services/api";
 
 const UserContext = createContext(null);
 
@@ -39,12 +39,18 @@ export const UserProvider = ({ children }) => {
     setUsers([]);
   };
 
+  const updateCurrentUserProfile = async (payload) => {
+    const data = await updateProfile(payload);
+    setAuthUser(data);
+    return data;
+  };
+
   const currentUser = authUser;
   const currentUserId = authUser?.id || "";
 
   return (
     <UserContext.Provider
-      value={{ users, currentUser, currentUserId, loading, isAuthenticated: !!authUser, login, logout }}
+      value={{ users, currentUser, currentUserId, loading, isAuthenticated: !!authUser, login, logout, updateCurrentUserProfile }}
     >
       {children}
     </UserContext.Provider>

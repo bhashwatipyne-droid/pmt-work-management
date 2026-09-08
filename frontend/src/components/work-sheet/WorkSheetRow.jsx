@@ -268,7 +268,32 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const isCellInFillRange = (col) => {
     if (!selection) return false;
 
-    const renderColumnCell = (column) => {
+    return (
+      selection.col === visibleColumns.indexOf(COLUMN_NAMES[col]) &&
+      index >= Math.min(selection.startRow, selection.endRow) &&
+      index <= Math.max(selection.startRow, selection.endRow)
+    );
+  };
+
+  const renderFillHandle = (col) => {
+    if (!isCellActive(col) || !canEditRow) return null;
+
+    return (
+      <span
+        className="sheet-fill-handle"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onFillStart?.({
+            row: index,
+            col: visibleColumns.indexOf(COLUMN_NAMES[col]),
+          });
+        }}
+      />
+    );
+  };
+
+  const renderColumnCell = (column) => {
     switch (column) {
       case "Date":
         return (
@@ -740,30 +765,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     }
   };
 
-  return (
-      selection.col === visibleColumns.indexOf(COLUMN_NAMES[col]) &&
-      index >= Math.min(selection.startRow, selection.endRow) &&
-      index <= Math.max(selection.startRow, selection.endRow)
-    );
-  };
 
-  const renderFillHandle = (col) => {
-    if (!isCellActive(col) || !canEditRow) return null;
-
-    return (
-      <span
-        className="sheet-fill-handle"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onFillStart?.({
-            row: index,
-            col: visibleColumns.indexOf(COLUMN_NAMES[col]),
-          });
-        }}
-      />
-    );
-  };
 
   return (
     <TableRow

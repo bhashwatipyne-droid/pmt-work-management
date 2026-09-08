@@ -365,10 +365,27 @@ export const WorkSheetTable = ({
       endRow: row,
       col,
     });
-    // A plain click/focus always collapses any Shift+Arrow range from
-    // before, same as Google Sheets.
-    rangeSelectionRef.current = null;
-    setRangeSelection(null);
+
+    // A plain click/focus on a different cell always collapses any
+    // Shift+Arrow range from before, same as Google Sheets. But
+    // Shift+Arrow itself blurs-then-refocuses this same anchor cell on
+    // every keystroke (to commit the typed value without losing focus —
+    // see useWorksheetKeyboardNavigation.js), which fires this exact
+    // handler too. If that refocus is what's happening — same cell as
+    // the range's own anchor — the range must survive it, or repeated
+    // Shift+Down could never extend past a single extra cell: each
+    // keystroke's own refocus would wipe out the previous extension
+    // right before applying the next one.
+    const currentRange = rangeSelectionRef.current;
+    const isOwnRangeAnchorRefocusing =
+      currentRange &&
+      currentRange.anchorRow === row &&
+      currentRange.anchorCol === col;
+
+    if (!isOwnRangeAnchorRefocusing) {
+      rangeSelectionRef.current = null;
+      setRangeSelection(null);
+    }
   }, []);
 
   // Shift(+Ctrl)+Arrow — grows/shrinks the rectangle from a fixed anchor
@@ -431,6 +448,12 @@ export const WorkSheetTable = ({
     (id, rowIndex) => {
       checkboxAnchorRef.current = rowIndex;
       onToggleSelect(id);
+      // Row-checkbox selection and the keyboard cell-range selection are
+      // two different modes; clicking a checkbox means the user has
+      // moved on to row-level selection, so the cell-range highlight
+      // shouldn't linger.
+      rangeSelectionRef.current = null;
+      setRangeSelection(null);
     },
     [onToggleSelect]
   );

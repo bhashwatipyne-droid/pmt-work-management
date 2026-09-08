@@ -53,14 +53,6 @@ const DEPARTMENT_TO_STAGE = {
   Finish: "Finish",
 };
 
-const SHEET_TO_DEPARTMENT = {
-  Content: "Content",
-  Design: "Design",
-  Animate: "Animation",
-  Animation: "Animation",
-  Finish: "Finish",
-};
-
 export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
   const [items, setItems] = useState([]);
@@ -119,14 +111,6 @@ export default function WorkSheetPage() {
     if (!currentUser) return;
     setLoading(true);
 
-    const department = SHEET_TO_DEPARTMENT[activeSheet];
-    const departmentUserIds =
-      activeSheet === "Master"
-        ? undefined
-        : users
-            .filter((user) => user.department === department)
-            .map((user) => user.id);
-
     const params = {
       search: filters.search || undefined,
       month: filters.month || undefined,
@@ -142,9 +126,10 @@ export default function WorkSheetPage() {
         ? filters.deliverable_ids
         : undefined,
 
-      stage: filters.stages?.length
-        ? filters.stages
-        : undefined,
+      stage:
+        activeSheet === "Master"
+          ? (filters.stages?.length ? filters.stages : undefined)
+          : [DEPARTMENT_TO_STAGE[activeSheet] || activeSheet],
 
       deliverable_type: filters.deliverable_types?.length
         ? filters.deliverable_types
@@ -154,19 +139,9 @@ export default function WorkSheetPage() {
         ? filters.work_categories
         : undefined,
 
-      creator_id:
-        activeSheet !== "Master"
-          ? (() => {
-              const creatorIds = filters.creator_ids?.length
-                ? filters.creator_ids.filter((id) => departmentUserIds?.includes(id))
-                : departmentUserIds;
-              return creatorIds?.length
-                ? creatorIds
-                : ["__no_matching_department_users__"];
-            })()
-          : filters.creator_ids?.length
-          ? filters.creator_ids
-          : undefined,
+      creator_id: filters.creator_ids?.length
+        ? filters.creator_ids
+        : undefined,
 
       reviewer_id: filters.reviewer_ids?.length
         ? filters.reviewer_ids
@@ -187,7 +162,7 @@ export default function WorkSheetPage() {
     fetchItems();
     setSelectedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, users, filters, activeSheet]);
+  }, [currentUser, filters, activeSheet]);
 
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {

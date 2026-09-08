@@ -5,7 +5,6 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
-import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";

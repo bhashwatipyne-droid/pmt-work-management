@@ -826,7 +826,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               onRowDragStart?.(event, item.id);
             }}
             onClick={(event) => event.stopPropagation()}
-            className={`rounded p-0.5 text-slate-300 ${
+            className={`inline-flex rounded p-1 text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:opacity-100 ${
               canDragRow
                 ? "cursor-grab hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
                 : "cursor-default opacity-40"
@@ -834,7 +834,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             title="Drag row"
             aria-label="Drag row"
           >
-            <GripVertical className="h-3 w-3" />
+            <GripVertical className="h-3.5 w-3.5" />
           </button>
           <span>{index}</span>
         </div>

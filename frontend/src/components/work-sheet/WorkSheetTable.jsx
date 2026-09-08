@@ -692,14 +692,14 @@ export const WorkSheetTable = ({
               return (
                 <TableHead
                   key={column}
-                  className={`relative h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${
+                  className={`group relative h-10 min-w-0 whitespace-nowrap border-r border-slate-200 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={() => handleColumnDrop(column)}
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <button
                       type="button"
                       draggable
@@ -709,11 +709,11 @@ export const WorkSheetTable = ({
                       }}
                       onDragEnd={() => setDraggedColumn(null)}
                       onClick={(event) => event.stopPropagation()}
-                      className="mr-0.5 inline-flex cursor-grab rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
+                      className="inline-flex shrink-0 cursor-grab rounded p-1 text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:cursor-grabbing active:opacity-100"
                       title={`Drag ${column} column`}
                       aria-label={`Drag ${column} column`}
                     >
-                      <GripVertical className="h-3 w-3" />
+                      <GripVertical className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
@@ -735,9 +735,9 @@ export const WorkSheetTable = ({
                           };
                         });
                       }}
-                      className="inline-flex min-w-0 items-center gap-1 rounded px-1 py-1 hover:bg-slate-100 hover:text-slate-700"
+                      className="flex min-w-0 flex-1 items-center justify-start gap-1 rounded px-1 py-1 text-left hover:bg-slate-100 hover:text-slate-700"
                     >
-                      <span className="truncate">{column}</span>
+                      <span className="min-w-0 truncate" title={column}>{column}</span>
 
                       {isSorted &&
                         (columnSort.direction === "asc" ? (

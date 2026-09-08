@@ -38,6 +38,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onFillHover,
     onFillEnd,
     selection,
+    rangeSelection,
+    totalRows = 0,
+    onExtendSelection,
+    onCheckboxRangeSelect,
     hiddenColumns = [],
     columnOrder = [],
     onRowDragStart,
@@ -266,6 +270,8 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           row: index,
           col: navigationCol,
           maxCol: Math.max(0, visibleColumns.length - 1),
+          maxRow: totalRows,
+          onExtendSelection,
         })(event);
       },
     };
@@ -288,6 +294,25 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       selection.col === visibleColumns.indexOf(COLUMN_NAMES[col]) &&
       index >= Math.min(selection.startRow, selection.endRow) &&
       index <= Math.max(selection.startRow, selection.endRow)
+    );
+  };
+
+  // Google-Sheets-style rectangular selection made with Shift+Arrow /
+  // Shift+Ctrl+Arrow. Separate from `selection` above, which is a
+  // single-column range used only for the fill-handle drag — keeping
+  // them apart avoids the keyboard range accidentally triggering a
+  // fill-copy, and vice versa.
+  const isCellInRangeSelection = (col) => {
+    if (!rangeSelection) return false;
+
+    const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
+    const { anchorRow, anchorCol, row, col: endCol } = rangeSelection;
+
+    return (
+      visualCol >= Math.min(anchorCol, endCol) &&
+      visualCol <= Math.max(anchorCol, endCol) &&
+      index >= Math.min(anchorRow, row) &&
+      index <= Math.max(anchorRow, row)
     );
   };
 
@@ -319,6 +344,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(0) && "sheet-cell-active",
           isCellInFillRange(0) && "sheet-cell-fill-range",
+          isCellInRangeSelection(0) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -343,6 +369,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(1) && "sheet-cell-active",
           isCellInFillRange(1) && "sheet-cell-fill-range",
+          isCellInRangeSelection(1) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -386,6 +413,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(2) && "sheet-cell-active",
           isCellInFillRange(2) && "sheet-cell-fill-range",
+          isCellInRangeSelection(2) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -426,6 +454,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(3) && "sheet-cell-active",
           isCellInFillRange(3) && "sheet-cell-fill-range",
+          isCellInRangeSelection(3) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -457,6 +486,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(4) && "sheet-cell-active",
           isCellInFillRange(4) && "sheet-cell-fill-range",
+          isCellInRangeSelection(4) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -488,6 +518,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(5) && "sheet-cell-active",
           isCellInFillRange(5) && "sheet-cell-fill-range",
+          isCellInRangeSelection(5) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -515,6 +546,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(6) && "sheet-cell-active",
           isCellInFillRange(6) && "sheet-cell-fill-range",
+          isCellInRangeSelection(6) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -546,6 +578,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(7) && "sheet-cell-active",
           isCellInFillRange(7) && "sheet-cell-fill-range",
+          isCellInRangeSelection(7) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -585,6 +618,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(8) && "sheet-cell-active",
           isCellInFillRange(8) && "sheet-cell-fill-range",
+          isCellInRangeSelection(8) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -607,6 +641,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(9) && "sheet-cell-active",
           isCellInFillRange(9) && "sheet-cell-fill-range",
+          isCellInRangeSelection(9) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -631,6 +666,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(10) && "sheet-cell-active",
           isCellInFillRange(10) && "sheet-cell-fill-range",
+          isCellInRangeSelection(10) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -657,6 +693,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(11) && "sheet-cell-active",
           isCellInFillRange(11) && "sheet-cell-fill-range",
+          isCellInRangeSelection(11) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -692,6 +729,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(12) && "sheet-cell-active",
           isCellInFillRange(12) && "sheet-cell-fill-range",
+          isCellInRangeSelection(12) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -727,6 +765,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(13) && "sheet-cell-active",
           isCellInFillRange(13) && "sheet-cell-fill-range",
+          isCellInRangeSelection(13) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -751,6 +790,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           "sheet-cell",
           isCellActive(14) && "sheet-cell-active",
           isCellInFillRange(14) && "sheet-cell-fill-range",
+          isCellInRangeSelection(14) && "sheet-cell-range-select",
         ]
           .filter(Boolean)
           .join(" ")}>
@@ -838,9 +878,23 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       <TableCell className="checkbox-cell">
         <Checkbox
           data-testid={`worksheet-row-checkbox-${item.id}`}
+          data-checkbox-row={index}
           checked={selected}
           disabled={!canEditRow}
           onCheckedChange={() => onToggleSelect(item.id)}
+          onKeyDown={(event) => {
+            // Click one checkbox, then Shift+Down/Up to bulk-select the
+            // rows in between — same as Google Sheets' row-header
+            // behavior. The anchor is whichever row was last plainly
+            // clicked/toggled; this only extends from it.
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            if (!event.shiftKey) return;
+            event.preventDefault();
+            onCheckboxRangeSelect?.(
+              index,
+              event.key === "ArrowDown" ? "down" : "up"
+            );
+          }}
         />
       </TableCell>
       {visibleColumns.map((column) => (

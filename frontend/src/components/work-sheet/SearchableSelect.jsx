@@ -108,6 +108,27 @@ export function SearchableSelect({
             onValueChange={setSearch}
             placeholder={searchPlaceholder}
             onKeyDown={(event) => {
+              // Clicking this cell opened the popover and moved focus
+              // into this search box — so normally every key here is
+              // cmdk's own list search/navigation (stopPropagation stops
+              // it reaching the sheet's handler at all). But Shift+Arrow
+              // is a sheet-level range-selection gesture with no meaning
+              // inside a search list, so forward it out instead of
+              // eating it, and close the dropdown since we're leaving
+              // "pick a value" mode.
+              if (
+                event.shiftKey &&
+                ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+                  event.key
+                )
+              ) {
+                triggerProps.onKeyDown?.(event);
+                if (event.defaultPrevented) {
+                  onOpenChange?.(false);
+                }
+                return;
+              }
+
               event.stopPropagation();
             }}
           />

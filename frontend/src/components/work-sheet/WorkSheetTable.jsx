@@ -10,6 +10,7 @@ import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
+import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WORKSHEET } from "@/constants/testIds";
 
 const COLUMNS = [
@@ -92,10 +93,14 @@ export const WorkSheetTable = ({
   onOpenFilters,
   onAddRow,
   addingRow = false,
+  onSelectRange,
   sheetKey = "Master",
 }) => {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [rangeSelection, setRangeSelection] = useState(null);
+  const rangeSelectionRef = useRef(null);
+  const checkboxAnchorRef = useRef(null);
   const [columnSort, setColumnSort] = useState({
     key: null,
     direction: "asc",
@@ -360,7 +365,75 @@ export const WorkSheetTable = ({
       endRow: row,
       col,
     });
+    // A plain click/focus always collapses any Shift+Arrow range from
+    // before, same as Google Sheets.
+    rangeSelectionRef.current = null;
+    setRangeSelection(null);
   }, []);
+
+  // Shift(+Ctrl)+Arrow — grows/shrinks the rectangle from a fixed anchor
+  // (the cell that was focused when the shift-session started) without
+  // moving focus. Ctrl/Cmd jumps straight to that edge of the sheet in
+  // one step instead of moving one cell at a time.
+  const handleExtendSelection = useCallback(
+    ({ anchorRow, anchorCol, direction, jumpToEdge, maxRow, maxCol }) => {
+      const current = rangeSelectionRef.current;
+      const base =
+        current &&
+        current.anchorRow === anchorRow &&
+        current.anchorCol === anchorCol
+          ? current
+          : { anchorRow, anchorCol, row: anchorRow, col: anchorCol };
+
+      let { row, col } = base;
+
+      if (direction === "up") row = jumpToEdge ? 1 : Math.max(1, row - 1);
+      if (direction === "down")
+        row = jumpToEdge ? maxRow : Math.min(maxRow, row + 1);
+      if (direction === "left") col = jumpToEdge ? 0 : Math.max(0, col - 1);
+      if (direction === "right")
+        col = jumpToEdge ? maxCol : Math.min(maxCol, col + 1);
+
+      const next = { anchorRow, anchorCol, row, col };
+      rangeSelectionRef.current = next;
+      setRangeSelection(next);
+    },
+    []
+  );
+
+  // Click a checkbox, then Shift+Down/Up to bulk-select rows in between —
+  // same as a spreadsheet's row-header selection. The anchor is whichever
+  // row's checkbox was last plainly clicked; falls back to the current
+  // row if nothing's been clicked yet this session.
+  const handleCheckboxRangeSelect = useCallback(
+    (currentRow, direction) => {
+      const anchor = checkboxAnchorRef.current ?? currentRow;
+      const targetRow = direction === "down" ? currentRow + 1 : currentRow - 1;
+      const clampedTarget = Math.max(
+        1,
+        Math.min(sortedItemsRef.current.length, targetRow)
+      );
+
+      const start = Math.min(anchor, clampedTarget);
+      const end = Math.max(anchor, clampedTarget);
+      const ids = sortedItemsRef.current
+        .slice(start - 1, end)
+        .map((entry) => entry.id);
+
+      checkboxAnchorRef.current = anchor;
+      onSelectRange?.(ids);
+      requestAnimationFrame(() => focusCheckboxRow(clampedTarget));
+    },
+    [onSelectRange]
+  );
+
+  const handleCheckboxToggle = useCallback(
+    (id, rowIndex) => {
+      checkboxAnchorRef.current = rowIndex;
+      onToggleSelect(id);
+    },
+    [onToggleSelect]
+  );
 
   const handleFillStart = useCallback(({ row, col }) => {
     const next = {
@@ -828,6 +901,10 @@ export const WorkSheetTable = ({
                     key={item.id}
                     activeCell={activeCell}
                     selection={selection}
+                    rangeSelection={rangeSelection}
+                    totalRows={sortedTableItems.length}
+                    onExtendSelection={handleExtendSelection}
+                    onCheckboxRangeSelect={handleCheckboxRangeSelect}
                     fillState={fillState}
                     onCellSelect={handleCellSelect}
                     onFillStart={handleFillStart}
@@ -864,7 +941,7 @@ export const WorkSheetTable = ({
                     isRowDragging={draggedRow === item.id}
                     canDragRow={!columnSort.key}
                     selected={selectedSet.has(item.id)}
-                    onToggleSelect={onToggleSelect}
+                    onToggleSelect={(id) => handleCheckboxToggle(id, index)}
                     displayRowNumber={displayRowNumberById[item.id]}
                     hiddenRowIdsBefore={hiddenRowsBeforeById[item.id] || []}
                     hiddenRowIdsAfter={

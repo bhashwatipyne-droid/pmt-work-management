@@ -3,6 +3,7 @@ import {
   ArrowDownAZ,
   ArrowUpAZ,
   ChevronsLeftRight,
+  Filter,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
@@ -556,6 +557,16 @@ export const WorkSheetTable = ({
                         ) : (
                           <ArrowDownAZ className="h-3.5 w-3.5 shrink-0" />
                         ))}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenFilters?.()}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                      title={`Filter ${column}`}
+                      aria-label={`Filter ${column}`}
+                    >
+                      <Filter className="h-3.5 w-3.5" />
                     </button>
 
                     <WorksheetColumnMenu

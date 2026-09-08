@@ -161,13 +161,33 @@ export default function WorkSheetPage() {
           activeSheet === "Master"
             ? null
             : DEPARTMENT_TO_STAGE[activeSheet] || activeSheet;
+        const selectedStages =
+          activeSheet === "Master" && filters.stages?.length
+            ? new Set(
+                filters.stages.map((stage) =>
+                  String(stage).trim().toLowerCase()
+                )
+              )
+            : null;
 
-        // Defensive client-side guard. This makes it impossible for a Design
-        // row to render in Content even if the deployed API ignores the stage query.
+        // Defensive client-side guard. Department sheets are always restricted
+        // to their own stage. On Master, an explicitly selected Stage filter is
+        // also enforced locally so the table cannot show rows outside the filter
+        // even if an API/deployment returns an unfiltered response.
         setItems(
           sheetStage
-            ? rows.filter((item) => item.stage === sheetStage)
-            : rows
+            ? rows.filter(
+                (item) =>
+                  String(item.stage || "").trim().toLowerCase() ===
+                  sheetStage.trim().toLowerCase()
+              )
+            : selectedStages
+              ? rows.filter((item) =>
+                  selectedStages.has(
+                    String(item.stage || "").trim().toLowerCase()
+                  )
+                )
+              : rows
         );
       })
       .catch(() => toast.error("Could not load work items"))

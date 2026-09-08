@@ -19,21 +19,40 @@ export default function DashboardPage() {
   const [approvals, setApprovals] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!currentUser || currentUser.role !== "admin") return;
 
     setLoading(true);
+    setError(null);
 
-    Promise.all([
+    Promise.allSettled([
       getDashboardOverview(currentUserId),
       getApprovals(currentUserId),
-      getProjects(currentUserId),
+
+      // The dashboard only shows 5 projects. Do not fetch and hydrate the
+      // entire project + deliverable dataset just to render those 5 rows.
+      getProjects(currentUserId, {
+        limit: 5,
+        include_deliverables: false,
+      }),
     ])
-      .then(([o, a, p]) => {
-        setOverview(o);
-        setApprovals(a);
-        setProjects(p);
+      .then(([overviewResult, approvalsResult, projectsResult]) => {
+        if (overviewResult.status === "fulfilled") {
+          setOverview(overviewResult.value);
+        } else {
+          setError("Could not load dashboard data. Please refresh the page.");
+          return;
+        }
+
+        if (approvalsResult.status === "fulfilled") {
+          setApprovals(approvalsResult.value);
+        }
+
+        if (projectsResult.status === "fulfilled") {
+          setProjects(projectsResult.value);
+        }
       })
       .finally(() => setLoading(false));
   }, [currentUser?.id, currentUserId]);
@@ -50,10 +69,25 @@ export default function DashboardPage() {
     );
   }
 
-  if (loading || !overview) {
+  if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center py-16 text-sm text-muted-foreground">
         Loading dashboard...
+      </div>
+    );
+  }
+
+  if (error || !overview) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8 text-center">
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            Dashboard could not be loaded
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {error || "Please refresh the page."}
+          </p>
+        </div>
       </div>
     );
   }
@@ -115,14 +149,16 @@ export default function DashboardPage() {
               </h2>
 
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Current distribution of deliverables across the production workflow.
+                Current distribution of deliverables across the production
+                workflow.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-4">
               {Object.entries(overview.deliv_stage_counts).map(
                 ([stage, count]) => {
-                  const c = STAGE_COLORS[stage];
+                  const c =
+                    STAGE_COLORS[stage] || STAGE_COLORS.Content;
 
                   return (
                     <div

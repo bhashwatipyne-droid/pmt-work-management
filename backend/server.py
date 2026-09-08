@@ -1540,17 +1540,16 @@ async def _generate_unique_project_code() -> str:
     return gen_project_code()
 
 
-async def _hydrate_projects(projects: list[dict]) -> list[dict]:
+async def _hydrate_projects(
+    projects: list[dict],
+    include_deliverables: bool = True,
+) -> list[dict]:
     """
     Hydrate multiple projects using batched MongoDB queries.
 
-    Instead of:
-        1 query per project for deliverables
-        1 query per project for client
-
-    this performs:
-        1 query for all deliverables
-        1 query for all clients
+    ``include_deliverables=False`` is used by lightweight list consumers
+    such as the dashboard, where returning every nested deliverable would
+    create an unnecessarily large JSON payload.
     """
 
     if not projects:
@@ -1559,11 +1558,26 @@ async def _hydrate_projects(projects: list[dict]) -> list[dict]:
     project_ids = [p["id"] for p in projects if p.get("id")]
     client_ids = [p["client_id"] for p in projects if p.get("client_id")]
 
-    # Fetch all deliverables for all projects in ONE query
-    deliverables = await db.deliverables.find(
-        {"project_id": {"$in": project_ids}},
-        {"_id": 0},
-    ).to_list(5000)
+    deliverables = []
+    deliverable_counts = {}
+
+    if include_deliverables:
+        # Fetch all deliverables for all projects in ONE query
+        deliverables = await db.deliverables.find(
+            {"project_id": {"$in": project_ids}},
+            {"_id": 0},
+        ).to_list(5000)
+    else:
+        # Dashboard only needs the count, not the full nested documents.
+        count_rows = await db.deliverables.aggregate([
+            {"$match": {"project_id": {"$in": project_ids}}},
+            {"$group": {"_id": "$project_id", "count": {"$sum": 1}}},
+        ]).to_list(None)
+        deliverable_counts = {
+            row.get("_id"): row.get("count", 0)
+            for row in count_rows
+            if row.get("_id")
+        }
 
     # Fetch all clients in ONE query
     clients = await db.clients.find(
@@ -1595,9 +1609,10 @@ async def _hydrate_projects(projects: list[dict]) -> list[dict]:
         project_id = p.get("id")
         client_doc = clients_by_id.get(p.get("client_id"))
 
-        project_deliverables = deliverables_by_project.get(
-            project_id,
-            [],
+        project_deliverables = (
+            deliverables_by_project.get(project_id, [])
+            if include_deliverables
+            else []
         )
 
         stage_counts = {s: 0 for s in STAGES}
@@ -1630,7 +1645,11 @@ async def _hydrate_projects(projects: list[dict]) -> list[dict]:
             {
                 **p,
                 "deliverables": project_deliverables,
-                "deliverables_count": len(project_deliverables),
+                "deliverables_count": (
+                    len(project_deliverables)
+                    if include_deliverables
+                    else deliverable_counts.get(project_id, 0)
+                ),
                 "stage_counts": stage_counts,
                 "collaborator_ids": list(collaborators),
                 "client_name": (
@@ -1661,6 +1680,8 @@ async def list_projects(
     request: Request,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    limit: int = 1000,
+    include_deliverables: bool = True,
 ):
     await get_acting_user(request)
 
@@ -1675,12 +1696,17 @@ async def list_projects(
             {"code": {"$regex": search, "$options": "i"}},
         ]
 
+    limit = max(1, min(limit, 1000))
+
     projects = await db.projects.find(
         query,
         {"_id": 0},
-    ).sort("created_at", -1).to_list(1000)
+    ).sort("created_at", -1).to_list(limit)
 
-    return await _hydrate_projects(projects)
+    return await _hydrate_projects(
+        projects,
+        include_deliverables=include_deliverables,
+    )
 
 
 @api_router.get("/projects/metrics")

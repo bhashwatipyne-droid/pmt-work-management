@@ -26,6 +26,10 @@ export function SearchableSelect({
   triggerProps = {},
   className = "",
   contentClassName = "w-[220px] p-0",
+  // Optional: render the closed trigger's value as something other than
+  // plain text (e.g. a colored status chip). Receives the matched option
+  // (or undefined) and the raw value.
+  renderValue,
 }) {
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
@@ -89,7 +93,9 @@ export function SearchableSelect({
           className={`flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] outline-none ${className}`}
         >
           <span className="min-w-0 truncate">
-            {selectedOption?.label || (value ? String(value) : placeholder)}
+            {renderValue
+              ? renderValue(selectedOption, value)
+              : selectedOption?.label || (value ? String(value) : placeholder)}
           </span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>

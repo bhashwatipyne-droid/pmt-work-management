@@ -74,15 +74,29 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
   const project = item.project_id
-    ? projects.find((p) => p.id === item.project_id)
+    ? projects.find((p) => String(p.id) === String(item.project_id))
     : undefined;
-  const effectiveClientId = item.client_id || project?.client_id || undefined;
+
+  // Select returns string values, so normalize IDs before comparing them.
+  const effectiveClientId =
+    item.client_id || project?.client_id || undefined;
+
   const projectOptions = effectiveClientId
-    ? projects.filter((p) => p.client_id === effectiveClientId)
-    : projects;
-  const projectDeliverables = deliverablesByProject[item.project_id] || [];
+    ? projects.filter(
+        (p) => String(p.client_id) === String(effectiveClientId)
+      )
+    : [];
+
+  const projectDeliverables = item.project_id
+    ? Object.entries(deliverablesByProject).find(
+        ([projectId]) => String(projectId) === String(item.project_id)
+      )?.[1] || []
+    : [];
+
   const clientName = effectiveClientId
-    ? clients.find((c) => c.id === effectiveClientId)?.name
+    ? clients.find(
+        (c) => String(c.id) === String(effectiveClientId)
+      )?.name
     : undefined;
 
   const isColumnHidden = (column) =>
@@ -120,11 +134,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   // every lazy dropdown we pass the label to SelectValue explicitly instead
   // of relying on that lookup.
   const projectName = item.project_id
-    ? projects.find((p) => p.id === item.project_id)?.name
+    ? projects.find((p) => String(p.id) === String(item.project_id))?.name
     : undefined;
 
   const deliverableName = item.deliverable_id
-    ? projectDeliverables.find((d) => d.id === item.deliverable_id)?.name
+    ? projectDeliverables.find(
+        (d) => String(d.id) === String(item.deliverable_id)
+      )?.name
     : undefined;
 
   const sheetCell = (col) => ({
@@ -236,7 +252,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         <Select
           open={openSelect === "client"}
           onOpenChange={(open) => setOpenSelect(open ? "client" : null)}
-          value={effectiveClientId || NONE_VALUE}
+          value={effectiveClientId ? String(effectiveClientId) : NONE_VALUE}
           onValueChange={(v) => {
             const nextClientId = v === NONE_VALUE ? null : v;
             onUpdate(item.id, {
@@ -265,8 +281,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {openSelect === "client" && clients.map((client) => (
-              <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+            {clients.map((client) => (
+              <SelectItem key={client.id} value={String(client.id)}>
+                {client.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -284,7 +302,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         <Select
           open={openSelect === "project"}
           onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
-          value={item.project_id || NONE_VALUE}
+          value={item.project_id ? String(item.project_id) : NONE_VALUE}
           onValueChange={(v) => {
             const nextId = v === NONE_VALUE ? null : v;
             const selectedProject = projects.find((p) => p.id === nextId);
@@ -309,8 +327,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {openSelect === "project" && projectOptions.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            {projectOptions.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {p.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -328,7 +348,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         <Select
           open={openSelect === "deliverable"}
           onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
-          value={item.deliverable_id || NONE_VALUE}
+          value={item.deliverable_id ? String(item.deliverable_id) : NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
           disabled={!canEditRow || !item.project_id}
         >
@@ -343,8 +363,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {openSelect === "deliverable" && projectDeliverables.map((d) => (
-              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+            {projectDeliverables.map((d) => (
+              <SelectItem key={d.id} value={String(d.id)}>
+                {d.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>

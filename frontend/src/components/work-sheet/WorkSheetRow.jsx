@@ -13,6 +13,24 @@ import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
 
+const COLUMN_WIDTHS = {
+  Date: "130px",
+  Client: "150px",
+  Project: "160px",
+  Deliverable: "160px",
+  Stage: "110px",
+  "Deliverable Name": "180px",
+  "Deliverable Link": "180px",
+  Type: "150px",
+  Category: "140px",
+  Version: "80px",
+  "Time (min)": "80px",
+  Creator: "140px",
+  Reviewer: "140px",
+  Remarks: "200px",
+  Status: "170px",
+};
+
 export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const {
     item,
@@ -771,6 +789,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     <TableRow
       data-testid={`worksheet-row-${item.id}`}
       className={`group ${isRowDragging ? "opacity-60" : ""}`}
+      style={{
+        display: "grid",
+        gridTemplateColumns: `44px 44px ${visibleColumns
+          .map((column) => COLUMN_WIDTHS[column] || "150px")
+          .join(" ")} 52px`,
+        minWidth: "max-content",
+      }}
       onDragOver={(event) => onRowDragOver?.(event, item.id)}
       onDrop={(event) => onRowDrop?.(event, item.id)}
       onDragEnd={() => onRowDragEnd?.()}

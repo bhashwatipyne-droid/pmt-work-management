@@ -296,14 +296,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             if (nextId !== item.project_id) patch.deliverable_id = null;
             onUpdate(item.id, patch);
           }}
-          disabled={!canEditRow}
+          disabled={!canEditRow || !effectiveClientId}
         >
           <SelectTrigger
             {...sheetCell(2)}
             data-testid={`worksheet-project-select-${item.id}`}
             className="h-8 w-[160px]"
           >
-            <SelectValue placeholder="Project">
+            <SelectValue placeholder={effectiveClientId ? "Project" : "Select client first"}>
               {item.project_id ? (projectName ?? "Project") : undefined}
             </SelectValue>
           </SelectTrigger>
@@ -337,7 +337,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             data-testid={`worksheet-deliverable-select-${item.id}`}
             className="h-8 w-[160px]"
           >
-            <SelectValue placeholder={item.project_id ? "Deliverable" : "—"}>
+            <SelectValue placeholder={item.project_id ? "Deliverable" : "Select project first"}>
               {item.deliverable_id ? (deliverableName ?? "Deliverable") : undefined}
             </SelectValue>
           </SelectTrigger>

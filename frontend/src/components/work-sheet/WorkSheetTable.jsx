@@ -78,6 +78,7 @@ export const WorkSheetTable = ({
   onUpdate,
   onDelete,
   onFill,
+  filters,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -470,6 +471,33 @@ export const WorkSheetTable = ({
     );
   };
 
+  // A column funnel is shown as active only when that column has a
+  // corresponding filter applied in the universal filter panel.
+  const isColumnFiltered = (column) => {
+    switch (column) {
+      case "Date":
+        return Boolean(filters?.date_from || filters?.date_to);
+      case "Project":
+        return Boolean(filters?.project_ids?.length);
+      case "Deliverable":
+        return Boolean(filters?.deliverable_ids?.length);
+      case "Stage":
+        return Boolean(filters?.stages?.length);
+      case "Type":
+        return Boolean(filters?.deliverable_types?.length);
+      case "Category":
+        return Boolean(filters?.work_categories?.length);
+      case "Creator":
+        return Boolean(filters?.creator_ids?.length);
+      case "Reviewer":
+        return Boolean(filters?.reviewer_ids?.length);
+      case "Status":
+        return Boolean(filters?.statuses?.length);
+      default:
+        return false;
+    }
+  };
+
   return (
     <div
       ref={scrollRef}
@@ -562,9 +590,21 @@ export const WorkSheetTable = ({
                     <button
                       type="button"
                       onClick={() => onOpenFilters?.()}
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                      title={`Filter ${column}`}
-                      aria-label={`Filter ${column}`}
+                      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded transition ${
+                        isColumnFiltered(column)
+                          ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+                          : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      }`}
+                      title={
+                        isColumnFiltered(column)
+                          ? `${column} filter active`
+                          : `Filter ${column}`
+                      }
+                      aria-label={
+                        isColumnFiltered(column)
+                          ? `${column} filter active`
+                          : `Filter ${column}`
+                      }
                     >
                       <Filter className="h-3.5 w-3.5" />
                     </button>

@@ -104,13 +104,17 @@ export const WorkSheetToolbar = ({
           type="button"
           variant="outline"
           size="sm"
-          className="h-9"
+          className={`h-9 transition-colors ${
+            activeFilterCount > 0
+              ? "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700 hover:text-white"
+              : ""
+          }`}
           onClick={onOpenFilters}
         >
           <SlidersHorizontal className="mr-1.5 h-4 w-4" />
           Filter
           {activeFilterCount > 0 && (
-            <span className="ml-1.5 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+            <span className="ml-1.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold text-white">
               {activeFilterCount}
             </span>
           )}

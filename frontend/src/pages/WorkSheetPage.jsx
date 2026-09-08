@@ -618,6 +618,7 @@ export default function WorkSheetPage() {
           sortDirection={sortDirection}
           hiddenRows={hiddenRows}
           setHiddenRows={setHiddenRows}
+          filters={filters}
           onOpenFilters={() => setFiltersOpen(true)}
         />
       )}

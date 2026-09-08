@@ -1,10 +1,10 @@
-import { memo, useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Fragment, memo, useEffect, useState } from "react";
+import { GripVertical, Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Checkbox } from "../ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { SearchableSelect } from "./SearchableSelect";
 import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
@@ -38,6 +38,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onFillEnd,
     selection,
     hiddenColumns = [],
+    columnOrder = [],
+    onRowDragStart,
+    onRowDragOver,
+    onRowDrop,
+    onRowDragEnd,
+    isRowDragging = false,
+    canDragRow = true,
   } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
@@ -74,29 +81,15 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
   const project = item.project_id
-    ? projects.find((p) => String(p.id) === String(item.project_id))
+    ? projects.find((p) => p.id === item.project_id)
     : undefined;
-
-  // Select returns string values, so normalize IDs before comparing them.
-  const effectiveClientId =
-    item.client_id || project?.client_id || undefined;
-
+  const effectiveClientId = item.client_id || project?.client_id || undefined;
   const projectOptions = effectiveClientId
-    ? projects.filter(
-        (p) => String(p.client_id) === String(effectiveClientId)
-      )
-    : [];
-
-  const projectDeliverables = item.project_id
-    ? Object.entries(deliverablesByProject).find(
-        ([projectId]) => String(projectId) === String(item.project_id)
-      )?.[1] || []
-    : [];
-
+    ? projects.filter((p) => p.client_id === effectiveClientId)
+    : projects;
+  const projectDeliverables = deliverablesByProject[item.project_id] || [];
   const clientName = effectiveClientId
-    ? clients.find(
-        (c) => String(c.id) === String(effectiveClientId)
-      )?.name
+    ? clients.find((c) => c.id === effectiveClientId)?.name
     : undefined;
 
   const isColumnHidden = (column) =>
@@ -120,6 +113,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     14: "Status",
   };
 
+  const orderedColumns = columnOrder.length
+    ? columnOrder
+    : Object.values(COLUMN_NAMES);
+  const visibleColumns = orderedColumns.filter(
+    (column) => !isColumnHidden(column)
+  );
+
   const cellStyle = (col) => ({
     display: isColumnHidden(COLUMN_NAMES[col]) ? "none" : undefined,
   });
@@ -134,91 +134,145 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   // every lazy dropdown we pass the label to SelectValue explicitly instead
   // of relying on that lookup.
   const projectName = item.project_id
-    ? projects.find((p) => String(p.id) === String(item.project_id))?.name
+    ? projects.find((p) => p.id === item.project_id)?.name
     : undefined;
 
   const deliverableName = item.deliverable_id
-    ? projectDeliverables.find(
-        (d) => String(d.id) === String(item.deliverable_id)
-      )?.name
+    ? projectDeliverables.find((d) => d.id === item.deliverable_id)?.name
     : undefined;
 
-  const sheetCell = (col) => ({
-    "data-sheet-cell": true,
-    "data-sheet-row": index,
-    "data-sheet-col": col,
-    onMouseDown: () => onCellSelect?.({ row: index, col }),
-    onFocus: () => onCellSelect?.({ row: index, col }),
-    onKeyDown: createWorksheetKeyHandler({
-      row: index,
-      col,
-      maxCol: 14,
-    }),
-  });
+  const clearCell = (col) => {
+    if (!canEditRow) return;
+
+    const fields = {
+      0: "work_date",
+      1: "client_id",
+      2: "project_id",
+      3: "deliverable_id",
+      4: "stage",
+      5: "deliverable_name",
+      6: "deliverable_link",
+      7: "deliverable_type",
+      8: "work_category",
+      9: "version",
+      10: "time_taken_minutes",
+      11: "creator_id",
+      12: "reviewer_id",
+      13: "remarks",
+      14: "status",
+    };
+
+    const field = fields[col];
+    if (!field) return;
+
+    const values = {
+      work_date: "",
+      client_id: null,
+      project_id: null,
+      deliverable_id: null,
+      stage: null,
+      deliverable_name: "",
+      deliverable_link: "",
+      deliverable_type: "",
+      work_category: "",
+      version: "",
+      time_taken_minutes: 0,
+      creator_id: null,
+      reviewer_id: null,
+      remarks: "",
+      // Members cannot clear status through the API; Not Started is the
+      // neutral editable value and behaves like a reset for this cell.
+      status: "Not Started",
+    };
+
+    if (field === "client_id") {
+      onUpdate(item.id, {
+        client_id: null,
+        project_id: null,
+        deliverable_id: null,
+      });
+      localStorage.removeItem("ws_last_client_id");
+      localStorage.removeItem("ws_last_project_id");
+      localStorage.removeItem("ws_last_deliverable_id");
+      return;
+    }
+
+    if (field === "project_id") {
+      onUpdate(item.id, { project_id: null, deliverable_id: null });
+      localStorage.removeItem("ws_last_project_id");
+      localStorage.removeItem("ws_last_deliverable_id");
+      return;
+    }
+
+    if (field === "deliverable_type" || field === "work_category") {
+      onUpdate(item.id, { deliverable_type: "", work_category: "" });
+      return;
+    }
+
+    if (field === "deliverable_name") {
+      setLocal((current) => ({ ...current, deliverable_name: "" }));
+    }
+    if (field === "deliverable_link") {
+      setLocal((current) => ({ ...current, deliverable_link: "" }));
+    }
+    if (field === "version") {
+      setLocal((current) => ({ ...current, version: "" }));
+    }
+    if (field === "time_taken_minutes") {
+      setLocal((current) => ({ ...current, time_taken_minutes: 0 }));
+    }
+    if (field === "remarks") {
+      setLocal((current) => ({ ...current, remarks: "" }));
+    }
+
+    onUpdate(item.id, { [field]: values[field] });
+  };
+
+  const sheetCell = (col) => {
+    const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
+    const navigationCol = visualCol === -1 ? col : visualCol;
+
+    return {
+      "data-sheet-cell": true,
+      "data-sheet-row": index,
+      "data-sheet-col": navigationCol,
+      onMouseDown: () => onCellSelect?.({ row: index, col: navigationCol }),
+      onFocus: () => onCellSelect?.({ row: index, col: navigationCol }),
+      onKeyDown: (event) => {
+        if (event.key === "Delete" && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          clearCell(col);
+          return;
+        }
+
+        return createWorksheetKeyHandler({
+          row: index,
+          col: navigationCol,
+          maxCol: Math.max(0, visibleColumns.length - 1),
+        })(event);
+      },
+    };
+  };
 
   const commit = (field, value) => {
     if (item[field] === value) return;
     onUpdate(item.id, { [field]: value });
   };
 
-  const isCellActive = (col) =>
-    activeCell?.row === index && activeCell?.col === col;
+  const isCellActive = (col) => {
+    const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
+    return activeCell?.row === index && activeCell?.col === visualCol;
+  };
 
   const isCellInFillRange = (col) => {
     if (!selection) return false;
 
-    return (
-      selection.col === col &&
-      index >= Math.min(selection.startRow, selection.endRow) &&
-      index <= Math.max(selection.startRow, selection.endRow)
-    );
-  };
-
-  const renderFillHandle = (col) => {
-    if (!isCellActive(col) || !canEditRow) return null;
-
-    return (
-      <span
-        className="sheet-fill-handle"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onFillStart?.({ row: index, col });
-        }}
-      />
-    );
-  };
-
-  return (
-    <TableRow
-      data-testid={`worksheet-row-${item.id}`}
-      className="group"
-      onPointerEnter={() => {
-        if (fillState) {
-          onFillHover?.(index);
-        }
-      }}
-      onMouseEnter={() => {
-        if (fillState) {
-          onFillHover?.(index);
-        }
-      }}
-      onMouseUp={() => {
-        if (fillState) {
-          onFillEnd?.();
-        }
-      }}
-    >
-      <TableCell className="row-num">{index}</TableCell>
-      <TableCell className="checkbox-cell">
-        <Checkbox
-          data-testid={`worksheet-row-checkbox-${item.id}`}
-          checked={selected}
-          disabled={!canEditRow}
-          onCheckedChange={() => onToggleSelect(item.id)}
-        />
-      </TableCell>
-      <TableCell
+    const renderColumnCell = (column) => {
+    switch (column) {
+      case "Date":
+        return (
+<TableCell
         style={cellStyle(0)}
         className={[
           "sheet-cell",
@@ -239,7 +293,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
         {renderFillHandle(0)}
       </TableCell>
-      <TableCell
+        );
+      case "Client":
+        return (
+<TableCell
         style={cellStyle(1)}
         className={[
           "sheet-cell",
@@ -249,7 +306,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}
       >
-        <Select
+        <SearchableSelect
           open={openSelect === "client"}
           onOpenChange={(open) => setOpenSelect(open ? "client" : null)}
           value={effectiveClientId ? String(effectiveClientId) : NONE_VALUE}
@@ -260,37 +317,29 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               project_id: null,
               deliverable_id: null,
             });
-            if (nextClientId) {
-              localStorage.setItem("ws_last_client_id", nextClientId);
-            } else {
-              localStorage.removeItem("ws_last_client_id");
-            }
+            if (nextClientId) localStorage.setItem("ws_last_client_id", nextClientId);
+            else localStorage.removeItem("ws_last_client_id");
             localStorage.removeItem("ws_last_project_id");
             localStorage.removeItem("ws_last_deliverable_id");
           }}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...clients.map((client) => ({ value: String(client.id), label: client.name })),
+          ]}
+          placeholder="Client"
+          searchPlaceholder="Type client name..."
+          emptyText="No clients found"
           disabled={!canEditRow}
-        >
-          <SelectTrigger
-            {...sheetCell(1)}
-            data-testid={`worksheet-client-select-${item.id}`}
-            className="h-8 w-[150px]"
-          >
-            <SelectValue placeholder="Client">
-              {effectiveClientId ? (clientName ?? "Client") : undefined}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {clients.map((client) => (
-              <SelectItem key={client.id} value={String(client.id)}>
-                {client.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          triggerProps={sheetCell(1)}
+          data-testid={`worksheet-client-select-${item.id}`}
+          contentClassName="w-[260px] p-0"
+        />
         {renderFillHandle(1)}
       </TableCell>
-      <TableCell
+        );
+      case "Project":
+        return (
+<TableCell
         style={cellStyle(2)}
         className={[
           "sheet-cell",
@@ -299,44 +348,38 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Select
+        <SearchableSelect
           open={openSelect === "project"}
           onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
           value={item.project_id ? String(item.project_id) : NONE_VALUE}
           onValueChange={(v) => {
             const nextId = v === NONE_VALUE ? null : v;
-            const selectedProject = projects.find((p) => p.id === nextId);
+            const selectedProject = projects.find((project) => String(project.id) === String(nextId));
             const patch = {
               project_id: nextId,
               client_id: selectedProject?.client_id || effectiveClientId || null,
             };
-            // clear deliverable if switching project
             if (nextId !== item.project_id) patch.deliverable_id = null;
             onUpdate(item.id, patch);
           }}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...projectOptions.map((project) => ({ value: String(project.id), label: project.name })),
+          ]}
+          placeholder={effectiveClientId ? "Project" : "Select client first"}
+          searchPlaceholder="Type project name..."
+          emptyText="No projects found for this client"
           disabled={!canEditRow || !effectiveClientId}
-        >
-          <SelectTrigger
-            {...sheetCell(2)}
-            data-testid={`worksheet-project-select-${item.id}`}
-            className="h-8 w-[160px]"
-          >
-            <SelectValue placeholder={effectiveClientId ? "Project" : "Select client first"}>
-              {item.project_id ? (projectName ?? "Project") : undefined}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {projectOptions.map((p) => (
-              <SelectItem key={p.id} value={String(p.id)}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          triggerProps={sheetCell(2)}
+          data-testid={`worksheet-project-select-${item.id}`}
+          contentClassName="w-[280px] p-0"
+        />
         {renderFillHandle(2)}
       </TableCell>
-      <TableCell
+        );
+      case "Deliverable":
+        return (
+<TableCell
         style={cellStyle(3)}
         className={[
           "sheet-cell",
@@ -345,34 +388,29 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Select
+        <SearchableSelect
           open={openSelect === "deliverable"}
           onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
           value={item.deliverable_id ? String(item.deliverable_id) : NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...projectDeliverables.map((deliverable) => ({ value: String(deliverable.id), label: deliverable.name })),
+          ]}
+          placeholder={item.project_id ? "Deliverable" : "Select project first"}
+          searchPlaceholder="Type deliverable name..."
+          emptyText="No deliverables found for this project"
           disabled={!canEditRow || !item.project_id}
-        >
-          <SelectTrigger
-            {...sheetCell(3)}
-            data-testid={`worksheet-deliverable-select-${item.id}`}
-            className="h-8 w-[160px]"
-          >
-            <SelectValue placeholder={item.project_id ? "Deliverable" : "Select project first"}>
-              {item.deliverable_id ? (deliverableName ?? "Deliverable") : undefined}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {projectDeliverables.map((d) => (
-              <SelectItem key={d.id} value={String(d.id)}>
-                {d.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          triggerProps={sheetCell(3)}
+          data-testid={`worksheet-deliverable-select-${item.id}`}
+          contentClassName="w-[300px] p-0"
+        />
         {renderFillHandle(3)}
       </TableCell>
-      <TableCell
+        );
+      case "Stage":
+        return (
+<TableCell
         style={cellStyle(4)}
         className={[
           "sheet-cell",
@@ -381,30 +419,29 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Select
+        <SearchableSelect
           open={openSelect === "stage"}
           onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
           value={item.stage || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...STAGES.map((stage) => ({ value: stage, label: stage })),
+          ]}
+          placeholder="Stage"
+          searchPlaceholder="Type stage..."
+          emptyText="No stages found"
           disabled={!canEditRow}
-        >
-          <SelectTrigger
-            {...sheetCell(4)}
-            data-testid={`worksheet-stage-select-${item.id}`}
-            className="h-8 w-[110px]"
-          >
-            <SelectValue placeholder="Stage" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE_VALUE}>—</SelectItem>
-            {STAGES.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          triggerProps={sheetCell(4)}
+          data-testid={`worksheet-stage-select-${item.id}`}
+          contentClassName="w-[180px] p-0"
+        />
         {renderFillHandle(4)}
       </TableCell>
-      <TableCell
+        );
+      case "Deliverable Name":
+        return (
+<TableCell
         style={cellStyle(5)}
         className={[
           "sheet-cell",
@@ -428,7 +465,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(5)}
       </TableCell>
-      <TableCell
+        );
+      case "Deliverable Link":
+        return (
+<TableCell
         style={cellStyle(6)}
         className={[
           "sheet-cell",
@@ -456,7 +496,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         )}
         {renderFillHandle(6)}
       </TableCell>
-      <TableCell
+        );
+      case "Type":
+        return (
+<TableCell
         style={cellStyle(7)}
         className={[
           "sheet-cell",
@@ -466,41 +509,36 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}>
         {canEditExtra ? (
-          <Select
-            open={openSelect === "type"}
-            onOpenChange={(open) => setOpenSelect(open ? "type" : null)}
-            value={item.deliverable_type || undefined}
-            onValueChange={(v) => {
-              const category =
-                options.deliverable_type_categories?.[v] || "";
-
-              onUpdate(item.id, {
-                deliverable_type: v,
-                work_category: category,
-              });
-            }}
-          >
-            <SelectTrigger
-              {...sheetCell(7)}
+          <SearchableSelect
+              open={openSelect === "type"}
+              onOpenChange={(open) => setOpenSelect(open ? "type" : null)}
+              value={item.deliverable_type || NONE_VALUE}
+              onValueChange={(v) => {
+                const nextType = v === NONE_VALUE ? "" : v;
+                const category = options.deliverable_type_categories?.[nextType] || "";
+                onUpdate(item.id, { deliverable_type: nextType, work_category: category });
+              }}
+              options={[
+                { value: NONE_VALUE, label: "—" },
+                ...(options.deliverable_types || []).map((type) => ({ value: type, label: type })),
+              ]}
+              placeholder="Type"
+              searchPlaceholder="Type to search..."
+              emptyText="No types found"
+              disabled={!canEditExtra}
+              triggerProps={sheetCell(7)}
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
-              className="h-8 w-[150px]"
-            >
-              <SelectValue placeholder="Type">
-                {item.deliverable_type || undefined}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {openSelect === "type" && options.deliverable_types?.map((t) => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              contentClassName="w-[320px] p-0"
+            />
         ) : (
           <span className="cell-plain block">{item.deliverable_type || "—"}</span>
         )}
         {renderFillHandle(7)}
       </TableCell>
-      <TableCell
+        );
+      case "Category":
+        return (
+<TableCell
         style={cellStyle(8)}
         className={[
           "sheet-cell",
@@ -510,14 +548,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}>
         <span
+          {...sheetCell(8)}
           data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
           className="cell-plain block"
+          tabIndex={canEditRow ? 0 : -1}
         >
           {item.work_category || "—"}
         </span>
         {renderFillHandle(8)}
       </TableCell>
-      <TableCell
+        );
+      case "Version":
+        return (
+<TableCell
         style={cellStyle(9)}
         className={[
           "sheet-cell",
@@ -538,7 +581,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
         {renderFillHandle(9)}
       </TableCell>
-      <TableCell
+        );
+      case "Time (min)":
+        return (
+<TableCell
         style={cellStyle(10)}
         className={[
           "sheet-cell",
@@ -561,7 +607,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
         {renderFillHandle(10)}
       </TableCell>
-      <TableCell
+        );
+      case "Creator":
+        return (
+<TableCell
         style={cellStyle(11)}
         className={[
           "sheet-cell",
@@ -571,33 +620,32 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}>
         {canEditExtra ? (
-          <Select
-            open={openSelect === "creator"}
-            onOpenChange={(open) => setOpenSelect(open ? "creator" : null)}
-            value={item.creator_id || undefined}
-            onValueChange={(v) => onUpdate(item.id, { creator_id: v })}
-          >
-            <SelectTrigger
-              {...sheetCell(11)}
+          <SearchableSelect
+              open={openSelect === "creator"}
+              onOpenChange={(open) => setOpenSelect(open ? "creator" : null)}
+              value={item.creator_id || NONE_VALUE}
+              onValueChange={(v) => onUpdate(item.id, { creator_id: v === NONE_VALUE ? null : v })}
+              options={[
+                { value: NONE_VALUE, label: "Unassigned" },
+                ...nonAdminUsers.map((user) => ({ value: user.id, label: user.name })),
+              ]}
+              placeholder="Creator"
+              searchPlaceholder="Type creator name..."
+              emptyText="No users found"
+              disabled={!canEditExtra}
+              triggerProps={sheetCell(11)}
               data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
-              className="h-8 w-[140px]"
-            >
-              <SelectValue placeholder="Creator">
-                {item.creator_id ? nameOf(item.creator_id) : undefined}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {openSelect === "creator" && nonAdminUsers.map((u) => (
-                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              contentClassName="w-[240px] p-0"
+            />
         ) : (
           <span className="cell-plain block">{nameOf(item.creator_id)}</span>
         )}
         {renderFillHandle(11)}
       </TableCell>
-      <TableCell
+        );
+      case "Reviewer":
+        return (
+<TableCell
         style={cellStyle(12)}
         className={[
           "sheet-cell",
@@ -607,34 +655,32 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           .filter(Boolean)
           .join(" ")}>
         {canEditRow ? (
-          <Select
-            open={openSelect === "reviewer"}
-            onOpenChange={(open) => setOpenSelect(open ? "reviewer" : null)}
-            value={item.reviewer_id || NONE_VALUE}
-            onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
-          >
-            <SelectTrigger
-              {...sheetCell(12)}
+          <SearchableSelect
+              open={openSelect === "reviewer"}
+              onOpenChange={(open) => setOpenSelect(open ? "reviewer" : null)}
+              value={item.reviewer_id || NONE_VALUE}
+              onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
+              options={[
+                { value: NONE_VALUE, label: "Unassigned" },
+                ...reviewerUsers.map((user) => ({ value: user.id, label: user.name })),
+              ]}
+              placeholder="Reviewer"
+              searchPlaceholder="Type reviewer name..."
+              emptyText="No reviewers found"
+              disabled={!canEditRow}
+              triggerProps={sheetCell(12)}
               data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
-              className="h-8 w-[140px]"
-            >
-              <SelectValue placeholder="Reviewer">
-                {item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_VALUE}>Unassigned</SelectItem>
-              {openSelect === "reviewer" && reviewerUsers.map((u) => (
-                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              contentClassName="w-[240px] p-0"
+            />
         ) : (
           <span className="cell-plain block">{item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}</span>
         )}
         {renderFillHandle(12)}
       </TableCell>
-      <TableCell
+        );
+      case "Remarks":
+        return (
+<TableCell
         style={cellStyle(13)}
         className={[
           "sheet-cell",
@@ -655,7 +701,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
         {renderFillHandle(13)}
       </TableCell>
-      <TableCell
+        );
+      case "Status":
+        return (
+<TableCell
         style={cellStyle(14)}
         className={[
           "sheet-cell",
@@ -664,33 +713,118 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Select
+        <SearchableSelect
           open={openSelect === "status"}
           onOpenChange={(open) => setOpenSelect(open ? "status" : null)}
-          value={item.status}
+          value={item.status || NONE_VALUE}
           onValueChange={(v) => onUpdate(item.id, { status: v })}
+          options={(options.statuses || []).map((status) => ({
+            value: status,
+            label: status,
+            disabled: !allowedStatuses?.includes(status),
+          }))}
+          placeholder="Status"
+          searchPlaceholder="Type status..."
+          emptyText="No statuses found"
           disabled={!canEditRow}
-        >
-          <SelectTrigger
-            {...sheetCell(14)}
-            data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
-            className="h-8 w-[170px] border-none bg-transparent shadow-none p-0"
-          >
-            <SelectValue>
-              <StatusBadge status={item.status} />
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {openSelect === "status" && options.statuses?.map((s) => (
-              <SelectItem key={s} value={s} disabled={!allowedStatuses?.includes(s)}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          triggerProps={sheetCell(14)}
+          data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
+          className="border-none bg-transparent shadow-none p-0"
+          contentClassName="w-[240px] p-0"
+        />
         {renderFillHandle(14)}
       </TableCell>
+        );
+      default:
+        return null;
+    }
+  };
 
+  return (
+      selection.col === visibleColumns.indexOf(COLUMN_NAMES[col]) &&
+      index >= Math.min(selection.startRow, selection.endRow) &&
+      index <= Math.max(selection.startRow, selection.endRow)
+    );
+  };
+
+  const renderFillHandle = (col) => {
+    if (!isCellActive(col) || !canEditRow) return null;
+
+    return (
+      <span
+        className="sheet-fill-handle"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onFillStart?.({
+            row: index,
+            col: visibleColumns.indexOf(COLUMN_NAMES[col]),
+          });
+        }}
+      />
+    );
+  };
+
+  return (
+    <TableRow
+      data-testid={`worksheet-row-${item.id}`}
+      className={`group ${isRowDragging ? "opacity-60" : ""}`}
+      onDragOver={(event) => onRowDragOver?.(event, item.id)}
+      onDrop={(event) => onRowDrop?.(event, item.id)}
+      onDragEnd={() => onRowDragEnd?.()}
+      onPointerEnter={() => {
+        if (fillState) {
+          onFillHover?.(index);
+        }
+      }}
+      onMouseEnter={() => {
+        if (fillState) {
+          onFillHover?.(index);
+        }
+      }}
+      onMouseUp={() => {
+        if (fillState) {
+          onFillEnd?.();
+        }
+      }}
+    >
+      <TableCell className="row-num">
+        <div className="flex items-center justify-center gap-0.5">
+          <button
+            type="button"
+            draggable={canDragRow}
+            onDragStart={(event) => {
+              if (!canDragRow) return;
+              event.stopPropagation();
+              onRowDragStart?.(event, item.id);
+            }}
+            onClick={(event) => event.stopPropagation()}
+            className={`rounded p-0.5 text-slate-300 ${
+              canDragRow
+                ? "cursor-grab hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
+                : "cursor-default opacity-40"
+            }`}
+            title="Drag row"
+            aria-label="Drag row"
+          >
+            <GripVertical className="h-3 w-3" />
+          </button>
+          <span>{index}</span>
+        </div>
+      </TableCell>
+      <TableCell className="checkbox-cell">
+        <Checkbox
+          data-testid={`worksheet-row-checkbox-${item.id}`}
+          checked={selected}
+          disabled={!canEditRow}
+          onCheckedChange={() => onToggleSelect(item.id)}
+        />
+      </TableCell>
+      {visibleColumns.map((column) => (
+        <Fragment key={column}>
+          {renderColumnCell(column)}
+        </Fragment>
+      ))}
       <TableCell className="sheet-cell w-[52px] text-center">
         {canEditRow && (
           <button

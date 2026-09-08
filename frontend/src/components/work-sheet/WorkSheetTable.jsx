@@ -4,6 +4,7 @@ import {
   ArrowUpAZ,
   ChevronsLeftRight,
   Filter,
+  GripVertical,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
@@ -89,6 +90,7 @@ export const WorkSheetTable = ({
   hiddenRows,
   setHiddenRows,
   onOpenFilters,
+  sheetKey = "Master",
 }) => {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -104,6 +106,32 @@ export const WorkSheetTable = ({
       return [];
     }
   });
+  const columnOrderKey = `worksheet_column_order_${currentUser.id}`;
+  const rowOrderKey = `worksheet_row_order_${currentUser.id}_${sheetKey}`;
+
+  const [columnOrder, setColumnOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`worksheet_column_order_${currentUser.id}`) || "null");
+      if (!Array.isArray(saved)) return COLUMNS;
+      const valid = saved.filter((column) => COLUMNS.includes(column));
+      const missing = COLUMNS.filter((column) => !valid.includes(column));
+      return [...valid, ...missing];
+    } catch {
+      return COLUMNS;
+    }
+  });
+
+  const [rowOrder, setRowOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`worksheet_row_order_${currentUser.id}_${sheetKey}`) || "[]");
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [draggedColumn, setDraggedColumn] = useState(null);
+  const [draggedRow, setDraggedRow] = useState(null);
+  const rowOrderScopeRef = useRef(rowOrderKey);
   const [fillState, setFillState] = useState(null);
   const [isFilling, setIsFilling] = useState(false);
 
@@ -114,6 +142,36 @@ export const WorkSheetTable = ({
   const onFillRef = useRef(onFill);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
+
+  useEffect(() => {
+    localStorage.setItem(columnOrderKey, JSON.stringify(columnOrder));
+  }, [columnOrder, columnOrderKey]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(`worksheet_row_order_${currentUser.id}_${sheetKey}`) || "[]"
+      );
+      setRowOrder(Array.isArray(saved) ? saved : []);
+    } catch {
+      setRowOrder([]);
+    }
+    rowOrderScopeRef.current = rowOrderKey;
+  }, [currentUser.id, sheetKey, rowOrderKey]);
+
+  useEffect(() => {
+    setRowOrder((current) => {
+      const missing = items
+        .map((item) => item.id)
+        .filter((id) => !current.includes(id));
+      return missing.length ? [...current, ...missing] : current;
+    });
+  }, [items]);
+
+  useEffect(() => {
+    if (rowOrderScopeRef.current !== rowOrderKey) return;
+    localStorage.setItem(rowOrderKey, JSON.stringify(rowOrder));
+  }, [rowOrder, rowOrderKey]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -235,12 +293,24 @@ export const WorkSheetTable = ({
     return sorted;
   }, [items, columnSort, getSortValue]);
 
+  const personallyOrderedItems = useMemo(() => {
+    if (!rowOrder.length || columnSort.key) return sortedAllTableItems;
+
+    const byId = new Map(sortedAllTableItems.map((item) => [item.id, item]));
+    const ordered = rowOrder
+      .map((id) => byId.get(id))
+      .filter(Boolean);
+    const orderedIds = new Set(ordered.map((item) => item.id));
+
+    return [
+      ...ordered,
+      ...sortedAllTableItems.filter((item) => !orderedIds.has(item.id)),
+    ];
+  }, [sortedAllTableItems, rowOrder, columnSort.key]);
+
   const visibleTableItems = useMemo(
-    () =>
-      sortedAllTableItems.filter(
-        (item) => !hiddenRowSet.has(item.id)
-      ),
-    [sortedAllTableItems, hiddenRowSet]
+    () => personallyOrderedItems.filter((item) => !hiddenRowSet.has(item.id)),
+    [personallyOrderedItems, hiddenRowSet]
   );
 
   const sortedTableItems = visibleTableItems;
@@ -250,7 +320,7 @@ export const WorkSheetTable = ({
     const result = {};
     let pendingHiddenRows = [];
 
-    for (const item of sortedAllTableItems) {
+    for (const item of personallyOrderedItems) {
       if (hiddenRowSet.has(item.id)) {
         pendingHiddenRows.push(item.id);
         continue;
@@ -263,17 +333,17 @@ export const WorkSheetTable = ({
     result.__trailing__ = pendingHiddenRows;
 
     return result;
-  }, [sortedAllTableItems, hiddenRowSet]);
+  }, [personallyOrderedItems, hiddenRowSet]);
 
   const displayRowNumberById = useMemo(() => {
     const result = {};
 
-    sortedAllTableItems.forEach((item, index) => {
+    personallyOrderedItems.forEach((item, index) => {
       result[item.id] = index + 1;
     });
 
     return result;
-  }, [sortedAllTableItems]);
+  }, [personallyOrderedItems]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -336,7 +406,8 @@ export const WorkSheetTable = ({
 
     if (!current || current.targetRow <= current.sourceRow) return;
 
-    const field = FILL_FIELDS[current.sourceCol];
+    const sourceColumn = columnOrder[current.sourceCol];
+    const field = COLUMN_FIELDS[sourceColumn];
     const currentItems = sortedItemsRef.current;
     const sourceItem = currentItems[current.sourceRow - 1];
 
@@ -354,7 +425,7 @@ export const WorkSheetTable = ({
     } catch {
       // onFill is responsible for displaying the persistence error.
     }
-  }, []);
+  }, [columnOrder]);
 
   // Global pointer tracking while a fill drag is active.
   useEffect(() => {
@@ -437,17 +508,73 @@ export const WorkSheetTable = ({
     allVisibleIds.length > 0 &&
     allVisibleIds.every((id) => selectedSet.has(id));
 
+  const visibleColumns = columnOrder.filter((column) => !hiddenColumns.includes(column));
+  const COLUMN_WIDTHS = {
+    Date: "130px",
+    Client: "150px",
+    Project: "160px",
+    Deliverable: "160px",
+    Stage: "110px",
+    "Deliverable Name": "180px",
+    "Deliverable Link": "180px",
+    Type: "150px",
+    Category: "140px",
+    Version: "80px",
+    "Time (min)": "80px",
+    Creator: "140px",
+    Reviewer: "140px",
+    Remarks: "200px",
+    Status: "170px",
+  };
+  const gridTemplateColumns = `44px 44px ${visibleColumns
+    .map((column) => COLUMN_WIDTHS[column] || "150px")
+    .join(" ")} 52px`;
+
   const totalCols = COLUMNS.length + 3; // #, checkbox, Actions
+
+  const handleColumnDrop = (targetColumn) => {
+    if (!draggedColumn || draggedColumn === targetColumn) return;
+
+    setColumnOrder((current) => {
+      const next = [...current];
+      const fromIndex = next.indexOf(draggedColumn);
+      const toIndex = next.indexOf(targetColumn);
+      if (fromIndex === -1 || toIndex === -1) return current;
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, draggedColumn);
+      return next;
+    });
+    setActiveCell(null);
+    setSelection(null);
+    setDraggedColumn(null);
+  };
+
+  const handleRowDrop = (targetId) => {
+    if (columnSort.key || !draggedRow || draggedRow === targetId) return;
+
+    setRowOrder((current) => {
+      const next = current.length ? [...current] : items.map((item) => item.id);
+      const fromIndex = next.indexOf(draggedRow);
+      const toIndex = next.indexOf(targetId);
+      if (fromIndex === -1 || toIndex === -1) return current;
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, draggedRow);
+      return next;
+    });
+    setActiveCell(null);
+    setSelection(null);
+    setDraggedRow(null);
+  };
 
   const getHiddenColumnsAfter = (columnIndex) => {
     const hidden = [];
 
-    for (let i = columnIndex + 1; i < COLUMNS.length; i += 1) {
-      if (!hiddenColumns.includes(COLUMNS[i])) {
+    for (let i = columnIndex + 1; i < columnOrder.length; i += 1) {
+      if (!hiddenColumns.includes(columnOrder[i])) {
         break;
       }
 
-      hidden.push(COLUMNS[i]);
+      hidden.push(columnOrder[i]);
     }
 
     return hidden;
@@ -456,7 +583,7 @@ export const WorkSheetTable = ({
   const getHiddenColumnsFromStart = () => {
     const hidden = [];
 
-    for (const column of COLUMNS) {
+    for (const column of columnOrder) {
       if (!hiddenColumns.includes(column)) {
         break;
       }
@@ -519,12 +646,15 @@ export const WorkSheetTable = ({
         className="min-w-max border-collapse"
       >
         <TableHeader>
-          <TableRow className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]">
-            <TableHead className="row-num-head h-10 border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <TableRow
+            className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
+            style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
+          >
+            <TableHead className="row-num-head h-10 border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: 1 }}>
               #
             </TableHead>
 
-            <TableHead className="checkbox-cell relative h-10 border-r border-slate-200 px-3">
+            <TableHead className="checkbox-cell relative h-10 border-r border-slate-200 px-3" style={{ gridColumn: 2 }}>
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
@@ -549,7 +679,7 @@ export const WorkSheetTable = ({
               )}
             </TableHead>
 
-            {COLUMNS.map((column, columnIndex) => {
+            {columnOrder.map((column, columnIndex) => {
               const isHidden = hiddenColumns.includes(column);
 
               if (isHidden) {
@@ -562,9 +692,29 @@ export const WorkSheetTable = ({
               return (
                 <TableHead
                   key={column}
-                  className="relative h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                  className={`relative h-10 whitespace-nowrap border-r border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${
+                    draggedColumn === column ? "opacity-50" : ""
+                  }`}
+                  style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => handleColumnDrop(column)}
                 >
                   <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.stopPropagation();
+                        setDraggedColumn(column);
+                      }}
+                      onDragEnd={() => setDraggedColumn(null)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="mr-0.5 inline-flex cursor-grab rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
+                      title={`Drag ${column} column`}
+                      aria-label={`Drag ${column} column`}
+                    >
+                      <GripVertical className="h-3 w-3" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -663,7 +813,7 @@ export const WorkSheetTable = ({
               );
             })}
 
-            <TableHead className="h-10 w-[52px] border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <TableHead className="h-10 w-[52px] border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: visibleColumns.length + 3 }}>
               Actions
             </TableHead>
           </TableRow>
@@ -723,6 +873,22 @@ export const WorkSheetTable = ({
                     onUpdate={onUpdate}
                     onDelete={onDelete}
                     hiddenColumns={hiddenColumns}
+                    columnOrder={columnOrder}
+                    onRowDragStart={(event, rowId) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      setDraggedRow(rowId);
+                    }}
+                    onRowDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onRowDrop={(event, rowId) => {
+                      event.preventDefault();
+                      handleRowDrop(rowId);
+                    }}
+                    onRowDragEnd={() => setDraggedRow(null)}
+                    isRowDragging={draggedRow === item.id}
+                    canDragRow={!columnSort.key}
                     selected={selectedSet.has(item.id)}
                     onToggleSelect={onToggleSelect}
                     displayRowNumber={displayRowNumberById[item.id]}

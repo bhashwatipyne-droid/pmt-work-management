@@ -59,6 +59,9 @@ DELIVERABLE_TYPES = [
     "Data Research and Analysis (SMI)",
     "Data Research and Analysis (Web)",
     "Data Updation",
+    "Changes",
+    "One Pager",
+    "Two Pager",
 
     # Non-Core
     "Project Briefing",
@@ -99,6 +102,9 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Data Research and Analysis (SMI)": "Core",
     "Data Research and Analysis (Web)": "Core",
     "Data Updation": "Core",
+    "Changes": "Core",
+    "One Pager": "Core",
+    "Two Pager": "Core",
 
     # Non-Core
     "Project Briefing": "Non-Core",

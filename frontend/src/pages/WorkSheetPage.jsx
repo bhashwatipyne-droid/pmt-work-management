@@ -668,6 +668,7 @@ export default function WorkSheetPage() {
           setHiddenRows={setHiddenRows}
           filters={filters}
           onOpenFilters={() => setFiltersOpen(true)}
+          sheetKey={activeSheet}
         />
       )}
 

@@ -128,6 +128,20 @@ export const createWorksheetKeyHandler = ({
         return;
       }
 
+      // Fields commit on blur. Moving focus to the next row's cell
+      // normally triggers that blur as a side effect, but focusCell can
+      // silently fail to find a target — the next row may not be
+      // rendered yet (the sheet is virtualized) or this may be the last
+      // row — leaving the typed value sitting uncommitted. Blur the
+      // current field explicitly first so Enter always saves what was
+      // typed, regardless of whether navigation itself succeeds.
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        target.blur();
+      }
+
       // Existing rows → move down/up.
       const nextRow = event.shiftKey ? row - 1 : row + 1;
 

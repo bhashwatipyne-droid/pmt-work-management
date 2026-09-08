@@ -548,6 +548,56 @@ export default function WorkSheetPage() {
     }
   };
 
+  // Delete key deletes checkbox-selected rows (same confirm flow as the
+  // "Delete" button in BulkActionBar). Previously nothing was wired to
+  // this at all — selecting rows and pressing Delete did nothing.
+  // Skipped while typing in any editable field: per-cell Delete already
+  // has its own handler (clears just that cell) and stops the event from
+  // reaching here, but we still guard explicitly in case focus is inside
+  // some other input (e.g. a modal or the filter panel) so a stray
+  // Delete press there can't wipe out a checkbox selection unexpectedly.
+  useEffect(() => {
+    const isEditableTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (el.isContentEditable) return true;
+      const role = el.getAttribute?.("role");
+      if (role === "combobox" || role === "textbox") return true;
+      return false;
+    };
+
+    const handleGlobalKeyDown = (event) => {
+      if (event.key !== "Delete") return;
+      if (!selectedIds.length) return;
+      if (isEditableTarget(event.target)) return;
+      if (
+        closeModalOpen ||
+        quickLoggerOpen ||
+        bulkReviewOpen ||
+        historyOpen ||
+        deleteTarget ||
+        bulkDeleteConfirmOpen
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      handleBulkDelete();
+    };
+
+    document.addEventListener("keydown", handleGlobalKeyDown);
+    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [
+    selectedIds,
+    closeModalOpen,
+    quickLoggerOpen,
+    bulkReviewOpen,
+    historyOpen,
+    deleteTarget,
+    bulkDeleteConfirmOpen,
+  ]);
+
   if (userLoading || !currentUser) {
     return <div className="flex h-screen items-center justify-center text-slate-500">Loading work sheet...</div>;
   }

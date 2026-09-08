@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDownAZ,
-  ArrowUpAZ,
   ChevronsLeftRight,
   Filter,
-  GripVertical,
+  Hand,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
@@ -686,71 +684,48 @@ export const WorkSheetTable = ({
                 return null;
               }
 
-              const isSorted = columnSort.key === column;
               const hiddenAfter = getHiddenColumnsAfter(columnIndex);
 
               return (
                 <TableHead
                   key={column}
-                  className={`group relative h-10 min-w-0 whitespace-nowrap border-r border-slate-200 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${
+                  className={`group relative h-10 min-w-0 whitespace-nowrap border-r border-slate-200 px-1 text-[12px] font-semibold text-slate-600 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={() => handleColumnDrop(column)}
                 >
-                  <div className="flex min-w-0 items-center gap-1.5">
+                  <div
+                    className="group/header flex min-w-0 items-center gap-0"
+                    draggable
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      setDraggedColumn(column);
+                    }}
+                    onDragEnd={() => setDraggedColumn(null)}
+                    title={`Drag ${column} column`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="mr-0.5 inline-flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity group-hover/header:opacity-100 active:cursor-grabbing"
+                    >
+                      <Hand className="h-3.5 w-3.5" />
+                    </span>
+
                     <button
                       type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.stopPropagation();
-                        setDraggedColumn(column);
-                      }}
-                      onDragEnd={() => setDraggedColumn(null)}
                       onClick={(event) => event.stopPropagation()}
-                      className="inline-flex shrink-0 cursor-grab rounded p-1 text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:cursor-grabbing active:opacity-100"
-                      title={`Drag ${column} column`}
-                      aria-label={`Drag ${column} column`}
+                      className="flex min-w-0 flex-1 items-center justify-start rounded px-0 py-0.5 text-left hover:text-slate-800"
+                      title={column}
                     >
-                      <GripVertical className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setColumnSort((current) => {
-                          if (current.key !== column) {
-                            return {
-                              key: column,
-                              direction: "asc",
-                            };
-                          }
-
-                          return {
-                            key: column,
-                            direction:
-                              current.direction === "asc"
-                                ? "desc"
-                                : "asc",
-                          };
-                        });
-                      }}
-                      className="flex min-w-0 flex-1 items-center justify-start gap-1 rounded px-1 py-1 text-left hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      <span className="min-w-0 truncate" title={column}>{column}</span>
-
-                      {isSorted &&
-                        (columnSort.direction === "asc" ? (
-                          <ArrowUpAZ className="h-3.5 w-3.5 shrink-0" />
-                        ) : (
-                          <ArrowDownAZ className="h-3.5 w-3.5 shrink-0" />
-                        ))}
+                      <span className="min-w-0 whitespace-nowrap">{column}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => onOpenFilters?.()}
-                      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded transition ${
+                      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded transition ${
                         isColumnFiltered(column)
                           ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
                           : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
@@ -766,7 +741,7 @@ export const WorkSheetTable = ({
                           : `Filter ${column}`
                       }
                     >
-                      <Filter className="h-3.5 w-3.5" />
+                      <Filter className="h-3 w-3" />
                     </button>
 
                     <WorksheetColumnMenu

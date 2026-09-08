@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { GripVertical, Trash2 } from "lucide-react";
+import { Hand, Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -14,21 +14,21 @@ const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate", "Finish"];
 
 const COLUMN_WIDTHS = {
-  Date: "130px",
-  Client: "150px",
-  Project: "160px",
-  Deliverable: "160px",
-  Stage: "110px",
+  Date: "105px",
+  Client: "135px",
+  Project: "145px",
+  Deliverable: "145px",
+  Stage: "95px",
   "Deliverable Name": "180px",
-  "Deliverable Link": "180px",
-  Type: "150px",
-  Category: "140px",
-  Version: "80px",
-  "Time (min)": "80px",
-  Creator: "140px",
-  Reviewer: "140px",
-  Remarks: "200px",
-  Status: "170px",
+  "Deliverable Link": "165px",
+  Type: "130px",
+  Category: "120px",
+  Version: "70px",
+  "Time (min)": "75px",
+  Creator: "120px",
+  Reviewer: "120px",
+  Remarks: "170px",
+  Status: "140px",
 };
 
 export const WorkSheetRow = memo(function WorkSheetRow(props) {
@@ -826,7 +826,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               onRowDragStart?.(event, item.id);
             }}
             onClick={(event) => event.stopPropagation()}
-            className={`inline-flex rounded p-1 text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:opacity-100 ${
+            className={`inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:opacity-100 ${
               canDragRow
                 ? "cursor-grab hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
                 : "cursor-default opacity-40"
@@ -834,7 +834,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             title="Drag row"
             aria-label="Drag row"
           >
-            <GripVertical className="h-3.5 w-3.5" />
+            <Hand className="h-3.5 w-3.5" />
           </button>
           <span>{index}</span>
         </div>

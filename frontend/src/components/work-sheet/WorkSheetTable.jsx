@@ -12,6 +12,8 @@ import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
 import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WORKSHEET } from "@/constants/testIds";
+import { toast } from "sonner";
+import { canEditWorkItem } from "@/lib/worksheetPermissions";
 
 const COLUMNS = [
   "Date",
@@ -67,6 +69,14 @@ const COLUMN_FIELDS = {
   Status: "status",
 };
 
+const STAGES = ["Content", "Design", "Animate", "Finish"];
+const MEMBER_STAGE_BY_DEPARTMENT = {
+  Content: "Content",
+  Design: "Design",
+  Animation: "Animate",
+  Finish: "Finish",
+};
+
 // The worksheet is intentionally virtualized without adding a new dependency.
 // Only the visible rows + a small overscan buffer are mounted in the DOM.
 const ROW_HEIGHT = 40;
@@ -100,6 +110,7 @@ export const WorkSheetTable = ({
   const [selection, setSelection] = useState(null);
   const [rangeSelection, setRangeSelection] = useState(null);
   const rangeSelectionRef = useRef(null);
+  const activeCellRef = useRef(null);
   const checkboxAnchorRef = useRef(null);
   const [columnSort, setColumnSort] = useState({
     key: null,
@@ -360,6 +371,7 @@ export const WorkSheetTable = ({
 
   const handleCellSelect = useCallback(({ row, col }) => {
     setActiveCell({ row, col });
+    activeCellRef.current = { row, col };
     setSelection({
       startRow: row,
       endRow: row,
@@ -607,6 +619,287 @@ export const WorkSheetTable = ({
     allVisibleIds.every((id) => selectedSet.has(id));
 
   const visibleColumns = columnOrder.filter((column) => !hiddenColumns.includes(column));
+
+  const isMember = currentUser.role === "member";
+  const memberStage = MEMBER_STAGE_BY_DEPARTMENT[currentUser.department];
+
+  const canEditItem = useCallback(
+    (item) =>
+      isMember
+        ? !item.stage || item.stage === memberStage
+        : canEditWorkItem(currentUser, item, users),
+    [isMember, memberStage, currentUser, users]
+  );
+
+  // Turns pasted display text back into the raw field(s) to save for a
+  // column, resolved against the target row's own current context (e.g.
+  // "Project" is matched only within the target's client). Returns null
+  // when the text doesn't match anything valid for that column, so the
+  // caller can skip that cell rather than write garbage.
+  const resolvePasteValue = useCallback(
+    (column, rawText, targetItem) => {
+      const text = (rawText ?? "").trim();
+      const clear = text === "" || text === "—" || text === "-";
+      const ciEquals = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+      switch (column) {
+        case "Date": {
+          if (clear) return { work_date: "" };
+          if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return { work_date: text };
+          const parsed = new Date(text);
+          if (Number.isNaN(parsed.getTime())) return null;
+          return { work_date: parsed.toISOString().slice(0, 10) };
+        }
+        case "Client": {
+          if (clear) {
+            return { client_id: null, project_id: null, deliverable_id: null };
+          }
+          const match = clients.find((c) => ciEquals(c.name, text));
+          if (!match) return null;
+          return {
+            client_id: match.id,
+            project_id: null,
+            deliverable_id: null,
+          };
+        }
+        case "Project": {
+          if (clear) return { project_id: null, deliverable_id: null };
+          const currentProject = projects.find(
+            (p) => p.id === targetItem.project_id
+          );
+          const effectiveClientId =
+            targetItem.client_id || currentProject?.client_id;
+          const pool = effectiveClientId
+            ? projects.filter((p) => p.client_id === effectiveClientId)
+            : projects;
+          const match = pool.find((p) => ciEquals(p.name, text));
+          if (!match) return null;
+          return { project_id: match.id, deliverable_id: null };
+        }
+        case "Deliverable": {
+          if (clear) return { deliverable_id: null };
+          const pool = deliverablesByProject[targetItem.project_id] || [];
+          const match = pool.find((d) => ciEquals(d.name, text));
+          if (!match) return null;
+          return { deliverable_id: match.id };
+        }
+        case "Stage": {
+          if (clear) return { stage: null };
+          const match = STAGES.find((s) => ciEquals(s, text));
+          if (!match) return null;
+          return { stage: match };
+        }
+        case "Deliverable Name":
+          return { deliverable_name: clear ? "" : text };
+        case "Deliverable Link":
+          return { deliverable_link: clear ? "" : text };
+        case "Type": {
+          if (clear) return { deliverable_type: "", work_category: "" };
+          const match = (options.deliverable_types || []).find((t) =>
+            ciEquals(t, text)
+          );
+          if (!match) return null;
+          return {
+            deliverable_type: match,
+            work_category: options.deliverable_type_categories?.[match] || "",
+          };
+        }
+        // Category is derived from Type, not directly editable anywhere
+        // else in the sheet — paste shouldn't be able to set it either.
+        case "Category":
+          return null;
+        case "Version":
+          return { version: clear ? "" : text };
+        case "Time (min)": {
+          if (clear) return { time_taken_minutes: 0 };
+          const num = Number(text.replace(/[^\d.-]/g, ""));
+          if (Number.isNaN(num)) return null;
+          return { time_taken_minutes: num };
+        }
+        case "Creator": {
+          if (clear) return { creator_id: null };
+          const match = nonAdminUsers.find((u) => ciEquals(u.name, text));
+          if (!match) return null;
+          return { creator_id: match.id };
+        }
+        case "Reviewer": {
+          if (clear) return { reviewer_id: null };
+          const match = reviewerUsers.find((u) => ciEquals(u.name, text));
+          if (!match) return null;
+          return { reviewer_id: match.id };
+        }
+        case "Remarks":
+          return { remarks: clear ? "" : text };
+        case "Status": {
+          const match = (options.statuses || []).find((s) => ciEquals(s, text));
+          if (!match) return null;
+          return { status: match };
+        }
+        default:
+          return null;
+      }
+    },
+    [clients, projects, deliverablesByProject, options, nonAdminUsers, reviewerUsers]
+  );
+
+  // Ctrl/Cmd+C copies the active cell or, if a Shift+Arrow range is
+  // selected, the whole rectangle — as tab/newline-separated text, so it
+  // also pastes cleanly into Excel/Sheets/a text editor. Ctrl/Cmd+V does
+  // the reverse: parses clipboard text the same way and writes each cell
+  // back through onUpdate, resolving names back to IDs per column (e.g.
+  // pasting "Ongoing" into Status, or a project name matched against the
+  // target row's own client).
+  useEffect(() => {
+    const isWithinSheet = (el) => !!el?.closest?.("[data-sheet-cell]");
+
+    const handleKeyDown = (event) => {
+      const key = event.key.toLowerCase();
+      const isCopy = (event.ctrlKey || event.metaKey) && key === "c";
+      const isPaste = (event.ctrlKey || event.metaKey) && key === "v";
+      if (!isCopy && !isPaste) return;
+
+      const target = event.target;
+
+      // Inside a text field with its own text actually selected, let the
+      // browser's normal text copy/paste happen instead of hijacking it.
+      if (
+        (target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement) &&
+        target.selectionStart !== target.selectionEnd
+      ) {
+        return;
+      }
+
+      if (!isWithinSheet(document.activeElement)) return;
+
+      if (!navigator.clipboard) {
+        toast.error(
+          "Clipboard access isn't available here (needs HTTPS or a supported browser)"
+        );
+        return;
+      }
+
+      const range = rangeSelectionRef.current;
+      const anchor = activeCellRef.current;
+      if (!range && !anchor) return;
+
+      const startRow = range ? Math.min(range.anchorRow, range.row) : anchor.row;
+      const endRow = range ? Math.max(range.anchorRow, range.row) : anchor.row;
+      const startCol = range ? Math.min(range.anchorCol, range.col) : anchor.col;
+      const endCol = range ? Math.max(range.anchorCol, range.col) : anchor.col;
+
+      if (isCopy) {
+        event.preventDefault();
+        const cols = visibleColumns.slice(startCol, endCol + 1);
+        const rowsData = sortedItemsRef.current.slice(startRow - 1, endRow);
+
+        const tsv = rowsData
+          .map((item) =>
+            cols.map((column) => String(getSortValue(item, column) ?? "")).join("\t")
+          )
+          .join("\n");
+
+        navigator.clipboard
+          .writeText(tsv)
+          .then(() => {
+            const count = rowsData.length * cols.length;
+            toast.success(count > 1 ? `Copied ${count} cells` : "Copied");
+          })
+          .catch(() => {
+            toast.error("Couldn't copy — clipboard access was blocked");
+          });
+
+        return;
+      }
+
+      // Paste.
+      event.preventDefault();
+
+      navigator.clipboard
+        .readText()
+        .then((clipboardText) => {
+          if (!clipboardText) return;
+
+          const pastedRows = clipboardText.replace(/\r/g, "").split("\n");
+          const pastedGrid = pastedRows.map((line) => line.split("\t"));
+          const isSingleValue =
+            pastedGrid.length === 1 && pastedGrid[0].length === 1;
+
+          // A single copied value pasted onto a multi-cell range fills
+          // the whole range with it (same as Sheets); otherwise the
+          // pasted block is stamped once, anchored at the range/active
+          // cell's top-left corner, clamped to the sheet's bounds.
+          const targetRowCount = isSingleValue
+            ? endRow - startRow + 1
+            : pastedGrid.length;
+          const targetColCount = isSingleValue
+            ? endCol - startCol + 1
+            : pastedGrid[0].length;
+
+          const maxRow = sortedItemsRef.current.length;
+          const maxCol = visibleColumns.length - 1;
+
+          let applied = 0;
+          let skipped = 0;
+
+          for (let r = 0; r < targetRowCount; r++) {
+            const targetRow = startRow + r;
+            if (targetRow > maxRow) break;
+
+            const targetItem = sortedItemsRef.current[targetRow - 1];
+            if (!targetItem || !canEditItem(targetItem)) {
+              skipped += targetColCount;
+              continue;
+            }
+
+            const updates = {};
+            let rowHasUpdate = false;
+
+            for (let c = 0; c < targetColCount; c++) {
+              const targetCol = startCol + c;
+              if (targetCol > maxCol) break;
+
+              const column = visibleColumns[targetCol];
+              const text = isSingleValue
+                ? pastedGrid[0][0]
+                : pastedGrid[r % pastedGrid.length][c % pastedGrid[0].length];
+
+              const resolved = column
+                ? resolvePasteValue(column, text, targetItem)
+                : null;
+
+              if (!resolved) {
+                skipped += 1;
+                continue;
+              }
+
+              Object.assign(updates, resolved);
+              rowHasUpdate = true;
+            }
+
+            if (rowHasUpdate) {
+              onUpdate(targetItem.id, updates);
+              applied += 1;
+            }
+          }
+
+          if (applied === 0) {
+            toast.error("Nothing pasted — no matching values for this selection");
+          } else if (skipped > 0) {
+            toast.success(`Pasted into ${applied} row${applied === 1 ? "" : "s"}, skipped ${skipped} cell${skipped === 1 ? "" : "s"} that didn't match`);
+          } else {
+            toast.success(`Pasted into ${applied} row${applied === 1 ? "" : "s"}`);
+          }
+        })
+        .catch(() => {
+          toast.error("Couldn't paste — clipboard access was blocked");
+        });
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [visibleColumns, getSortValue, resolvePasteValue, canEditItem, onUpdate]);
+
   const gridTemplateColumns = buildGridTemplateColumns(visibleColumns);
 
   const totalCols = COLUMNS.length + 3; // #, checkbox, Actions

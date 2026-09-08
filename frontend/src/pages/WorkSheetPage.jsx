@@ -120,6 +120,7 @@ export default function WorkSheetPage() {
     }
   });
   const [bulkAdding, setBulkAdding] = useState(false);
+  const [addingRow, setAddingRow] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
@@ -128,6 +129,7 @@ export default function WorkSheetPage() {
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const bulkAddingRef = useRef(false);
+  const addingRowRef = useRef(false);
   const itemsRef = useRef(items);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
@@ -269,6 +271,9 @@ export default function WorkSheetPage() {
     (filters.statuses?.length || 0);
 
   const handleAddRow = async () => {
+    if (addingRowRef.current) return; // guards against rapid double-clicks on the + button
+    addingRowRef.current = true;
+    setAddingRow(true);
     try {
       const defaultType = options.deliverable_types?.[0] || "";
       const created = await createWorkItem(currentUser.id, {
@@ -291,6 +296,9 @@ export default function WorkSheetPage() {
       toast.success("Row added");
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add row");
+    } finally {
+      addingRowRef.current = false;
+      setAddingRow(false);
     }
   };
 
@@ -551,11 +559,17 @@ export default function WorkSheetPage() {
   // Delete key deletes checkbox-selected rows (same confirm flow as the
   // "Delete" button in BulkActionBar). Previously nothing was wired to
   // this at all — selecting rows and pressing Delete did nothing.
+  // Also handles Backspace: on Mac keyboards the key labeled "delete"
+  // sends event.key "Backspace", not "Delete" — real "Delete" only comes
+  // from Fn+Delete (forward-delete) — so Backspace has to be treated the
+  // same way here or this never fires on a Mac.
   // Skipped while typing in any editable field: per-cell Delete already
   // has its own handler (clears just that cell) and stops the event from
   // reaching here, but we still guard explicitly in case focus is inside
   // some other input (e.g. a modal or the filter panel) so a stray
-  // Delete press there can't wipe out a checkbox selection unexpectedly.
+  // Delete/Backspace press there can't wipe out a checkbox selection
+  // unexpectedly, and so Backspace doesn't trigger the browser's
+  // back-navigation in that case either.
   useEffect(() => {
     const isEditableTarget = (el) => {
       if (!el) return false;
@@ -568,7 +582,7 @@ export default function WorkSheetPage() {
     };
 
     const handleGlobalKeyDown = (event) => {
-      if (event.key !== "Delete") return;
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (!selectedIds.length) return;
       if (isEditableTarget(event.target)) return;
       if (
@@ -719,6 +733,8 @@ export default function WorkSheetPage() {
           setHiddenRows={setHiddenRows}
           filters={filters}
           onOpenFilters={() => setFiltersOpen(true)}
+          onAddRow={isAdmin ? undefined : handleAddRow}
+          addingRow={addingRow}
           sheetKey={activeSheet}
         />
       )}

@@ -408,8 +408,6 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
         update_fields = {k: v for k, v in update_fields.items() if k in MEMBER_EDITABLE_FIELDS}
         if "stage" in update_fields and department_stage and update_fields["stage"] != department_stage:
             raise HTTPException(status_code=403, detail="Members can only assign work to their department")
-        if "status" in update_fields and update_fields["status"] not in MEMBER_FORWARD_STATUSES:
-            raise HTTPException(status_code=403, detail="Members cannot set this status")
     elif user.role == "manager":
         if not creator_department or creator_department != user.department:
             raise HTTPException(status_code=403, detail="You can only edit work items logged by your own department")

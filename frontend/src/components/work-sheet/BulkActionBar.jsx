@@ -65,7 +65,7 @@ export const BulkActionBar = ({
 }) => {
   const [status, setStatus] = useState("");
   const [showAssign, setShowAssign] = useState(false);
-  const allowedStatuses = currentUser.role === "member" ? options.member_forward_statuses : options.statuses;
+  const allowedStatuses = options.statuses;
 
   return (
     <div className="border-b border-indigo-200 bg-indigo-50">

@@ -3,6 +3,7 @@ import {
   ChevronsLeftRight,
   Filter,
   Hand,
+  Plus,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
@@ -89,6 +90,8 @@ export const WorkSheetTable = ({
   hiddenRows,
   setHiddenRows,
   onOpenFilters,
+  onAddRow,
+  addingRow = false,
   sheetKey = "Master",
 }) => {
   const [activeCell, setActiveCell] = useState(null);
@@ -631,7 +634,21 @@ export const WorkSheetTable = ({
             style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
           >
             <TableHead className="row-num-head flex h-10 items-center justify-center border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: 1 }}>
-              #
+              {onAddRow ? (
+                <button
+                  type="button"
+                  onClick={onAddRow}
+                  disabled={addingRow}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Add a row"
+                  aria-label="Add a row"
+                  data-testid="worksheet-add-row-btn"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                "#"
+              )}
             </TableHead>
 
             <TableHead className="checkbox-cell relative flex h-10 items-center border-r border-slate-200 px-3" style={{ gridColumn: 2 }}>

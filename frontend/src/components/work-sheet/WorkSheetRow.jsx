@@ -80,7 +80,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   }, [item.updated_at]);
 
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
-  const allowedStatuses = isMember ? options.member_forward_statuses : options.statuses;
+  const allowedStatuses = options.statuses;
   const project = item.project_id
     ? projects.find((p) => p.id === item.project_id)
     : undefined;
@@ -240,7 +240,22 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       onMouseDown: () => onCellSelect?.({ row: index, col: navigationCol }),
       onFocus: () => onCellSelect?.({ row: index, col: navigationCol }),
       onKeyDown: (event) => {
-        if (event.key === "Delete" && !event.defaultPrevented) {
+        const target = event.target;
+
+        // Mac's "delete" key sends "Backspace", not "Delete" — see the
+        // same note in WorkSheetPage.jsx's row-delete shortcut. Forward
+        // Delete always clears the cell. Backspace only clears it when
+        // the target isn't an actual text-editing input/textarea (e.g. a
+        // dropdown trigger button) — otherwise Backspace has to keep
+        // deleting one character at a time while typing, same as normal.
+        const isTextEditable =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement;
+        const isClearKey =
+          event.key === "Delete" ||
+          (event.key === "Backspace" && !isTextEditable);
+
+        if (isClearKey && !event.defaultPrevented) {
           event.preventDefault();
           event.stopPropagation();
           clearCell(col);

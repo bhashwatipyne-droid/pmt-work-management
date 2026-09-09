@@ -1,487 +1,935 @@
-import { useEffect, useState } from "react";
-import {
-  CheckCircle2,
-  MessageSquare,
-  RefreshCw,
-  XCircle,
-} from "lucide-react";
-import { Button } from "../ui/button";
+import { Fragment, memo, useEffect, useState } from "react";
+import { Hand, Trash2 } from "lucide-react";
+import { TableCell, TableRow } from "../ui/table";
+import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
-import { getBulkReview, reviewWorkItem } from "@/services/api";
-import { toast } from "sonner";
+import { Checkbox } from "../ui/checkbox";
+import { SearchableSelect } from "./SearchableSelect";
+import { StatusBadge } from "./StatusBadge";
+import { WORKSHEET } from "@/constants/testIds";
+import { canEditWorkItem } from "@/lib/worksheetPermissions";
+import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
+import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 
-export default function BulkReviewModal({
-  open,
-  onClose,
-  currentUser,
-}) {
-  const [items, setItems] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [notes, setNotes] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState({});
+const NONE_VALUE = "__none__";
+const STAGES = ["Content", "Design", "Animate", "Finish"];
 
-  const fetchItems = async () => {
-    if (!currentUser) return;
+export const WorkSheetRow = memo(function WorkSheetRow(props) {
+  const {
+    item,
+    index,
+    currentUser,
+    users,
+    usersById = {},
+    nonAdminUsers = [],
+    reviewerUsers = [],
+    options,
+    clients = [],
+    projects = [],
+    deliverablesByProject = {},
+    onUpdate,
+    onDelete,
+    selected,
+    onToggleSelect,
+    activeCell,
+    onCellSelect,
+    fillState,
+    onFillStart,
+    onFillHover,
+    onFillEnd,
+    selection,
+    rangeSelection,
+    totalRows = 0,
+    onExtendSelection,
+    onCheckboxRangeSelect,
+    hiddenColumns = [],
+    columnOrder = [],
+    onRowDragStart,
+    onRowDragOver,
+    onRowDrop,
+    onRowDragEnd,
+    isRowDragging = false,
+    canDragRow = true,
+  } = props;
+  const isMember = currentUser.role === "member";
+  const isElevated = !isMember;
+  const memberStage = {
+    Content: "Content",
+    Design: "Design",
+    Animation: "Animate",
+    Finish: "Finish",
+  }[currentUser.department];
+  const canEditRow = isMember
+    ? (!item.stage || item.stage === memberStage)
+    : canEditWorkItem(currentUser, item, users);
+  const canEditExtra = isElevated && canEditRow;
+  const [openSelect, setOpenSelect] = useState(null);
 
-    setLoading(true);
-
-    try {
-      const data = await getBulkReview(currentUser.id);
-      setItems(data);
-      setSelectedIds([]);
-      setNotes({});
-    } catch (e) {
-      toast.error(
-        e.response?.data?.detail ||
-          "Could not load deliverables for review"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [local, setLocal] = useState({
+    deliverable_name: item.deliverable_name,
+    deliverable_link: item.deliverable_link,
+    version: item.version,
+    time_taken_minutes: item.time_taken_minutes,
+    remarks: item.remarks,
+  });
 
   useEffect(() => {
-    if (open) {
-      fetchItems();
-    }
-  }, [open, currentUser]);
+    setLocal({
+      deliverable_name: item.deliverable_name ?? "",
+      deliverable_link: item.deliverable_link ?? "",
+      version: item.version ?? "",
+      time_taken_minutes: item.time_taken_minutes ?? 0,
+      remarks: item.remarks ?? "",
+    });
+  }, [
+    item.deliverable_name,
+    item.deliverable_link,
+    item.version,
+    item.time_taken_minutes,
+    item.remarks,
+  ]);
 
-  const toggleSelect = (id) => {
-    setSelectedIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((itemId) => itemId !== id)
-        : [...prev, id]
-    );
+  const nameOf = (id) => usersById[id]?.name || "Unassigned";
+  const allowedStatuses = options.statuses;
+  const project = item.project_id
+    ? projects.find((p) => p.id === item.project_id)
+    : undefined;
+  const effectiveClientId = item.client_id || project?.client_id || undefined;
+  const projectOptions = effectiveClientId
+    ? projects.filter((p) => p.client_id === effectiveClientId)
+    : projects;
+  const projectDeliverables = deliverablesByProject[item.project_id] || [];
+  const clientName = effectiveClientId
+    ? clients.find((c) => c.id === effectiveClientId)?.name
+    : undefined;
+
+  const isColumnHidden = (column) =>
+    hiddenColumns.includes(column);
+
+  const COLUMN_NAMES = {
+    0: "Date",
+    1: "Client",
+    2: "Project",
+    3: "Deliverable",
+    4: "Stage",
+    5: "Deliverable Name",
+    6: "Deliverable Link",
+    7: "Type",
+    8: "Category",
+    9: "Version",
+    10: "Time (min)",
+    11: "Creator",
+    12: "Reviewer",
+    13: "Remarks",
+    14: "Status",
   };
 
-  const toggleSelectAll = () => {
-    setSelectedIds((prev) =>
-      prev.length === items.length
-        ? []
-        : items.map((item) => item.id)
-    );
-  };
+  const orderedColumns = columnOrder.length
+    ? columnOrder
+    : Object.values(COLUMN_NAMES);
+  const visibleColumns = orderedColumns.filter(
+    (column) => !isColumnHidden(column)
+  );
 
-  const updateNote = (id, value) => {
-    setNotes((prev) => ({
-      ...prev,
-      [id]: value,
-    }));
-  };
+  const cellStyle = (col) => ({
+    display: isColumnHidden(COLUMN_NAMES[col]) ? "none" : undefined,
+  });
 
-  const handleSingleAction = async (itemId, action) => {
-    setActionLoading((prev) => ({
-      ...prev,
-      [itemId]: action,
-    }));
+  // Lazy dropdown lists (below) only mount SelectItems for the open dropdown,
+  // which keeps 700+ project/deliverable options from turning into tens of
+  // thousands of React elements across all mounted rows. But Radix's
+  // SelectValue normally resolves its displayed text by finding the matching
+  // SelectItem in the tree — if that item was never mounted (row never
+  // opened, or scrolled out and remounted by virtualization), it silently
+  // falls back to the placeholder instead of showing the saved value. So for
+  // every lazy dropdown we pass the label to SelectValue explicitly instead
+  // of relying on that lookup.
+  const projectName = item.project_id
+    ? projects.find((p) => p.id === item.project_id)?.name
+    : undefined;
 
-    try {
-      await reviewWorkItem(
-        itemId,
-        action,
-        currentUser.id,
-        notes[itemId] || ""
-      );
+  const deliverableName = item.deliverable_id
+    ? projectDeliverables.find((d) => d.id === item.deliverable_id)?.name
+    : undefined;
 
-      const message =
-        action === "approve"
-          ? "Item approved"
-          : "Item sent back for changes";
+  const clearCell = (col) => {
+    if (!canEditRow) return;
 
-      toast.success(message);
+    const fields = {
+      0: "work_date",
+      1: "client_id",
+      2: "project_id",
+      3: "deliverable_id",
+      4: "stage",
+      5: "deliverable_name",
+      6: "deliverable_link",
+      7: "deliverable_type",
+      8: "work_category",
+      9: "version",
+      10: "time_taken_minutes",
+      11: "creator_id",
+      12: "reviewer_id",
+      13: "remarks",
+      14: "status",
+    };
 
-      setItems((prev) =>
-        prev.filter((item) => item.id !== itemId)
-      );
+    const field = fields[col];
+    if (!field) return;
 
-      setSelectedIds((prev) =>
-        prev.filter((id) => id !== itemId)
-      );
+    const values = {
+      work_date: "",
+      client_id: null,
+      project_id: null,
+      deliverable_id: null,
+      stage: null,
+      deliverable_name: "",
+      deliverable_link: "",
+      deliverable_type: "",
+      work_category: "",
+      version: "",
+      time_taken_minutes: 0,
+      creator_id: null,
+      reviewer_id: null,
+      remarks: "",
+      // Members cannot clear status through the API; Not Started is the
+      // neutral editable value and behaves like a reset for this cell.
+      status: "Not Started",
+    };
 
-      setNotes((prev) => {
-        const next = { ...prev };
-        delete next[itemId];
-        return next;
+    if (field === "client_id") {
+      onUpdate(item.id, {
+        client_id: null,
+        project_id: null,
+        deliverable_id: null,
       });
-    } catch (error) {
-      console.error("Failed to review work item:", error);
-
-      toast.error(
-        error.response?.data?.detail ||
-          "Could not complete review"
-      );
-    } finally {
-      setActionLoading((prev) => {
-        const next = { ...prev };
-        delete next[itemId];
-        return next;
-      });
-    }
-  };
-
-  const handleApprove = async () => {
-    if (!selectedIds.length) {
-      toast.error("Select at least one item");
+      localStorage.removeItem("ws_last_client_id");
+      localStorage.removeItem("ws_last_project_id");
+      localStorage.removeItem("ws_last_deliverable_id");
       return;
     }
 
-    setActionLoading((prev) => {
-      const next = { ...prev };
-
-      selectedIds.forEach((id) => {
-        next[id] = "approve";
-      });
-
-      return next;
-    });
-
-    try {
-      await Promise.all(
-        selectedIds.map((id) =>
-          reviewWorkItem(
-            id,
-            "approve",
-            currentUser.id,
-            notes[id] || ""
-          )
-        )
-      );
-
-      toast.success(
-        `${selectedIds.length} item${
-          selectedIds.length === 1 ? "" : "s"
-        } approved`
-      );
-
-      setItems((prev) =>
-        prev.filter(
-          (item) => !selectedIds.includes(item.id)
-        )
-      );
-
-      setSelectedIds([]);
-    } catch (error) {
-      console.error(
-        "Failed to approve work items:",
-        error
-      );
-
-      toast.error(
-        error.response?.data?.detail ||
-          "Could not complete bulk review"
-      );
-    } finally {
-      setActionLoading({});
-    }
-  };
-
-  const handleRequestChanges = async () => {
-    if (!selectedIds.length) {
-      toast.error("Select at least one item");
+    if (field === "project_id") {
+      onUpdate(item.id, { project_id: null, deliverable_id: null });
+      localStorage.removeItem("ws_last_project_id");
+      localStorage.removeItem("ws_last_deliverable_id");
       return;
     }
 
-    setActionLoading((prev) => {
-      const next = { ...prev };
+    if (field === "deliverable_type" || field === "work_category") {
+      onUpdate(item.id, { deliverable_type: "", work_category: "" });
+      return;
+    }
 
-      selectedIds.forEach((id) => {
-        next[id] = "request_changes";
-      });
+    if (field === "deliverable_name") {
+      setLocal((current) => ({ ...current, deliverable_name: "" }));
+    }
+    if (field === "deliverable_link") {
+      setLocal((current) => ({ ...current, deliverable_link: "" }));
+    }
+    if (field === "version") {
+      setLocal((current) => ({ ...current, version: "" }));
+    }
+    if (field === "time_taken_minutes") {
+      setLocal((current) => ({ ...current, time_taken_minutes: 0 }));
+    }
+    if (field === "remarks") {
+      setLocal((current) => ({ ...current, remarks: "" }));
+    }
 
-      return next;
-    });
+    onUpdate(item.id, { [field]: values[field] });
+  };
 
-    try {
-      await Promise.all(
-        selectedIds.map((id) =>
-          reviewWorkItem(
-            id,
-            "request_changes",
-            currentUser.id,
-            notes[id] || ""
-          )
-        )
-      );
+  const sheetCell = (col) => {
+    const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
+    const navigationCol = visualCol === -1 ? col : visualCol;
 
-      toast.success(
-        `${selectedIds.length} item${
-          selectedIds.length === 1 ? "" : "s"
-        } sent back`
-      );
+    return {
+      "data-sheet-cell": true,
+      "data-sheet-row": index,
+      "data-sheet-col": navigationCol,
+      onMouseDown: () => onCellSelect?.({ row: index, col: navigationCol }),
+      onFocus: () => onCellSelect?.({ row: index, col: navigationCol }),
+      onKeyDown: (event) => {
+        const target = event.target;
 
-      setItems((prev) =>
-        prev.filter(
-          (item) => !selectedIds.includes(item.id)
-        )
-      );
+        // Mac's "delete" key sends "Backspace", not "Delete" — see the
+        // same note in WorkSheetPage.jsx's row-delete shortcut. Forward
+        // Delete always clears the cell. Backspace only clears it when
+        // the target isn't an actual text-editing input/textarea (e.g. a
+        // dropdown trigger button) — otherwise Backspace has to keep
+        // deleting one character at a time while typing, same as normal.
+        const isTextEditable =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement;
+        const isClearKey =
+          event.key === "Delete" ||
+          (event.key === "Backspace" && !isTextEditable);
 
-      setSelectedIds([]);
-    } catch (error) {
-      console.error(
-        "Failed to request changes:",
-        error
-      );
+        if (isClearKey && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          clearCell(col);
+          return;
+        }
 
-      toast.error(
-        error.response?.data?.detail ||
-          "Could not complete bulk review"
-      );
-    } finally {
-      setActionLoading({});
+        return createWorksheetKeyHandler({
+          row: index,
+          col: navigationCol,
+          maxCol: Math.max(0, visibleColumns.length - 1),
+          maxRow: totalRows,
+          onExtendSelection,
+        })(event);
+      },
+    };
+  };
+
+  const commit = (field, value) => {
+    if (item[field] === value) return;
+    onUpdate(item.id, { [field]: value });
+  };
+
+  const isCellActive = (col) => {
+    const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
+    return activeCell?.row === index && activeCell?.col === visualCol;
+  };
+
+  const isCellInFillRange = (col) => {
+    if (!selection) return false;
+
+    return (
+      selection.col === visibleColumns.indexOf(COLUMN_NAMES[col]) &&
+      index >= Math.min(selection.startRow, selection.endRow) &&
+      index <= Math.max(selection.startRow, selection.endRow)
+    );
+  };
+
+  // Google-Sheets-style rectangular selection made with Shift+Arrow /
+  // Shift+Ctrl+Arrow. Separate from `selection` above, which is a
+  // single-column range used only for the fill-handle drag — keeping
+  // them apart avoids the keyboard range accidentally triggering a
+  // fill-copy, and vice versa.
+  const isCellInRangeSelection = (col) => {
+    if (!rangeSelection) return false;
+
+    const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
+    const { anchorRow, anchorCol, row, col: endCol } = rangeSelection;
+
+    return (
+      visualCol >= Math.min(anchorCol, endCol) &&
+      visualCol <= Math.max(anchorCol, endCol) &&
+      index >= Math.min(anchorRow, row) &&
+      index <= Math.max(anchorRow, row)
+    );
+  };
+
+  const renderFillHandle = (col) => {
+    if (!isCellActive(col) || !canEditRow) return null;
+
+    return (
+      <span
+        className="sheet-fill-handle"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onFillStart?.({
+            row: index,
+            col: visibleColumns.indexOf(COLUMN_NAMES[col]),
+          });
+        }}
+      />
+    );
+  };
+
+  const renderColumnCell = (column) => {
+    switch (column) {
+      case "Date":
+        return (
+<TableCell
+        style={cellStyle(0)}
+        className={[
+          "sheet-cell",
+          isCellActive(0) && "sheet-cell-active",
+          isCellInFillRange(0) && "sheet-cell-fill-range",
+          isCellInRangeSelection(0) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <Input
+          {...sheetCell(0)}
+          data-testid={`${WORKSHEET.dateInput}-${item.id}`}
+          type="date"
+          value={item.work_date}
+          disabled={!canEditRow}
+          onChange={(e) => onUpdate(item.id, { work_date: e.target.value })}
+          className="h-8 w-[130px]"
+        />
+
+        {renderFillHandle(0)}
+      </TableCell>
+        );
+      case "Client":
+        return (
+<TableCell
+        style={cellStyle(1)}
+        className={[
+          "sheet-cell",
+          isCellActive(1) && "sheet-cell-active",
+          isCellInFillRange(1) && "sheet-cell-fill-range",
+          isCellInRangeSelection(1) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <SearchableSelect
+          open={openSelect === "client"}
+          onOpenChange={(open) => setOpenSelect(open ? "client" : null)}
+          value={effectiveClientId ? String(effectiveClientId) : NONE_VALUE}
+          onValueChange={(v) => {
+            const nextClientId = v === NONE_VALUE ? null : v;
+            onUpdate(item.id, {
+              client_id: nextClientId,
+              project_id: null,
+              deliverable_id: null,
+            });
+            if (nextClientId) localStorage.setItem("ws_last_client_id", nextClientId);
+            else localStorage.removeItem("ws_last_client_id");
+            localStorage.removeItem("ws_last_project_id");
+            localStorage.removeItem("ws_last_deliverable_id");
+          }}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...clients.map((client) => ({ value: String(client.id), label: client.name })),
+          ]}
+          placeholder="Client"
+          searchPlaceholder="Type client name..."
+          emptyText="No clients found"
+          disabled={!canEditRow}
+          triggerProps={sheetCell(1)}
+          data-testid={`worksheet-client-select-${item.id}`}
+          contentClassName="w-[260px] p-0"
+        />
+        {renderFillHandle(1)}
+      </TableCell>
+        );
+      case "Project":
+        return (
+<TableCell
+        style={cellStyle(2)}
+        className={[
+          "sheet-cell",
+          isCellActive(2) && "sheet-cell-active",
+          isCellInFillRange(2) && "sheet-cell-fill-range",
+          isCellInRangeSelection(2) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <SearchableSelect
+          open={openSelect === "project"}
+          onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
+          value={item.project_id ? String(item.project_id) : NONE_VALUE}
+          onValueChange={(v) => {
+            const nextId = v === NONE_VALUE ? null : v;
+            const selectedProject = projects.find((project) => String(project.id) === String(nextId));
+            const patch = {
+              project_id: nextId,
+              client_id: selectedProject?.client_id || effectiveClientId || null,
+            };
+            if (nextId !== item.project_id) patch.deliverable_id = null;
+            onUpdate(item.id, patch);
+          }}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...projectOptions.map((project) => ({ value: String(project.id), label: project.name })),
+          ]}
+          placeholder={effectiveClientId ? "Project" : "Select client first"}
+          searchPlaceholder="Type project name..."
+          emptyText="No projects found for this client"
+          disabled={!canEditRow || !effectiveClientId}
+          triggerProps={sheetCell(2)}
+          data-testid={`worksheet-project-select-${item.id}`}
+          contentClassName="w-[280px] p-0"
+        />
+        {renderFillHandle(2)}
+      </TableCell>
+        );
+      case "Deliverable":
+        return (
+<TableCell
+        style={cellStyle(3)}
+        className={[
+          "sheet-cell",
+          isCellActive(3) && "sheet-cell-active",
+          isCellInFillRange(3) && "sheet-cell-fill-range",
+          isCellInRangeSelection(3) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <SearchableSelect
+          open={openSelect === "deliverable"}
+          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
+          value={item.deliverable_id ? String(item.deliverable_id) : NONE_VALUE}
+          onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...projectDeliverables.map((deliverable) => ({ value: String(deliverable.id), label: deliverable.name })),
+          ]}
+          placeholder={item.project_id ? "Deliverable" : "Select project first"}
+          searchPlaceholder="Type deliverable name..."
+          emptyText="No deliverables found for this project"
+          disabled={!canEditRow || !item.project_id}
+          triggerProps={sheetCell(3)}
+          data-testid={`worksheet-deliverable-select-${item.id}`}
+          contentClassName="w-[300px] p-0"
+        />
+        {renderFillHandle(3)}
+      </TableCell>
+        );
+      case "Stage":
+        return (
+<TableCell
+        style={cellStyle(4)}
+        className={[
+          "sheet-cell",
+          isCellActive(4) && "sheet-cell-active",
+          isCellInFillRange(4) && "sheet-cell-fill-range",
+          isCellInRangeSelection(4) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <SearchableSelect
+          open={openSelect === "stage"}
+          onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
+          value={item.stage || NONE_VALUE}
+          onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
+          options={[
+            { value: NONE_VALUE, label: "—" },
+            ...STAGES.map((stage) => ({ value: stage, label: stage })),
+          ]}
+          placeholder="Stage"
+          searchPlaceholder="Type stage..."
+          emptyText="No stages found"
+          disabled={!canEditRow}
+          triggerProps={sheetCell(4)}
+          data-testid={`worksheet-stage-select-${item.id}`}
+          contentClassName="w-[180px] p-0"
+        />
+        {renderFillHandle(4)}
+      </TableCell>
+        );
+      case "Deliverable Name":
+        return (
+<TableCell
+        style={cellStyle(5)}
+        className={[
+          "sheet-cell",
+          isCellActive(5) && "sheet-cell-active",
+          isCellInFillRange(5) && "sheet-cell-fill-range",
+          isCellInRangeSelection(5) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        {canEditRow ? (
+          <Input
+            {...sheetCell(5)}
+            data-testid={`${WORKSHEET.deliverableInput}-${item.id}`}
+            value={local.deliverable_name}
+            onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
+            onBlur={() => commit("deliverable_name", local.deliverable_name)}
+            className="h-7 w-[180px]"
+            placeholder="Deliverable name"
+          />
+        ) : (
+          <span className="cell-plain block">{item.deliverable_name || "—"}</span>
+        )}
+        {renderFillHandle(5)}
+      </TableCell>
+        );
+      case "Deliverable Link":
+        return (
+<TableCell
+        style={cellStyle(6)}
+        className={[
+          "sheet-cell",
+          isCellActive(6) && "sheet-cell-active",
+          isCellInFillRange(6) && "sheet-cell-fill-range",
+          isCellInRangeSelection(6) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        {canEditRow ? (
+          <Input
+            {...sheetCell(6)}
+            data-testid={`${WORKSHEET.deliverableLinkInput}-${item.id}`}
+            value={local.deliverable_link}
+            onChange={(e) => setLocal((l) => ({ ...l, deliverable_link: e.target.value }))}
+            onBlur={() => commit("deliverable_link", local.deliverable_link)}
+            className="h-7 w-[180px]"
+            placeholder="Paste drive link"
+          />
+        ) : item.deliverable_link ? (
+          <a href={item.deliverable_link} target="_blank" rel="noreferrer" className="cell-plain block truncate text-indigo-600 underline">
+            {item.deliverable_link}
+          </a>
+        ) : (
+          <span className="cell-plain block">—</span>
+        )}
+        {renderFillHandle(6)}
+      </TableCell>
+        );
+      case "Type":
+        return (
+<TableCell
+        style={cellStyle(7)}
+        className={[
+          "sheet-cell",
+          isCellActive(7) && "sheet-cell-active",
+          isCellInFillRange(7) && "sheet-cell-fill-range",
+          isCellInRangeSelection(7) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        {canEditExtra ? (
+          <SearchableSelect
+              open={openSelect === "type"}
+              onOpenChange={(open) => setOpenSelect(open ? "type" : null)}
+              value={item.deliverable_type || NONE_VALUE}
+              onValueChange={(v) => {
+                const nextType = v === NONE_VALUE ? "" : v;
+                const category = options.deliverable_type_categories?.[nextType] || "";
+                onUpdate(item.id, { deliverable_type: nextType, work_category: category });
+              }}
+              options={[
+                { value: NONE_VALUE, label: "—" },
+                ...(options.deliverable_types || []).map((type) => ({ value: type, label: type })),
+              ]}
+              placeholder="Type"
+              searchPlaceholder="Type to search..."
+              emptyText="No types found"
+              disabled={!canEditExtra}
+              triggerProps={sheetCell(7)}
+              data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
+              contentClassName="w-[320px] p-0"
+            />
+        ) : (
+          <span className="cell-plain block">{item.deliverable_type || "—"}</span>
+        )}
+        {renderFillHandle(7)}
+      </TableCell>
+        );
+      case "Category":
+        return (
+<TableCell
+        style={cellStyle(8)}
+        className={[
+          "sheet-cell",
+          isCellActive(8) && "sheet-cell-active",
+          isCellInFillRange(8) && "sheet-cell-fill-range",
+          isCellInRangeSelection(8) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <span
+          {...sheetCell(8)}
+          data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
+          className="cell-plain block"
+          tabIndex={canEditRow ? 0 : -1}
+        >
+          {item.work_category || "—"}
+        </span>
+        {renderFillHandle(8)}
+      </TableCell>
+        );
+      case "Version":
+        return (
+<TableCell
+        style={cellStyle(9)}
+        className={[
+          "sheet-cell",
+          isCellActive(9) && "sheet-cell-active",
+          isCellInFillRange(9) && "sheet-cell-fill-range",
+          isCellInRangeSelection(9) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <Input
+          {...sheetCell(9)}
+          data-testid={`${WORKSHEET.versionInput}-${item.id}`}
+          value={local.version}
+          disabled={!canEditRow}
+          onChange={(e) => setLocal((l) => ({ ...l, version: e.target.value }))}
+          onBlur={() => commit("version", local.version)}
+          className="h-7 w-[80px]"
+          placeholder="v1"
+        />
+        {renderFillHandle(9)}
+      </TableCell>
+        );
+      case "Time (min)":
+        return (
+<TableCell
+        style={cellStyle(10)}
+        className={[
+          "sheet-cell",
+          isCellActive(10) && "sheet-cell-active",
+          isCellInFillRange(10) && "sheet-cell-fill-range",
+          isCellInRangeSelection(10) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <Input
+          {...sheetCell(10)}
+          data-testid={`${WORKSHEET.timeInput}-${item.id}`}
+          type="number"
+          min="0"
+          step="5"
+          value={local.time_taken_minutes}
+          disabled={!canEditRow}
+          onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
+          onBlur={() => commit("time_taken_minutes", Number(local.time_taken_minutes) || 0)}
+          className="h-7 w-[80px]"
+        />
+        {renderFillHandle(10)}
+      </TableCell>
+        );
+      case "Creator":
+        return (
+<TableCell
+        style={cellStyle(11)}
+        className={[
+          "sheet-cell",
+          isCellActive(11) && "sheet-cell-active",
+          isCellInFillRange(11) && "sheet-cell-fill-range",
+          isCellInRangeSelection(11) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        {canEditExtra ? (
+          <SearchableSelect
+              open={openSelect === "creator"}
+              onOpenChange={(open) => setOpenSelect(open ? "creator" : null)}
+              value={item.creator_id || NONE_VALUE}
+              onValueChange={(v) => onUpdate(item.id, { creator_id: v === NONE_VALUE ? null : v })}
+              options={[
+                { value: NONE_VALUE, label: "Unassigned" },
+                ...nonAdminUsers.map((user) => ({ value: user.id, label: user.name })),
+              ]}
+              placeholder="Creator"
+              searchPlaceholder="Type creator name..."
+              emptyText="No users found"
+              disabled={!canEditExtra}
+              triggerProps={sheetCell(11)}
+              data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
+              contentClassName="w-[240px] p-0"
+            />
+        ) : (
+          <span className="cell-plain block">{nameOf(item.creator_id)}</span>
+        )}
+        {renderFillHandle(11)}
+      </TableCell>
+        );
+      case "Reviewer":
+        return (
+<TableCell
+        style={cellStyle(12)}
+        className={[
+          "sheet-cell",
+          isCellActive(12) && "sheet-cell-active",
+          isCellInFillRange(12) && "sheet-cell-fill-range",
+          isCellInRangeSelection(12) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        {canEditRow ? (
+          <SearchableSelect
+              open={openSelect === "reviewer"}
+              onOpenChange={(open) => setOpenSelect(open ? "reviewer" : null)}
+              value={item.reviewer_id || NONE_VALUE}
+              onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
+              options={[
+                { value: NONE_VALUE, label: "Unassigned" },
+                ...reviewerUsers.map((user) => ({ value: user.id, label: user.name })),
+              ]}
+              placeholder="Reviewer"
+              searchPlaceholder="Type reviewer name..."
+              emptyText="No reviewers found"
+              disabled={!canEditRow}
+              triggerProps={sheetCell(12)}
+              data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
+              contentClassName="w-[240px] p-0"
+            />
+        ) : (
+          <span className="cell-plain block">{item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}</span>
+        )}
+        {renderFillHandle(12)}
+      </TableCell>
+        );
+      case "Remarks":
+        return (
+<TableCell
+        style={cellStyle(13)}
+        className={[
+          "sheet-cell",
+          isCellActive(13) && "sheet-cell-active",
+          isCellInFillRange(13) && "sheet-cell-fill-range",
+          isCellInRangeSelection(13) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <Textarea
+          {...sheetCell(13)}
+          data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
+          value={local.remarks}
+          disabled={!canEditRow}
+          onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
+          onBlur={() => commit("remarks", local.remarks)}
+          className="min-h-[32px] h-8 w-[200px] resize-none py-1.5"
+          rows={1}
+        />
+        {renderFillHandle(13)}
+      </TableCell>
+        );
+      case "Status":
+        return (
+<TableCell
+        style={cellStyle(14)}
+        className={[
+          "sheet-cell",
+          isCellActive(14) && "sheet-cell-active",
+          isCellInFillRange(14) && "sheet-cell-fill-range",
+          isCellInRangeSelection(14) && "sheet-cell-range-select",
+        ]
+          .filter(Boolean)
+          .join(" ")}>
+        <SearchableSelect
+          open={openSelect === "status"}
+          onOpenChange={(open) => setOpenSelect(open ? "status" : null)}
+          value={item.status || NONE_VALUE}
+          onValueChange={(v) => onUpdate(item.id, { status: v })}
+          options={(options.statuses || []).map((status) => ({
+            value: status,
+            label: status,
+            disabled: !allowedStatuses?.includes(status),
+          }))}
+          renderValue={(_option, value) =>
+            value && value !== NONE_VALUE ? (
+              <StatusBadge status={value} />
+            ) : (
+              "Status"
+            )
+          }
+          placeholder="Status"
+          searchPlaceholder="Type status..."
+          emptyText="No statuses found"
+          disabled={!canEditRow}
+          triggerProps={sheetCell(14)}
+          data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
+          className="border-none bg-transparent shadow-none p-0"
+          contentClassName="w-[240px] p-0"
+        />
+        {renderFillHandle(14)}
+      </TableCell>
+        );
+      default:
+        return null;
     }
   };
 
-  if (!open) return null;
 
-  const allSelected =
-    items.length > 0 &&
-    selectedIds.length === items.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/50 p-4 backdrop-blur-[1px]">
-      <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f0f0fd]">
-                <CheckCircle2 className="h-4 w-4 text-[#2b2bb5]" />
-              </div>
-
-              <h2 className="text-lg font-semibold text-foreground">
-                Bulk Review
-              </h2>
-            </div>
-
-            <p className="mt-1 text-xs text-muted-foreground">
-              {items.length} item
-              {items.length === 1 ? "" : "s"} waiting for review
-            </p>
-          </div>
-
+    <TableRow
+      data-testid={`worksheet-row-${item.id}`}
+      className={`group ${isRowDragging ? "opacity-60" : ""} ${
+        selected ? "sheet-row-selected" : ""
+      }`}
+      style={{
+        display: "grid",
+        gridTemplateColumns: buildGridTemplateColumns(visibleColumns),
+        minWidth: "max-content",
+      }}
+      onDragOver={(event) => onRowDragOver?.(event, item.id)}
+      onDrop={(event) => onRowDrop?.(event, item.id)}
+      onDragEnd={() => onRowDragEnd?.()}
+      onPointerEnter={() => {
+        if (fillState) {
+          onFillHover?.(index);
+        }
+      }}
+      onMouseEnter={() => {
+        if (fillState) {
+          onFillHover?.(index);
+        }
+      }}
+      onMouseUp={() => {
+        if (fillState) {
+          onFillEnd?.();
+        }
+      }}
+    >
+      <TableCell className="row-num">
+        <div className="flex items-center justify-center gap-0.5">
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            draggable={canDragRow}
+            onDragStart={(event) => {
+              if (!canDragRow) return;
+              event.stopPropagation();
+              onRowDragStart?.(event, item.id);
+            }}
+            onClick={(event) => event.stopPropagation()}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:opacity-100 ${
+              canDragRow
+                ? "cursor-grab hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
+                : "cursor-default opacity-40"
+            }`}
+            title="Drag row"
+            aria-label="Drag row"
           >
-            <XCircle className="h-5 w-5" />
+            <Hand className="h-3.5 w-3.5" />
           </button>
+          <span>{index}</span>
         </div>
-
-        {/* Bulk actions */}
-        {items.length > 0 && (
-          <div className="flex items-center justify-between border-b border-border bg-[#f7f9fc] px-6 py-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleSelectAll}
-                className="h-4 w-4 rounded border-border accent-[#2b2bb5]"
-              />
-
-              <span>Select all</span>
-
-              {selectedIds.length > 0 && (
-                <span className="font-normal text-muted-foreground">
-                  ({selectedIds.length} selected)
-                </span>
-              )}
-            </label>
-
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  !selectedIds.length ||
-                  Object.keys(actionLoading).length > 0
-                }
-                onClick={handleRequestChanges}
-              >
-                <XCircle className="mr-1.5 h-4 w-4" />
-                Request Changes
-              </Button>
-
-              <Button
-                size="sm"
-                className="border border-[#16a34a] bg-[#16a34a] text-white hover:bg-[#15803d]"
-                disabled={
-                  !selectedIds.length ||
-                  Object.keys(actionLoading).length > 0
-                }
-                onClick={handleApprove}
-              >
-                <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                Approve Selected
-              </Button>
-            </div>
-          </div>
+      </TableCell>
+      <TableCell className="checkbox-cell">
+        <Checkbox
+          data-testid={`worksheet-row-checkbox-${item.id}`}
+          data-checkbox-row={index}
+          checked={selected}
+          disabled={!canEditRow}
+          onCheckedChange={() => onToggleSelect(item.id)}
+          onKeyDown={(event) => {
+            // Click one checkbox, then Shift+Down/Up to bulk-select the
+            // rows in between — same as Google Sheets' row-header
+            // behavior. The anchor is whichever row was last plainly
+            // clicked/toggled; this only extends from it.
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            if (!event.shiftKey) return;
+            event.preventDefault();
+            onCheckboxRangeSelect?.(
+              index,
+              event.key === "ArrowDown" ? "down" : "up"
+            );
+          }}
+        />
+      </TableCell>
+      {visibleColumns.map((column) => (
+        <Fragment key={column}>
+          {renderColumnCell(column)}
+        </Fragment>
+      ))}
+      <TableCell className="sheet-cell w-[52px] text-center">
+        {canEditRow && (
+          <button
+            type="button"
+            onClick={() => onDelete?.(item)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            title="Delete entry"
+            aria-label="Delete entry"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         )}
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto bg-[#f7f9fc] p-5">
-          {loading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <RefreshCw className="h-4 w-4 animate-spin text-[#2b2bb5]" />
-                Loading deliverables...
-              </div>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#f0f0fd]">
-                <CheckCircle2 className="h-6 w-6 text-[#2b2bb5]" />
-              </div>
-
-              <p className="text-sm font-semibold text-foreground">
-                Nothing waiting for review
-              </p>
-
-              <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
-                All deliverables for your stage are currently
-                cleared.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {items.map((item) => {
-                const rowLoading =
-                  actionLoading[item.id];
-
-                const selected = selectedIds.includes(item.id);
-
-                return (
-                  <div
-                    key={item.id}
-                    className={[
-                      "rounded-xl border bg-card p-4 transition-all",
-                      selected
-                        ? "border-[#2b2bb5] bg-[#f0f0fd]/40 shadow-sm"
-                        : "border-border hover:shadow-sm",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-start gap-3">
-                      {/* Checkbox */}
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() =>
-                          toggleSelect(item.id)
-                        }
-                        disabled={!!rowLoading}
-                        className="mt-1 h-4 w-4 rounded border-border accent-[#2b2bb5]"
-                      />
-
-                      <div className="min-w-0 flex-1">
-                        {/* Main row */}
-                        <div className="flex items-start justify-between gap-6">
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-semibold text-foreground">
-                              {item.name}
-                            </h3>
-
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {item.project_code
-                                ? `${item.project_code} · `
-                                : ""}
-                              {item.project_name}
-                            </p>
-
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              Client:{" "}
-                              <span className="text-foreground/80">
-                                {item.client_name || "—"}
-                              </span>
-                              {" · "}
-                              Owner:{" "}
-                              <span className="text-foreground/80">
-                                {item.owner_name ||
-                                  "Unassigned"}
-                              </span>
-                            </p>
-                          </div>
-
-                          <div className="flex shrink-0 items-center gap-2">
-                            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
-                              Ready for Review
-                            </span>
-
-                            {/* Direct actions */}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!!rowLoading}
-                              onClick={() =>
-                                handleSingleAction(
-                                  item.id,
-                                  "request_changes"
-                                )
-                              }
-                            >
-                              {rowLoading ===
-                              "request_changes" ? (
-                                <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
-                              ) : (
-                                <XCircle className="mr-1.5 h-4 w-4" />
-                              )}
-
-                              Request Changes
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              className="border border-[#16a34a] bg-[#16a34a] text-white hover:bg-[#15803d]"
-                              disabled={!!rowLoading}
-                              onClick={() =>
-                                handleSingleAction(
-                                  item.id,
-                                  "approve"
-                                )
-                              }
-                            >
-                              {rowLoading === "approve" ? (
-                                <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                              )}
-
-                              Approve
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Review note */}
-                        <div className="mt-4">
-                          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            Review note
-                          </div>
-
-                          <Textarea
-                            value={notes[item.id] || ""}
-                            onChange={(e) =>
-                              updateNote(
-                                item.id,
-                                e.target.value
-                              )
-                            }
-                            placeholder="Optional note..."
-                            className="min-h-[64px] bg-card"
-                            disabled={!!rowLoading}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      </TableCell>
+    </TableRow>
   );
-}
+});

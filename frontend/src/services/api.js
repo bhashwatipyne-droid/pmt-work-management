@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/+$/, "");
-export const API = `${BACKEND_URL}/api`;
+export const API = BACKEND_URL + "/api";
 
 axios.defaults.withCredentials = true;
 
@@ -274,6 +274,72 @@ export const getApprovals = (userId) =>
     .get(`${API}/approvals`, {
       headers: authHeaders(userId),
     })
+    .then((r) => r.data);
+
+export const getApprovalBoard = (userId) =>
+  axios
+    .get(`${API}/approvals/board`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
+export const getDeliverableApprovals = (userId, deliverableId) =>
+  axios
+    .get(`${API}/deliverables/${deliverableId}/approvals`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
+export const configureApprovalWorkflow = (
+  userId,
+  deliverableId,
+  approvalTypes
+) =>
+  axios
+    .put(
+      `${API}/deliverables/${deliverableId}/approval-workflow`,
+      { approval_types: approvalTypes },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const approveApprovalItem = (
+  userId,
+  approvalItemId,
+  note = ""
+) =>
+  axios
+    .post(
+      `${API}/approval-items/${approvalItemId}/approve`,
+      { note },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const sendBackApprovalItem = (
+  userId,
+  approvalItemId,
+  note = ""
+) =>
+  axios
+    .post(
+      `${API}/approval-items/${approvalItemId}/send-back`,
+      { note },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const moveApprovalItem = (
+  userId,
+  approvalItemId,
+  approvalType
+) =>
+  axios
+    .patch(
+      `${API}/approval-items/${approvalItemId}/move`,
+      { approval_type: approvalType },
+      { headers: authHeaders(userId) }
+    )
     .then((r) => r.data);
 
 export const getBulkReview = (userId) =>

@@ -1,25 +1,64 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  GripVertical,
+  Clock3,
+  ShieldCheck,
+  Users,
+  UserCheck,
+} from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import {
-  getApprovals,
-  approveDeliverable,
-  rejectDeliverable,
+  getApprovalBoard,
+  approveApprovalItem,
+  sendBackApprovalItem,
+  moveApprovalItem,
 } from "@/services/api";
 import { APPROVALS } from "@/constants/testIds";
-import { STAGE_COLORS } from "@/constants/projectPalette";
+
+const COLUMNS = [
+  {
+    key: "MANAGER",
+    label: "Manager",
+    icon: Users,
+    description: "Internal manager sign-off",
+  },
+  {
+    key: "LEADERSHIP",
+    label: "Leadership",
+    icon: ShieldCheck,
+    description: "Leadership review",
+  },
+  {
+    key: "CLIENT_SPOC",
+    label: "Client SPOC",
+    icon: UserCheck,
+    description: "Client sign-off",
+  },
+  {
+    key: "COMPLIANCE",
+    label: "Compliance",
+    icon: ShieldCheck,
+    description: "Compliance review",
+  },
+];
+
+const initialBoard = () =>
+  Object.fromEntries(COLUMNS.map((column) => [column.key, []]));
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
-  const [items, setItems] = useState([]);
+  const [board, setBoard] = useState(initialBoard);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState({});
+  const [dragging, setDragging] = useState(null);
 
-  const fetchItems = async () => {
+  const fetchBoard = async () => {
     setLoading(true);
     try {
-      setItems(await getApprovals(currentUserId));
+      setBoard(await getApprovalBoard(currentUserId));
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Failed to load approvals");
     } finally {
@@ -29,33 +68,45 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     if (currentUser && currentUser.role !== "member") {
-      fetchItems();
+      fetchBoard();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
-  const decide = async (id, action) => {
-    const note = notes[id] || "";
+  const total = useMemo(
+    () => COLUMNS.reduce((sum, column) => sum + (board[column.key]?.length || 0), 0),
+    [board]
+  );
 
+  const decide = async (item, action) => {
+    const note = notes[item.id] || "";
     try {
       if (action === "approve") {
-        await approveDeliverable(currentUserId, id, note);
+        await approveApprovalItem(currentUserId, item.id, note);
       } else {
-        await rejectDeliverable(currentUserId, id, note);
+        await sendBackApprovalItem(currentUserId, item.id, note);
       }
-
-      toast.success(
-        action === "approve" ? "Approved" : "Sent back for changes"
-      );
-
+      toast.success(action === "approve" ? "Approval recorded" : "Sent back for changes");
       setNotes((prev) => {
         const next = { ...prev };
-        delete next[id];
+        delete next[item.id];
         return next;
       });
-
-      fetchItems();
+      await fetchBoard();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Action failed");
+    }
+  };
+
+  const handleDrop = async (targetType) => {
+    if (!dragging || dragging.approval_type === targetType) return;
+    try {
+      await moveApprovalItem(currentUserId, dragging.id, targetType);
+      toast.success(`Moved to ${COLUMNS.find((c) => c.key === targetType)?.label}`);
+      setDragging(null);
+      await fetchBoard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not move approval");
     }
   };
 
@@ -79,168 +130,134 @@ export default function ApprovalsPage() {
   return (
     <div
       data-testid={APPROVALS.page}
-      className="flex-1 overflow-auto bg-background px-8 py-7"
+      className="flex-1 overflow-auto bg-background px-6 py-6 lg:px-8"
     >
-      {/* Page Header */}
-      <div className="mb-6">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Approvals
-          </h1>
-
-          <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
-            {items.length}
-          </span>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Approvals</h1>
+            <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
+              {total}
+            </span>
+          </div>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Independent approval queues. Drag a card to reassign its approval authority, or approve/send it back.
+          </p>
         </div>
-
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Deliverables awaiting your review. Approve to advance to the next
-          stage, or send back for changes.
-        </p>
       </div>
 
-      {/* Loading */}
       {loading ? (
-        <div className="mint-card flex min-h-[240px] items-center justify-center">
-          <div className="text-sm text-muted-foreground">
-            Loading approvals...
-          </div>
-        </div>
-      ) : items.length === 0 ? (
-        /* Empty State */
-        <div
-          data-testid={APPROVALS.emptyState}
-          className="mint-card flex min-h-[280px] flex-col items-center justify-center px-6 text-center"
-        >
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent">
-            <CheckCircle2 className="h-5 w-5 text-primary" />
-          </div>
-
-          <p className="mt-4 text-sm font-semibold text-foreground">
-            No pending approvals
-          </p>
-
-          <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-            Deliverables marked “Ready for Review” will appear here.
-          </p>
+        <div className="mint-card flex min-h-[280px] items-center justify-center">
+          <div className="text-sm text-muted-foreground">Loading approvals...</div>
         </div>
       ) : (
-        /* Approval Cards */
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((d) => {
-            const c =
-              STAGE_COLORS[d.current_stage] || STAGE_COLORS.Content;
-
-            const rework = d.stage_status === "Changes Requested";
+        <div className="grid min-w-[1100px] grid-cols-4 gap-4">
+          {COLUMNS.map((column) => {
+            const Icon = column.icon;
+            const items = board[column.key] || [];
+            const isDropTarget = dragging && dragging.approval_type !== column.key;
 
             return (
               <div
-                key={d.id}
-                data-testid={`${APPROVALS.cardPrefix}-${d.id}`}
-                className="mint-card overflow-hidden p-5 transition-shadow hover:shadow-sm"
+                key={column.key}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleDrop(column.key);
+                }}
+                className={`flex min-h-[560px] flex-col rounded-xl border bg-[#f7f9fc] transition-colors ${
+                  isDropTarget ? "border-[#b8b8e8] bg-[#f3f3ff]" : "border-border"
+                }`}
               >
-                {/* Card Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-mono text-[11px] font-medium text-muted-foreground">
-                      {d.project_code}
+                <div className="border-b border-border bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-4 w-4 text-[#2b2bb5]" />
+                      <span className="text-sm font-semibold text-foreground">{column.label}</span>
                     </div>
-
-                    <div className="mt-1 truncate text-[15px] font-semibold text-foreground">
-                      {d.name}
-                    </div>
-
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {d.project_name} · {d.client_name || "—"}
-                    </div>
-                  </div>
-
-                  <span
-                    className={[
-                      "shrink-0 rounded-full px-2.5 py-1",
-                      "text-[10px] font-semibold uppercase tracking-wide",
-                      rework
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-blue-50 text-blue-700",
-                    ].join(" ")}
-                  >
-                    {rework ? "Rework" : "Ready"}
-                  </span>
-                </div>
-
-                {/* Stage / Owner */}
-                <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                  <span className="flex items-center gap-1.5">
-                    <span className={`h-2 w-2 rounded-full ${c.dot}`} />
-
-                    <span className={`font-medium ${c.text}`}>
-                      {d.current_stage} stage
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {items.length}
                     </span>
-                  </span>
-
-                  <span className="text-border">·</span>
-
-                  <span className="text-muted-foreground">
-                    Owner: {d.owner_name}
-                  </span>
-                </div>
-
-                {/* Previous Review Note */}
-                {d.last_review_note && (
-                  <div className="mt-4 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
-                    <div className="text-[11px] font-semibold text-foreground">
-                      Last note
-                    </div>
-
-                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {d.last_review_note}
-                    </div>
                   </div>
-                )}
-
-                {/* Review Note */}
-                <div className="mt-4">
-                  <label className="mb-1.5 block text-xs font-medium text-foreground">
-                    Review note
-                    <span className="ml-1 font-normal text-muted-foreground">
-                      (optional)
-                    </span>
-                  </label>
-
-                  <textarea
-                    data-testid={`${APPROVALS.notePrefix}-${d.id}`}
-                    placeholder="Add a note for the creator..."
-                    value={notes[d.id] || ""}
-                    onChange={(e) =>
-                      setNotes((prev) => ({
-                        ...prev,
-                        [d.id]: e.target.value,
-                      }))
-                    }
-                    className="min-h-[72px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-xs leading-5 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    rows={3}
-                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">{column.description}</p>
                 </div>
 
-                {/* Actions */}
-                <div className="mt-4 flex gap-2">
-                  <button
-                    data-testid={`${APPROVALS.approvePrefix}-${d.id}`}
-                    onClick={() => decide(d.id, "approve")}
-                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-[hsl(240_61%_36%)] focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Approve
-                  </button>
+                <div className="flex-1 space-y-3 p-3">
+                  {items.length === 0 ? (
+                    <div className="flex min-h-[180px] items-center justify-center rounded-lg border border-dashed border-border bg-white/60 px-4 text-center">
+                      <p className="text-xs text-muted-foreground">No pending approvals</p>
+                    </div>
+                  ) : (
+                    items.map((item) => (
+                      <div
+                        key={item.id}
+                        draggable
+                        onDragStart={(e) => {
+                          setDragging(item);
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", item.id);
+                        }}
+                        onDragEnd={() => setDragging(null)}
+                        data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
+                        className="rounded-xl border border-border bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                      >
+                        <div className="flex items-start gap-2">
+                          <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-slate-300" />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-mono text-[10px] text-muted-foreground">{item.project_code}</div>
+                            <div className="mt-1 text-sm font-semibold leading-5 text-foreground">{item.deliverable_name}</div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              {item.project_name} · {item.client_name || "—"}
+                            </div>
+                          </div>
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
+                            <Clock3 className="h-3 w-3" /> Pending
+                          </span>
+                        </div>
 
-                  <button
-                    data-testid={`${APPROVALS.rejectPrefix}-${d.id}`}
-                    onClick={() => decide(d.id, "reject")}
-                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  >
-                    <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    Send Back
-                  </button>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                          <span>{item.current_stage}</span>
+                          <span>·</span>
+                          <span>Owner: {item.owner_name}</span>
+                        </div>
+
+                        {item.comments && (
+                          <div className="mt-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
+                            {item.comments}
+                          </div>
+                        )}
+
+                        <textarea
+                          data-testid={`${APPROVALS.notePrefix}-${item.id}`}
+                          placeholder="Add a review note..."
+                          value={notes[item.id] || ""}
+                          onChange={(e) => setNotes((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                          className="mt-3 min-h-[58px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[11px] leading-4 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                          rows={2}
+                        />
+
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            data-testid={`${APPROVALS.approvePrefix}-${item.id}`}
+                            onClick={() => decide(item, "approve")}
+                            className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-[hsl(240_61%_36%)]"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                          </button>
+                          <button
+                            data-testid={`${APPROVALS.rejectPrefix}-${item.id}`}
+                            onClick={() => decide(item, "reject")}
+                            className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11px] font-semibold text-foreground hover:bg-muted"
+                          >
+                            <XCircle className="h-3.5 w-3.5 text-muted-foreground" /> Send Back
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             );

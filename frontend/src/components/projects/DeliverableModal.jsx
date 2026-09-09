@@ -40,6 +40,7 @@ export const DeliverableModal = ({
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [approvalTypes, setApprovalTypes] = useState([]);
 
   useEffect(() => {
     if (!open) return;
@@ -52,10 +53,12 @@ export const DeliverableModal = ({
         start_dt: initial.start_dt || "",
         end_dt: initial.end_dt || "",
       });
+      setApprovalTypes(initial.approval_types || []);
     } else {
       setDeliverable({
         ...emptyDeliverable,
       });
+      setApprovalTypes([]);
     }
   }, [open, mode, initial]);
 
@@ -95,6 +98,7 @@ export const DeliverableModal = ({
         owner_id: deliverable.owner_id || null,
         start_dt: deliverable.start_dt || null,
         end_dt: deliverable.end_dt || null,
+        approval_types: approvalTypes,
       };
 
       let saved;
@@ -333,6 +337,44 @@ export const DeliverableModal = ({
                 />
               </div>
             </div>
+          </div>
+
+          <div className="mt-6 border-t border-border pt-5">
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-foreground">Approval workflow</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Choose the approvals this deliverable needs. They run independently, not in sequence.</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {[
+                ["MANAGER", "Manager"],
+                ["LEADERSHIP", "Leadership"],
+                ["CLIENT_SPOC", "Client SPOC"],
+                ["COMPLIANCE", "Compliance"],
+              ].map(([value, label]) => {
+                const checked = approvalTypes.includes(value);
+                return (
+                  <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-white px-3 py-2.5 text-xs hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setApprovalTypes((prev) =>
+                          checked ? prev.filter((x) => x !== value) : [...prev, value]
+                        )
+                      }
+                      disabled={saving}
+                      className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]/20"
+                    />
+                    <span className="font-medium text-foreground">{label}</span>
+                  </label>
+                );
+              })}
+            </div>
+
+            {approvalTypes.length === 0 && (
+              <p className="mt-2 text-[11px] text-muted-foreground">No additional approvals. A manager can close the deliverable directly.</p>
+            )}
           </div>
 
           <p className="mt-3 text-[11px] text-muted-foreground">

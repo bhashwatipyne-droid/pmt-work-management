@@ -127,6 +127,8 @@ STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Req
 CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Finish", "Administration"]
 ROLES = ["admin", "manager", "member"]
+APPROVAL_TYPES = ["MANAGER", "LEADERSHIP", "CLIENT_SPOC", "COMPLIANCE"]
+APPROVAL_STATUSES = ["NOT_STARTED", "PENDING", "APPROVED", "CHANGES_REQUESTED"]
 
 # ---------------- Models ----------------
 class User(BaseModel):
@@ -262,6 +264,7 @@ class DeliverableInput(BaseModel):
     owner_id: Optional[str] = None
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    approval_types: Optional[List[str]] = None
 
 
 class ProjectCreate(BaseModel):
@@ -311,6 +314,7 @@ class Deliverable(BaseModel):
     end_dt: Optional[str] = None
     current_stage: str = "Content"
     stage_status: str = "Not Started"
+    approval_types: List[str] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -530,6 +534,7 @@ async def get_options():
         "client_statuses": CLIENT_STATUSES,
         "departments": DEPARTMENTS,
         "roles": ROLES,
+        "approval_types": APPROVAL_TYPES,
     }
 
 
@@ -1653,6 +1658,19 @@ async def _hydrate_projects(
         {"_id": 0},
     ).to_list(1000)
 
+    # Attach approval configuration without storing it on the deliverable document.
+    if deliverables:
+        approval_rows = await db.approval_workflows.find(
+            {"deliverable_id": {"$in": [d["id"] for d in deliverables]}},
+            {"_id": 0, "deliverable_id": 1, "required_types": 1},
+        ).to_list(5000)
+        approval_types_by_deliverable = {
+            row["deliverable_id"]: row.get("required_types", [])
+            for row in approval_rows
+        }
+        for d in deliverables:
+            d["approval_types"] = approval_types_by_deliverable.get(d["id"], [])
+
     # Index deliverables by project
     deliverables_by_project = {}
 
@@ -1860,6 +1878,7 @@ async def create_project(payload: ProjectCreate, request: Request):
         },
     )
     for d in payload.deliverables or []:
+        approval_types = d.approval_types or []
         deliv = Deliverable(
             project_id=project.id,
             name=d.name,
@@ -1869,10 +1888,15 @@ async def create_project(payload: ProjectCreate, request: Request):
             end_dt=d.end_dt,
             current_stage="Content",
             stage_status="Not Started",
+            approval_types=approval_types,
             created_at=ts,
             updated_at=ts,
         )
-        await db.deliverables.insert_one(deliv.model_dump())
+        db_doc = deliv.model_dump()
+        db_doc.pop("approval_types", None)
+        await db.deliverables.insert_one(db_doc)
+        if approval_types:
+            await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
         await log_activity(
             collection_name="deliverable_activity_log",
             entity_id=deliv.id,
@@ -2036,6 +2060,7 @@ class DeliverableCreate(BaseModel):
     end_dt: Optional[str] = None
     current_stage: Optional[str] = "Content"
     stage_status: Optional[str] = "Not Started"
+    approval_types: Optional[List[str]] = None
 
 
 class DeliverableUpdate(BaseModel):
@@ -2046,6 +2071,19 @@ class DeliverableUpdate(BaseModel):
     end_dt: Optional[str] = None
     current_stage: Optional[str] = None
     stage_status: Optional[str] = None
+    approval_types: Optional[List[str]] = None
+
+
+class ApprovalWorkflowCreate(BaseModel):
+    approval_types: List[str] = Field(default_factory=list)
+
+
+class ApprovalDecision(BaseModel):
+    note: Optional[str] = ""
+
+
+class ApprovalMove(BaseModel):
+    approval_type: str
 
 
 @api_router.get("/deliverables", response_model=List[Deliverable])
@@ -2055,7 +2093,13 @@ async def list_deliverables(
 ):
     await get_acting_user(request)
     query = {"project_id": project_id} if project_id else {}
-    return await db.deliverables.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    deliverables = await db.deliverables.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    ids = [d["id"] for d in deliverables]
+    workflows = await db.approval_workflows.find({"deliverable_id": {"$in": ids}}, {"_id": 0, "deliverable_id": 1, "required_types": 1}).to_list(5000) if ids else []
+    by_id = {w["deliverable_id"]: w.get("required_types", []) for w in workflows}
+    for d in deliverables:
+        d["approval_types"] = by_id.get(d["id"], [])
+    return deliverables
 
 
 @api_router.post("/deliverables", response_model=Deliverable)
@@ -2064,8 +2108,14 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
     if not await db.projects.find_one({"id": payload.project_id}, {"_id": 0}):
         raise HTTPException(status_code=400, detail="Project not found")
     ts = now_iso()
-    d = Deliverable(created_at=ts, updated_at=ts, **payload.model_dump())
-    await db.deliverables.insert_one(d.model_dump())
+    payload_data = payload.model_dump()
+    approval_types = payload_data.pop("approval_types", None) or []
+    d = Deliverable(created_at=ts, updated_at=ts, **payload_data, approval_types=approval_types)
+    db_doc = d.model_dump()
+    db_doc.pop("approval_types", None)
+    await db.deliverables.insert_one(db_doc)
+    if approval_types:
+        await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
     await log_activity(
         collection_name="deliverable_activity_log",
         entity_id=d.id,
@@ -2091,6 +2141,7 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")
     update_fields = payload.model_dump(exclude_unset=True)
+    approval_types = update_fields.pop("approval_types", None)
     if "current_stage" in update_fields and update_fields["current_stage"] not in STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
     if "stage_status" in update_fields and update_fields["stage_status"] not in STAGE_STATUSES:
@@ -2101,6 +2152,12 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
 
     update_fields["updated_at"] = now_iso()
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update_fields})
+
+    updated_for_workflow = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    if approval_types is not None:
+        await _create_or_sync_approval_workflow(updated_for_workflow, approval_types, user.id)
+    if update_fields.get("stage_status") == "Ready for Review" and existing.get("stage_status") != "Ready for Review":
+        await _set_approval_items_pending(deliverable_id)
 
     await log_activity(
         collection_name="deliverable_activity_log",
@@ -2156,7 +2213,10 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
                 new_value="Changes Requested",
             )
 
-    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    updated = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    workflow = await _get_approval_workflow(deliverable_id)
+    updated["approval_types"] = workflow.get("required_types", []) if workflow else []
+    return updated
 
 
 @api_router.delete("/deliverables/{deliverable_id}")
@@ -2378,6 +2438,85 @@ async def update_user(
     return User(**updated)
 
 
+# ---------------- Approval helpers ----------------
+async def _get_approval_workflow(deliverable_id: str):
+    return await db.approval_workflows.find_one({"deliverable_id": deliverable_id}, {"_id": 0})
+
+
+async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: List[str], changed_by: Optional[str] = None):
+    normalized = []
+    for value in approval_types or []:
+        value = str(value).upper().strip()
+        if value not in APPROVAL_TYPES:
+            raise HTTPException(status_code=400, detail=f"Invalid approval type: {value}")
+        if value not in normalized:
+            normalized.append(value)
+    workflow = await _get_approval_workflow(deliverable["id"])
+    ts = now_iso()
+    if not normalized:
+        if workflow:
+            await db.approval_items.delete_many({"approval_workflow_id": workflow["id"]})
+            await db.approval_workflows.delete_one({"id": workflow["id"]})
+        return None
+    if not workflow:
+        workflow = {"id": str(uuid.uuid4()), "deliverable_id": deliverable["id"], "status": "NOT_STARTED", "required_types": normalized, "created_at": ts, "updated_at": ts}
+        await db.approval_workflows.insert_one(workflow)
+    else:
+        await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"required_types": normalized, "updated_at": ts}})
+    existing = await db.approval_items.find({"approval_workflow_id": workflow["id"]}, {"_id": 0}).to_list(50)
+    existing_types = {x.get("approval_type") for x in existing}
+    for approval_type in normalized:
+        if approval_type not in existing_types:
+            item = {"id": str(uuid.uuid4()), "approval_workflow_id": workflow["id"], "deliverable_id": deliverable["id"], "approval_type": approval_type, "status": "PENDING" if deliverable.get("stage_status") == "Ready for Review" else "NOT_STARTED", "assigned_to": None, "department": "Administration" if approval_type == "COMPLIANCE" else None, "requested_at": ts if deliverable.get("stage_status") == "Ready for Review" else None, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "created_at": ts, "updated_at": ts}
+            await db.approval_items.insert_one(item)
+    await db.approval_items.delete_many({"approval_workflow_id": workflow["id"], "approval_type": {"$nin": normalized}})
+    return await _get_approval_workflow(deliverable["id"])
+
+
+async def _set_approval_items_pending(deliverable_id: str):
+    workflow = await _get_approval_workflow(deliverable_id)
+    if not workflow:
+        return
+    ts = now_iso()
+    await db.approval_items.update_many({"approval_workflow_id": workflow["id"]}, {"$set": {"status": "PENDING", "requested_at": ts, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "updated_at": ts}})
+    await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"status": "IN_PROGRESS", "updated_at": ts, "completed_at": None}})
+
+
+async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> bool:
+    if user.role == "admin":
+        return True
+    if item.get("assigned_to"):
+        return item.get("assigned_to") == user.id
+    approval_type = item.get("approval_type")
+    if approval_type == "MANAGER":
+        owner_department = await get_user_department(deliverable.get("owner_id"))
+        return user.role == "manager" and (not owner_department or owner_department == user.department)
+    if approval_type == "COMPLIANCE":
+        return user.department == "Administration"
+    return False
+
+
+async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
+    if not items:
+        return []
+    deliverable_ids = list({x.get("deliverable_id") for x in items if x.get("deliverable_id")})
+    deliverables = {d["id"]: d for d in await db.deliverables.find({"id": {"$in": deliverable_ids}}, {"_id": 0}).to_list(5000)}
+    project_ids = list({d.get("project_id") for d in deliverables.values() if d.get("project_id")})
+    projects = {p["id"]: p for p in await db.projects.find({"id": {"$in": project_ids}}, {"_id": 0}).to_list(1000)}
+    user_ids = list({uid for uid in ([d.get("owner_id") for d in deliverables.values()] + [x.get("assigned_to") for x in items]) if uid})
+    users = {u["id"]: u for u in await db.users.find({"id": {"$in": user_ids}}, {"_id": 0}).to_list(1000)}
+    clients = {c["id"]: c for c in await db.clients.find({}, {"_id": 0}).to_list(1000)}
+    result = []
+    for item in items:
+        d = deliverables.get(item.get("deliverable_id"), {})
+        p = projects.get(d.get("project_id"), {})
+        owner = users.get(d.get("owner_id"), {})
+        assigned = users.get(item.get("assigned_to"), {})
+        client = clients.get(p.get("client_id"), {})
+        result.append({**item, "deliverable_name": d.get("name", ""), "deliverable_type": d.get("type", ""), "current_stage": d.get("current_stage", "Content"), "stage_status": d.get("stage_status", "Not Started"), "owner_name": owner.get("name", "Unassigned"), "assigned_to_name": assigned.get("name", "Unassigned"), "project_name": p.get("name", ""), "project_code": p.get("code", ""), "client_name": client.get("name", "")})
+    return result
+
+
 # ---------------- Approvals (deliverable review queue) ----------------
 def _next_stage(stage: str) -> Optional[str]:
     try:
@@ -2462,39 +2601,254 @@ async def list_bulk_review(request: Request):
     return result
 
 
-@api_router.get("/approvals")
-async def list_approvals(request: Request):
-    """Deliverables waiting for review, hydrated with project + owner details."""
-    await get_acting_user(request)
-    delivs = await db.deliverables.find(
-        {"stage_status": "Ready for Review"}, {"_id": 0}
-    ).sort("updated_at", -1).to_list(500)
-    project_ids = list({d["project_id"] for d in delivs})
-    projects = {p["id"]: p for p in await db.projects.find({"id": {"$in": project_ids}}, {"_id": 0}).to_list(500)}
-    users = {u["id"]: u for u in await db.users.find({}, {"_id": 0}).to_list(500)}
-    clients = {c["id"]: c for c in await db.clients.find({}, {"_id": 0}).to_list(500)}
+async def _build_implicit_manager_items(user: User):
+    """Manager queue for deliverables with no configured approval workflow."""
+    if user.role not in ("admin", "manager"):
+        return []
+    ready = await db.deliverables.find({"stage_status": "Ready for Review"}, {"_id": 0}).sort("updated_at", -1).to_list(500)
     result = []
-    for d in delivs:
-        p = projects.get(d["project_id"]) or {}
-        owner = users.get(d.get("owner_id") or "") or {}
-        client = clients.get(p.get("client_id") or "") or {}
+    for d in ready:
+        workflow = await _get_approval_workflow(d["id"])
+        if workflow:
+            continue
+        if user.role == "manager":
+            owner_department = await get_user_department(d.get("owner_id"))
+            if owner_department and owner_department != user.department:
+                continue
         result.append({
-            **d,
-            "project_name": p.get("name", ""),
-            "project_code": p.get("code", ""),
-            "client_name": client.get("name", ""),
-            "owner_name": owner.get("name", "Unassigned"),
+            "id": f"implicit-manager-{d['id']}",
+            "approval_workflow_id": None,
+            "deliverable_id": d["id"],
+            "approval_type": "MANAGER",
+            "status": "PENDING",
+            "assigned_to": None,
+            "department": user.department,
+            "requested_at": d.get("updated_at"),
+            "approved_at": None,
+            "sent_back_at": None,
+            "approved_by": None,
+            "sent_back_by": None,
+            "comments": "",
+            "created_at": d.get("created_at"),
+            "updated_at": d.get("updated_at"),
         })
     return result
 
 
-class ApprovalDecision(BaseModel):
-    note: Optional[str] = ""
+@api_router.get("/approvals")
+async def list_approvals(request: Request):
+    """Return actionable approval items, scoped to the current user's authority."""
+    user = await get_acting_user(request)
+    query = {"status": "PENDING"}
+    if user.role != "admin":
+        query["$or"] = [
+            {"assigned_to": user.id},
+            {"approval_type": "MANAGER", "assigned_to": None},
+            {"approval_type": "COMPLIANCE", "assigned_to": None, "department": "Administration"},
+        ]
+    items = await db.approval_items.find(query, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    hydrated = await _hydrate_approval_items(items)
+    result = []
+    for item in hydrated:
+        d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+        if d and await _approval_item_can_act(user, item, d):
+            result.append(item)
+    result.extend(await _hydrate_approval_items(await _build_implicit_manager_items(user)))
+    return result
 
 
+@api_router.get("/approvals/board")
+async def approval_board(request: Request):
+    """Return pending approval cards grouped by approval authority."""
+    user = await get_acting_user(request)
+    query = {"status": "PENDING"}
+    if user.role != "admin":
+        query["$or"] = [
+            {"assigned_to": user.id},
+            {"approval_type": "MANAGER", "assigned_to": None},
+            {"approval_type": "COMPLIANCE", "assigned_to": None, "department": "Administration"},
+        ]
+    items = await db.approval_items.find(query, {"_id": 0}).sort("updated_at", -1).to_list(1000)
+    items.extend(await _build_implicit_manager_items(user))
+    hydrated = await _hydrate_approval_items(items)
+    result = {key: [] for key in APPROVAL_TYPES}
+    for item in hydrated:
+        d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+        if d and await _approval_item_can_act(user, item, d):
+            result[item["approval_type"]].append(item)
+    return result
+
+
+@api_router.get("/deliverables/{deliverable_id}/approvals")
+async def get_deliverable_approvals(deliverable_id: str, request: Request):
+    await get_acting_user(request)
+    d = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    workflow = await _get_approval_workflow(deliverable_id)
+    if not workflow:
+        return {"workflow": None, "items": []}
+    items = await db.approval_items.find(
+        {"approval_workflow_id": workflow["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(50)
+    return {"workflow": workflow, "items": await _hydrate_approval_items(items)}
+
+
+@api_router.put("/deliverables/{deliverable_id}/approval-workflow")
+async def configure_approval_workflow(deliverable_id: str, payload: ApprovalWorkflowCreate, request: Request):
+    user = await require_admin(request)
+    d = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    workflow = await _create_or_sync_approval_workflow(d, payload.approval_types, user.id)
+    await log_activity(
+        collection_name="deliverable_activity_log",
+        entity_id=deliverable_id,
+        entity_field="deliverable_id",
+        action="APPROVAL_WORKFLOW_CONFIGURED",
+        changed_by=user.id,
+        new_value={"approval_types": payload.approval_types},
+    )
+    return await get_deliverable_approvals(deliverable_id, request)
+
+
+@api_router.post("/approval-items/{approval_item_id}/approve")
+async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
+    user = await get_acting_user(request)
+    item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
+    if not item and approval_item_id.startswith("implicit-manager-"):
+        deliverable_id = approval_item_id.removeprefix("implicit-manager-")
+        item = {"id": approval_item_id, "deliverable_id": deliverable_id, "approval_type": "MANAGER", "status": "PENDING", "assigned_to": None, "department": user.department}
+    if not item:
+        raise HTTPException(status_code=404, detail="Approval item not found")
+    d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    if item.get("status") != "PENDING":
+        raise HTTPException(status_code=400, detail="This approval is not pending")
+    if not await _approval_item_can_act(user, item, d):
+        raise HTTPException(status_code=403, detail="You are not authorized to approve this item")
+    ts = now_iso()
+    if item.get("approval_workflow_id") is None:
+        await db.deliverables.update_one({"id": d["id"]}, {"$set": {"stage_status": "Completed", "updated_at": ts, "last_review_action": "approved", "last_reviewer_id": user.id, "last_review_note": payload.note or ""}})
+        await db.approval_history.insert_one({"id": str(uuid.uuid4()), "approval_item_id": approval_item_id, "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id, "comment": payload.note or "", "created_at": ts})
+        return await get_deliverable_approvals(d["id"], request)
+    await db.approval_items.update_one(
+        {"id": approval_item_id},
+        {"$set": {"status": "APPROVED", "approved_by": user.id, "approved_at": ts, "comments": payload.note or "", "updated_at": ts}},
+    )
+    workflow = await _get_approval_workflow(d["id"])
+    pending = await db.approval_items.count_documents({"approval_workflow_id": workflow["id"], "status": "PENDING"})
+    if pending == 0:
+        await db.approval_workflows.update_one(
+            {"id": workflow["id"]},
+            {"$set": {"status": "COMPLETED", "completed_at": ts, "updated_at": ts}},
+        )
+        await db.deliverables.update_one(
+            {"id": d["id"]},
+            {"$set": {"stage_status": "Completed", "updated_at": ts}},
+        )
+    await db.approval_history.insert_one({
+        "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
+        "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id,
+        "comment": payload.note or "", "created_at": ts,
+    })
+    return await get_deliverable_approvals(d["id"], request)
+
+
+@api_router.post("/approval-items/{approval_item_id}/send-back")
+async def send_back_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
+    user = await get_acting_user(request)
+    item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
+    if not item and approval_item_id.startswith("implicit-manager-"):
+        deliverable_id = approval_item_id.removeprefix("implicit-manager-")
+        item = {"id": approval_item_id, "deliverable_id": deliverable_id, "approval_type": "MANAGER", "status": "PENDING", "assigned_to": None, "department": user.department}
+    if not item:
+        raise HTTPException(status_code=404, detail="Approval item not found")
+    d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    if item.get("status") != "PENDING":
+        raise HTTPException(status_code=400, detail="This approval is not pending")
+    if not await _approval_item_can_act(user, item, d):
+        raise HTTPException(status_code=403, detail="You are not authorized to send this item back")
+    ts = now_iso()
+    if item.get("approval_workflow_id") is None:
+        await db.deliverables.update_one({"id": d["id"]}, {"$set": {"stage_status": "Changes Requested", "updated_at": ts, "last_review_action": "rejected", "last_reviewer_id": user.id, "last_review_note": payload.note or ""}})
+        await db.approval_history.insert_one({"id": str(uuid.uuid4()), "approval_item_id": approval_item_id, "deliverable_id": d["id"], "action": "CHANGES_REQUESTED", "performed_by": user.id, "comment": payload.note or "", "created_at": ts})
+        return await get_deliverable_approvals(d["id"], request)
+    await db.approval_items.update_one(
+        {"id": approval_item_id},
+        {"$set": {"status": "CHANGES_REQUESTED", "sent_back_by": user.id, "sent_back_at": ts, "comments": payload.note or "", "updated_at": ts}},
+    )
+    workflow = await _get_approval_workflow(d["id"])
+    await db.approval_workflows.update_one(
+        {"id": workflow["id"]},
+        {"$set": {"status": "CHANGES_REQUESTED", "updated_at": ts}},
+    )
+    await db.deliverables.update_one(
+        {"id": d["id"]},
+        {"$set": {"stage_status": "Changes Requested", "updated_at": ts}},
+    )
+    await db.approval_history.insert_one({
+        "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
+        "deliverable_id": d["id"], "action": "CHANGES_REQUESTED", "performed_by": user.id,
+        "comment": payload.note or "", "created_at": ts,
+    })
+    return await get_deliverable_approvals(d["id"], request)
+
+
+@api_router.patch("/approval-items/{approval_item_id}/move")
+async def move_approval_item(approval_item_id: str, payload: ApprovalMove, request: Request):
+    user = await require_manager_or_admin(request)
+    target = payload.approval_type.upper().strip()
+    if target not in APPROVAL_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid approval type")
+    item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
+    if not item and approval_item_id.startswith("implicit-manager-"):
+        deliverable_id = approval_item_id.removeprefix("implicit-manager-")
+        d0 = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+        if not d0:
+            raise HTTPException(status_code=404, detail="Deliverable not found")
+        await _create_or_sync_approval_workflow(d0, ["MANAGER"], user.id)
+        item = await db.approval_items.find_one({"deliverable_id": deliverable_id, "approval_type": "MANAGER"}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Approval item not found")
+    d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    if user.role != "admin" and not await _approval_item_can_act(user, item, d):
+        raise HTTPException(status_code=403, detail="You are not authorized to move this approval")
+    if item.get("approval_type") == target:
+        return item
+    duplicate = await db.approval_items.find_one({
+        "approval_workflow_id": item["approval_workflow_id"],
+        "approval_type": target,
+        "id": {"$ne": approval_item_id},
+    }, {"_id": 0, "id": 1})
+    if duplicate:
+        raise HTTPException(status_code=400, detail="This deliverable already has that approval type")
+    ts = now_iso()
+    old_type = item.get("approval_type")
+    await db.approval_items.update_one(
+        {"id": approval_item_id},
+        {"$set": {"approval_type": target, "status": "PENDING", "updated_at": ts}},
+    )
+    await db.approval_workflows.update_one(
+        {"id": item["approval_workflow_id"]},
+        {"$addToSet": {"required_types": target}, "$pull": {"required_types": old_type}, "$set": {"updated_at": ts}},
+    )
+    await db.approval_history.insert_one({
+        "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
+        "deliverable_id": d["id"], "action": "MOVED", "performed_by": user.id,
+        "comment": "", "old_value": old_type, "new_value": target, "created_at": ts,
+    })
+    return await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
+
+
+# Legacy endpoints remain for the existing stage-based Close Stage UI.
 @api_router.post("/deliverables/{deliverable_id}/approve")
 async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
-    """Advance to next stage; if at Finish, mark Completed."""
     user = await get_acting_user(request)
     if user.role not in ("admin", "manager"):
         raise HTTPException(status_code=403, detail="Only admin or manager can approve")
@@ -2503,34 +2857,10 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
         raise HTTPException(status_code=404, detail="Deliverable not found")
     cur = existing.get("current_stage", "Content")
     nxt = _next_stage(cur)
-    if nxt is None:
-        update = {"stage_status": "Completed"}
-    else:
-        update = {"current_stage": nxt, "stage_status": "Not Started"}
-    update["updated_at"] = now_iso()
-    update["last_review_note"] = payload.note or ""
-    update["last_review_action"] = "approved"
-    update["last_reviewer_id"] = user.id
+    update = {"stage_status": "Completed"} if nxt is None else {"current_stage": nxt, "stage_status": "Not Started"}
+    update.update({"updated_at": now_iso(), "last_review_note": payload.note or "", "last_review_action": "approved", "last_reviewer_id": user.id})
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
-    updated = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
-    await log_activity(
-        collection_name="deliverable_activity_log",
-        entity_id=deliverable_id,
-        entity_field="deliverable_id",
-        action="DELIVERABLE_REVIEWED",
-        changed_by=user.id,
-        old_value={
-            "stage": existing.get("current_stage"),
-            "stage_status": existing.get("stage_status"),
-        },
-        new_value={
-            "stage": updated.get("current_stage"),
-            "stage_status": updated.get("stage_status"),
-            "action": "APPROVED",
-            "review_note": payload.note or "",
-        },
-    )
-    return updated
+    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
 
 
 @api_router.post("/deliverables/{deliverable_id}/reject")
@@ -2541,163 +2871,9 @@ async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, req
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")
-    update = {
-        "stage_status": "Changes Requested",
-        "updated_at": now_iso(),
-        "last_review_note": payload.note or "",
-        "last_review_action": "rejected",
-        "last_reviewer_id": user.id,
-    }
+    update = {"stage_status": "Changes Requested", "updated_at": now_iso(), "last_review_note": payload.note or "", "last_review_action": "rejected", "last_reviewer_id": user.id}
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
-    updated = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
-    await log_activity(
-        collection_name="deliverable_activity_log",
-        entity_id=deliverable_id,
-        entity_field="deliverable_id",
-        action="DELIVERABLE_REVIEWED",
-        changed_by=user.id,
-        old_value={
-            "stage": existing.get("current_stage"),
-            "stage_status": existing.get("stage_status"),
-        },
-        new_value={
-            "stage": updated.get("current_stage"),
-            "stage_status": "Changes Requested",
-            "action": "REJECTED",
-            "review_note": payload.note or "",
-        },
-    )
-    await log_activity(
-        collection_name="deliverable_activity_log",
-        entity_id=deliverable_id,
-        entity_field="deliverable_id",
-        action="DELIVERABLE_REWORKED",
-        changed_by=user.id,
-        old_value=existing.get("stage_status"),
-        new_value="Changes Requested",
-    )
-    return updated
-@api_router.get("/dashboard/overview")
-async def dashboard_overview(request: Request):
-    await require_admin(request)
-
-    today = datetime.now(timezone.utc).date()
-    week_end = today + timedelta(days=7)
-
-    # Run independent MongoDB operations concurrently.
-    project_status_task = db.projects.aggregate([
-        {
-            "$group": {
-                "_id": "$status",
-                "count": {"$sum": 1}
-            }
-        }
-    ]).to_list(None)
-
-    deliverable_stage_task = db.deliverables.aggregate([
-        {
-            "$group": {
-                "_id": "$current_stage",
-                "count": {"$sum": 1}
-            }
-        }
-    ]).to_list(None)
-
-    deliverable_review_task = db.deliverables.count_documents({
-        "stage_status": {
-            "$in": ["Ready for Review", "Changes Requested"]
-        }
-    })
-
-    project_due_task = db.projects.count_documents({
-        "end_date": {
-            "$gte": today.isoformat(),
-            "$lte": week_end.isoformat()
-        },
-        "status": {
-            "$ne": "Completed"
-        }
-    })
-
-    total_projects_task = db.projects.count_documents({})
-    total_deliverables_task = db.deliverables.count_documents({})
-    total_work_items_task = db.work_items.count_documents({})
-
-    work_item_hours_task = db.work_items.aggregate([
-        {
-            "$group": {
-                "_id": None,
-                "total_minutes": {
-                    "$sum": {
-                        "$ifNull": ["$time_taken_minutes", 0]
-                    }
-                }
-            }
-        }
-    ]).to_list(1)
-
-    (
-        project_status_rows,
-        deliverable_stage_rows,
-        needs_review,
-        due_this_week,
-        total_projects,
-        total_deliverables,
-        total_work_items,
-        work_item_hours_rows,
-    ) = await asyncio.gather(
-        project_status_task,
-        deliverable_stage_task,
-        deliverable_review_task,
-        project_due_task,
-        total_projects_task,
-        total_deliverables_task,
-        total_work_items_task,
-        work_item_hours_task,
-    )
-
-    # Preserve the existing response shape.
-    project_status_counts = {
-        s: 0 for s in PROJECT_STATUSES
-    }
-
-    for row in project_status_rows:
-        status = row.get("_id") or "Planning"
-        project_status_counts[status] = row["count"]
-
-    deliv_stage_counts = {
-        s: 0 for s in STAGES
-    }
-
-    for row in deliverable_stage_rows:
-        stage = row.get("_id") or "Content"
-        deliv_stage_counts[stage] = row["count"]
-
-    total_minutes = 0
-
-    if work_item_hours_rows:
-        total_minutes = work_item_hours_rows[0].get(
-            "total_minutes", 0
-        ) or 0
-
-    return {
-        "active_projects": project_status_counts.get("Active", 0),
-        "in_rework": project_status_counts.get("In Rework", 0),
-        "completed_projects": project_status_counts.get("Completed", 0),
-        "planning_projects": project_status_counts.get("Planning", 0),
-
-        "total_projects": total_projects,
-        "total_deliverables": total_deliverables,
-
-        "deliv_stage_counts": deliv_stage_counts,
-        "needs_review": needs_review,
-        "due_this_week": due_this_week,
-
-        "total_hours_logged": round(total_minutes / 60, 1),
-        "total_work_items": total_work_items,
-
-        "project_status_counts": project_status_counts,
-    }
+    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
 
 
 app.include_router(api_router)
@@ -2720,6 +2896,10 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def run_startup_migrations():
     await migrate_client_contacts()
+    await db.approval_workflows.create_index("deliverable_id", unique=True)
+    await db.approval_items.create_index([("approval_workflow_id", 1), ("approval_type", 1)], unique=True)
+    await db.approval_items.create_index([("status", 1), ("approval_type", 1), ("assigned_to", 1)])
+    await db.approval_history.create_index([("deliverable_id", 1), ("created_at", -1)])
 
 
 @app.on_event("shutdown")

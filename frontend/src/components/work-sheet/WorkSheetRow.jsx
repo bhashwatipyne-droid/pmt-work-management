@@ -535,7 +535,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             value={local.deliverable_name}
             onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
             onBlur={() => commit("deliverable_name", local.deliverable_name)}
-            className="h-7 w-[180px]"
+            className="h-8 w-[180px]"
             placeholder="Deliverable name"
           />
         ) : (

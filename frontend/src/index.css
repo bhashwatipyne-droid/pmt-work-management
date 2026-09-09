@@ -285,3 +285,17 @@
     background: transparent;
   }
 }
+@layer utilities {
+  .sheet-mode .sheet-cell {
+    box-sizing: border-box;
+    height: 40px;
+    min-height: 40px;
+    padding: 4px 8px;
+  }
+
+  .sheet-mode .sheet-cell > input,
+  .sheet-mode .sheet-cell > textarea,
+  .sheet-mode .sheet-cell > button {
+    box-sizing: border-box;
+  }
+}

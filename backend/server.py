@@ -3124,9 +3124,27 @@ async def move_approval_item(approval_item_id: str, payload: ApprovalMove, reque
         {"id": approval_item_id},
         {"$set": {"approval_type": target, "status": "PENDING", "updated_at": ts}},
     )
+    workflow = await db.approval_workflows.find_one(
+        {"id": item["approval_workflow_id"]},
+        {"_id": 0, "required_types": 1},
+    )
+
+    required_types = list(workflow.get("required_types", [])) if workflow else []
+
+    if old_type in required_types:
+        required_types.remove(old_type)
+
+    if target not in required_types:
+        required_types.append(target)
+
     await db.approval_workflows.update_one(
         {"id": item["approval_workflow_id"]},
-        {"$addToSet": {"required_types": target}, "$pull": {"required_types": old_type}, "$set": {"updated_at": ts}},
+        {
+            "$set": {
+                "required_types": required_types,
+                "updated_at": ts,
+            }
+        },
     )
     await db.approval_history.insert_one({
         "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,

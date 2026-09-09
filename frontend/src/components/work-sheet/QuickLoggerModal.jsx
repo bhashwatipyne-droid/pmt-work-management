@@ -84,6 +84,7 @@ export default function QuickLoggerModal({
   const [error, setError] = useState("");
   const [showRemark, setShowRemark] = useState(false);
   const inputRef = useRef(null);
+  const entryCardRef = useRef(null);
   const suggestionRefs = useRef([]);
   const committingRef = useRef(false);
 
@@ -252,6 +253,24 @@ export default function QuickLoggerModal({
     committingRef.current = false;
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
+
+  // Clicking anywhere outside the input/suggestions (but still inside the
+  // modal — e.g. the logged-entries list, the quick-duration buttons, or
+  // just empty space) previously left the dropdown stuck open with
+  // nothing to dismiss it short of retyping. This dismisses it on any
+  // outside click without closing the whole modal.
+  useEffect(() => {
+    if (!open || !suggestions.length) return;
+
+    const handlePointerDown = (event) => {
+      if (!entryCardRef.current?.contains(event.target)) {
+        setSuggestions([]);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [open, suggestions.length]);
 
   useEffect(() => {
     const step = currentStep;
@@ -572,7 +591,43 @@ export default function QuickLoggerModal({
 
         <div className="flex-1 overflow-y-auto bg-[#f7f9fc] p-6">
           <div className="mx-auto w-full max-w-5xl space-y-5">
-            <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            {savedEntries.length > 0 && (
+              <section>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Logged this session
+                </div>
+                <div className="space-y-2">
+                  {savedEntries.map((entry, index) => (
+                    <div
+                      key={`${entry.project_id}-${entry.deliverable_id}-${entry.deliverable_type}-${index}`}
+                      className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
+                    >
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd]">
+                        <Check className="h-3.5 w-3.5 text-[#2b2bb5]" />
+                      </div>
+                      <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                        {[
+                          clientMap.get(entry.client_id)?.name,
+                          projectMap.get(entry.project_id)?.name,
+                          entry.deliverable_name,
+                          entry.deliverable_type,
+                        ]
+                          .filter(Boolean)
+                          .join(" / ")}
+                      </div>
+                      <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
+                        {formatDuration(entry.time_taken_minutes)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section
+              ref={entryCardRef}
+              className="rounded-2xl border border-border bg-card p-5 shadow-sm"
+            >
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-foreground">
@@ -755,39 +810,6 @@ export default function QuickLoggerModal({
                 </button>
               </div>
             </section>
-
-            {savedEntries.length > 0 && (
-              <section>
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Logged this session
-                </div>
-                <div className="space-y-2">
-                  {savedEntries.map((entry, index) => (
-                    <div
-                      key={`${entry.project_id}-${entry.deliverable_id}-${entry.deliverable_type}-${index}`}
-                      className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
-                    >
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd]">
-                        <Check className="h-3.5 w-3.5 text-[#2b2bb5]" />
-                      </div>
-                      <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                        {[
-                          clientMap.get(entry.client_id)?.name,
-                          projectMap.get(entry.project_id)?.name,
-                          entry.deliverable_name,
-                          entry.deliverable_type,
-                        ]
-                          .filter(Boolean)
-                          .join(" / ")}
-                      </div>
-                      <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
-                        {formatDuration(entry.time_taken_minutes)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
           </div>
         </div>
 

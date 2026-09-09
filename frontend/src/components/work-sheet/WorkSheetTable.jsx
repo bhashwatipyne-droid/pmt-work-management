@@ -779,8 +779,29 @@ export const WorkSheetTable = ({
         return;
       }
 
+      // Read the anchor cell straight off whatever DOM element actually
+      // has focus right now, rather than trusting activeCellRef to have
+      // stayed perfectly in sync with it. A ref that mirrors focus state
+      // can drift stale (state updates and DOM focus don't always land
+      // in the same tick); the focused element's own data-sheet-row/col
+      // attributes can't be stale — they describe exactly what's focused
+      // at this exact moment, which is what paste should target.
+      const focusedCellEl = document.activeElement?.closest?.(
+        "[data-sheet-cell]"
+      );
+      const domRow = focusedCellEl
+        ? Number(focusedCellEl.getAttribute("data-sheet-row"))
+        : null;
+      const domCol = focusedCellEl
+        ? Number(focusedCellEl.getAttribute("data-sheet-col"))
+        : null;
+      const domAnchor =
+        Number.isFinite(domRow) && Number.isFinite(domCol)
+          ? { row: domRow, col: domCol }
+          : null;
+
       const range = rangeSelectionRef.current;
-      const anchor = activeCellRef.current;
+      const anchor = domAnchor || activeCellRef.current;
       if (!range && !anchor) return;
 
       const startRow = range ? Math.min(range.anchorRow, range.row) : anchor.row;

@@ -1234,7 +1234,6 @@ async def dashboard_attention_items(request: Request):
         it["creator_name"] = users.get(it.get("creator_id"), "Unassigned")
     return items
 
-
 @api_router.get("/dashboard/overview")
 async def dashboard_overview(request: Request):
     await require_admin(request)
@@ -2581,21 +2580,89 @@ async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> b
 async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
     if not items:
         return []
-    deliverable_ids = list({x.get("deliverable_id") for x in items if x.get("deliverable_id")})
-    deliverables = {d["id"]: d for d in await db.deliverables.find({"id": {"$in": deliverable_ids}}, {"_id": 0}).to_list(5000)}
-    project_ids = list({d.get("project_id") for d in deliverables.values() if d.get("project_id")})
-    projects = {p["id"]: p for p in await db.projects.find({"id": {"$in": project_ids}}, {"_id": 0}).to_list(1000)}
-    user_ids = list({uid for uid in ([d.get("owner_id") for d in deliverables.values()] + [x.get("assigned_to") for x in items]) if uid})
-    users = {u["id"]: u for u in await db.users.find({"id": {"$in": user_ids}}, {"_id": 0}).to_list(1000)}
-    clients = {c["id"]: c for c in await db.clients.find({}, {"_id": 0}).to_list(1000)}
+
+    deliverable_ids = list({
+        x.get("deliverable_id")
+        for x in items
+        if x.get("deliverable_id")
+    })
+
+    deliverables = {
+        d["id"]: d
+        for d in await db.deliverables.find(
+            {"id": {"$in": deliverable_ids}},
+            {"_id": 0},
+        ).to_list(len(deliverable_ids) or 1)
+    }
+
+    project_ids = list({
+        d.get("project_id")
+        for d in deliverables.values()
+        if d.get("project_id")
+    })
+
+    projects = {
+        p["id"]: p
+        for p in await db.projects.find(
+            {"id": {"$in": project_ids}},
+            {"_id": 0},
+        ).to_list(len(project_ids) or 1)
+    }
+
+    user_ids = list({
+        uid
+        for uid in (
+            [d.get("owner_id") for d in deliverables.values()]
+            + [x.get("assigned_to") for x in items]
+        )
+        if uid
+    })
+
+    users = {
+        u["id"]: u
+        for u in await db.users.find(
+            {"id": {"$in": user_ids}},
+            {"_id": 0},
+        ).to_list(len(user_ids) or 1)
+    }
+
+    client_ids = list({
+        p.get("client_id")
+        for p in projects.values()
+        if p.get("client_id")
+    })
+
+    clients = {
+        c["id"]: c
+        for c in await db.clients.find(
+            {"id": {"$in": client_ids}},
+            {"_id": 0},
+        ).to_list(len(client_ids) or 1)
+    }
+
     result = []
+
     for item in items:
         d = deliverables.get(item.get("deliverable_id"), {})
         p = projects.get(d.get("project_id"), {})
         owner = users.get(d.get("owner_id"), {})
         assigned = users.get(item.get("assigned_to"), {})
         client = clients.get(p.get("client_id"), {})
-        result.append({**item, "deliverable_name": d.get("name", ""), "deliverable_type": d.get("type", ""), "current_stage": d.get("current_stage", "Content"), "stage_status": d.get("stage_status", "Not Started"), "owner_name": owner.get("name", "Unassigned"), "assigned_to_name": assigned.get("name", "Unassigned"), "project_name": p.get("name", ""), "project_code": p.get("code", ""), "client_name": client.get("name", "")})
+
+        result.append({
+            **item,
+            "_deliverable": d,
+            "deliverable_name": d.get("name", ""),
+            "deliverable_type": d.get("type", ""),
+            "current_stage": d.get("current_stage", "Content"),
+            "stage_status": d.get("stage_status", "Not Started"),
+            "owner_name": owner.get("name", "Unassigned"),
+            "assigned_to_name": assigned.get("name", "Unassigned"),
+            "project_name": p.get("name", ""),
+            "project_code": p.get("code", ""),
+            "client_name": client.get("name", ""),
+        })
+
     return result
 
 
@@ -2743,21 +2810,47 @@ async def list_approvals(request: Request):
 async def approval_board(request: Request):
     """Return pending approval cards grouped by approval authority."""
     user = await get_acting_user(request)
+
     query = {"status": "PENDING"}
+
     if user.role != "admin":
         query["$or"] = [
             {"assigned_to": user.id},
-            {"approval_type": "MANAGER", "assigned_to": None},
-            {"approval_type": "COMPLIANCE", "assigned_to": None, "department": "Administration"},
+            {
+                "approval_type": "MANAGER",
+                "assigned_to": None,
+            },
+            {
+                "approval_type": "COMPLIANCE",
+                "assigned_to": None,
+                "department": "Administration",
+            },
         ]
-    items = await db.approval_items.find(query, {"_id": 0}).sort("updated_at", -1).to_list(1000)
-    items.extend(await _build_implicit_manager_items(user))
+
+    items = await db.approval_items.find(
+        query,
+        {"_id": 0},
+    ).sort(
+        "updated_at",
+        -1,
+    ).to_list(200)
+
+    implicit_items = await _build_implicit_manager_items(user)
+    items.extend(implicit_items[:200])
+
     hydrated = await _hydrate_approval_items(items)
+
     result = {key: [] for key in APPROVAL_TYPES}
+
     for item in hydrated:
-        d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+        d = item.get("_deliverable")
         if d and await _approval_item_can_act(user, item, d):
             result[item["approval_type"]].append(item)
+
+    for key in result:
+        for item in result[key]:
+            item.pop("_deliverable", None)
+
     return result
 
 
@@ -2909,7 +3002,12 @@ async def move_approval_item(approval_item_id: str, payload: ApprovalMove, reque
         "id": {"$ne": approval_item_id},
     }, {"_id": 0, "id": 1})
     if duplicate:
-        raise HTTPException(status_code=400, detail="This deliverable already has that approval type")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"This deliverable already has a {target.replace('_', " " ).title()} approval."
+            ),
+        )
     ts = now_iso()
     old_type = item.get("approval_type")
     await db.approval_items.update_one(
@@ -2981,6 +3079,10 @@ async def run_startup_migrations():
     await db.approval_workflows.create_index("deliverable_id", unique=True)
     await db.approval_items.create_index([("approval_workflow_id", 1), ("approval_type", 1)], unique=True)
     await db.approval_items.create_index([("status", 1), ("approval_type", 1), ("assigned_to", 1)])
+    await db.approval_items.create_index([("status", 1), ("approval_type", 1)])
+    await db.approval_items.create_index([("status", 1), ("assigned_to", 1)])
+    await db.approval_items.create_index([("approval_workflow_id", 1)])
+    await db.approval_items.create_index([("deliverable_id", 1)])
     await db.approval_history.create_index([("deliverable_id", 1), ("created_at", -1)])
 
 

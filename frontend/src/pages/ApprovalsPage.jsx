@@ -98,15 +98,46 @@ export default function ApprovalsPage() {
     }
   };
 
-  const handleDrop = async (targetType) => {
-    if (!dragging || dragging.approval_type === targetType) return;
+  const handleDrop = async (e, targetType) => {
+    e.preventDefault();
+
+    const approvalItemId =
+      e.dataTransfer.getData("text/plain") || dragging?.id;
+
+    if (!approvalItemId) {
+      setDragging(null);
+      return;
+    }
+
+    if (dragging?.approval_type === targetType) {
+      setDragging(null);
+      return;
+    }
+
     try {
-      await moveApprovalItem(currentUserId, dragging.id, targetType);
-      toast.success(`Moved to ${COLUMNS.find((c) => c.key === targetType)?.label}`);
+      await moveApprovalItem(
+        currentUserId,
+        approvalItemId,
+        targetType
+      );
+
+      toast.success(
+        `Moved to ${COLUMNS.find((c) => c.key === targetType)?.label}`
+      );
+
       setDragging(null);
       await fetchBoard();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not move approval");
+      console.error("Approval move failed:", err);
+
+      toast.error(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Could not move approval"
+      );
+
+      setDragging(null);
     }
   };
 
@@ -165,8 +196,7 @@ export default function ApprovalsPage() {
                   e.dataTransfer.dropEffect = "move";
                 }}
                 onDrop={(e) => {
-                  e.preventDefault();
-                  handleDrop(column.key);
+                  handleDrop(e, column.key);
                 }}
                 className={`flex min-h-[560px] flex-col rounded-xl border bg-[#f7f9fc] transition-colors ${
                   isDropTarget ? "border-[#b8b8e8] bg-[#f3f3ff]" : "border-border"
@@ -198,9 +228,11 @@ export default function ApprovalsPage() {
                         onDragStart={(e) => {
                           setDragging(item);
                           e.dataTransfer.effectAllowed = "move";
-                          e.dataTransfer.setData("text/plain", item.id);
+                          e.dataTransfer.setData("text/plain", String(item.id));
                         }}
-                        onDragEnd={() => setDragging(null)}
+                        onDragEnd={() => {
+                          setDragging(null);
+                        }}
                         data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
                         className="rounded-xl border border-border bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                       >

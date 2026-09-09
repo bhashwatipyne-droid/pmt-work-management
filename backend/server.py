@@ -1235,6 +1235,88 @@ async def dashboard_attention_items(request: Request):
     return items
 
 
+@api_router.get("/dashboard/overview")
+async def dashboard_overview(request: Request):
+    await require_admin(request)
+
+    today = datetime.now(timezone.utc).date()
+    week_end = today + timedelta(days=7)
+
+    project_status_task = db.projects.aggregate([
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]).to_list(None)
+
+    deliverable_stage_task = db.deliverables.aggregate([
+        {"$group": {"_id": "$current_stage", "count": {"$sum": 1}}}
+    ]).to_list(None)
+
+    deliverable_review_task = db.deliverables.count_documents({
+        "stage_status": {"$in": ["Ready for Review", "Changes Requested"]}
+    })
+
+    project_due_task = db.projects.count_documents({
+        "end_date": {"$gte": today.isoformat(), "$lte": week_end.isoformat()},
+        "status": {"$ne": "Completed"}
+    })
+
+    total_projects_task = db.projects.count_documents({})
+    total_deliverables_task = db.deliverables.count_documents({})
+    total_work_items_task = db.work_items.count_documents({})
+
+    work_item_hours_task = db.work_items.aggregate([
+        {"$group": {"_id": None, "total_minutes": {"$sum": {"$ifNull": ["$time_taken_minutes", 0]}}}}
+    ]).to_list(1)
+
+    (
+        project_status_rows,
+        deliverable_stage_rows,
+        needs_review,
+        due_this_week,
+        total_projects,
+        total_deliverables,
+        total_work_items,
+        work_item_hours_rows,
+    ) = await asyncio.gather(
+        project_status_task,
+        deliverable_stage_task,
+        deliverable_review_task,
+        project_due_task,
+        total_projects_task,
+        total_deliverables_task,
+        total_work_items_task,
+        work_item_hours_task,
+    )
+
+    project_status_counts = {s: 0 for s in PROJECT_STATUSES}
+    for row in project_status_rows:
+        status = row.get("_id") or "Planning"
+        project_status_counts[status] = row["count"]
+
+    deliv_stage_counts = {s: 0 for s in STAGES}
+    for row in deliverable_stage_rows:
+        stage = row.get("_id") or "Content"
+        deliv_stage_counts[stage] = row["count"]
+
+    total_minutes = 0
+    if work_item_hours_rows:
+        total_minutes = work_item_hours_rows[0].get("total_minutes", 0) or 0
+
+    return {
+        "active_projects": project_status_counts.get("Active", 0),
+        "in_rework": project_status_counts.get("In Rework", 0),
+        "completed_projects": project_status_counts.get("Completed", 0),
+        "planning_projects": project_status_counts.get("Planning", 0),
+        "total_projects": total_projects,
+        "total_deliverables": total_deliverables,
+        "deliv_stage_counts": deliv_stage_counts,
+        "needs_review": needs_review,
+        "due_this_week": due_this_week,
+        "total_hours_logged": round(total_minutes / 60, 1),
+        "total_work_items": total_work_items,
+        "project_status_counts": project_status_counts,
+    }
+
+
 async def migrate_client_contacts():
     """
     Ensure all clients use the contact_persons structure

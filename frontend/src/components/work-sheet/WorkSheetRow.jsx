@@ -535,7 +535,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             value={local.deliverable_name}
             onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
             onBlur={() => commit("deliverable_name", local.deliverable_name)}
-            className="h-8 w-[180px]"
+            className="h-7 w-[180px]"
             placeholder="Deliverable name"
           />
         ) : (
@@ -563,7 +563,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             value={local.deliverable_link}
             onChange={(e) => setLocal((l) => ({ ...l, deliverable_link: e.target.value }))}
             onBlur={() => commit("deliverable_link", local.deliverable_link)}
-            className="h-8 w-[180px]"
+            className="h-7 w-[180px]"
             placeholder="Paste drive link"
           />
         ) : item.deliverable_link ? (
@@ -658,7 +658,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, version: e.target.value }))}
           onBlur={() => commit("version", local.version)}
-          className="h-8 w-[80px]"
+          className="h-7 w-[80px]"
           placeholder="v1"
         />
         {renderFillHandle(9)}
@@ -686,7 +686,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
           onBlur={() => commit("time_taken_minutes", Number(local.time_taken_minutes) || 0)}
-          className="h-8 w-[80px]"
+          className="h-7 w-[80px]"
         />
         {renderFillHandle(10)}
       </TableCell>

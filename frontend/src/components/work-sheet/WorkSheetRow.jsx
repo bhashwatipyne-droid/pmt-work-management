@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { Hand, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Hand, Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -50,6 +50,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onRowDragEnd,
     isRowDragging = false,
     canDragRow = true,
+    hiddenRowIdsBefore = [],
+    hiddenRowIdsAfter = [],
+    onUnhideRows,
   } = props;
   const isMember = currentUser.role === "member";
   const isElevated = !isMember;
@@ -866,7 +869,41 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         }
       }}
     >
-      <TableCell className="row-num">
+      <TableCell className="row-num relative">
+        {hiddenRowIdsBefore.length > 0 && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUnhideRows?.(hiddenRowIdsBefore);
+            }}
+            className="absolute -right-2 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
+            title={`Show ${hiddenRowIdsBefore.length} hidden row${
+              hiddenRowIdsBefore.length === 1 ? "" : "s"
+            }`}
+            aria-label="Show hidden rows"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+          </button>
+        )}
+
+        {hiddenRowIdsAfter.length > 0 && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUnhideRows?.(hiddenRowIdsAfter);
+            }}
+            className="absolute -right-2 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
+            title={`Show ${hiddenRowIdsAfter.length} hidden row${
+              hiddenRowIdsAfter.length === 1 ? "" : "s"
+            }`}
+            aria-label="Show hidden rows"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+          </button>
+        )}
+
         <div className="flex items-center justify-center gap-0.5">
           <button
             type="button"

@@ -297,5 +297,11 @@
   .sheet-mode .sheet-cell > textarea,
   .sheet-mode .sheet-cell > button {
     box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .sheet-mode .sheet-cell > input,
+  .sheet-mode .sheet-cell > textarea {
+    width: 100%;
   }
 }

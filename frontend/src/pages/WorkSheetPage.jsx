@@ -19,7 +19,6 @@ import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
 import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
-import { CloseDeliverableModal } from "@/components/work-sheet/CloseDeliverableModal";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
 import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
 import { History } from "lucide-react";
@@ -121,7 +120,6 @@ export default function WorkSheetPage() {
   });
   const [bulkAdding, setBulkAdding] = useState(false);
   const [addingRow, setAddingRow] = useState(false);
-  const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -618,7 +616,6 @@ export default function WorkSheetPage() {
       if (!selectedIds.length) return;
       if (isEditableTarget(event.target)) return;
       if (
-        closeModalOpen ||
         quickLoggerOpen ||
         bulkReviewOpen ||
         historyOpen ||
@@ -636,7 +633,6 @@ export default function WorkSheetPage() {
     return () => document.removeEventListener("keydown", handleGlobalKeyDown);
   }, [
     selectedIds,
-    closeModalOpen,
     quickLoggerOpen,
     bulkReviewOpen,
     historyOpen,
@@ -661,9 +657,6 @@ export default function WorkSheetPage() {
         resultCount={items.length}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
-        onOpenCloseDeliverable={
-          isManager ? () => setCloseModalOpen(true) : undefined
-        }
         onOpenQuickLogger={
           isManager || isMember ? () => setQuickLoggerOpen(true) : undefined
         }
@@ -688,19 +681,6 @@ export default function WorkSheetPage() {
         activeSheet={activeSheet}
         onChange={setActiveSheet}
       />
-
-      {isManager && (
-        <CloseDeliverableModal
-          open={closeModalOpen}
-          onClose={() => setCloseModalOpen(false)}
-          currentUserId={currentUser.id}
-          projects={projects}
-          deliverables={deliverables}
-          onClosed={() => {
-            getDeliverables(currentUserId).then(setDeliverables).catch(() => {});
-          }}
-        />
-      )}
 
       <QuickLoggerModal
         open={quickLoggerOpen}

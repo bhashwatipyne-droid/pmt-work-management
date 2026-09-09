@@ -117,24 +117,29 @@ export default function QuickLoggerModal({
     return map;
   }, [deliverables]);
 
-  const parts = useMemo(() => {
+  // Client and Project always sit at fixed positions 0/1 in the typed
+  // text. Everything after that shifts depending on whether the
+  // resolved project actually has any deliverables to pick from —
+  // Atlas is missing deliverable data for a lot of projects right now,
+  // so when there's genuinely nothing to choose, that segment is
+  // skipped entirely rather than blocking the user on a field with no
+  // valid answer.
+  const clientProjectParts = useMemo(() => {
     const values = draft.text.split("/");
     return {
       client: (values[0] || "").trim(),
       project: (values[1] || "").trim(),
-      deliverable: (values[2] || "").trim(),
-      type: (values[3] || "").trim(),
-      duration: (values[4] || "").trim(),
     };
   }, [draft.text]);
 
   const resolvedClient = useMemo(() => {
     if (draft.client_id) return clientMap.get(draft.client_id) || null;
     return (
-      clients.find((c) => normalise(c.name) === normalise(parts.client)) ||
-      null
+      clients.find(
+        (c) => normalise(c.name) === normalise(clientProjectParts.client)
+      ) || null
     );
-  }, [draft.client_id, clientMap, clients, parts.client]);
+  }, [draft.client_id, clientMap, clients, clientProjectParts.client]);
 
   const clientProjects = useMemo(
     () =>
@@ -148,17 +153,45 @@ export default function QuickLoggerModal({
     if (draft.project_id) return projectMap.get(draft.project_id) || null;
     return (
       clientProjects.find(
-        (p) => normalise(p.name) === normalise(parts.project)
+        (p) => normalise(p.name) === normalise(clientProjectParts.project)
       ) || null
     );
-  }, [draft.project_id, projectMap, clientProjects, parts.project]);
+  }, [draft.project_id, projectMap, clientProjects, clientProjectParts.project]);
 
   const projectDeliverables = useMemo(
     () => (resolvedProject ? deliverablesByProject.get(resolvedProject.id) || [] : []),
     [deliverablesByProject, resolvedProject]
   );
 
+  // Only require a deliverable when the project actually has at least
+  // one to choose from — otherwise there's no valid answer to give, so
+  // don't make the user get stuck on it.
+  const deliverableRequired = projectDeliverables.length > 0;
+
+  const parts = useMemo(() => {
+    const values = draft.text.split("/").map((v) => (v || "").trim());
+
+    if (deliverableRequired) {
+      return {
+        client: clientProjectParts.client,
+        project: clientProjectParts.project,
+        deliverable: values[2] || "",
+        type: values[3] || "",
+        duration: values[4] || "",
+      };
+    }
+
+    return {
+      client: clientProjectParts.client,
+      project: clientProjectParts.project,
+      deliverable: "",
+      type: values[2] || "",
+      duration: values[3] || "",
+    };
+  }, [draft.text, deliverableRequired, clientProjectParts]);
+
   const resolvedDeliverable = useMemo(() => {
+    if (!deliverableRequired) return null;
     if (draft.deliverable_id) {
       return deliverables.find((d) => d.id === draft.deliverable_id) || null;
     }
@@ -170,6 +203,7 @@ export default function QuickLoggerModal({
       ) || null
     );
   }, [
+    deliverableRequired,
     deliverables,
     draft.deliverable_id,
     parts.deliverable,
@@ -192,12 +226,13 @@ export default function QuickLoggerModal({
     if (!draft.text.trim()) return "client";
     if (!resolvedClient) return "client";
     if (!resolvedProject) return "project";
-    if (!resolvedDeliverable) return "deliverable";
+    if (deliverableRequired && !resolvedDeliverable) return "deliverable";
     if (!resolvedType) return "type";
     if (!parsedDuration || parsedDuration <= 0) return "duration";
     return "complete";
   }, [
     draft.text,
+    deliverableRequired,
     parsedDuration,
     resolvedClient,
     resolvedDeliverable,
@@ -291,7 +326,9 @@ export default function QuickLoggerModal({
       updateDraft({
         deliverable_type: item,
         time_taken_minutes: "",
-        text: `${parts.client} / ${parts.project} / ${parts.deliverable} / ${item} / `,
+        text: deliverableRequired
+          ? `${parts.client} / ${parts.project} / ${parts.deliverable} / ${item} / `
+          : `${parts.client} / ${parts.project} / ${item} / `,
       });
     }
 
@@ -303,7 +340,7 @@ export default function QuickLoggerModal({
     if (
       !resolvedClient ||
       !resolvedProject ||
-      !resolvedDeliverable ||
+      (deliverableRequired && !resolvedDeliverable) ||
       !resolvedType ||
       !parsedDuration ||
       parsedDuration <= 0
@@ -315,10 +352,10 @@ export default function QuickLoggerModal({
       text: draft.text.trim(),
       client_id: resolvedClient.id,
       project_id: resolvedProject.id,
-      deliverable_id: resolvedDeliverable.id,
+      deliverable_id: resolvedDeliverable?.id || null,
       deliverable_name:
-        resolvedDeliverable.name ||
-        resolvedDeliverable.deliverable_name ||
+        resolvedDeliverable?.name ||
+        resolvedDeliverable?.deliverable_name ||
         "",
       deliverable_type: resolvedType,
       work_category: deliverableTypeCategories[resolvedType] || "",
@@ -491,7 +528,9 @@ export default function QuickLoggerModal({
   };
 
   const setQuickDuration = (minutes) => {
-    const value = `${parts.client} / ${parts.project} / ${parts.deliverable} / ${parts.type} / ${formatDuration(minutes)}`;
+    const value = deliverableRequired
+      ? `${parts.client} / ${parts.project} / ${parts.deliverable} / ${parts.type} / ${formatDuration(minutes)}`
+      : `${parts.client} / ${parts.project} / ${parts.type} / ${formatDuration(minutes)}`;
     updateDraft({
       text: value,
       time_taken_minutes: minutes,
@@ -540,7 +579,9 @@ export default function QuickLoggerModal({
                     New work entry
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    Client / Project / Deliverable / Type / Time
+                    {deliverableRequired
+                      ? "Client / Project / Deliverable / Type / Time"
+                      : "Client / Project / Type / Time"}
                   </div>
                 </div>
                 {draft.text && (
@@ -631,11 +672,13 @@ export default function QuickLoggerModal({
                 {[
                   ["Client", resolvedClient?.name],
                   ["Project", resolvedProject?.name],
-                  [
-                    "Deliverable",
-                    resolvedDeliverable?.name ||
-                      resolvedDeliverable?.deliverable_name,
-                  ],
+                  resolvedProject && !deliverableRequired
+                    ? ["Deliverable", "Not required"]
+                    : [
+                        "Deliverable",
+                        resolvedDeliverable?.name ||
+                          resolvedDeliverable?.deliverable_name,
+                      ],
                   ["Type", resolvedType],
                   ["Time", parsedDuration ? formatDuration(parsedDuration) : ""],
                 ].map(([label, value]) => (
@@ -728,9 +771,14 @@ export default function QuickLoggerModal({
                         <Check className="h-3.5 w-3.5 text-[#2b2bb5]" />
                       </div>
                       <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                        {clientMap.get(entry.client_id)?.name} /{" "}
-                        {projectMap.get(entry.project_id)?.name} /{" "}
-                        {entry.deliverable_name} / {entry.deliverable_type}
+                        {[
+                          clientMap.get(entry.client_id)?.name,
+                          projectMap.get(entry.project_id)?.name,
+                          entry.deliverable_name,
+                          entry.deliverable_type,
+                        ]
+                          .filter(Boolean)
+                          .join(" / ")}
                       </div>
                       <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
                         {formatDuration(entry.time_taken_minutes)}

@@ -117,21 +117,36 @@ export function SearchableSelect({
               // Clicking this cell opened the popover and moved focus
               // into this search box — so normally every key here is
               // cmdk's own list search/navigation (stopPropagation stops
-              // it reaching the sheet's handler at all). But Shift+Arrow
-              // is a sheet-level range-selection gesture with no meaning
-              // inside a search list, so forward it out instead of
-              // eating it, and close the dropdown since we're leaving
-              // "pick a value" mode.
-              if (
+              // it reaching the sheet's handler at all).
+              const isShiftArrow =
                 event.shiftKey &&
                 ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
                   event.key
-                )
-              ) {
+                );
+
+              // Shift+Arrow (range selection) has no meaning in a search
+              // list, so forward it to the trigger's own handler (that's
+              // where arrow-key navigation actually lives) and close the
+              // dropdown since we're leaving "pick a value" mode.
+              if (isShiftArrow) {
                 triggerProps.onKeyDown?.(event);
                 if (event.defaultPrevented) {
                   onOpenChange?.(false);
                 }
+                return;
+              }
+
+              const isCopyOrPaste =
+                (event.ctrlKey || event.metaKey) &&
+                ["c", "v"].includes(event.key.toLowerCase());
+
+              // Copy/paste also has no meaning here, but unlike arrow
+              // navigation, that logic doesn't live on the trigger's own
+              // handler at all — it's a separate document-level listener
+              // the sheet sets up. So there's nothing useful to forward
+              // to; just let the event bubble up undisturbed instead of
+              // eating it.
+              if (isCopyOrPaste) {
                 return;
               }
 

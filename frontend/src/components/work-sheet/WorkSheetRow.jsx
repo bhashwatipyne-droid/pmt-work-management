@@ -75,13 +75,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
   useEffect(() => {
     setLocal({
-      deliverable_name: item.deliverable_name,
-      deliverable_link: item.deliverable_link,
-      version: item.version,
-      time_taken_minutes: item.time_taken_minutes,
-      remarks: item.remarks,
+      deliverable_name: item.deliverable_name ?? "",
+      deliverable_link: item.deliverable_link ?? "",
+      version: item.version ?? "",
+      time_taken_minutes: item.time_taken_minutes ?? 0,
+      remarks: item.remarks ?? "",
     });
-  }, [item.updated_at]);
+  }, [
+    item.deliverable_name,
+    item.deliverable_link,
+    item.version,
+    item.time_taken_minutes,
+    item.remarks,
+  ]);
 
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
   const allowedStatuses = options.statuses;

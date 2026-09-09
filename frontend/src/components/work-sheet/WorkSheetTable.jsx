@@ -865,7 +865,7 @@ export const WorkSheetTable = ({
 
       navigator.clipboard
         .readText()
-        .then((clipboardText) => {
+        .then(async (clipboardText) => {
           if (!clipboardText) return;
 
           const pastedRows = clipboardText.replace(/\r/g, "").split("\n");
@@ -928,16 +928,24 @@ export const WorkSheetTable = ({
             }
 
             if (rowHasUpdate) {
-              onUpdate(targetItem.id, updates);
-              applied += 1;
-              targetedRows.push(targetRow);
+              // IMPORTANT:
+              // Wait for the API/MongoDB update before counting
+              // this row as successfully pasted.
+              const result = await onUpdate(targetItem.id, updates);
+
+              if (result?.success) {
+                applied += 1;
+                targetedRows.push(targetRow);
+              } else {
+                skipped += Object.keys(updates).length;
+              }
             }
           }
 
           if (applied === 0) {
-            toast.error("Nothing pasted — no matching values for this selection");
+            toast.error("Nothing pasted — no changes were saved");
           } else if (skipped > 0) {
-            toast.success(`Pasted into row ${targetedRows.join(", ")} — skipped ${skipped} cell${skipped === 1 ? "" : "s"} that didn't match`);
+            toast.success(`Pasted into row ${targetedRows.join(", ")} — skipped ${skipped} cell${skipped === 1 ? "" : "s"} that couldn't be saved`);
           } else {
             toast.success(`Pasted into row ${targetedRows.join(", ")}`);
           }

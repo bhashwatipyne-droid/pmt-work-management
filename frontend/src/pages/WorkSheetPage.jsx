@@ -341,7 +341,7 @@ export default function WorkSheetPage() {
   const handleUpdate = useCallback(async (id, patch) => {
     const previous = itemsRef.current.find((item) => item.id === id);
 
-    // Optimistic update — exactly one React state update.
+    // Optimistically update the UI immediately.
     setItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, ...patch } : item
@@ -364,9 +364,31 @@ export default function WorkSheetPage() {
     }
 
     try {
-      await updateWorkItem(currentUser.id, id, patch);
+      // IMPORTANT:
+      // Keep the actual MongoDB response instead of treating the
+      // optimistic React update as proof that persistence succeeded.
+      const updated = await updateWorkItem(
+        currentUser.id,
+        id,
+        patch
+      );
+
+      // The backend returns the complete updated work item.
+      // Use it as the source of truth once persistence succeeds.
+      if (updated) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === id ? updated : item
+          )
+        );
+      }
+
+      return {
+        success: true,
+        item: updated,
+      };
     } catch (e) {
-      // Revert only this row if persistence fails.
+      // Revert only this row if MongoDB/API persistence fails.
       if (previous) {
         setItems((prev) =>
           prev.map((item) =>
@@ -378,6 +400,11 @@ export default function WorkSheetPage() {
       toast.error(
         e.response?.data?.detail || "Update failed"
       );
+
+      return {
+        success: false,
+        error: e,
+      };
     }
   }, [currentUser]);
 

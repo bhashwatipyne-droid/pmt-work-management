@@ -2751,20 +2751,71 @@ async def list_bulk_review(request: Request):
 
 
 async def _build_implicit_manager_items(user: User):
-    """Manager queue for deliverables with no configured approval workflow."""
+    """Build manager approvals for ready deliverables without workflows."""
+
     if user.role not in ("admin", "manager"):
         return []
-    ready = await db.deliverables.find({"stage_status": "Ready for Review"}, {"_id": 0}).sort("updated_at", -1).to_list(500)
-    result = []
-    for d in ready:
-        workflow = await _get_approval_workflow(d["id"])
-        if workflow:
-            continue
-        if user.role == "manager":
-            owner_department = await get_user_department(d.get("owner_id"))
-            if owner_department and owner_department != user.department:
-                continue
-        result.append({
+
+    # Fetch ready deliverables once.
+    ready = await db.deliverables.find(
+        {"stage_status": "Ready for Review"},
+        {"_id": 0},
+    ).sort(
+        "updated_at",
+        -1,
+    ).to_list(500)
+
+    if not ready:
+        return []
+
+    deliverable_ids = [d["id"] for d in ready]
+
+    # Fetch all existing workflows in ONE query.
+    workflows = await db.approval_workflows.find(
+        {"deliverable_id": {"$in": deliverable_ids}},
+        {"_id": 0, "deliverable_id": 1},
+    ).to_list(len(deliverable_ids))
+
+    workflow_deliverable_ids = {
+        w["deliverable_id"]
+        for w in workflows
+        if w.get("deliverable_id")
+    }
+
+    candidates = [
+        d
+        for d in ready
+        if d["id"] not in workflow_deliverable_ids
+    ]
+
+    # Managers are department-scoped.
+    if user.role == "manager":
+        owner_ids = list({
+            d.get("owner_id")
+            for d in candidates
+            if d.get("owner_id")
+        })
+
+        owners = {
+            u["id"]: u
+            for u in await db.users.find(
+                {"id": {"$in": owner_ids}},
+                {"_id": 0, "id": 1, "department": 1},
+            ).to_list(len(owner_ids) or 1)
+        }
+
+        candidates = [
+            d
+            for d in candidates
+            if (
+                not owners.get(d.get("owner_id"))
+                or not owners[d["owner_id"]].get("department")
+                or owners[d["owner_id"]].get("department") == user.department
+            )
+        ]
+
+    return [
+        {
             "id": f"implicit-manager-{d['id']}",
             "approval_workflow_id": None,
             "deliverable_id": d["id"],
@@ -2780,35 +2831,13 @@ async def _build_implicit_manager_items(user: User):
             "comments": "",
             "created_at": d.get("created_at"),
             "updated_at": d.get("updated_at"),
-        })
-    return result
-
-
+        }
+        for d in candidates
+    ]
 @api_router.get("/approvals")
 async def list_approvals(request: Request):
-    """Return actionable approval items, scoped to the current user's authority."""
-    user = await get_acting_user(request)
-    query = {"status": "PENDING"}
-    if user.role != "admin":
-        query["$or"] = [
-            {"assigned_to": user.id},
-            {"approval_type": "MANAGER", "assigned_to": None},
-            {"approval_type": "COMPLIANCE", "assigned_to": None, "department": "Administration"},
-        ]
-    items = await db.approval_items.find(query, {"_id": 0}).sort("updated_at", -1).to_list(500)
-    hydrated = await _hydrate_approval_items(items)
-    result = []
-    for item in hydrated:
-        d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
-        if d and await _approval_item_can_act(user, item, d):
-            result.append(item)
-    result.extend(await _hydrate_approval_items(await _build_implicit_manager_items(user)))
-    return result
+    """Return actionable approval items."""
 
-
-@api_router.get("/approvals/board")
-async def approval_board(request: Request):
-    """Return pending approval cards grouped by approval authority."""
     user = await get_acting_user(request)
 
     query = {"status": "PENDING"}
@@ -2833,20 +2862,101 @@ async def approval_board(request: Request):
     ).sort(
         "updated_at",
         -1,
-    ).to_list(200)
+    ).to_list(500)
 
     implicit_items = await _build_implicit_manager_items(user)
-    items.extend(implicit_items[:200])
+    items.extend(implicit_items)
 
     hydrated = await _hydrate_approval_items(items)
 
-    result = {key: [] for key in APPROVAL_TYPES}
+    # Admins can see all approval items.
+    # No permission query is required for every item.
+    if user.role == "admin":
+        for item in hydrated:
+            item.pop("_deliverable", None)
+        return hydrated
+
+    # For managers, permission checks are still required,
+    # but deliverables are already available from hydration.
+    result = []
 
     for item in hydrated:
-        d = item.get("_deliverable")
-        if d and await _approval_item_can_act(user, item, d):
+        deliverable = item.get("_deliverable")
+
+        if deliverable and await _approval_item_can_act(
+            user,
+            item,
+            deliverable,
+        ):
+            result.append(item)
+
+    for item in result:
+        item.pop("_deliverable", None)
+
+    return result
+
+
+@api_router.get("/approvals/board")
+async def approval_board(request: Request):
+    """Return pending approval cards grouped by approval authority."""
+
+    user = await get_acting_user(request)
+
+    query = {"status": "PENDING"}
+
+    if user.role != "admin":
+        query["$or"] = [
+            {"assigned_to": user.id},
+            {
+                "approval_type": "MANAGER",
+                "assigned_to": None,
+            },
+            {
+                "approval_type": "COMPLIANCE",
+                "assigned_to": None,
+                "department": "Administration",
+            },
+        ]
+
+    items = await db.approval_items.find(
+        query,
+        {"_id": 0},
+    ).sort(
+        "updated_at",
+        -1,
+    ).to_list(500)
+
+    # Build implicit manager approvals efficiently.
+    items.extend(
+        (await _build_implicit_manager_items(user))[:200]
+    )
+
+    hydrated = await _hydrate_approval_items(items)
+
+    result = {
+        key: []
+        for key in APPROVAL_TYPES
+    }
+
+    for item in hydrated:
+        deliverable = item.get("_deliverable")
+
+        if user.role == "admin":
+            allowed = True
+        else:
+            allowed = (
+                deliverable
+                and await _approval_item_can_act(
+                    user,
+                    item,
+                    deliverable,
+                )
+            )
+
+        if allowed:
             result[item["approval_type"]].append(item)
 
+    # Remove internal hydration field.
     for key in result:
         for item in result[key]:
             item.pop("_deliverable", None)

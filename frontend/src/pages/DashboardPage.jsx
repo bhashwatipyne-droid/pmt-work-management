@@ -24,37 +24,59 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!currentUser || currentUser.role !== "admin") return;
 
+    let cancelled = false;
+
     setLoading(true);
     setError(null);
 
-    Promise.allSettled([
-      getDashboardOverview(currentUserId),
-      getApprovals(currentUserId),
-
-      // The dashboard only shows 5 projects. Do not fetch and hydrate the
-      // entire project + deliverable dataset just to render those 5 rows.
-      getProjects(currentUserId, {
-        limit: 5,
-        include_deliverables: false,
-      }),
-    ])
-      .then(([overviewResult, approvalsResult, projectsResult]) => {
-        if (overviewResult.status === "fulfilled") {
-          setOverview(overviewResult.value);
-        } else {
-          setError("Could not load dashboard data. Please refresh the page.");
-          return;
-        }
-
-        if (approvalsResult.status === "fulfilled") {
-          setApprovals(approvalsResult.value);
-        }
-
-        if (projectsResult.status === "fulfilled") {
-          setProjects(projectsResult.value);
+    // 1. Dashboard overview is the critical request.
+    getDashboardOverview(currentUserId)
+      .then((data) => {
+        if (!cancelled) {
+          setOverview(data);
+          setLoading(false);
         }
       })
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) {
+          setError(
+            "Could not load dashboard data. Please refresh the page."
+          );
+          setLoading(false);
+        }
+      });
+
+    // 2. Projects load independently.
+    getProjects(
+      currentUserId,
+      {
+        limit: 5,
+        include_deliverables: false,
+      }
+    )
+      .then((data) => {
+        if (!cancelled) {
+          setProjects(data);
+        }
+      })
+      .catch(() => {
+        // Non-critical.
+      });
+
+    // 3. Approvals load independently.
+    getApprovals(currentUserId)
+      .then((data) => {
+        if (!cancelled) {
+          setApprovals(data);
+        }
+      })
+      .catch(() => {
+        // Non-critical.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentUser?.id, currentUserId]);
 
   if (userLoading || !currentUser) {

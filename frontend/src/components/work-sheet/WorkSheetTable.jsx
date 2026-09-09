@@ -800,9 +800,36 @@ export const WorkSheetTable = ({
           ? { row: domRow, col: domCol }
           : null;
 
-      const range = rangeSelectionRef.current;
+      const rawRange = rangeSelectionRef.current;
+
+      // A range selection can only still be "live" if whatever's
+      // currently focused is actually inside it. If the DOM says focus
+      // is on a cell outside that range, the range is a leftover from
+      // an earlier, unrelated interaction (e.g. a prior Shift+Arrow
+      // session) that never got cleared on every path — trust the fresh
+      // click over it rather than silently pasting into stale
+      // coordinates.
+      const rangeContainsDomAnchor =
+        rawRange &&
+        domAnchor &&
+        domAnchor.row >= Math.min(rawRange.anchorRow, rawRange.row) &&
+        domAnchor.row <= Math.max(rawRange.anchorRow, rawRange.row) &&
+        domAnchor.col >= Math.min(rawRange.anchorCol, rawRange.col) &&
+        domAnchor.col <= Math.max(rawRange.anchorCol, rawRange.col);
+
+      const range = !domAnchor || rangeContainsDomAnchor ? rawRange : null;
       const anchor = domAnchor || activeCellRef.current;
       if (!range && !anchor) return;
+
+      // eslint-disable-next-line no-console
+      console.log("[worksheet paste] anchor detection:", {
+        domAnchor,
+        activeCellRefCurrent: activeCellRef.current,
+        rawRange,
+        rangeContainsDomAnchor,
+        usingRange: range,
+        usingAnchor: anchor,
+      });
 
       const startRow = range ? Math.min(range.anchorRow, range.row) : anchor.row;
       const endRow = range ? Math.max(range.anchorRow, range.row) : anchor.row;
@@ -863,6 +890,8 @@ export const WorkSheetTable = ({
           let applied = 0;
           let skipped = 0;
 
+          const targetedRows = [];
+
           for (let r = 0; r < targetRowCount; r++) {
             const targetRow = startRow + r;
             if (targetRow > maxRow) break;
@@ -901,15 +930,16 @@ export const WorkSheetTable = ({
             if (rowHasUpdate) {
               onUpdate(targetItem.id, updates);
               applied += 1;
+              targetedRows.push(targetRow);
             }
           }
 
           if (applied === 0) {
             toast.error("Nothing pasted — no matching values for this selection");
           } else if (skipped > 0) {
-            toast.success(`Pasted into ${applied} row${applied === 1 ? "" : "s"}, skipped ${skipped} cell${skipped === 1 ? "" : "s"} that didn't match`);
+            toast.success(`Pasted into row ${targetedRows.join(", ")} — skipped ${skipped} cell${skipped === 1 ? "" : "s"} that didn't match`);
           } else {
-            toast.success(`Pasted into ${applied} row${applied === 1 ? "" : "s"}`);
+            toast.success(`Pasted into row ${targetedRows.join(", ")}`);
           }
         })
         .catch(() => {

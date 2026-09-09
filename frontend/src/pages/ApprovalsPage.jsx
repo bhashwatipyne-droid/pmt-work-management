@@ -50,17 +50,23 @@ const initialBoard = () =>
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
+
   const [board, setBoard] = useState(initialBoard);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState({});
   const [dragging, setDragging] = useState(null);
+  const [movingId, setMovingId] = useState(null);
 
   const fetchBoard = async () => {
     setLoading(true);
+
     try {
-      setBoard(await getApprovalBoard(currentUserId));
+      const data = await getApprovalBoard(currentUserId);
+      setBoard(data);
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to load approvals");
+      toast.error(
+        err?.response?.data?.detail || "Failed to load approvals"
+      );
     } finally {
       setLoading(false);
     }
@@ -70,49 +76,109 @@ export default function ApprovalsPage() {
     if (currentUser && currentUser.role !== "member") {
       fetchBoard();
     }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
   const total = useMemo(
-    () => COLUMNS.reduce((sum, column) => sum + (board[column.key]?.length || 0), 0),
+    () =>
+      COLUMNS.reduce(
+        (sum, column) => sum + (board[column.key]?.length || 0),
+        0
+      ),
     [board]
   );
 
   const decide = async (item, action) => {
     const note = notes[item.id] || "";
+
     try {
       if (action === "approve") {
         await approveApprovalItem(currentUserId, item.id, note);
       } else {
         await sendBackApprovalItem(currentUserId, item.id, note);
       }
-      toast.success(action === "approve" ? "Approval recorded" : "Sent back for changes");
+
+      toast.success(
+        action === "approve"
+          ? "Approval recorded"
+          : "Sent back for changes"
+      );
+
       setNotes((prev) => {
         const next = { ...prev };
         delete next[item.id];
         return next;
       });
+
       await fetchBoard();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Action failed");
+      toast.error(
+        err?.response?.data?.detail || "Action failed"
+      );
     }
   };
 
-  const handleDrop = async (e, targetType) => {
-    e.preventDefault();
+  /**
+   * Optimistically move the card immediately.
+   *
+   * We do NOT reload the entire board after the API call.
+   * If the API fails, the original board is restored.
+   */
+  const handleDrop = async (targetType) => {
+    if (!dragging) return;
 
-    const approvalItemId =
-      e.dataTransfer.getData("text/plain") || dragging?.id;
+    const sourceType = dragging.approval_type;
+    const approvalItemId = dragging.id;
 
-    if (!approvalItemId) {
+    if (sourceType === targetType) {
       setDragging(null);
       return;
     }
 
-    if (dragging?.approval_type === targetType) {
-      setDragging(null);
-      return;
-    }
+    // Keep the exact previous board so we can rollback.
+    const previousBoard = board;
+
+    // Optimistically move the card immediately.
+    setBoard((currentBoard) => {
+      const nextBoard = {
+        ...currentBoard,
+      };
+
+      const sourceItems = [
+        ...(nextBoard[sourceType] || []),
+      ];
+
+      const targetItems = [
+        ...(nextBoard[targetType] || []),
+      ];
+
+      const index = sourceItems.findIndex(
+        (item) => item.id === approvalItemId
+      );
+
+      if (index === -1) {
+        return currentBoard;
+      }
+
+      const [movedItem] = sourceItems.splice(index, 1);
+
+      const updatedItem = {
+        ...movedItem,
+        approval_type: targetType,
+      };
+
+      nextBoard[sourceType] = sourceItems;
+      nextBoard[targetType] = [
+        updatedItem,
+        ...targetItems,
+      ];
+
+      return nextBoard;
+    });
+
+    setDragging(null);
+    setMovingId(approvalItemId);
 
     try {
       await moveApprovalItem(
@@ -122,22 +188,24 @@ export default function ApprovalsPage() {
       );
 
       toast.success(
-        `Moved to ${COLUMNS.find((c) => c.key === targetType)?.label}`
+        `Moved to ${
+          COLUMNS.find((c) => c.key === targetType)?.label
+        }`
       );
-
-      setDragging(null);
-      await fetchBoard();
     } catch (err) {
+      // API failed — restore the original board.
+      setBoard(previousBoard);
+
       console.error("Approval move failed:", err);
 
       toast.error(
         err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        err?.message ||
-        "Could not move approval"
+          err?.response?.data?.message ||
+          err?.message ||
+          "Could not move approval"
       );
-
-      setDragging(null);
+    } finally {
+      setMovingId(null);
     }
   };
 
@@ -150,6 +218,7 @@ export default function ApprovalsPage() {
           <div className="text-sm font-medium text-foreground">
             Approvals is available to managers and admins only
           </div>
+
           <div className="mt-1 text-xs text-muted-foreground">
             Ask a manager or admin to review deliverables.
           </div>
@@ -166,27 +235,37 @@ export default function ApprovalsPage() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Approvals</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Approvals
+            </h1>
+
             <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
               {total}
             </span>
           </div>
+
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Independent approval queues. Drag a card to reassign its approval authority, or approve/send it back.
+            Independent approval queues. Drag a card to reassign its
+            approval authority, or approve/send it back.
           </p>
         </div>
       </div>
 
       {loading ? (
         <div className="mint-card flex min-h-[280px] items-center justify-center">
-          <div className="text-sm text-muted-foreground">Loading approvals...</div>
+          <div className="text-sm text-muted-foreground">
+            Loading approvals...
+          </div>
         </div>
       ) : (
         <div className="grid min-w-[1100px] grid-cols-4 gap-4">
           {COLUMNS.map((column) => {
             const Icon = column.icon;
             const items = board[column.key] || [];
-            const isDropTarget = dragging && dragging.approval_type !== column.key;
+
+            const isDropTarget =
+              dragging &&
+              dragging.approval_type !== column.key;
 
             return (
               <div
@@ -196,99 +275,157 @@ export default function ApprovalsPage() {
                   e.dataTransfer.dropEffect = "move";
                 }}
                 onDrop={(e) => {
-                  handleDrop(e, column.key);
+                  e.preventDefault();
+                  handleDrop(column.key);
                 }}
                 className={`flex min-h-[560px] flex-col rounded-xl border bg-[#f7f9fc] transition-colors ${
-                  isDropTarget ? "border-[#b8b8e8] bg-[#f3f3ff]" : "border-border"
+                  isDropTarget
+                    ? "border-[#b8b8e8] bg-[#f3f3ff]"
+                    : "border-border"
                 }`}
               >
                 <div className="border-b border-border bg-white px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Icon className="h-4 w-4 text-[#2b2bb5]" />
-                      <span className="text-sm font-semibold text-foreground">{column.label}</span>
+
+                      <span className="text-sm font-semibold text-foreground">
+                        {column.label}
+                      </span>
                     </div>
+
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                       {items.length}
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">{column.description}</p>
+
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {column.description}
+                  </p>
                 </div>
 
                 <div className="flex-1 space-y-3 p-3">
                   {items.length === 0 ? (
                     <div className="flex min-h-[180px] items-center justify-center rounded-lg border border-dashed border-border bg-white/60 px-4 text-center">
-                      <p className="text-xs text-muted-foreground">No pending approvals</p>
+                      <p className="text-xs text-muted-foreground">
+                        No pending approvals
+                      </p>
                     </div>
                   ) : (
-                    items.map((item) => (
-                      <div
-                        key={item.id}
-                        draggable
-                        onDragStart={(e) => {
-                          setDragging(item);
-                          e.dataTransfer.effectAllowed = "move";
-                          e.dataTransfer.setData("text/plain", String(item.id));
-                        }}
-                        onDragEnd={() => {
-                          setDragging(null);
-                        }}
-                        data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
-                        className="rounded-xl border border-border bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
-                      >
-                        <div className="flex items-start gap-2">
-                          <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-slate-300" />
-                          <div className="min-w-0 flex-1">
-                            <div className="font-mono text-[10px] text-muted-foreground">{item.project_code}</div>
-                            <div className="mt-1 text-sm font-semibold leading-5 text-foreground">{item.deliverable_name}</div>
-                            <div className="mt-1 text-[11px] text-muted-foreground">
-                              {item.project_name} · {item.client_name || "—"}
+                    items.map((item) => {
+                      const isMoving = movingId === item.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          draggable={!isMoving}
+                          onDragStart={(e) => {
+                            setDragging(item);
+
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData(
+                              "text/plain",
+                              String(item.id)
+                            );
+                          }}
+                          onDragEnd={() => {
+                            setDragging(null);
+                          }}
+                          data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
+                          className={`rounded-xl border border-border bg-white p-4 shadow-sm transition-all ${
+                            isMoving
+                              ? "opacity-50"
+                              : "hover:shadow-md"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <GripVertical
+                              className={`mt-0.5 h-4 w-4 shrink-0 text-slate-300 ${
+                                isMoving
+                                  ? "cursor-not-allowed"
+                                  : "cursor-grab"
+                              }`}
+                            />
+
+                            <div className="min-w-0 flex-1">
+                              <div className="font-mono text-[10px] text-muted-foreground">
+                                {item.project_code}
+                              </div>
+
+                              <div className="mt-1 text-sm font-semibold leading-5 text-foreground">
+                                {item.deliverable_name}
+                              </div>
+
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                {item.project_name} ·{" "}
+                                {item.client_name || "—"}
+                              </div>
                             </div>
+
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
+                              <Clock3 className="h-3 w-3" />
+                              Pending
+                            </span>
                           </div>
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                            <Clock3 className="h-3 w-3" /> Pending
-                          </span>
-                        </div>
 
-                        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                          <span>{item.current_stage}</span>
-                          <span>·</span>
-                          <span>Owner: {item.owner_name}</span>
-                        </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                            <span>{item.current_stage}</span>
 
-                        {item.comments && (
-                          <div className="mt-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
-                            {item.comments}
+                            <span>·</span>
+
+                            <span>
+                              Owner: {item.owner_name}
+                            </span>
                           </div>
-                        )}
 
-                        <textarea
-                          data-testid={`${APPROVALS.notePrefix}-${item.id}`}
-                          placeholder="Add a review note..."
-                          value={notes[item.id] || ""}
-                          onChange={(e) => setNotes((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                          className="mt-3 min-h-[58px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[11px] leading-4 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                          rows={2}
-                        />
+                          {item.comments && (
+                            <div className="mt-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
+                              {item.comments}
+                            </div>
+                          )}
 
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            data-testid={`${APPROVALS.approvePrefix}-${item.id}`}
-                            onClick={() => decide(item, "approve")}
-                            className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-[hsl(240_61%_36%)]"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                          </button>
-                          <button
-                            data-testid={`${APPROVALS.rejectPrefix}-${item.id}`}
-                            onClick={() => decide(item, "reject")}
-                            className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11px] font-semibold text-foreground hover:bg-muted"
-                          >
-                            <XCircle className="h-3.5 w-3.5 text-muted-foreground" /> Send Back
-                          </button>
+                          <textarea
+                            data-testid={`${APPROVALS.notePrefix}-${item.id}`}
+                            placeholder="Add a review note..."
+                            value={notes[item.id] || ""}
+                            onChange={(e) =>
+                              setNotes((prev) => ({
+                                ...prev,
+                                [item.id]: e.target.value,
+                              }))
+                            }
+                            className="mt-3 min-h-[58px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[11px] leading-4 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                            rows={2}
+                          />
+
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              data-testid={`${APPROVALS.approvePrefix}-${item.id}`}
+                              onClick={() =>
+                                decide(item, "approve")
+                              }
+                              disabled={isMoving}
+                              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-[hsl(240_61%_36%)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Approve
+                            </button>
+
+                            <button
+                              data-testid={`${APPROVALS.rejectPrefix}-${item.id}`}
+                              onClick={() =>
+                                decide(item, "reject")
+                              }
+                              disabled={isMoving}
+                              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                              Send Back
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>

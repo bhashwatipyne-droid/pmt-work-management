@@ -434,6 +434,25 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
 
     if "work_date" in update_fields and update_fields["work_date"]:
         update_fields["month"] = update_fields["work_date"][:7]
+
+    if (
+        user.role == "member"
+        and update_fields.get("status") == "Ready for Review"
+    ):
+        reviewer_id = update_fields.get(
+            "reviewer_id",
+            existing.get("reviewer_id")
+        )
+
+        if not reviewer_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Please assign a reviewer before "
+                    "marking this as Ready for Review."
+                ),
+            )
+
     if "stage" in update_fields and update_fields["stage"] and update_fields["stage"] not in STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
     return update_fields

@@ -1,7 +1,7 @@
 // Single source of truth for worksheet column widths.
 // WorkSheetTable.jsx (header) and WorkSheetRow.jsx (body rows) both
-// import this so the CSS-grid columns always line up. Do not fork
-// this object again in either file.
+// import this so the CSS-grid columns always line up.
+
 export const COLUMN_WIDTHS = {
   Date: "130px",
   Client: "150px",
@@ -24,7 +24,15 @@ export const ROW_NUM_WIDTH = "44px";
 export const CHECKBOX_WIDTH = "44px";
 export const ACTIONS_WIDTH = "52px";
 
-export const buildGridTemplateColumns = (visibleColumns) =>
+export const buildGridTemplateColumns = (
+  visibleColumns,
+  columnWidths = {}
+) =>
   `${ROW_NUM_WIDTH} ${CHECKBOX_WIDTH} ${visibleColumns
-    .map((column) => COLUMN_WIDTHS[column] || "150px")
+    .map(
+      (column) =>
+        columnWidths[column] ||
+        COLUMN_WIDTHS[column] ||
+        "150px"
+    )
     .join(" ")} ${ACTIONS_WIDTH}`;

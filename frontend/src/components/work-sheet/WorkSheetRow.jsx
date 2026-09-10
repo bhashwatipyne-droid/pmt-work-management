@@ -44,6 +44,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onCheckboxRangeSelect,
     hiddenColumns = [],
     columnOrder = [],
+    columnWidths = {},
     onRowDragStart,
     onRowDragOver,
     onRowDrop,
@@ -877,7 +878,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       }`}
       style={{
         display: "grid",
-        gridTemplateColumns: buildGridTemplateColumns(visibleColumns),
+        gridTemplateColumns: buildGridTemplateColumns(
+          visibleColumns,
+          columnWidths
+        ),
         minWidth: "max-content",
       }}
       onDragOver={(event) => onRowDragOver?.(event, item.id)}

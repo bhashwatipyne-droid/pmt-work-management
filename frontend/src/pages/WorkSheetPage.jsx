@@ -352,6 +352,25 @@ export default function WorkSheetPage() {
   // snapshot from itemsRef instead of closing over `items`, so `items` can
   // safely stay out of the dependency array.
   const handleUpdate = useCallback(async (id, patch) => {
+    const currentItem = itemsRef.current.find(
+      (item) => item.id === id
+    );
+
+    if (
+      currentUser.role === "member" &&
+      patch.status === "Ready for Review" &&
+      !currentItem?.reviewer_id
+    ) {
+      toast.error(
+        "Please assign a reviewer before marking this as Ready for Review."
+      );
+
+      return {
+        success: false,
+        validation: true,
+      };
+    }
+
     const previous = itemsRef.current.find((item) => item.id === id);
 
     // Optimistically update the UI immediately.

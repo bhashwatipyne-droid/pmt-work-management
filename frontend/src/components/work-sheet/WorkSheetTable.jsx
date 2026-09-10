@@ -158,6 +158,24 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   });
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [draggedRow, setDraggedRow] = useState(null);
+  const columnWidthsKey = `worksheet_column_widths_${currentUser.id}`;
+
+  const [columnWidths, setColumnWidths] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(
+          `worksheet_column_widths_${currentUser.id}`
+        ) || "null"
+      );
+
+      return saved && typeof saved === "object" ? saved : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [resizingColumn, setResizingColumn] = useState(null);
+  const resizeStateRef = useRef(null);
   const rowOrderScopeRef = useRef(rowOrderKey);
   const [fillState, setFillState] = useState(null);
   const [isFilling, setIsFilling] = useState(false);
@@ -191,6 +209,13 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   useEffect(() => {
     localStorage.setItem(columnOrderKey, JSON.stringify(columnOrder));
   }, [columnOrder, columnOrderKey]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      columnWidthsKey,
+      JSON.stringify(columnWidths)
+    );
+  }, [columnWidths, columnWidthsKey]);
 
   useEffect(() => {
     try {
@@ -1128,9 +1153,77 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [visibleColumns, getSortValue, resolvePasteValue, canEditItem, onUpdate]);
 
-  const gridTemplateColumns = buildGridTemplateColumns(visibleColumns);
+  const gridTemplateColumns = buildGridTemplateColumns(
+    visibleColumns,
+    columnWidths
+  );
 
   const totalCols = COLUMNS.length + 3; // #, checkbox, Actions
+
+  const handleColumnResizeStart = useCallback(
+    (event, column) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const header = event.currentTarget.parentElement;
+
+      if (!header) return;
+
+      const startWidth = header.getBoundingClientRect().width;
+
+      resizeStateRef.current = {
+        column,
+        startX: event.clientX,
+        startWidth,
+      };
+
+      setResizingColumn(column);
+
+      const handleMouseMove = (moveEvent) => {
+        const state = resizeStateRef.current;
+
+        if (!state) return;
+
+        const delta = moveEvent.clientX - state.startX;
+
+        const nextWidth = Math.max(
+          80,
+          Math.round(state.startWidth + delta)
+        );
+
+        setColumnWidths((current) => ({
+          ...current,
+          [state.column]: `${nextWidth}px`,
+        }));
+      };
+
+      const handleMouseUp = () => {
+        resizeStateRef.current = null;
+        setResizingColumn(null);
+
+        document.removeEventListener(
+          "mousemove",
+          handleMouseMove
+        );
+
+        document.removeEventListener(
+          "mouseup",
+          handleMouseUp
+        );
+      };
+
+      document.addEventListener(
+        "mousemove",
+        handleMouseMove
+      );
+
+      document.addEventListener(
+        "mouseup",
+        handleMouseUp
+      );
+    },
+    []
+  );
 
   const handleColumnDrop = (targetColumn) => {
     if (!draggedColumn || draggedColumn === targetColumn) return;
@@ -1367,6 +1460,35 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                       <ChevronsLeftRight className="h-3 w-3" />
                     </button>
                   )}
+
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={`Resize ${column} column`}
+                    onMouseDown={(event) =>
+                      handleColumnResizeStart(event, column)
+                    }
+                    className={[
+                      "absolute right-0 top-0 z-40 h-full w-2",
+                      "cursor-col-resize",
+                      "group/resize",
+                      resizingColumn === column
+                        ? "bg-indigo-200"
+                        : "hover:bg-indigo-100",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "absolute left-1/2 top-1/2",
+                        "h-6 w-px -translate-x-1/2 -translate-y-1/2",
+                        "rounded-full",
+                        "transition-opacity",
+                        resizingColumn === column
+                          ? "opacity-100 bg-indigo-500"
+                          : "opacity-0 group-hover/resize:opacity-100 bg-slate-400",
+                      ].join(" ")}
+                    />
+                  </div>
                 </TableHead>
               );
             })}
@@ -1436,6 +1558,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     onDelete={onDelete}
                     hiddenColumns={hiddenColumns}
                     columnOrder={columnOrder}
+                    columnWidths={columnWidths}
                     onRowDragStart={(event, rowId) => {
                       event.dataTransfer.effectAllowed = "move";
                       setDraggedRow(rowId);

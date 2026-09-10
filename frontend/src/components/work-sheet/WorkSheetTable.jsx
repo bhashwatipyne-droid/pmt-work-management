@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ChevronsLeftRight,
   Filter,
@@ -83,7 +91,7 @@ const ROW_HEIGHT = 40;
 const HEADER_HEIGHT = 40;
 const OVERSCAN = 20;
 
-export const WorkSheetTable = ({
+export const WorkSheetTable = forwardRef(function WorkSheetTable({
   items,
   currentUser,
   users,
@@ -105,7 +113,7 @@ export const WorkSheetTable = ({
   addingRow = false,
   onSelectRange,
   sheetKey = "Master",
-}) => {
+}, ref) {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
   const [rangeSelection, setRangeSelection] = useState(null);
@@ -116,6 +124,15 @@ export const WorkSheetTable = ({
     key: null,
     direction: "asc",
   });
+
+  // Exposed so the page can force the sheet back to its default
+  // (newest-first) order when a row is added — otherwise a row added
+  // while a per-column sort is active lands wherever that column's
+  // sort puts it instead of being visible at the top.
+  useImperativeHandle(ref, () => ({
+    resetColumnSort: () => setColumnSort({ key: null, direction: "asc" }),
+  }), []);
+
   const [hiddenColumns, setHiddenColumns] = useState(() => {
     try {
       const saved = localStorage.getItem("worksheet_hidden_columns");
@@ -1357,4 +1374,4 @@ export const WorkSheetTable = ({
       </Table>
     </div>
   );
-};
+});

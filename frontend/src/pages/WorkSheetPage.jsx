@@ -129,6 +129,7 @@ export default function WorkSheetPage() {
   const bulkAddingRef = useRef(false);
   const addingRowRef = useRef(false);
   const itemsRef = useRef(items);
+  const tableRef = useRef(null);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
   const isMember = currentUser?.role === "member";
@@ -297,6 +298,12 @@ export default function WorkSheetPage() {
             ? (DEPARTMENT_TO_STAGE[currentUser.department] || null)
             : (DEPARTMENT_TO_STAGE[activeSheet] || activeSheet),
       });
+      // A per-column sort (set via a column header's "Sort Asc/Desc" menu)
+      // would otherwise decide where this row lands, hiding it from the
+      // top. Clear it so the sheet falls back to its default order —
+      // newest first — where the new row is guaranteed to be visible.
+      tableRef.current?.resetColumnSort();
+
       // New row goes to the top of the sheet, not the bottom.
       setItems((prev) => [created, ...prev]);
       toast.success("Row added");
@@ -734,6 +741,7 @@ export default function WorkSheetPage() {
         </div>
       ) : (
         <WorkSheetTable
+          ref={tableRef}
           items={sortedItems}
           currentUser={currentUser}
           users={users}

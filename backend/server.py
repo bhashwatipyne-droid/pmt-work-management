@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -541,17 +541,17 @@ async def get_options():
 @api_router.get("/work-items", response_model=List[WorkItem])
 async def list_work_items(
     request: Request,
-    status: Optional[List[str]] = None,
-    stage: Optional[List[str]] = None,
-    deliverable_type: Optional[List[str]] = None,
-    work_category: Optional[List[str]] = None,
+    status: Optional[List[str]] = Query(default=None),
+    stage: Optional[List[str]] = Query(default=None),
+    deliverable_type: Optional[List[str]] = Query(default=None),
+    work_category: Optional[List[str]] = Query(default=None),
     month: Optional[str] = None,
     search: Optional[str] = None,
 
-    creator_id: Optional[List[str]] = None,
-    reviewer_id: Optional[List[str]] = None,
-    project_id: Optional[List[str]] = None,
-    deliverable_id: Optional[List[str]] = None,
+    creator_id: Optional[List[str]] = Query(default=None),
+    reviewer_id: Optional[List[str]] = Query(default=None),
+    project_id: Optional[List[str]] = Query(default=None),
+    deliverable_id: Optional[List[str]] = Query(default=None),
 
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,

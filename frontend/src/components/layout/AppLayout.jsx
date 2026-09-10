@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, Bug, User } from "lucide-react";
+import { Bell, Bug, User, X } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
 import { Sidebar } from "./Sidebar";
@@ -30,6 +31,7 @@ export const AppLayout = ({ children }) => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useUser();
+  const [showBugReport, setShowBugReport] = useState(false);
 
   const crumb = CRUMBS[pathname] || "PMT";
   const initials = getInitials(currentUser?.name);
@@ -49,23 +51,22 @@ export const AppLayout = ({ children }) => {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                window.location.href =
-                  "mailto:YOUR_EMAIL@example.com?subject=PMT%20Bug%20Report";
-              }}
+              onClick={() => setShowBugReport(true)}
               className={[
-                "inline-flex h-9 items-center gap-1.5",
-                "rounded-lg border border-slate-200",
-                "bg-white px-3",
-                "text-xs font-medium text-slate-600",
-                "transition-colors",
-                "hover:bg-slate-50 hover:text-slate-900",
+                "inline-flex h-9 items-center gap-2",
+                "rounded-lg",
+                "bg-[#2b2bb5] px-4",
+                "text-xs font-semibold text-white",
+                "shadow-sm",
+                "transition-all",
+                "hover:bg-[#23239a]",
+                "hover:shadow-md",
                 "focus:outline-none",
                 "focus:ring-[3px]",
-                "focus:ring-[#2b2bb5]/20",
+                "focus:ring-[#2b2bb5]/25",
               ].join(" ")}
             >
-              <Bug className="h-3.5 w-3.5" />
+              <Bug className="h-4 w-4" />
               Report a bug
             </button>
             <button
@@ -118,6 +119,42 @@ export const AppLayout = ({ children }) => {
           {children}
         </main>
       </div>
+
+      {showBugReport && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+          onMouseDown={() => setShowBugReport(false)}
+        >
+          <div
+            className="relative flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
+              <div className="flex items-center gap-2">
+                <Bug className="h-4 w-4 text-[#2b2bb5]" />
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Report a bug
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowBugReport(false)}
+                className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <iframe
+              src="https://docs.google.com/forms/d/e/1FAIpQLScNFMcRUNMpf25VwBQQjV0uN9pCWqblp5gt-txVqivFQmQ_iw/viewform?embedded=true"
+              title="Report a bug"
+              className="min-h-0 flex-1 w-full border-0"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

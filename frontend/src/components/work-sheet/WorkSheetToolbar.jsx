@@ -131,7 +131,7 @@ export const WorkSheetToolbar = ({
         </span>
 
         {canAdd && (
-          <div className={`inline-flex h-9 ${onBulkAdd ? "" : "ml-auto"}`}>
+          <div className="ml-auto inline-flex h-9">
             <Button
               data-testid={WORKSHEET.addRowBtn}
               onClick={onAddRow}

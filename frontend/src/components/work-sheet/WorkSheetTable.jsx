@@ -1462,32 +1462,17 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   )}
 
                   <div
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-label={`Resize ${column} column`}
                     onMouseDown={(event) =>
                       handleColumnResizeStart(event, column)
                     }
-                    className={[
-                      "absolute right-0 top-0 z-40 h-full w-2",
-                      "cursor-col-resize",
-                      "group/resize",
-                      resizingColumn === column
-                        ? "bg-indigo-200"
-                        : "hover:bg-indigo-100",
-                    ].join(" ")}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    className="group/resize absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize"
+                    title="Drag to resize column"
                   >
-                    <span
-                      className={[
-                        "absolute left-1/2 top-1/2",
-                        "h-6 w-px -translate-x-1/2 -translate-y-1/2",
-                        "rounded-full",
-                        "transition-opacity",
-                        resizingColumn === column
-                          ? "opacity-100 bg-indigo-500"
-                          : "opacity-0 group-hover/resize:opacity-100 bg-slate-400",
-                      ].join(" ")}
-                    />
+                    <div className="mx-auto h-full w-px bg-transparent group-hover/resize:bg-slate-400" />
                   </div>
                 </TableHead>
               );

@@ -14,8 +14,8 @@ export const COLUMN_WIDTHS = {
   Category: "140px",
   Version: "100px",
   "Time (min)": "110px",
-  Creator: "140px",
-  Reviewer: "140px",
+  Creator: "170px",
+  Reviewer: "150px",
   Remarks: "200px",
   Status: "170px",
 };

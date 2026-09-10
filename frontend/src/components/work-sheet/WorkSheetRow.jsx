@@ -93,6 +93,18 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   ]);
 
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
+
+  const getInitials = (name) => {
+    if (!name || name === "Unassigned") return "—";
+
+    const parts = name.trim().split(/\s+/);
+
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  };
   const allowedStatuses = options.statuses;
   const project = item.project_id
     ? projects.find((p) => p.id === item.project_id)
@@ -723,9 +735,27 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               triggerProps={sheetCell(11)}
               data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
               contentClassName="w-[240px] p-0"
+              renderValue={(option) => {
+                const name = option?.label || "Unassigned";
+                const initials = getInitials(name);
+
+                return (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-semibold text-indigo-700">
+                      {initials}
+                    </span>
+                    <span className="min-w-0 truncate text-[13px] text-slate-700">{name}</span>
+                  </span>
+                );
+              }}
             />
         ) : (
-          <span className="cell-plain block">{nameOf(item.creator_id)}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-semibold text-indigo-700">
+              {getInitials(nameOf(item.creator_id))}
+            </span>
+            <span className="cell-plain min-w-0 truncate">{nameOf(item.creator_id)}</span>
+          </span>
         )}
         {renderFillHandle(11)}
       </TableCell>

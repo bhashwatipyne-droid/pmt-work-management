@@ -1305,7 +1305,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               return (
                 <TableHead
                   key={column}
-                  className={`group relative flex h-10 min-w-0 items-center whitespace-nowrap border-r border-slate-200 px-1 text-[12px] font-semibold text-slate-600 ${
+                  className={`group relative flex h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 text-[12px] font-semibold text-slate-600 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
@@ -1313,7 +1313,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   onDrop={() => handleColumnDrop(column)}
                 >
                   <div
-                    className="group/header flex min-w-0 items-center gap-0"
+                    className="group/header flex w-full min-w-0 items-center justify-center gap-1"
                     draggable
                     onDragStart={(event) => {
                       event.stopPropagation();
@@ -1324,7 +1324,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   >
                     <span
                       aria-hidden="true"
-                      className="mr-0.5 inline-flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity group-hover/header:opacity-100 active:cursor-grabbing"
+                      className="inline-flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity group-hover/header:opacity-100 active:cursor-grabbing"
                     >
                       <Hand className="h-3.5 w-3.5" />
                     </span>
@@ -1332,10 +1332,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     <button
                       type="button"
                       onClick={(event) => event.stopPropagation()}
-                      className="flex min-w-0 flex-1 items-center justify-start overflow-hidden rounded px-0 py-0.5 text-left hover:text-slate-800"
+                      className="max-w-full min-w-0 overflow-hidden rounded px-1 py-0.5 text-center hover:text-slate-900"
                       title={column}
                     >
-                      <span className="min-w-0 truncate">{column}</span>
+                      <span className="block truncate">{column}</span>
                     </button>
 
                     <WorksheetColumnMenu

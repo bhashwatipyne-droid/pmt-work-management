@@ -143,12 +143,12 @@ export const WorkSheetToolbar = ({
             data-testid={WORKSHEET.addRowBtn}
             onClick={onAddRow}
             size="sm"
-            className={`h-9 bg-teal-700 hover:bg-teal-800 ${
+            className={`h-9 bg-indigo-600 text-white hover:bg-indigo-700 ${
               onBulkAdd ? "" : "ml-auto"
             }`}
           >
             <Plus className="mr-1 h-4 w-4" />
-            Add Row
+            Add row
           </Button>
         )}
       </div>

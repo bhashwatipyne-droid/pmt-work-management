@@ -209,7 +209,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       const missing = items
         .map((item) => item.id)
         .filter((id) => !current.includes(id));
-      return missing.length ? [...current, ...missing] : current;
+      // New/never-ordered rows (e.g. one just created via "+") go to the
+      // FRONT of the saved drag order, not the back. This effect fires
+      // right after a row is added — appending to the end would silently
+      // undo the "show brand-new rows at the top" behavior on the very
+      // next tick, which is exactly what was happening before this fix.
+      return missing.length ? [...missing, ...current] : current;
     });
   }, [items]);
 

@@ -79,8 +79,8 @@ export default function ProjectsPage() {
         if (!q) return true;
 
         return (
-          p.name.toLowerCase().includes(q) ||
-          p.code.toLowerCase().includes(q) ||
+          (p.name || "").toLowerCase().includes(q) ||
+          (p.code || "").toLowerCase().includes(q) ||
           (p.client_name || "").toLowerCase().includes(q)
         );
       })

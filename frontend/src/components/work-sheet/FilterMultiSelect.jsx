@@ -26,7 +26,9 @@ export const FilterMultiSelect = memo(function FilterMultiSelect({
   const filtered = useMemo(() => {
     if (!search) return values;
     const needle = search.toLowerCase();
-    return values.filter((value) => value.label.toLowerCase().includes(needle));
+    return values.filter((value) =>
+      (value.label || "").toLowerCase().includes(needle)
+    );
   }, [values, search]);
 
   const toggle = (value) => {

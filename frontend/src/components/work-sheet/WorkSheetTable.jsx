@@ -1158,7 +1158,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     columnWidths
   );
 
-  const totalCols = COLUMNS.length + 3; // #, checkbox, Actions
+  const totalCols = COLUMNS.length + 3; // #, checkbox, row actions
 
   const handleColumnResizeStart = useCallback(
     (event, column) => {
@@ -1374,6 +1374,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               )}
             </TableHead>
 
+            <TableHead
+              className="h-10 border-r border-slate-200 bg-[#f7f9fc]"
+              style={{ gridColumn: 3 }}
+            />
+
             {columnOrder.map((column, columnIndex) => {
               const isHidden = hiddenColumns.includes(column);
 
@@ -1389,7 +1394,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   className={`group relative flex h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 text-[12px] font-semibold text-slate-600 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
-                  style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
+                  style={{ gridColumn: visibleColumns.indexOf(column) + 4 }}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={() => handleColumnDrop(column)}
                 >
@@ -1477,10 +1482,6 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                 </TableHead>
               );
             })}
-
-            <TableHead className="flex h-10 w-[52px] items-center justify-center border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: visibleColumns.length + 3 }}>
-              Actions
-            </TableHead>
           </TableRow>
         </TableHeader>
 

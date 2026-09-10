@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { ChevronsUpDown, Hand, Trash2 } from "lucide-react";
+import { ChevronsUpDown, EyeOff, Hand, Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -29,6 +29,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     deliverablesByProject = {},
     onUpdate,
     onDelete,
+    onHideRow,
     selected,
     onToggleSelect,
     activeCell,
@@ -983,24 +984,44 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           }}
         />
       </TableCell>
+
+      <TableCell className="flex h-full items-center justify-center border-r border-slate-200 px-1">
+        {canEditRow && (
+          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onHideRow?.(item.id);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              title="Hide row"
+              aria-label="Hide row"
+            >
+              <EyeOff className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete?.(item);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+              title="Delete entry"
+              aria-label="Delete entry"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </TableCell>
+
       {visibleColumns.map((column) => (
         <Fragment key={column}>
           {renderColumnCell(column)}
         </Fragment>
       ))}
-      <TableCell className="sheet-cell w-[52px] text-center">
-        {canEditRow && (
-          <button
-            type="button"
-            onClick={() => onDelete?.(item)}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-            title="Delete entry"
-            aria-label="Delete entry"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-      </TableCell>
     </TableRow>
   );
 });

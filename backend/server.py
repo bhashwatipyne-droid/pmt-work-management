@@ -1172,9 +1172,50 @@ async def get_work_items_history(
 
 
 @api_router.post("/work-items/bulk-delete")
-async def bulk_delete_work_items(payload: BulkDeletePayload, request: Request):
-    await require_admin(request)
-    result = await db.work_items.delete_many({"id": {"$in": payload.ids}})
+async def bulk_delete_work_items(
+    payload: BulkDeletePayload,
+    request: Request
+):
+    user = await get_acting_user(request)
+
+    if not payload.ids:
+        return {"deleted_count": 0}
+
+    items = await db.work_items.find(
+        {"id": {"$in": payload.ids}},
+        {"_id": 0}
+    ).to_list(None)
+
+    allowed_ids = []
+
+    for item in items:
+        if user.role == "admin":
+            # Admins are view-only on the Work Sheet.
+            continue
+
+        if user.role == "member":
+            if item.get("creator_id") == user.id:
+                allowed_ids.append(item["id"])
+            continue
+
+        if user.role == "manager":
+            creator_department = await get_user_department(
+                item.get("creator_id")
+            )
+
+            if creator_department == user.department:
+                allowed_ids.append(item["id"])
+
+    if len(allowed_ids) != len(payload.ids):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete work items you are allowed to edit"
+        )
+
+    result = await db.work_items.delete_many(
+        {"id": {"$in": allowed_ids}}
+    )
+
     return {"deleted_count": result.deleted_count}
 
 

@@ -668,7 +668,7 @@ export default function WorkSheetPage() {
         onOpenFilters={() => setFiltersOpen((current) => !current)}
         activeFilterCount={activeFilterCount}
         onAddRow={handleAddRow}
-        canAdd={false}
+        canAdd={true}
         resultCount={filteredItems.length}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}

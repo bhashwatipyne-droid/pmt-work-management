@@ -1250,23 +1250,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
             style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
           >
-            <TableHead className="row-num-head flex h-10 items-center justify-center border-r border-slate-200 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500" style={{ gridColumn: 1 }}>
-              {onAddRow ? (
-                <button
-                  type="button"
-                  onClick={onAddRow}
-                  disabled={addingRow}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm transition-all hover:scale-105 hover:bg-indigo-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-                  title="Add a row"
-                  aria-label="Add a row"
-                  data-testid="worksheet-add-row-btn"
-                >
-                  <Plus className="h-4 w-4" strokeWidth={2.75} />
-                </button>
-              ) : (
-                "#"
-              )}
-            </TableHead>
+            <TableHead
+              className="row-num-head flex h-10 items-center justify-center border-r border-slate-200 bg-[#f7f9fc] px-3"
+              style={{ gridColumn: 1 }}
+            />
+
 
             <TableHead className="checkbox-cell relative flex h-10 items-center border-r border-slate-200 px-3" style={{ gridColumn: 2 }}>
               <Checkbox

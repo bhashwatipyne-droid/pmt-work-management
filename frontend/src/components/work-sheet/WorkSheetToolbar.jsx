@@ -1,8 +1,14 @@
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "../ui/dropdown-menu";
+import {
   Plus,
-  Rows3,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   ClipboardCheck,
@@ -124,32 +130,48 @@ export const WorkSheetToolbar = ({
           {resultCount} row{resultCount === 1 ? "" : "s"}
         </span>
 
-        {onBulkAdd && (
-          <Button
-            data-testid="worksheet-bulk-add-rows-btn"
-            onClick={() => onBulkAdd(5)}
-            disabled={bulkAdding}
-            size="sm"
-            variant="outline"
-            className="ml-auto h-9"
-          >
-            <Rows3 className="mr-1.5 h-4 w-4" />
-            {bulkAdding ? "Adding rows..." : "Add 5 rows below"}
-          </Button>
-        )}
-
         {canAdd && (
-          <Button
-            data-testid={WORKSHEET.addRowBtn}
-            onClick={onAddRow}
-            size="sm"
-            className={`h-9 bg-indigo-600 text-white hover:bg-indigo-700 ${
-              onBulkAdd ? "" : "ml-auto"
-            }`}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Add row
-          </Button>
+          <div className={`inline-flex h-9 ${onBulkAdd ? "" : "ml-auto"}`}>
+            <Button
+              data-testid={WORKSHEET.addRowBtn}
+              onClick={onAddRow}
+              size="sm"
+              disabled={bulkAdding}
+              className={`h-9 bg-indigo-600 text-white hover:bg-indigo-700 ${
+                onBulkAdd ? "rounded-r-none" : ""
+              }`}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              {bulkAdding ? "Adding rows..." : "Add row"}
+            </Button>
+
+            {onBulkAdd && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    disabled={bulkAdding}
+                    aria-label="Add multiple rows"
+                    className="h-9 rounded-l-none border-l border-indigo-500 bg-indigo-600 px-2 text-white hover:bg-indigo-700"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {[1, 5, 10, 20].map((count) => (
+                    <DropdownMenuItem
+                      key={count}
+                      onClick={() =>
+                        count === 1 ? onAddRow() : onBulkAdd(count)
+                      }
+                    >
+                      Add {count} row{count === 1 ? "" : "s"}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, User } from "lucide-react";
+import { Bell, Bug, User } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
 import { Sidebar } from "./Sidebar";
@@ -47,6 +47,27 @@ export const AppLayout = ({ children }) => {
 
           {/* Header actions */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href =
+                  "mailto:YOUR_EMAIL@example.com?subject=PMT%20Bug%20Report";
+              }}
+              className={[
+                "inline-flex h-9 items-center gap-1.5",
+                "rounded-lg border border-slate-200",
+                "bg-white px-3",
+                "text-xs font-medium text-slate-600",
+                "transition-colors",
+                "hover:bg-slate-50 hover:text-slate-900",
+                "focus:outline-none",
+                "focus:ring-[3px]",
+                "focus:ring-[#2b2bb5]/20",
+              ].join(" ")}
+            >
+              <Bug className="h-3.5 w-3.5" />
+              Report a bug
+            </button>
             <button
               type="button"
               data-testid="topbar-notifications"

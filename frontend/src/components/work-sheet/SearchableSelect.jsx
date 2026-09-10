@@ -25,7 +25,7 @@ export function SearchableSelect({
   onOpenChange,
   triggerProps = {},
   className = "",
-  contentClassName = "w-[220px] p-0",
+  contentClassName = "w-[360px] p-0",
   // Optional: render the closed trigger's value as something other than
   // plain text (e.g. a colored status chip). Receives the matched option
   // (or undefined) and the raw value.
@@ -160,6 +160,7 @@ export function SearchableSelect({
                 key={String(option.value)}
                 value={`${option.label} ${option.value}`}
                 disabled={option.disabled}
+                className="items-start"
                 onSelect={() => {
                   onValueChange?.(option.value);
                   onOpenChange?.(false);
@@ -172,7 +173,9 @@ export function SearchableSelect({
                       : "opacity-0"
                   }`}
                 />
-                <span className="min-w-0 truncate">{option.label}</span>
+                <span className="min-w-0 flex-1 whitespace-normal break-words leading-5">
+                  {option.label}
+                </span>
               </CommandItem>
             ))}
           </CommandList>

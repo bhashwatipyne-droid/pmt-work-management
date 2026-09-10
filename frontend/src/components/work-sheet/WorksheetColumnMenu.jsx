@@ -82,7 +82,7 @@ export const WorksheetColumnMenu = ({
         <div
           className="
             absolute right-0 top-full z-50 mt-1
-            w-[280px]
+            w-[380px]
             overflow-hidden
             rounded-lg
             border border-slate-200

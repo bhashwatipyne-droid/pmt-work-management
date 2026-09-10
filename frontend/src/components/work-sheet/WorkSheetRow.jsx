@@ -462,7 +462,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow || !effectiveClientId}
           triggerProps={sheetCell(2)}
           data-testid={`worksheet-project-select-${item.id}`}
-          contentClassName="w-[280px] p-0"
+          contentClassName="w-[380px] p-0"
         />
         {renderFillHandle(2)}
       </TableCell>
@@ -494,7 +494,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow || !item.project_id}
           triggerProps={sheetCell(3)}
           data-testid={`worksheet-deliverable-select-${item.id}`}
-          contentClassName="w-[300px] p-0"
+          contentClassName="w-[400px] p-0"
         />
         {renderFillHandle(3)}
       </TableCell>
@@ -623,7 +623,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               disabled={!canEditRow}
               triggerProps={sheetCell(7)}
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
-              contentClassName="w-[320px] p-0"
+              contentClassName="w-[400px] p-0"
             />
         ) : (
           <span className="cell-plain block">{item.deliverable_type || "—"}</span>

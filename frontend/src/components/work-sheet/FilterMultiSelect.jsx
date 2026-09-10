@@ -57,19 +57,22 @@ export const FilterMultiSelect = memo(function FilterMultiSelect({
         </div>
       )}
 
-      <div className="max-h-36 space-y-1 overflow-y-auto">
+      <div className="max-h-64 space-y-1 overflow-y-auto">
         {filtered.map((value) => (
           <label
             key={value.value}
-            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-50"
+            className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-50"
           >
             <input
               type="checkbox"
               checked={selected.includes(value.value)}
               onChange={() => toggle(value.value)}
+              className="mt-0.5 shrink-0"
             />
 
-            <span className="truncate">{value.label}</span>
+            <span className="min-w-0 flex-1 whitespace-normal break-words leading-5">
+              {value.label}
+            </span>
           </label>
         ))}
       </div>

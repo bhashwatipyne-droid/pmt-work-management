@@ -514,6 +514,55 @@ async def me(request: Request):
     return await get_acting_user(request)
 
 
+class ProfileUpdatePayload(BaseModel):
+    username: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+
+@api_router.patch("/auth/profile", response_model=User)
+async def update_own_profile(payload: ProfileUpdatePayload, request: Request):
+    user = await get_acting_user(request)
+    update_fields = {}
+
+    if payload.username is not None:
+        username = payload.username.strip().lower()
+
+        if not username:
+            raise HTTPException(status_code=400, detail="Username required")
+
+        existing_username = await db.users.find_one(
+            {"username": username, "id": {"$ne": user.id}}
+        )
+
+        if existing_username:
+            raise HTTPException(status_code=400, detail="Username already exists")
+
+        update_fields["username"] = username
+
+    if payload.new_password is not None:
+        doc = await db.users.find_one({"id": user.id}, {"_id": 0})
+
+        if not verify_password(payload.current_password or "", doc.get("password_hash", "")):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+        if len(payload.new_password) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 8 characters",
+            )
+
+        update_fields["password_hash"] = hash_password(payload.new_password)
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    await db.users.update_one({"id": user.id}, {"$set": update_fields})
+
+    updated = await db.users.find_one({"id": user.id}, {"_id": 0})
+    return User(**updated)
+
+
 @api_router.get("/users", response_model=List[User])
 async def list_users(request: Request):
     await get_acting_user(request)

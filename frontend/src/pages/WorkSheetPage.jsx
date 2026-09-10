@@ -760,6 +760,7 @@ export default function WorkSheetPage() {
           hiddenRows={hiddenRows}
           setHiddenRows={setHiddenRows}
           filters={filters}
+          setFilters={setFilters}
           onOpenFilters={() => setFiltersOpen(true)}
           onAddRow={isAdmin ? undefined : handleAddRow}
           addingRow={addingRow}

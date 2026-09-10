@@ -9,11 +9,11 @@ import {
 } from "react";
 import {
   ChevronsLeftRight,
-  Filter,
   Hand,
   Plus,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
+import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
@@ -103,12 +103,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   onDelete,
   onFill,
   filters,
+  setFilters,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
   hiddenRows,
   setHiddenRows,
-  onOpenFilters,
   onAddRow,
   addingRow = false,
   onSelectRange,
@@ -266,6 +266,132 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     () => (users || []).filter((user) => user.role !== "member"),
     [users]
   );
+
+  // Value lists for the per-column filter menus. Memoized on the
+  // underlying data only (not on `filters` or any per-render state), so
+  // opening/using one column's filter never recomputes or re-renders the
+  // others — same reasoning as the big filter panel's fix.
+  const projectFilterValues = useMemo(
+    () => (projects || []).map((p) => ({ value: p.id, label: p.name })),
+    [projects]
+  );
+  const deliverableFilterValues = useMemo(
+    () => (deliverables || []).map((d) => ({ value: d.id, label: d.name })),
+    [deliverables]
+  );
+  const stageFilterValues = useMemo(
+    () => (options.stages || []).map((s) => ({ value: s, label: s })),
+    [options.stages]
+  );
+  const typeFilterValues = useMemo(
+    () => (options.deliverable_types || []).map((t) => ({ value: t, label: t })),
+    [options.deliverable_types]
+  );
+  const categoryFilterValues = useMemo(
+    () => (options.work_categories || []).map((c) => ({ value: c, label: c })),
+    [options.work_categories]
+  );
+  const statusFilterValues = useMemo(
+    () => (options.statuses || []).map((s) => ({ value: s, label: s })),
+    [options.statuses]
+  );
+  const creatorFilterValues = useMemo(
+    () => nonAdminUsers.map((u) => ({ value: u.id, label: u.name })),
+    [nonAdminUsers]
+  );
+  const reviewerFilterValues = useMemo(
+    () => reviewerUsers.map((u) => ({ value: u.id, label: u.name })),
+    [reviewerUsers]
+  );
+
+  // Maps a column to its filter field(s) in the `filters` object. Columns
+  // not listed here (Client, Deliverable Name, Deliverable Link, Version,
+  // Time (min), Remarks) have no filter — their column menu only offers
+  // Sort and Hide.
+  const COLUMN_FILTER_KEYS = {
+    Project: "project_ids",
+    Deliverable: "deliverable_ids",
+    Stage: "stages",
+    "Deliverable Type": "deliverable_types",
+    Category: "work_categories",
+    Creator: "creator_ids",
+    Reviewer: "reviewer_ids",
+    Status: "statuses",
+  };
+
+  const COLUMN_FILTER_VALUES = {
+    Project: projectFilterValues,
+    Deliverable: deliverableFilterValues,
+    Stage: stageFilterValues,
+    "Deliverable Type": typeFilterValues,
+    Category: categoryFilterValues,
+    Creator: creatorFilterValues,
+    Reviewer: reviewerFilterValues,
+    Status: statusFilterValues,
+  };
+
+  // Renders the scoped control shown inside a single column's dropdown —
+  // just that column's own filter, not the full filter panel.
+  const renderColumnFilterControl = (column) => {
+    if (!setFilters) return null;
+
+    if (column === "Date") {
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block text-[11px] text-slate-500">From</label>
+            <input
+              type="date"
+              value={filters?.date_from || ""}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, date_from: e.target.value }))
+              }
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] text-slate-500">To</label>
+            <input
+              type="date"
+              value={filters?.date_to || ""}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, date_to: e.target.value }))
+              }
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    const key = COLUMN_FILTER_KEYS[column];
+    if (!key) return null;
+
+    return (
+      <FilterMultiSelect
+        values={COLUMN_FILTER_VALUES[column] || []}
+        selected={filters?.[key] || []}
+        onChange={(value) =>
+          setFilters((prev) => ({ ...prev, [key]: value }))
+        }
+      />
+    );
+  };
+
+  const clearColumnFilter = (column) => {
+    if (!setFilters) return;
+
+    if (column === "Date") {
+      setFilters((prev) => ({ ...prev, date_from: "", date_to: "" }));
+      return;
+    }
+
+    const key = COLUMN_FILTER_KEYS[column];
+    if (!key) return;
+
+    setFilters((prev) => ({ ...prev, [key]: [] }));
+  };
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -1204,30 +1330,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                       <span className="min-w-0 truncate">{column}</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => onOpenFilters?.()}
-                      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded transition ${
-                        isColumnFiltered(column)
-                          ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
-                          : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                      }`}
-                      title={
-                        isColumnFiltered(column)
-                          ? `${column} filter active`
-                          : `Filter ${column}`
-                      }
-                      aria-label={
-                        isColumnFiltered(column)
-                          ? `${column} filter active`
-                          : `Filter ${column}`
-                      }
-                    >
-                      <Filter className="h-3 w-3" />
-                    </button>
-
                     <WorksheetColumnMenu
                       column={column}
+                      isSorted={columnSort.key === column}
+                      isFiltered={isColumnFiltered(column)}
                       onSortAsc={() =>
                         setColumnSort({
                           key: column,
@@ -1240,9 +1346,6 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                           direction: "desc",
                         })
                       }
-                      onFilter={() => {
-                        onOpenFilters?.();
-                      }}
                       onHide={() =>
                         setHiddenColumns((current) =>
                           current.includes(column)
@@ -1250,6 +1353,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                             : [...current, column]
                         )
                       }
+                      filterControl={renderColumnFilterControl(column)}
+                      onClearFilter={() => clearColumnFilter(column)}
                     />
                   </div>
 

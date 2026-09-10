@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { X, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { FilterMultiSelect } from "./FilterMultiSelect";
 
 const EMPTY = {
   search: "",
@@ -21,67 +22,6 @@ const EMPTY = {
   statuses: [],
 };
 
-const MultiSelect = ({
-  label,
-  values,
-  selected,
-  onChange,
-}) => {
-  const [search, setSearch] = useState("");
-
-  const filtered = values.filter((value) =>
-    value.label.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const toggle = (value) => {
-    onChange(
-      selected.includes(value)
-        ? selected.filter((v) => v !== value)
-        : [...selected, value]
-    );
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="text-xs font-semibold text-slate-700">
-        {label}
-      </div>
-
-      {values.length > 6 && (
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Search ${label.toLowerCase()}...`}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-      )}
-
-      <div className="max-h-36 space-y-1 overflow-y-auto">
-        {filtered.map((value) => (
-          <label
-            key={value.value}
-            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-50"
-          >
-            <input
-              type="checkbox"
-              checked={selected.includes(value.value)}
-              onChange={() => toggle(value.value)}
-            />
-
-            <span className="truncate">
-              {value.label}
-            </span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-};
-
 export const WorksheetFilterPanel = ({
   open,
   onClose,
@@ -99,6 +39,53 @@ export const WorksheetFilterPanel = ({
       setDraft(filters);
     }
   }, [open, filters]);
+
+  // Each of these is recomputed only when the underlying data actually
+  // changes (projects/deliverables/options/users) — NOT on every draft
+  // edit. Previously these were built inline as `projects.map(...)` on
+  // every render, which handed every FilterMultiSelect a brand-new array
+  // reference on every keystroke/checkbox click, defeating memoization
+  // and making every checkbox in the panel re-render, not just the one
+  // that changed. That's what caused the multi-second lag on a single
+  // tick.
+  const projectValues = useMemo(
+    () => projects.map((p) => ({ value: p.id, label: p.name })),
+    [projects]
+  );
+  const deliverableValues = useMemo(
+    () => deliverables.map((d) => ({ value: d.id, label: d.name })),
+    [deliverables]
+  );
+  const stageValues = useMemo(
+    () => (options.stages || []).map((s) => ({ value: s, label: s })),
+    [options.stages]
+  );
+  const typeValues = useMemo(
+    () => (options.deliverable_types || []).map((t) => ({ value: t, label: t })),
+    [options.deliverable_types]
+  );
+  const categoryValues = useMemo(
+    () => (options.work_categories || []).map((c) => ({ value: c, label: c })),
+    [options.work_categories]
+  );
+  const creatorValues = useMemo(
+    () =>
+      users
+        .filter((u) => u.role !== "admin")
+        .map((u) => ({ value: u.id, label: u.name })),
+    [users]
+  );
+  const reviewerValues = useMemo(
+    () =>
+      users
+        .filter((u) => u.role !== "member")
+        .map((u) => ({ value: u.id, label: u.name })),
+    [users]
+  );
+  const statusValues = useMemo(
+    () => (options.statuses || []).map((s) => ({ value: s, label: s })),
+    [options.statuses]
+  );
 
   if (!open) return null;
 
@@ -129,8 +116,8 @@ export const WorksheetFilterPanel = ({
         aria-label="Close filters"
       />
 
-      <div className="absolute right-4 top-20 flex w-[380px] max-h-[calc(100vh-110px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b px-5 py-4">
+      <div className="absolute right-4 top-20 flex max-h-[calc(100vh-110px)] w-[380px] flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md">
+        <div className="flex items-center justify-between border-b px-4 py-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
               Filters
@@ -150,7 +137,7 @@ export const WorksheetFilterPanel = ({
           </button>
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto p-5">
+        <div className="flex-1 space-y-6 overflow-y-auto p-4">
 
           {/* DATE */}
           <div className="space-y-3">
@@ -192,115 +179,71 @@ export const WorksheetFilterPanel = ({
           </div>
 
           {/* PROJECT */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Project"
-            values={projects.map((p) => ({
-              value: p.id,
-              label: p.name,
-            }))}
+            values={projectValues}
             selected={draft.project_ids || []}
-            onChange={(value) =>
-              update("project_ids", value)
-            }
+            onChange={(value) => update("project_ids", value)}
           />
 
           {/* DELIVERABLE */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Deliverable"
-            values={deliverables.map((d) => ({
-              value: d.id,
-              label: d.name,
-            }))}
+            values={deliverableValues}
             selected={draft.deliverable_ids || []}
-            onChange={(value) =>
-              update("deliverable_ids", value)
-            }
+            onChange={(value) => update("deliverable_ids", value)}
           />
 
           {/* STAGE */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Stage"
-            values={(options.stages || []).map((s) => ({
-              value: s,
-              label: s,
-            }))}
+            values={stageValues}
             selected={draft.stages || []}
-            onChange={(value) =>
-              update("stages", value)
-            }
+            onChange={(value) => update("stages", value)}
           />
 
           {/* TYPE */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Deliverable Type"
-            values={(options.deliverable_types || []).map((t) => ({
-              value: t,
-              label: t,
-            }))}
+            values={typeValues}
             selected={draft.deliverable_types || []}
-            onChange={(value) =>
-              update("deliverable_types", value)
-            }
+            onChange={(value) => update("deliverable_types", value)}
           />
 
           {/* CATEGORY */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Category"
-            values={(options.work_categories || []).map((c) => ({
-              value: c,
-              label: c,
-            }))}
+            values={categoryValues}
             selected={draft.work_categories || []}
-            onChange={(value) =>
-              update("work_categories", value)
-            }
+            onChange={(value) => update("work_categories", value)}
           />
 
           {/* CREATOR */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Creator"
-            values={users
-              .filter((u) => u.role !== "admin")
-              .map((u) => ({
-                value: u.id,
-                label: u.name,
-              }))}
+            values={creatorValues}
             selected={draft.creator_ids || []}
-            onChange={(value) =>
-              update("creator_ids", value)
-            }
+            onChange={(value) => update("creator_ids", value)}
           />
 
           {/* REVIEWER */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Reviewer"
-            values={users
-              .filter((u) => u.role !== "member")
-              .map((u) => ({
-                value: u.id,
-                label: u.name,
-              }))}
+            values={reviewerValues}
             selected={draft.reviewer_ids || []}
-            onChange={(value) =>
-              update("reviewer_ids", value)
-            }
+            onChange={(value) => update("reviewer_ids", value)}
           />
 
           {/* STATUS */}
-          <MultiSelect
+          <FilterMultiSelect
             label="Status"
-            values={(options.statuses || []).map((s) => ({
-              value: s,
-              label: s,
-            }))}
+            values={statusValues}
             selected={draft.statuses || []}
-            onChange={(value) =>
-              update("statuses", value)
-            }
+            onChange={(value) => update("statuses", value)}
           />
         </div>
 
-        <div className="flex items-center justify-between border-t bg-slate-50 px-5 py-3">
+        <div className="flex items-center justify-between border-t bg-slate-50 px-4 py-3">
           <Button
             variant="ghost"
             size="sm"

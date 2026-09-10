@@ -1,0 +1,70 @@
+import { memo, useMemo, useState } from "react";
+import { Search } from "lucide-react";
+import { Input } from "../ui/input";
+
+// Memoized so that editing one filter (e.g. checking a Creator box)
+// doesn't force every other unrelated MultiSelect in the same panel to
+// re-filter and re-render its own (potentially long) list. Combined with
+// memoizing the `values` array itself at the call site, this is what
+// makes the checkboxes feel instant instead of lagging a couple of
+// seconds on a large project/deliverable/user list.
+export const FilterMultiSelect = memo(function FilterMultiSelect({
+  label,
+  values,
+  selected,
+  onChange,
+}) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search) return values;
+    const needle = search.toLowerCase();
+    return values.filter((value) => value.label.toLowerCase().includes(needle));
+  }, [values, search]);
+
+  const toggle = (value) => {
+    onChange(
+      selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value]
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      {label && (
+        <div className="text-xs font-semibold text-slate-700">{label}</div>
+      )}
+
+      {values.length > 6 && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${(label || "").toLowerCase()}...`}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+      )}
+
+      <div className="max-h-36 space-y-1 overflow-y-auto">
+        {filtered.map((value) => (
+          <label
+            key={value.value}
+            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-50"
+          >
+            <input
+              type="checkbox"
+              checked={selected.includes(value.value)}
+              onChange={() => toggle(value.value)}
+            />
+
+            <span className="truncate">{value.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+});

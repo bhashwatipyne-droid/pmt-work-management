@@ -251,9 +251,18 @@ export default function WorkSheetPage() {
       const dateA = a.work_date || "";
       const dateB = b.work_date || "";
 
-      return sortDirection === "desc"
-        ? dateB.localeCompare(dateA)
-        : dateA.localeCompare(dateB);
+      if (dateA !== dateB) {
+        return sortDirection === "desc"
+          ? dateB.localeCompare(dateA)
+          : dateA.localeCompare(dateB);
+      }
+
+      // Same work_date: break the tie by creation time, newest first,
+      // so a just-added row doesn't get lost among older same-day rows
+      // (matters most after a re-fetch, e.g. following hide/unhide).
+      const createdA = a.created_at || "";
+      const createdB = b.created_at || "";
+      return createdB.localeCompare(createdA);
     });
   }, [items, sortDirection]);
 

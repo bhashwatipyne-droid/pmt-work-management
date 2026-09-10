@@ -621,7 +621,7 @@ async def list_work_items(
     items = (
         await db.work_items
         .find(query, {"_id": 0})
-        .sort("work_date", -1)
+        .sort([("work_date", -1), ("created_at", -1)])
         .to_list(5000)
     )
 

@@ -125,14 +125,6 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     direction: "asc",
   });
 
-  // Exposed so the page can force the sheet back to its default
-  // (newest-first) order when a row is added — otherwise a row added
-  // while a per-column sort is active lands wherever that column's
-  // sort puts it instead of being visible at the top.
-  useImperativeHandle(ref, () => ({
-    resetColumnSort: () => setColumnSort({ key: null, direction: "asc" }),
-  }), []);
-
   const [hiddenColumns, setHiddenColumns] = useState(() => {
     try {
       const saved = localStorage.getItem("worksheet_hidden_columns");
@@ -177,6 +169,24 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const onFillRef = useRef(onFill);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
+
+  // Exposed so the page can force the sheet back to its default
+  // (newest-first) order when a row is added — otherwise a row added
+  // while a per-column sort is active lands wherever that column's
+  // sort puts it instead of being visible at the top. Also scrolls the
+  // (virtualized) table back to the top, since the new row is only
+  // ever rendered there — without this, adding a row while scrolled
+  // further down never brings it into view, which looks identical to
+  // "it got added at the bottom."
+  useImperativeHandle(ref, () => ({
+    resetColumnSort: () => setColumnSort({ key: null, direction: "asc" }),
+    scrollToTop: () => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = 0;
+      }
+      setScrollTop(0);
+    },
+  }), []);
 
   useEffect(() => {
     localStorage.setItem(columnOrderKey, JSON.stringify(columnOrder));

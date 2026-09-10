@@ -304,6 +304,13 @@ export default function WorkSheetPage() {
       // newest first — where the new row is guaranteed to be visible.
       tableRef.current?.resetColumnSort();
 
+      // The new row is inserted at the top of the (correctly-ordered) data,
+      // but if the sheet is scrolled further down, the virtualized table
+      // won't show it — which looks identical to "it got added at the
+      // bottom" even though the underlying order is right. Scroll back up
+      // so the row is actually visible.
+      tableRef.current?.scrollToTop();
+
       // New row goes to the top of the sheet, not the bottom.
       setItems((prev) => [created, ...prev]);
       toast.success("Row added");

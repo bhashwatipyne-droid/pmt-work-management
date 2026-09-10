@@ -4,12 +4,19 @@ import { Input } from "../ui/input";
 
 // Memoized so that editing one filter (e.g. checking a Creator box)
 // doesn't force every other unrelated MultiSelect in the same panel to
-// re-filter and re-render its own (potentially long) list. Combined with
-// memoizing the `values` array itself at the call site, this is what
-// makes the checkboxes feel instant instead of lagging a couple of
-// seconds on a large project/deliverable/user list.
+// re-filter and re-render its own (potentially long) list. This only
+// works if EVERY prop stays referentially stable across unrelated
+// updates — including `onChange`. That's why this takes `filterKey` +
+// a shared `onChange(filterKey, value)` dispatcher instead of a
+// pre-bound `onChange(value)` closure: a closure like
+// `(v) => update("project_ids", v)` is a brand-new function on every
+// parent render, which makes React.memo bail out and re-render
+// every list on every single checkbox click regardless of the
+// `values`/`selected` memoization — this was the actual remaining
+// cause of the multi-second lag.
 export const FilterMultiSelect = memo(function FilterMultiSelect({
   label,
+  filterKey,
   values,
   selected,
   onChange,
@@ -23,11 +30,10 @@ export const FilterMultiSelect = memo(function FilterMultiSelect({
   }, [values, search]);
 
   const toggle = (value) => {
-    onChange(
-      selected.includes(value)
-        ? selected.filter((v) => v !== value)
-        : [...selected, value]
-    );
+    const next = selected.includes(value)
+      ? selected.filter((v) => v !== value)
+      : [...selected, value];
+    onChange(filterKey, next);
   };
 
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -96,6 +96,18 @@ export const WorksheetFilterPanel = ({
     }));
   };
 
+  // Stable across every render (setDraft's identity from useState never
+  // changes) — passed as-is to every FilterMultiSelect below so
+  // React.memo can actually tell "nothing relevant to me changed" and
+  // skip re-rendering the other seven lists when only one checkbox in
+  // one of them was clicked.
+  const updateField = useCallback((key, value) => {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }, []);
+
   const clearAll = () => {
     setDraft({
       ...EMPTY,
@@ -181,65 +193,73 @@ export const WorksheetFilterPanel = ({
           {/* PROJECT */}
           <FilterMultiSelect
             label="Project"
+            filterKey="project_ids"
             values={projectValues}
             selected={draft.project_ids || []}
-            onChange={(value) => update("project_ids", value)}
+            onChange={updateField}
           />
 
           {/* DELIVERABLE */}
           <FilterMultiSelect
             label="Deliverable"
+            filterKey="deliverable_ids"
             values={deliverableValues}
             selected={draft.deliverable_ids || []}
-            onChange={(value) => update("deliverable_ids", value)}
+            onChange={updateField}
           />
 
           {/* STAGE */}
           <FilterMultiSelect
             label="Stage"
+            filterKey="stages"
             values={stageValues}
             selected={draft.stages || []}
-            onChange={(value) => update("stages", value)}
+            onChange={updateField}
           />
 
           {/* TYPE */}
           <FilterMultiSelect
             label="Deliverable Type"
+            filterKey="deliverable_types"
             values={typeValues}
             selected={draft.deliverable_types || []}
-            onChange={(value) => update("deliverable_types", value)}
+            onChange={updateField}
           />
 
           {/* CATEGORY */}
           <FilterMultiSelect
             label="Category"
+            filterKey="work_categories"
             values={categoryValues}
             selected={draft.work_categories || []}
-            onChange={(value) => update("work_categories", value)}
+            onChange={updateField}
           />
 
           {/* CREATOR */}
           <FilterMultiSelect
             label="Creator"
+            filterKey="creator_ids"
             values={creatorValues}
             selected={draft.creator_ids || []}
-            onChange={(value) => update("creator_ids", value)}
+            onChange={updateField}
           />
 
           {/* REVIEWER */}
           <FilterMultiSelect
             label="Reviewer"
+            filterKey="reviewer_ids"
             values={reviewerValues}
             selected={draft.reviewer_ids || []}
-            onChange={(value) => update("reviewer_ids", value)}
+            onChange={updateField}
           />
 
           {/* STATUS */}
           <FilterMultiSelect
             label="Status"
+            filterKey="statuses"
             values={statusValues}
             selected={draft.statuses || []}
-            onChange={(value) => update("statuses", value)}
+            onChange={updateField}
           />
         </div>
 

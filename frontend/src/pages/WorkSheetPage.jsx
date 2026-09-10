@@ -665,7 +665,7 @@ export default function WorkSheetPage() {
         filters={filters}
         setFilters={setFilters}
         options={options}
-        onOpenFilters={() => setFiltersOpen(true)}
+        onOpenFilters={() => setFiltersOpen((current) => !current)}
         activeFilterCount={activeFilterCount}
         onAddRow={handleAddRow}
         canAdd={false}
@@ -761,7 +761,6 @@ export default function WorkSheetPage() {
           setHiddenRows={setHiddenRows}
           filters={filters}
           setFilters={setFilters}
-          onOpenFilters={() => setFiltersOpen(true)}
           onAddRow={isAdmin ? undefined : handleAddRow}
           addingRow={addingRow}
           onSelectRange={handleSelectRange}

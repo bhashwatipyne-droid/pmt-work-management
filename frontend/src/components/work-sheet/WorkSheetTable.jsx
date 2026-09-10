@@ -330,6 +330,15 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     Status: statusFilterValues,
   };
 
+  // Stable across renders (only depends on setFilters, itself stable from
+  // the page's useCallback) — passed to FilterMultiSelect as its onChange.
+  const updateColumnFilter = useCallback(
+    (key, value) => {
+      setFilters?.((prev) => ({ ...prev, [key]: value }));
+    },
+    [setFilters]
+  );
+
   // Renders the scoped control shown inside a single column's dropdown —
   // just that column's own filter, not the full filter panel.
   const renderColumnFilterControl = (column) => {
@@ -370,11 +379,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
     return (
       <FilterMultiSelect
+        filterKey={key}
         values={COLUMN_FILTER_VALUES[column] || []}
         selected={filters?.[key] || []}
-        onChange={(value) =>
-          setFilters((prev) => ({ ...prev, [key]: value }))
-        }
+        onChange={updateColumnFilter}
       />
     );
   };

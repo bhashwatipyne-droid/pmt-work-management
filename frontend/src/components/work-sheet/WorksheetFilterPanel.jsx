@@ -87,6 +87,19 @@ export const WorksheetFilterPanel = ({
     [options.statuses]
   );
 
+  // Stable across every render (setDraft's identity from useState never
+  // changes) — passed as-is to every FilterMultiSelect below so
+  // React.memo can actually tell "nothing relevant to me changed" and
+  // skip re-rendering the other seven lists when only one checkbox in
+  // one of them was clicked. Must be defined before any early return —
+  // hooks can't be called conditionally.
+  const updateField = useCallback((key, value) => {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }, []);
+
   if (!open) return null;
 
   const update = (key, value) => {
@@ -95,18 +108,6 @@ export const WorksheetFilterPanel = ({
       [key]: value,
     }));
   };
-
-  // Stable across every render (setDraft's identity from useState never
-  // changes) — passed as-is to every FilterMultiSelect below so
-  // React.memo can actually tell "nothing relevant to me changed" and
-  // skip re-rendering the other seven lists when only one checkbox in
-  // one of them was clicked.
-  const updateField = useCallback((key, value) => {
-    setDraft((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  }, []);
 
   const clearAll = () => {
     setDraft({

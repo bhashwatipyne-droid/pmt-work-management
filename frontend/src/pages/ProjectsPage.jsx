@@ -15,6 +15,7 @@ import { PROJECT_STATUSES } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
 import { ProjectMetricCard } from "@/components/projects/ProjectMetricCard";
 import { KanbanColumn } from "@/components/projects/KanbanColumn";
+import { KanbanBoard } from "@/components/ui/KanbanBoard";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 
@@ -268,19 +269,17 @@ export default function ProjectsPage() {
           </p>
         </div>
       ) : view === "chart" ? (
-        <div className="overflow-x-auto pb-4">
-          <div className="grid min-w-[1680px] grid-cols-6 gap-4">
-            {PROJECT_STATUSES.map((s) => (
-              <KanbanColumn
-                key={s}
-                status={s}
-                projects={byStatus[s]}
-                users={users}
-                onOpenProject={(p) => navigate(`/projects/${p.id}`)}
-              />
-            ))}
-          </div>
-        </div>
+        <KanbanBoard minWidth="1920px">
+          {PROJECT_STATUSES.map((s) => (
+            <KanbanColumn
+              key={s}
+              status={s}
+              projects={byStatus[s]}
+              users={users}
+              onOpenProject={(p) => navigate(`/projects/${p.id}`)}
+            />
+          ))}
+        </KanbanBoard>
       ) : (
         <ProjectListTable
           projects={filtered}

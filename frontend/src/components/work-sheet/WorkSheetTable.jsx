@@ -1122,12 +1122,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   type="button"
                   onClick={onAddRow}
                   disabled={addingRow}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm transition-all hover:scale-105 hover:bg-indigo-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
                   title="Add a row"
                   aria-label="Add a row"
                   data-testid="worksheet-add-row-btn"
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-4 w-4" strokeWidth={2.75} />
                 </button>
               ) : (
                 "#"

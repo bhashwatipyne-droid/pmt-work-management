@@ -17,6 +17,8 @@ import {
   moveApprovalItem,
 } from "@/services/api";
 import { APPROVALS } from "@/constants/testIds";
+import { KanbanBoard } from "@/components/ui/KanbanBoard";
+import { KanbanColumn } from "@/components/ui/KanbanColumn";
 
 const COLUMNS = [
   {
@@ -258,7 +260,7 @@ export default function ApprovalsPage() {
           </div>
         </div>
       ) : (
-        <div className="grid min-w-[1100px] grid-cols-4 gap-4">
+        <KanbanBoard minWidth="1360px">
           {COLUMNS.map((column) => {
             const Icon = column.icon;
             const items = board[column.key] || [];
@@ -268,8 +270,14 @@ export default function ApprovalsPage() {
               dragging.approval_type !== column.key;
 
             return (
-              <div
+              <KanbanColumn
                 key={column.key}
+                title={column.label}
+                count={items.length}
+                icon={Icon}
+                description={column.description}
+                empty={items.length === 0 ? "No pending approvals" : null}
+                isDropTarget={isDropTarget}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
@@ -278,160 +286,125 @@ export default function ApprovalsPage() {
                   e.preventDefault();
                   handleDrop(column.key);
                 }}
-                className={`flex min-h-[560px] flex-col rounded-xl border bg-[#f7f9fc] transition-colors ${
-                  isDropTarget
-                    ? "border-[#b8b8e8] bg-[#f3f3ff]"
-                    : "border-border"
-                }`}
               >
-                <div className="border-b border-border bg-white px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-[#2b2bb5]" />
+                {items.map((item) => {
+                  const isMoving = movingId === item.id;
 
-                      <span className="text-sm font-semibold text-foreground">
-                        {column.label}
-                      </span>
-                    </div>
+                  return (
+                    <div
+                      key={item.id}
+                      draggable={!isMoving}
+                      onDragStart={(e) => {
+                        setDragging(item);
 
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                      {items.length}
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {column.description}
-                  </p>
-                </div>
-
-                <div className="flex-1 space-y-3 p-3">
-                  {items.length === 0 ? (
-                    <div className="flex min-h-[180px] items-center justify-center rounded-lg border border-dashed border-border bg-white/60 px-4 text-center">
-                      <p className="text-xs text-muted-foreground">
-                        No pending approvals
-                      </p>
-                    </div>
-                  ) : (
-                    items.map((item) => {
-                      const isMoving = movingId === item.id;
-
-                      return (
-                        <div
-                          key={item.id}
-                          draggable={!isMoving}
-                          onDragStart={(e) => {
-                            setDragging(item);
-
-                            e.dataTransfer.effectAllowed = "move";
-                            e.dataTransfer.setData(
-                              "text/plain",
-                              String(item.id)
-                            );
-                          }}
-                          onDragEnd={() => {
-                            setDragging(null);
-                          }}
-                          data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
-                          className={`rounded-xl border border-border bg-white p-4 shadow-sm transition-all ${
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData(
+                          "text/plain",
+                          String(item.id)
+                        );
+                      }}
+                      onDragEnd={() => {
+                        setDragging(null);
+                      }}
+                      data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
+                      className={`rounded-xl border border-border bg-white p-4 shadow-sm transition-all ${
+                        isMoving
+                          ? "opacity-50"
+                          : "hover:shadow-md"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <GripVertical
+                          className={`mt-0.5 h-4 w-4 shrink-0 text-slate-300 ${
                             isMoving
-                              ? "opacity-50"
-                              : "hover:shadow-md"
+                              ? "cursor-not-allowed"
+                              : "cursor-grab"
                           }`}
-                        >
-                          <div className="flex items-start gap-2">
-                            <GripVertical
-                              className={`mt-0.5 h-4 w-4 shrink-0 text-slate-300 ${
-                                isMoving
-                                  ? "cursor-not-allowed"
-                                  : "cursor-grab"
-                              }`}
-                            />
+                        />
 
-                            <div className="min-w-0 flex-1">
-                              <div className="font-mono text-[10px] text-muted-foreground">
-                                {item.project_code}
-                              </div>
-
-                              <div className="mt-1 text-sm font-semibold leading-5 text-foreground">
-                                {item.deliverable_name}
-                              </div>
-
-                              <div className="mt-1 text-[11px] text-muted-foreground">
-                                {item.project_name} ·{" "}
-                                {item.client_name || "—"}
-                              </div>
-                            </div>
-
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                              <Clock3 className="h-3 w-3" />
-                              Pending
-                            </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-mono text-[10px] text-muted-foreground">
+                            {item.project_code}
                           </div>
 
-                          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                            <span>{item.current_stage}</span>
-
-                            <span>·</span>
-
-                            <span>
-                              Owner: {item.owner_name}
-                            </span>
+                          <div className="mt-1 text-sm font-semibold leading-5 text-foreground">
+                            {item.deliverable_name}
                           </div>
 
-                          {item.comments && (
-                            <div className="mt-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
-                              {item.comments}
-                            </div>
-                          )}
-
-                          <textarea
-                            data-testid={`${APPROVALS.notePrefix}-${item.id}`}
-                            placeholder="Add a review note..."
-                            value={notes[item.id] || ""}
-                            onChange={(e) =>
-                              setNotes((prev) => ({
-                                ...prev,
-                                [item.id]: e.target.value,
-                              }))
-                            }
-                            className="mt-3 min-h-[58px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[11px] leading-4 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                            rows={2}
-                          />
-
-                          <div className="mt-3 flex gap-2">
-                            <button
-                              data-testid={`${APPROVALS.approvePrefix}-${item.id}`}
-                              onClick={() =>
-                                decide(item, "approve")
-                              }
-                              disabled={isMoving}
-                              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-[hsl(240_61%_36%)] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              Approve
-                            </button>
-
-                            <button
-                              data-testid={`${APPROVALS.rejectPrefix}-${item.id}`}
-                              onClick={() =>
-                                decide(item, "reject")
-                              }
-                              disabled={isMoving}
-                              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                              Send Back
-                            </button>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            {item.project_name} ·{" "}
+                            {item.client_name || "—"}
                           </div>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
+
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
+                          <Clock3 className="h-3 w-3" />
+                          Pending
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                        <span>{item.current_stage}</span>
+
+                        <span>·</span>
+
+                        <span>
+                          Owner: {item.owner_name}
+                        </span>
+                      </div>
+
+                      {item.comments && (
+                        <div className="mt-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
+                          {item.comments}
+                        </div>
+                      )}
+
+                      <textarea
+                        data-testid={`${APPROVALS.notePrefix}-${item.id}`}
+                        placeholder="Add a review note..."
+                        value={notes[item.id] || ""}
+                        onChange={(e) =>
+                          setNotes((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                        className="mt-3 min-h-[58px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[11px] leading-4 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        rows={2}
+                      />
+
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          data-testid={`${APPROVALS.approvePrefix}-${item.id}`}
+                          onClick={() =>
+                            decide(item, "approve")
+                          }
+                          disabled={isMoving}
+                          className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-[hsl(240_61%_36%)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Approve
+                        </button>
+
+                        <button
+                          data-testid={`${APPROVALS.rejectPrefix}-${item.id}`}
+                          onClick={() =>
+                            decide(item, "reject")
+                          }
+                          disabled={isMoving}
+                          className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                          Send Back
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </KanbanColumn>
             );
           })}
-        </div>
+        </KanbanBoard>
       )}
     </div>
   );

@@ -158,84 +158,14 @@ export default function WorkSheetPage() {
     if (!currentUser) return;
     setLoading(true);
 
-    const params = {
-      search: filters.search || undefined,
-      month: filters.month || undefined,
-
-      date_from: filters.date_from || undefined,
-      date_to: filters.date_to || undefined,
-
-      project_id: filters.project_ids?.length
-        ? filters.project_ids
-        : undefined,
-
-      deliverable_id: filters.deliverable_ids?.length
-        ? filters.deliverable_ids
-        : undefined,
-
-      // Master can use the Stage filter. Department sheets are hard-scoped
-      // to their own stage and ignore any Stage selection from the filter panel.
-      stage:
-        activeSheet === "Master"
-          ? (filters.stages?.length ? filters.stages : undefined)
-          : [DEPARTMENT_TO_STAGE[activeSheet] || activeSheet],
-
-      deliverable_type: filters.deliverable_types?.length
-        ? filters.deliverable_types
-        : undefined,
-
-      work_category: filters.work_categories?.length
-        ? filters.work_categories
-        : undefined,
-
-      creator_id: filters.creator_ids?.length
-        ? filters.creator_ids
-        : undefined,
-
-      reviewer_id: filters.reviewer_ids?.length
-        ? filters.reviewer_ids
-        : undefined,
-
-      status: filters.statuses?.length
-        ? filters.statuses
-        : undefined,
-    };
-
-    getWorkItems(currentUser.id, params)
+    // Fetches the whole dataset once, unfiltered. Every filter and tab
+    // switch below is applied client-side against this single copy —
+    // no network round-trip per filter change, so it's instant instead
+    // of waiting on a request each time (and immune to a slow/sleeping
+    // backend instance).
+    getWorkItems(currentUser.id, {})
       .then((data) => {
-        const rows = Array.isArray(data) ? data : [];
-        const sheetStage =
-          activeSheet === "Master"
-            ? null
-            : DEPARTMENT_TO_STAGE[activeSheet] || activeSheet;
-        const selectedStages =
-          activeSheet === "Master" && filters.stages?.length
-            ? new Set(
-                filters.stages.map((stage) =>
-                  String(stage).trim().toLowerCase()
-                )
-              )
-            : null;
-
-        // Defensive client-side guard. Department sheets are always restricted
-        // to their own stage. On Master, an explicitly selected Stage filter is
-        // also enforced locally so the table cannot show rows outside the filter
-        // even if an API/deployment returns an unfiltered response.
-        setItems(
-          sheetStage
-            ? rows.filter(
-                (item) =>
-                  String(item.stage || "").trim().toLowerCase() ===
-                  sheetStage.trim().toLowerCase()
-              )
-            : selectedStages
-              ? rows.filter((item) =>
-                  selectedStages.has(
-                    String(item.stage || "").trim().toLowerCase()
-                  )
-                )
-              : rows
-        );
+        setItems(Array.isArray(data) ? data : []);
       })
       .catch(() => toast.error("Could not load work items"))
       .finally(() => setLoading(false));
@@ -243,12 +173,75 @@ export default function WorkSheetPage() {
 
   useEffect(() => {
     fetchItems();
-    setSelectedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, filters, activeSheet]);
+  }, [currentUser]);
+
+  // Selection is tied to whatever's currently visible — clear it whenever
+  // the visible set could change underneath it, even though this no
+  // longer triggers a refetch.
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [filters, activeSheet]);
+
+  // All filtering (search, date range, project/deliverable/type/category,
+  // creator, reviewer, status) plus the per-tab stage scoping happens here,
+  // client-side, against the single fetched copy of `items` — this is what
+  // makes applying a filter instant rather than waiting on a server round
+  // trip.
+  const filteredItems = useMemo(() => {
+    const sheetStage =
+      activeSheet === "Master"
+        ? null
+        : (DEPARTMENT_TO_STAGE[activeSheet] || activeSheet).trim().toLowerCase();
+
+    const selectedStages =
+      activeSheet === "Master" && filters.stages?.length
+        ? new Set(filters.stages.map((s) => String(s).trim().toLowerCase()))
+        : null;
+
+    const search = (filters.search || "").trim().toLowerCase();
+    const projectIds = filters.project_ids?.length ? new Set(filters.project_ids) : null;
+    const deliverableIds = filters.deliverable_ids?.length ? new Set(filters.deliverable_ids) : null;
+    const deliverableTypes = filters.deliverable_types?.length ? new Set(filters.deliverable_types) : null;
+    const workCategories = filters.work_categories?.length ? new Set(filters.work_categories) : null;
+    const creatorIds = filters.creator_ids?.length ? new Set(filters.creator_ids) : null;
+    const reviewerIds = filters.reviewer_ids?.length ? new Set(filters.reviewer_ids) : null;
+    const statuses = filters.statuses?.length ? new Set(filters.statuses) : null;
+
+    return items.filter((item) => {
+      const itemStage = String(item.stage || "").trim().toLowerCase();
+
+      // Department sheets are hard-scoped to their own stage. Master can
+      // optionally scope to a Stage selection from the filter panel.
+      if (sheetStage) {
+        if (itemStage !== sheetStage) return false;
+      } else if (selectedStages && !selectedStages.has(itemStage)) {
+        return false;
+      }
+
+      if (search) {
+        const haystack = `${item.deliverable_name || ""} ${item.remarks || ""}`.toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+
+      if (filters.date_from && (item.work_date || "") < filters.date_from) return false;
+      if (filters.date_to && (item.work_date || "") > filters.date_to) return false;
+      if (filters.month && item.month !== filters.month) return false;
+
+      if (projectIds && !projectIds.has(item.project_id)) return false;
+      if (deliverableIds && !deliverableIds.has(item.deliverable_id)) return false;
+      if (deliverableTypes && !deliverableTypes.has(item.deliverable_type)) return false;
+      if (workCategories && !workCategories.has(item.work_category)) return false;
+      if (creatorIds && !creatorIds.has(item.creator_id)) return false;
+      if (reviewerIds && !reviewerIds.has(item.reviewer_id)) return false;
+      if (statuses && !statuses.has(item.status)) return false;
+
+      return true;
+    });
+  }, [items, filters, activeSheet]);
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    return [...filteredItems].sort((a, b) => {
       const dateA = a.work_date || "";
       const dateB = b.work_date || "";
 
@@ -265,7 +258,7 @@ export default function WorkSheetPage() {
       const createdB = b.created_at || "";
       return createdB.localeCompare(createdA);
     });
-  }, [items, sortDirection]);
+  }, [filteredItems, sortDirection]);
 
   const activeFilterCount =
     Number(Boolean(filters.date_from || filters.date_to)) +
@@ -528,7 +521,7 @@ export default function WorkSheetPage() {
     setSelectedIds([]);
   };
   const toggleSelectAll = () => {
-    const visibleIds = items.map((item) => item.id);
+    const visibleIds = filteredItems.map((item) => item.id);
 
     setSelectedIds((prev) => {
       const allSelected =
@@ -676,7 +669,7 @@ export default function WorkSheetPage() {
         activeFilterCount={activeFilterCount}
         onAddRow={handleAddRow}
         canAdd={false}
-        resultCount={items.length}
+        resultCount={filteredItems.length}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
         onOpenQuickLogger={

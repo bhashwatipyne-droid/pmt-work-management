@@ -232,7 +232,7 @@ export const WorksheetFilterPanel = ({
 
           {/* TYPE */}
           <MultiSelect
-            label="Type"
+            label="Deliverable Type"
             values={(options.deliverable_types || []).map((t) => ({
               value: t,
               label: t,

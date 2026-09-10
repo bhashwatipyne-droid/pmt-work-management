@@ -119,7 +119,7 @@ DELIVERABLE_TYPE_CATEGORIES = {
 
 STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Rework", "Closed"]
 MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
-MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link"}
+MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
 PROJECT_STATUSES = ["Planning", "Active", "In Rework", "Completed"]
 STAGES = ["Content", "Design", "Animate", "Finish"]

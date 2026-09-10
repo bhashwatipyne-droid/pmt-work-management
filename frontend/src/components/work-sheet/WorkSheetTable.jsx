@@ -23,7 +23,7 @@ const COLUMNS = [
   "Stage",
   "Deliverable Name",
   "Deliverable Link",
-  "Type",
+  "Deliverable Type",
   "Category",
   "Version",
   "Time (min)",
@@ -59,7 +59,7 @@ const COLUMN_FIELDS = {
   Stage: "stage",
   "Deliverable Name": "deliverable_name",
   "Deliverable Link": "deliverable_link",
-  Type: "deliverable_type",
+  "Deliverable Type": "deliverable_type",
   Category: "work_category",
   Version: "version",
   "Time (min)": "time_taken_minutes",
@@ -320,9 +320,12 @@ export const WorkSheetTable = ({
       .filter(Boolean);
     const orderedIds = new Set(ordered.map((item) => item.id));
 
+    // Items not yet part of the saved drag order are newly added rows —
+    // surface them at the top instead of burying them after everything
+    // the user has already arranged.
     return [
-      ...ordered,
       ...sortedAllTableItems.filter((item) => !orderedIds.has(item.id)),
+      ...ordered,
     ];
   }, [sortedAllTableItems, rowOrder, columnSort.key]);
 
@@ -693,7 +696,7 @@ export const WorkSheetTable = ({
           return { deliverable_name: clear ? "" : text };
         case "Deliverable Link":
           return { deliverable_link: clear ? "" : text };
-        case "Type": {
+        case "Deliverable Type": {
           if (clear) return { deliverable_type: "", work_category: "" };
           const match = (options.deliverable_types || []).find((t) =>
             ciEquals(t, text)
@@ -1051,7 +1054,7 @@ export const WorkSheetTable = ({
         return Boolean(filters?.deliverable_ids?.length);
       case "Stage":
         return Boolean(filters?.stages?.length);
-      case "Type":
+      case "Deliverable Type":
         return Boolean(filters?.deliverable_types?.length);
       case "Category":
         return Boolean(filters?.work_categories?.length);

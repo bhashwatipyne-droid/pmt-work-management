@@ -273,24 +273,23 @@ export default function WorkSheetPage() {
     addingRowRef.current = true;
     setAddingRow(true);
     try {
-      const defaultType = options.deliverable_types?.[0] || "";
       const created = await createWorkItem(currentUser.id, {
         work_date: new Date().toISOString().slice(0, 10),
         deliverable_name: "",
-        deliverable_type: defaultType,
-        work_category:
-          options.deliverable_type_categories?.[defaultType] || "",
+        deliverable_type: "",
+        work_category: "",
         creator_id: currentUser.id,
         status: "Not Started",
-        client_id: localStorage.getItem(LS.client) || null,
-        project_id: localStorage.getItem(LS.project) || null,
-        deliverable_id: localStorage.getItem(LS.deliverable) || null,
+        client_id: null,
+        project_id: null,
+        deliverable_id: null,
         stage:
           activeSheet === "Master"
             ? (DEPARTMENT_TO_STAGE[currentUser.department] || null)
             : (DEPARTMENT_TO_STAGE[activeSheet] || activeSheet),
       });
-      setItems((prev) => [...prev, created]);
+      // New row goes to the top of the sheet, not the bottom.
+      setItems((prev) => [created, ...prev]);
       toast.success("Row added");
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add row");

@@ -117,7 +117,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     4: "Stage",
     5: "Deliverable Name",
     6: "Deliverable Link",
-    7: "Type",
+    7: "Deliverable Type",
     8: "Category",
     9: "Version",
     10: "Time (min)",
@@ -579,7 +579,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         {renderFillHandle(6)}
       </TableCell>
         );
-      case "Type":
+      case "Deliverable Type":
         return (
 <TableCell
         style={cellStyle(7)}
@@ -591,7 +591,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        {canEditExtra ? (
+        {canEditRow ? (
           <SearchableSelect
               open={openSelect === "type"}
               onOpenChange={(open) => setOpenSelect(open ? "type" : null)}
@@ -605,10 +605,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 { value: NONE_VALUE, label: "—" },
                 ...(options.deliverable_types || []).map((type) => ({ value: type, label: type })),
               ]}
-              placeholder="Type"
+              placeholder="Deliverable Type"
               searchPlaceholder="Type to search..."
               emptyText="No types found"
-              disabled={!canEditExtra}
+              disabled={!canEditRow}
               triggerProps={sheetCell(7)}
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
               contentClassName="w-[320px] p-0"

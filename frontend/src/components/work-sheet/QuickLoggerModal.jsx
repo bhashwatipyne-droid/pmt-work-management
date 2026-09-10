@@ -734,7 +734,7 @@ export default function QuickLoggerModal({
                         resolvedDeliverable?.name ||
                           resolvedDeliverable?.deliverable_name,
                       ],
-                  ["Type", resolvedType],
+                  ["Deliverable Type", resolvedType],
                   ["Time", parsedDuration ? formatDuration(parsedDuration) : ""],
                 ].map(([label, value]) => (
                   <div

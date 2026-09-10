@@ -10,7 +10,7 @@ export const COLUMN_WIDTHS = {
   Stage: "110px",
   "Deliverable Name": "180px",
   "Deliverable Link": "180px",
-  Type: "150px",
+  "Deliverable Type": "170px",
   Category: "140px",
   Version: "100px",
   "Time (min)": "110px",

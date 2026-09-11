@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { format, parseISO } from "date-fns";
 import {
   Search,
   Plus,
@@ -8,6 +9,7 @@ import {
   LayoutGrid,
   List,
   X,
+  CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +36,12 @@ import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
@@ -328,6 +336,16 @@ export default function ProjectsPage() {
     }
   };
 
+  const dateRange = {
+    from: dateFrom ? parseISO(dateFrom) : undefined,
+    to: dateTo ? parseISO(dateTo) : undefined,
+  };
+
+  const handleDateRangeChange = (range) => {
+    setDateFrom(range?.from ? format(range.from, "yyyy-MM-dd") : "");
+    setDateTo(range?.to ? format(range.to, "yyyy-MM-dd") : "");
+  };
+
   if (userLoading || !currentUser) return null;
 
   if (currentUser.role !== "admin") {
@@ -372,7 +390,7 @@ export default function ProjectsPage() {
         </div>
 
         {/* Controls */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
@@ -381,7 +399,7 @@ export default function ProjectsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search project name..."
-              className="h-10 w-56 rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+              className="h-10 w-52 rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
             />
           </div>
 
@@ -414,23 +432,63 @@ export default function ProjectsPage() {
             ))}
           </select>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-            />
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={[
+                  "inline-flex h-10 min-w-[190px] items-center gap-2 rounded-lg border bg-white px-3 text-sm outline-none transition-colors",
+                  "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
+                  dateFrom || dateTo
+                    ? "border-[#2b2bb5] text-foreground"
+                    : "border-input text-muted-foreground",
+                ].join(" ")}
+              >
+                <CalendarDays className="h-4 w-4 shrink-0" />
 
-            <span className="text-sm text-muted-foreground">–</span>
+                {dateFrom && dateTo ? (
+                  <span>
+                    {format(parseISO(dateFrom), "dd MMM")} –{" "}
+                    {format(parseISO(dateTo), "dd MMM")}
+                  </span>
+                ) : dateFrom ? (
+                  <span>
+                    From {format(parseISO(dateFrom), "dd MMM")}
+                  </span>
+                ) : (
+                  <span>Select date range</span>
+                )}
+              </button>
+            </PopoverTrigger>
 
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-            />
-          </div>
+            <PopoverContent
+              align="start"
+              className="w-auto rounded-xl p-0"
+            >
+              <Calendar
+                mode="range"
+                selected={dateRange}
+                onSelect={handleDateRangeChange}
+                numberOfMonths={1}
+                initialFocus
+              />
+
+              {(dateFrom || dateTo) && (
+                <div className="border-t border-border px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDateFrom("");
+                      setDateTo("");
+                    }}
+                    className="text-xs font-medium text-[#2b2bb5] hover:underline"
+                  >
+                    Clear date range
+                  </button>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
 
           <select
             value={visibility}

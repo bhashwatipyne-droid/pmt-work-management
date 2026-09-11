@@ -1,7 +1,8 @@
 // Generic Kanban column shell. Knows nothing about projects, approvals,
 // or any other domain — just how to render a column: header, count badge,
 // optional description, a drop zone, and an empty state. The cards inside
-// are passed as children.
+// are passed as children. `headerAction` renders an optional control
+// (e.g. a hide/show toggle) on the right side of the header.
 export const KanbanColumn = ({
   title,
   count,
@@ -16,6 +17,7 @@ export const KanbanColumn = ({
   isDropTarget = false,
   width = "320px",
   className = "",
+  headerAction,
 }) => {
   return (
     <div
@@ -39,11 +41,13 @@ export const KanbanColumn = ({
             <span className={`truncate text-sm font-semibold ${titleClassName}`}>
               {title}
             </span>
+
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+              {count}
+            </span>
           </div>
 
-          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-            {count}
-          </span>
+          {headerAction}
         </div>
 
         {description && (

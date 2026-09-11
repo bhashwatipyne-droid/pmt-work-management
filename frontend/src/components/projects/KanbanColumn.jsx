@@ -1,13 +1,17 @@
+import { Eye } from "lucide-react";
+
 import { STATUS_COLORS } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
 import { ProjectCard } from "./ProjectCard";
 import { KanbanColumn as BaseKanbanColumn } from "@/components/ui/KanbanColumn";
 
 const COLUMN_TESTIDS = {
-  Planning: PROJECTS.columnPlanning,
   Active: PROJECTS.columnActive,
-  "In Rework": PROJECTS.columnRework,
+  "Approval Pending": PROJECTS.columnApprovalPending,
   Completed: PROJECTS.columnCompleted,
+  "Raised Invoice": PROJECTS.columnRaisedInvoice,
+  "On Hold": PROJECTS.columnOnHold,
+  Scrapped: PROJECTS.columnScrapped,
 };
 
 export const KanbanColumn = ({
@@ -17,9 +21,7 @@ export const KanbanColumn = ({
   onOpenProject,
   selectedProjects,
   onSelectProject,
-  onHideProject,
-  onUnhideProject,
-  onDeleteProject,
+  onToggleVisibility,
 }) => {
   const c = STATUS_COLORS[status];
 
@@ -29,6 +31,17 @@ export const KanbanColumn = ({
       count={projects.length}
       dotClassName={c?.dot}
       titleClassName={c?.text || "text-foreground"}
+      headerAction={
+        <button
+          type="button"
+          onClick={() => onToggleVisibility?.(status)}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-[#667085] transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5]"
+          title={`Hide ${status} column`}
+          aria-label={`Hide ${status} column`}
+        >
+          <Eye className="h-4 w-4" />
+        </button>
+      }
       empty={projects.length === 0 ? "No projects" : null}
     >
       {projects.length > 0 && (
@@ -36,17 +49,14 @@ export const KanbanColumn = ({
           data-testid={COLUMN_TESTIDS[status]}
           className="flex flex-col gap-3"
         >
-          {projects.map((p) => (
+          {projects.map((project) => (
             <ProjectCard
-              key={p.id}
-              project={p}
+              key={project.id}
+              project={project}
               users={users}
-              selected={selectedProjects?.has(p.id)}
+              selected={selectedProjects?.has(project.id)}
               onSelect={onSelectProject}
-              onOpen={() => onOpenProject?.(p)}
-              onHide={onHideProject}
-              onUnhide={onUnhideProject}
-              onDelete={onDeleteProject}
+              onOpen={() => onOpenProject?.(project)}
             />
           ))}
         </div>

@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, Plus, ArrowRight, Eye, EyeOff, Trash2 } from "lucide-react";
+import {
+  Search,
+  Plus,
+  ArrowRight,
+  Eye,
+  LayoutGrid,
+  List,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
@@ -23,6 +31,7 @@ import { ProjectMetricCard } from "@/components/projects/ProjectMetricCard";
 import { KanbanColumn } from "@/components/projects/KanbanColumn";
 import { KanbanBoard } from "@/components/ui/KanbanBoard";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
+import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 
@@ -51,6 +60,20 @@ export default function ProjectsPage() {
 
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const [hiddenColumns, setHiddenColumns] = useState(() => {
+    try {
+      return new Set(
+        JSON.parse(
+          localStorage.getItem("pmt-hidden-project-columns") || "[]"
+        )
+      );
+    } catch {
+      return new Set();
+    }
+  });
+
+  const [listPage, setListPage] = useState(1);
 
   const fetchAll = async () => {
     if (!currentUserId) return;
@@ -138,6 +161,37 @@ export default function ProjectsPage() {
     return map;
   }, [filtered]);
 
+  useEffect(() => {
+    setListPage(1);
+  }, [search, statusFilter, pocFilter, dateFrom, dateTo, visibility]);
+
+  const toggleColumnVisibility = (status) => {
+    setHiddenColumns((current) => {
+      const next = new Set(current);
+
+      if (next.has(status)) {
+        next.delete(status);
+      } else {
+        next.add(status);
+      }
+
+      localStorage.setItem(
+        "pmt-hidden-project-columns",
+        JSON.stringify([...next])
+      );
+
+      return next;
+    });
+  };
+
+  const visibleStatuses = PROJECT_STATUSES.filter(
+    (status) => !hiddenColumns.has(status)
+  );
+
+  const hiddenStatuses = PROJECT_STATUSES.filter((status) =>
+    hiddenColumns.has(status)
+  );
+
   const toggleProjectSelection = (projectId) => {
     setSelectedProjects((current) => {
       const next = new Set(current);
@@ -154,6 +208,22 @@ export default function ProjectsPage() {
 
   const selectAllFiltered = () => {
     setSelectedProjects(new Set(filtered.map((p) => p.id)));
+  };
+
+  const selectPage = (ids, checked) => {
+    setSelectedProjects((current) => {
+      const next = new Set(current);
+
+      ids.forEach((id) => {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+
+      return next;
+    });
   };
 
   const clearSelection = () => {
@@ -310,7 +380,7 @@ export default function ProjectsPage() {
               data-testid={PROJECTS.searchInput}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects..."
+              placeholder="Search project name..."
               className="h-10 w-56 rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
             />
           </div>
@@ -382,13 +452,14 @@ export default function ProjectsPage() {
               data-testid={PROJECTS.chartViewBtn}
               onClick={() => setView("chart")}
               className={[
-                "px-3 text-sm font-medium transition-colors",
+                "inline-flex items-center gap-2 px-4 text-sm font-medium transition-colors",
                 view === "chart"
                   ? "bg-[#f0f0fd] text-[#1a1a8a]"
-                  : "text-muted-foreground hover:bg-[#fafbff] hover:text-foreground",
+                  : "text-muted-foreground hover:bg-[#fafbff]",
               ].join(" ")}
             >
-              Chart View
+              <LayoutGrid className="h-4 w-4" />
+              Kanban
             </button>
 
             <button
@@ -396,13 +467,14 @@ export default function ProjectsPage() {
               data-testid={PROJECTS.listViewBtn}
               onClick={() => setView("list")}
               className={[
-                "px-3 text-sm font-medium transition-colors",
+                "inline-flex items-center gap-2 px-4 text-sm font-medium transition-colors",
                 view === "list"
                   ? "bg-[#f0f0fd] text-[#1a1a8a]"
-                  : "text-muted-foreground hover:bg-[#fafbff] hover:text-foreground",
+                  : "text-muted-foreground hover:bg-[#fafbff]",
               ].join(" ")}
             >
-              List View
+              <List className="h-4 w-4" />
+              List
             </button>
           </div>
 
@@ -417,6 +489,61 @@ export default function ProjectsPage() {
           </button>
         </div>
       </div>
+
+      {/* Active filter chips */}
+      {(pocFilter || statusFilter || dateFrom || dateTo) && (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          {pocFilter && (
+            <button
+              type="button"
+              onClick={() => setPocFilter("")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
+            >
+              POC: {pocFilter}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+
+          {statusFilter && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter("")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
+            >
+              Status: {statusFilter}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
+            >
+              Due: {dateFrom || "Any"} – {dateTo || "Any"}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setPocFilter("");
+              setStatusFilter("");
+              setDateFrom("");
+              setDateTo("");
+              setSearch("");
+            }}
+            className="ml-1 text-xs font-medium text-[#2b2bb5] hover:underline"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {/* Metrics */}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -446,65 +573,16 @@ export default function ProjectsPage() {
       </div>
 
       {/* Bulk actions */}
-      {selectedProjects.size > 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-[#d9d9f5] bg-[#f5f5ff] px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-[#1a1a8a]">
-              {selectedProjects.size} project
-              {selectedProjects.size === 1 ? "" : "s"} selected
-            </span>
-
-            {selectedProjects.size < filtered.length && (
-              <button
-                type="button"
-                onClick={selectAllFiltered}
-                className="text-xs font-medium text-[#2b2bb5] hover:underline"
-              >
-                Select all {filtered.length}
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {visibility === "hidden" ? (
-              <button
-                type="button"
-                onClick={handleBulkUnhide}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#2b2bb5] bg-white px-3 text-sm font-medium text-[#2b2bb5]"
-              >
-                <Eye className="h-4 w-4" />
-                Unhide
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleBulkHide}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#2b2bb5] bg-white px-3 text-sm font-medium text-[#2b2bb5]"
-              >
-                <EyeOff className="h-4 w-4" />
-                Hide
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setDeleteTarget("bulk")}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-red-600"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </button>
-
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="ml-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-      )}
+      <ProjectBulkActionBar
+        selectedCount={selectedProjects.size}
+        totalCount={filtered.length}
+        visibility={visibility}
+        onSelectAll={selectAllFiltered}
+        onHide={handleBulkHide}
+        onUnhide={handleBulkUnhide}
+        onDelete={() => setDeleteTarget("bulk")}
+        onClear={clearSelection}
+      />
 
       {/* Content */}
       {loading ? (
@@ -528,27 +606,61 @@ export default function ProjectsPage() {
           </p>
         </div>
       ) : view === "chart" ? (
-        <KanbanBoard minWidth="1920px">
-          {PROJECT_STATUSES.map((s) => (
-            <KanbanColumn
-              key={s}
-              status={s}
-              projects={byStatus[s]}
-              users={users}
-              selectedProjects={selectedProjects}
-              onSelectProject={toggleProjectSelection}
-              onOpenProject={(p) => navigate(`/projects/${p.id}`)}
-              onHideProject={handleHideProject}
-              onUnhideProject={handleUnhideProject}
-              onDeleteProject={(p) => setDeleteTarget(p)}
-            />
-          ))}
-        </KanbanBoard>
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-800">
+              Kanban View
+            </div>
+
+            {hiddenStatuses.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Hidden:</span>
+
+                {hiddenStatuses.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => toggleColumnVisibility(status)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-[#c8c8ee] hover:text-[#2b2bb5]"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    {status}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <KanbanBoard minWidth="1920px">
+            {visibleStatuses.map((status) => (
+              <KanbanColumn
+                key={status}
+                status={status}
+                projects={byStatus[status]}
+                users={users}
+                selectedProjects={selectedProjects}
+                onSelectProject={toggleProjectSelection}
+                onOpenProject={(project) =>
+                  navigate(`/projects/${project.id}`)
+                }
+                onToggleVisibility={toggleColumnVisibility}
+              />
+            ))}
+          </KanbanBoard>
+        </>
       ) : (
         <ProjectListTable
           projects={filtered}
           users={users}
+          selectedProjects={selectedProjects}
+          onSelectProject={toggleProjectSelection}
+          onSelectPage={selectPage}
           onOpenProject={(p) => navigate(`/projects/${p.id}`)}
+          onHideProject={handleHideProject}
+          onUnhideProject={handleUnhideProject}
+          onDeleteProject={(p) => setDeleteTarget(p)}
+          page={listPage}
+          setPage={setListPage}
         />
       )}
 

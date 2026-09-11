@@ -7,7 +7,17 @@ import {
   ArrowRight,
   Building2,
   User as UserIcon,
+  MoreVertical,
+  Eye,
+  EyeOff,
+  Trash2,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -27,7 +37,16 @@ const fmtDate = (iso) => {
 const initial = (name) =>
   (name || "?").trim().charAt(0).toUpperCase();
 
-export const ProjectCard = ({ project, users, onOpen }) => {
+export const ProjectCard = ({
+  project,
+  users,
+  onOpen,
+  selected = false,
+  onSelect,
+  onHide,
+  onUnhide,
+  onDelete,
+}) => {
   const status =
     STATUS_COLORS[project.status] || STATUS_COLORS.Active;
 
@@ -39,29 +58,103 @@ export const ProjectCard = ({ project, users, onOpen }) => {
     .slice(0, 3);
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       data-testid={`${PROJECTS.cardPrefix}-${project.id}`}
-      className="w-full rounded-xl border border-border bg-white p-4 text-left transition-all hover:-translate-y-0.5 hover:border-[#c8c8ee] hover:shadow-md focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+      className="w-full rounded-xl border border-border bg-white p-4 text-left transition-all hover:-translate-y-0.5 hover:border-[#c8c8ee] hover:shadow-md"
     >
-      {/* Code + status */}
+      {/* Card controls */}
       <div className="flex items-start justify-between gap-2">
-        <div className="font-mono text-[11px] text-muted-foreground">
-          {project.code}
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onSelect?.(project.id);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
+            aria-label={`Select ${project.name}`}
+          />
+
+          <div className="font-mono text-[11px] text-muted-foreground">
+            {project.code}
+          </div>
         </div>
 
-        <span
-          className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
-        >
-          {project.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
+          >
+            {project.status}
+          </span>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-slate-100 hover:text-foreground"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen?.();
+                }}
+              >
+                View details
+              </DropdownMenuItem>
+
+              {project.hidden ? (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUnhide?.(project);
+                  }}
+                >
+                  <Eye className="h-4 w-4" />
+                  Unhide project
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onHide?.(project);
+                  }}
+                >
+                  <EyeOff className="h-4 w-4" />
+                  Hide project
+                </DropdownMenuItem>
+              )}
+
+              <DropdownMenuItem
+                className="text-red-600 focus:text-red-600"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete?.(project);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete project
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Project name */}
-      <div className="mt-2 line-clamp-2 text-sm font-semibold leading-5 text-foreground">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="mt-2 block w-full text-left line-clamp-2 text-sm font-semibold leading-5 text-foreground hover:text-[#2b2bb5]"
+      >
         {project.name}
-      </div>
+      </button>
 
       {/* Client + POC */}
       <div className="mt-3 space-y-2 text-xs text-muted-foreground">
@@ -126,11 +219,15 @@ export const ProjectCard = ({ project, users, onOpen }) => {
           {project.deliverables_count === 1 ? "" : "s"}
         </span>
 
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-[#2b2bb5]">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="inline-flex items-center gap-1 text-xs font-medium text-[#2b2bb5]"
+        >
           Open
           <ArrowRight className="h-3 w-3" />
-        </span>
+        </button>
       </div>
-    </button>
+    </div>
   );
 };

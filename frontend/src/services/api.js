@@ -223,6 +223,51 @@ export const deleteProject = (userId, id) =>
     })
     .then((r) => r.data);
 
+export const hideProject = (userId, id) =>
+  axios
+    .post(
+      `${API}/projects/${id}/hide`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const unhideProject = (userId, id) =>
+  axios
+    .post(
+      `${API}/projects/${id}/unhide`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const bulkHideProjects = (userId, projectIds) =>
+  axios
+    .post(
+      `${API}/projects/bulk-hide`,
+      { project_ids: projectIds },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const bulkUnhideProjects = (userId, projectIds) =>
+  axios
+    .post(
+      `${API}/projects/bulk-unhide`,
+      { project_ids: projectIds },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const bulkDeleteProjects = (userId, projectIds) =>
+  axios
+    .post(
+      `${API}/projects/bulk-delete`,
+      { project_ids: projectIds },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
 // -------- Deliverables --------
 export const getDeliverables = (userId, params) =>
   axios

@@ -238,6 +238,10 @@ class BulkCreatePayload(BaseModel):
     template: Optional[WorkItemCreate] = None
 
 
+class BulkProjectIdsPayload(BaseModel):
+    project_ids: List[str]
+
+
 class Client(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: f"client-{uuid.uuid4().hex[:8]}")
@@ -299,6 +303,12 @@ class Project(BaseModel):
     start_date: str
     end_date: str
     status: str = "Planning"
+
+    # Visibility
+    hidden: bool = False
+    hidden_at: Optional[str] = None
+    hidden_by: Optional[str] = None
+
     created_at: str
     updated_at: str
 
@@ -1956,21 +1966,45 @@ async def list_projects(
     request: Request,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    visibility: Optional[str] = "visible",
     limit: int = 1000,
     include_deliverables: bool = True,
 ):
     await get_acting_user(request)
 
     query = {}
+    and_clauses = []
+
+    if visibility == "visible":
+        and_clauses.append({
+            "$or": [
+                {"hidden": False},
+                {"hidden": {"$exists": False}},
+            ]
+        })
+    elif visibility == "hidden":
+        query["hidden"] = True
+    elif visibility == "all":
+        pass
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid visibility"
+        )
 
     if status:
         query["status"] = status
 
     if search:
-        query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"code": {"$regex": search, "$options": "i"}},
-        ]
+        and_clauses.append({
+            "$or": [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"code": {"$regex": search, "$options": "i"}},
+            ]
+        })
+
+    if and_clauses:
+        query["$and"] = and_clauses
 
     limit = max(1, min(limit, 1000))
 
@@ -2188,6 +2222,174 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
 
     p = await db.projects.find_one({"id": project_id}, {"_id": 0})
     return await _hydrate_project(p)
+
+
+@api_router.post("/projects/{project_id}/hide")
+async def hide_project(project_id: str, request: Request):
+    user = await require_manager_or_admin(request)
+
+    existing = await db.projects.find_one(
+        {"id": project_id},
+        {"_id": 0}
+    )
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found"
+        )
+
+    await db.projects.update_one(
+        {"id": project_id},
+        {
+            "$set": {
+                "hidden": True,
+                "hidden_at": now_iso(),
+                "hidden_by": user.id,
+                "updated_at": now_iso(),
+            }
+        }
+    )
+
+    await log_activity(
+        collection_name="project_activity_log",
+        entity_id=project_id,
+        entity_field="project_id",
+        action="PROJECT_HIDDEN",
+        changed_by=user.id,
+    )
+
+    return {"success": True}
+
+
+@api_router.post("/projects/{project_id}/unhide")
+async def unhide_project(project_id: str, request: Request):
+    user = await require_manager_or_admin(request)
+
+    existing = await db.projects.find_one(
+        {"id": project_id},
+        {"_id": 0}
+    )
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found"
+        )
+
+    await db.projects.update_one(
+        {"id": project_id},
+        {
+            "$set": {
+                "hidden": False,
+                "hidden_at": None,
+                "hidden_by": None,
+                "updated_at": now_iso(),
+            }
+        }
+    )
+
+    await log_activity(
+        collection_name="project_activity_log",
+        entity_id=project_id,
+        entity_field="project_id",
+        action="PROJECT_UNHIDDEN",
+        changed_by=user.id,
+    )
+
+    return {"success": True}
+
+
+@api_router.post("/projects/bulk-hide")
+async def bulk_hide_projects(payload: BulkProjectIdsPayload, request: Request):
+    user = await require_manager_or_admin(request)
+
+    project_ids = payload.project_ids
+
+    if not project_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No projects selected"
+        )
+
+    await db.projects.update_many(
+        {"id": {"$in": project_ids}},
+        {
+            "$set": {
+                "hidden": True,
+                "hidden_at": now_iso(),
+                "hidden_by": user.id,
+                "updated_at": now_iso(),
+            }
+        }
+    )
+
+    return {
+        "success": True,
+        "count": len(project_ids),
+    }
+
+
+@api_router.post("/projects/bulk-unhide")
+async def bulk_unhide_projects(payload: BulkProjectIdsPayload, request: Request):
+    user = await require_manager_or_admin(request)
+
+    project_ids = payload.project_ids
+
+    if not project_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No projects selected"
+        )
+
+    await db.projects.update_many(
+        {"id": {"$in": project_ids}},
+        {
+            "$set": {
+                "hidden": False,
+                "hidden_at": None,
+                "hidden_by": None,
+                "updated_at": now_iso(),
+            }
+        }
+    )
+
+    return {
+        "success": True,
+        "count": len(project_ids),
+    }
+
+
+@api_router.post("/projects/bulk-delete")
+async def bulk_delete_projects(payload: BulkProjectIdsPayload, request: Request):
+    user = await require_manager_or_admin(request)
+
+    project_ids = payload.project_ids
+
+    if not project_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No projects selected"
+        )
+
+    # Preserve historical work entries.
+    await db.work_items.update_many(
+        {"project_id": {"$in": project_ids}},
+        {
+            "$set": {
+                "project_id": None,
+                "deliverable_id": None,
+            }
+        },
+    )
+
+    await db.projects.delete_many({"id": {"$in": project_ids}})
+    await db.deliverables.delete_many({"project_id": {"$in": project_ids}})
+
+    return {
+        "success": True,
+        "count": len(project_ids),
+    }
 
 
 @api_router.delete("/projects/{project_id}")

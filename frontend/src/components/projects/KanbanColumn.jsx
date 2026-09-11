@@ -15,6 +15,11 @@ export const KanbanColumn = ({
   projects,
   users,
   onOpenProject,
+  selectedProjects,
+  onSelectProject,
+  onHideProject,
+  onUnhideProject,
+  onDeleteProject,
 }) => {
   const c = STATUS_COLORS[status];
 
@@ -36,7 +41,12 @@ export const KanbanColumn = ({
               key={p.id}
               project={p}
               users={users}
+              selected={selectedProjects?.has(p.id)}
+              onSelect={onSelectProject}
               onOpen={() => onOpenProject?.(p)}
+              onHide={onHideProject}
+              onUnhide={onUnhideProject}
+              onDelete={onDeleteProject}
             />
           ))}
         </div>

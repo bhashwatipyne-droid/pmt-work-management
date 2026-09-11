@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, Plus, ArrowRight } from "lucide-react";
+import { Search, Plus, ArrowRight, Eye, EyeOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
@@ -9,6 +9,12 @@ import {
   getProjectMetrics,
   getClients,
   getOptions,
+  hideProject,
+  unhideProject,
+  deleteProject,
+  bulkHideProjects,
+  bulkUnhideProjects,
+  bulkDeleteProjects,
 } from "@/services/api";
 
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
@@ -18,6 +24,7 @@ import { KanbanColumn } from "@/components/projects/KanbanColumn";
 import { KanbanBoard } from "@/components/ui/KanbanBoard";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
+import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
@@ -35,8 +42,15 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [pocFilter, setPocFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [visibility, setVisibility] = useState("visible");
   const [view, setView] = useState("chart");
   const [modalOpen, setModalOpen] = useState(false);
+
+  const [selectedProjects, setSelectedProjects] = useState(new Set());
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const fetchAll = async () => {
     if (!currentUserId) return;
@@ -45,7 +59,7 @@ export default function ProjectsPage() {
 
     try {
       const [p, m, c, opts] = await Promise.all([
-        getProjects(currentUserId),
+        getProjects(currentUserId, { visibility }),
         getProjectMetrics(currentUserId),
         getClients(),
         getOptions(),
@@ -67,7 +81,15 @@ export default function ProjectsPage() {
   useEffect(() => {
     if (currentUser?.role === "admin") fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId, currentUser?.role]);
+  }, [currentUserId, currentUser?.role, visibility]);
+
+  const pocOptions = useMemo(() => {
+    return [
+      ...new Set(
+        projects.map((p) => p.client_poc).filter(Boolean)
+      ),
+    ].sort();
+  }, [projects]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -75,6 +97,17 @@ export default function ProjectsPage() {
     return projects
       .filter((p) => {
         if (statusFilter && p.status !== statusFilter) return false;
+
+        if (
+          pocFilter &&
+          (p.client_poc || "").toLowerCase() !== pocFilter.toLowerCase()
+        ) {
+          return false;
+        }
+
+        if (dateFrom && p.end_date < dateFrom) return false;
+
+        if (dateTo && p.end_date > dateTo) return false;
 
         if (!q) return true;
 
@@ -89,7 +122,7 @@ export default function ProjectsPage() {
         const dateB = new Date(b.start_date || 0).getTime();
         return dateB - dateA;
       });
-  }, [projects, search, statusFilter]);
+  }, [projects, search, statusFilter, pocFilter, dateFrom, dateTo]);
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -104,6 +137,126 @@ export default function ProjectsPage() {
 
     return map;
   }, [filtered]);
+
+  const toggleProjectSelection = (projectId) => {
+    setSelectedProjects((current) => {
+      const next = new Set(current);
+
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedProjects(new Set(filtered.map((p) => p.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedProjects(new Set());
+  };
+
+  const handleHideProject = async (project) => {
+    try {
+      await hideProject(currentUserId, project.id);
+
+      toast.success("Project hidden");
+
+      setSelectedProjects((current) => {
+        const next = new Set(current);
+        next.delete(project.id);
+        return next;
+      });
+
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Failed to hide project"
+      );
+    }
+  };
+
+  const handleUnhideProject = async (project) => {
+    try {
+      await unhideProject(currentUserId, project.id);
+
+      toast.success("Project restored");
+
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Failed to unhide project"
+      );
+    }
+  };
+
+  const handleBulkHide = async () => {
+    const ids = [...selectedProjects];
+
+    if (!ids.length) return;
+
+    try {
+      await bulkHideProjects(currentUserId, ids);
+
+      toast.success(
+        `${ids.length} project${ids.length === 1 ? "" : "s"} hidden`
+      );
+
+      clearSelection();
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Failed to hide projects"
+      );
+    }
+  };
+
+  const handleBulkUnhide = async () => {
+    const ids = [...selectedProjects];
+
+    if (!ids.length) return;
+
+    try {
+      await bulkUnhideProjects(currentUserId, ids);
+
+      toast.success(
+        `${ids.length} project${ids.length === 1 ? "" : "s"} restored`
+      );
+
+      clearSelection();
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Failed to restore projects"
+      );
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedProjects];
+
+    if (!ids.length) return;
+
+    try {
+      await bulkDeleteProjects(currentUserId, ids);
+
+      toast.success(
+        `${ids.length} project${ids.length === 1 ? "" : "s"} deleted`
+      );
+
+      setDeleteTarget(null);
+      clearSelection();
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Failed to delete projects"
+      );
+    }
+  };
 
   if (userLoading || !currentUser) return null;
 
@@ -177,6 +330,51 @@ export default function ProjectsPage() {
             ))}
           </select>
 
+          <select
+            value={pocFilter}
+            onChange={(e) => setPocFilter(e.target.value)}
+            className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+          >
+            <option value="">All POCs / Owners</option>
+
+            {pocOptions.map((poc) => (
+              <option key={poc} value={poc}>
+                {poc}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            />
+
+            <span className="text-sm text-muted-foreground">–</span>
+
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            />
+          </div>
+
+          <select
+            value={visibility}
+            onChange={(e) => {
+              setVisibility(e.target.value);
+              clearSelection();
+            }}
+            className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+          >
+            <option value="visible">Visible projects</option>
+            <option value="hidden">Hidden projects</option>
+            <option value="all">All projects</option>
+          </select>
+
           {/* View toggle */}
           <div className="flex h-10 overflow-hidden rounded-lg border border-border bg-white">
             <button
@@ -247,6 +445,67 @@ export default function ProjectsPage() {
         />
       </div>
 
+      {/* Bulk actions */}
+      {selectedProjects.size > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-[#d9d9f5] bg-[#f5f5ff] px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-[#1a1a8a]">
+              {selectedProjects.size} project
+              {selectedProjects.size === 1 ? "" : "s"} selected
+            </span>
+
+            {selectedProjects.size < filtered.length && (
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                className="text-xs font-medium text-[#2b2bb5] hover:underline"
+              >
+                Select all {filtered.length}
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {visibility === "hidden" ? (
+              <button
+                type="button"
+                onClick={handleBulkUnhide}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#2b2bb5] bg-white px-3 text-sm font-medium text-[#2b2bb5]"
+              >
+                <Eye className="h-4 w-4" />
+                Unhide
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleBulkHide}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#2b2bb5] bg-white px-3 text-sm font-medium text-[#2b2bb5]"
+              >
+                <EyeOff className="h-4 w-4" />
+                Hide
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setDeleteTarget("bulk")}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-red-600"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="ml-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       {loading ? (
         <div
@@ -276,7 +535,12 @@ export default function ProjectsPage() {
               status={s}
               projects={byStatus[s]}
               users={users}
+              selectedProjects={selectedProjects}
+              onSelectProject={toggleProjectSelection}
               onOpenProject={(p) => navigate(`/projects/${p.id}`)}
+              onHideProject={handleHideProject}
+              onUnhideProject={handleUnhideProject}
+              onDeleteProject={(p) => setDeleteTarget(p)}
             />
           ))}
         </KanbanBoard>
@@ -295,6 +559,42 @@ export default function ProjectsPage() {
         clients={clients}
         users={users}
         deliverableTypes={deliverableTypes}
+      />
+
+      <ConfirmDeleteModal
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={
+          deleteTarget === "bulk"
+            ? handleBulkDelete
+            : async () => {
+                try {
+                  await deleteProject(currentUserId, deleteTarget.id);
+
+                  toast.success("Project deleted");
+
+                  setDeleteTarget(null);
+                  await fetchAll();
+                } catch (err) {
+                  toast.error(
+                    err?.response?.data?.detail ||
+                      "Failed to delete project"
+                  );
+                }
+              }
+        }
+        title={
+          deleteTarget === "bulk"
+            ? `Delete ${selectedProjects.size} projects?`
+            : "Delete this project?"
+        }
+        description={
+          deleteTarget === "bulk"
+            ? "These projects and their deliverables will be permanently deleted."
+            : "This project and its deliverables will be permanently deleted."
+        }
+        warning="Historical work entries will be preserved."
+        confirmLabel="Delete"
       />
     </div>
   );

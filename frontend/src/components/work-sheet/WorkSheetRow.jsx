@@ -985,7 +985,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         />
       </TableCell>
 
-      <TableCell className="flex h-full items-center justify-center border-r border-slate-200 px-1">
+      <TableCell className="flex h-full items-center justify-center border-r border-slate-200 px-1 py-0">
         {canEditRow && (
           <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
             <button

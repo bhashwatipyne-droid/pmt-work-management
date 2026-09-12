@@ -219,6 +219,26 @@ export default function ProjectsPage() {
     setSelectedProjects(new Set(filtered.map((p) => p.id)));
   };
 
+  const toggleColumnSelection = (columnProjects) => {
+    const projectIds = columnProjects.map((project) => project.id);
+
+    if (projectIds.length === 0) return;
+
+    setSelectedProjects((current) => {
+      const next = new Set(current);
+
+      const allSelected = projectIds.every((id) => next.has(id));
+
+      if (allSelected) {
+        projectIds.forEach((id) => next.delete(id));
+      } else {
+        projectIds.forEach((id) => next.add(id));
+      }
+
+      return next;
+    });
+  };
+
   const selectPage = (ids, checked) => {
     setSelectedProjects((current) => {
       const next = new Set(current);
@@ -727,20 +747,34 @@ export default function ProjectsPage() {
           </div>
 
           <KanbanBoard minWidth="1920px">
-            {visibleStatuses.map((status) => (
-              <KanbanColumn
-                key={status}
-                status={status}
-                projects={byStatus[status]}
-                users={users}
-                selectedProjects={selectedProjects}
-                onSelectProject={toggleProjectSelection}
-                onOpenProject={(project) =>
-                  navigate(`/projects/${project.id}`)
-                }
-                onToggleVisibility={toggleColumnVisibility}
-              />
-            ))}
+            {visibleStatuses.map((status) => {
+              const columnProjects = byStatus[status] || [];
+
+              const columnProjectIds = columnProjects.map(
+                (project) => project.id
+              );
+
+              const allColumnProjectsSelected =
+                columnProjectIds.length > 0 &&
+                columnProjectIds.every((id) => selectedProjects.has(id));
+
+              return (
+                <KanbanColumn
+                  key={status}
+                  status={status}
+                  projects={columnProjects}
+                  users={users}
+                  selectedProjects={selectedProjects}
+                  onSelectProject={toggleProjectSelection}
+                  onSelectAll={() => toggleColumnSelection(columnProjects)}
+                  allSelected={allColumnProjectsSelected}
+                  onOpenProject={(project) =>
+                    navigate(`/projects/${project.id}`)
+                  }
+                  onToggleVisibility={toggleColumnVisibility}
+                />
+              );
+            })}
           </KanbanBoard>
         </>
       ) : (

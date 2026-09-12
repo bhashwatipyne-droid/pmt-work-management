@@ -21,6 +21,8 @@ export const KanbanColumn = ({
   onOpenProject,
   selectedProjects,
   onSelectProject,
+  onSelectAll,
+  allSelected,
   onToggleVisibility,
 }) => {
   const c = STATUS_COLORS[status];
@@ -32,15 +34,41 @@ export const KanbanColumn = ({
       dotClassName={c?.dot}
       titleClassName={c?.text || "text-foreground"}
       headerAction={
-        <button
-          type="button"
-          onClick={() => onToggleVisibility?.(status)}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-[#667085] transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5]"
-          title={`Hide ${status} column`}
-          aria-label={`Hide ${status} column`}
-        >
-          <Eye className="h-4 w-4" />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <label
+            className="inline-flex shrink-0 items-center gap-2"
+            title={
+              projects.length === 0
+                ? "No projects in this column"
+                : allSelected
+                  ? "Deselect all projects in this column"
+                  : "Select all projects in this column"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={allSelected}
+              disabled={projects.length === 0}
+              onChange={onSelectAll}
+              aria-label={
+                allSelected
+                  ? `Deselect all ${status} projects`
+                  : `Select all ${status} projects`
+              }
+              className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5] disabled:cursor-not-allowed disabled:opacity-40"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() => onToggleVisibility?.(status)}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[#667085] transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5]"
+            title={`Hide ${status} column`}
+            aria-label={`Hide ${status} column`}
+          >
+            <Eye className="h-4 w-4" />
+          </button>
+        </div>
       }
       empty={projects.length === 0 ? "No projects" : null}
     >

@@ -136,9 +136,9 @@ export default function ProjectsPage() {
           return false;
         }
 
+        // Show projects whose timeline overlaps the selected date range
         if (dateFrom && p.end_date < dateFrom) return false;
-
-        if (dateTo && p.end_date > dateTo) return false;
+        if (dateTo && p.start_date > dateTo) return false;
 
         if (!q) return true;
 

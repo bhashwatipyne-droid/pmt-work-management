@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
+import { trackEvent } from "@/analytics";
 
 const emptyFilters = {
   search: "",
@@ -323,6 +324,12 @@ export default function WorkSheetPage() {
 
       // New row goes to the top of the sheet, not the bottom.
       setItems((prev) => [created, ...prev]);
+
+      trackEvent("row_added", {
+        worksheet: activeSheet,
+        row_id: created.id,
+      });
+
       toast.success("Row added");
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add row");
@@ -334,7 +341,11 @@ export default function WorkSheetPage() {
 
   const handleQuickLoggerSave = async (payloads) => {
     for (const payload of payloads) {
-      await createWorkItem(currentUser.id, payload);
+      const created = await createWorkItem(currentUser.id, payload);
+
+      trackEvent("task_created", {
+        task_id: created.id,
+      });
     }
 
     await fetchItems();
@@ -362,6 +373,13 @@ export default function WorkSheetPage() {
         { stage }
       );
       setItems((prev) => [...prev, ...created]);
+
+      trackEvent("row_added", {
+        worksheet: activeSheet,
+        count: created.length,
+        bulk: true,
+      });
+
       toast.success(`${created.length} rows added`);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not add rows");
@@ -437,6 +455,19 @@ export default function WorkSheetPage() {
             item.id === id ? updated : item
           )
         );
+      }
+
+      trackEvent("cell_edited", {
+        row_id: id,
+        fields: Object.keys(patch),
+      });
+
+      if (patch.status && currentItem?.status !== patch.status) {
+        trackEvent("task_status_changed", {
+          row_id: id,
+          old_status: currentItem?.status,
+          new_status: patch.status,
+        });
       }
 
       return {
@@ -643,6 +674,12 @@ export default function WorkSheetPage() {
       setItems((prev) =>
         prev.filter((item) => !idsToDelete.includes(item.id))
       );
+
+      trackEvent("row_deleted", {
+        worksheet: activeSheet,
+        count: idsToDelete.length,
+        bulk: true,
+      });
 
       toast.success(
         `Deleted ${deleted_count} row${deleted_count === 1 ? "" : "s"}`

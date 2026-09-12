@@ -22,6 +22,7 @@ import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
+import { trackEvent } from "@/analytics";
 
 const COLUMNS = [
   "Date",
@@ -361,6 +362,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const updateColumnFilter = useCallback(
     (key, value) => {
       setFilters?.((prev) => ({ ...prev, [key]: value }));
+
+      trackEvent("filter_applied", {
+        filter_type: key,
+        filter_value: Array.isArray(value) ? value : String(value ?? ""),
+      });
     },
     [setFilters]
   );
@@ -1046,6 +1052,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
           .writeText(tsv)
           .then(() => {
             const count = rowsData.length * cols.length;
+
+            trackEvent("copy_paste_used", {
+              action: "copy",
+              cell_count: count,
+            });
+
             toast.success(count > 1 ? `Copied ${count} cells` : "Copied");
           })
           .catch(() => {
@@ -1135,6 +1147,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                 skipped += Object.keys(updates).length;
               }
             }
+          }
+
+          if (applied > 0) {
+            trackEvent("copy_paste_used", {
+              action: "paste",
+              rows_updated: applied,
+              cells_skipped: skipped,
+            });
           }
 
           if (applied === 0) {

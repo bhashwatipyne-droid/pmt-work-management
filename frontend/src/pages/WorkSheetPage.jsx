@@ -136,6 +136,14 @@ export default function WorkSheetPage() {
   const isManager = currentUser?.role === "manager";
   const isMember = currentUser?.role === "member";
 
+  // Admins are view-only on the Work Sheet. Managers/members can only add
+  // rows to their own department's stage, or to Master (which resolves to
+  // their own department's stage anyway).
+  const canAddToActiveSheet =
+    currentUser?.role !== "admin" &&
+    (activeSheet === "Master" ||
+      activeSheet === DEPARTMENT_TO_STAGE[currentUser?.department]);
+
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -274,6 +282,13 @@ export default function WorkSheetPage() {
     (filters.statuses?.length || 0);
 
   const handleAddRow = async () => {
+    if (!canAddToActiveSheet) {
+      toast.error(
+        `You cannot add rows to the ${activeSheet} sheet.`
+      );
+      return;
+    }
+
     if (addingRowRef.current) return; // guards against rapid double-clicks on the + button
     addingRowRef.current = true;
     setAddingRow(true);
@@ -326,6 +341,13 @@ export default function WorkSheetPage() {
   };
 
   const handleBulkAddRows = async (count) => {
+    if (!canAddToActiveSheet) {
+      toast.error(
+        `You cannot add rows to the ${activeSheet} sheet.`
+      );
+      return;
+    }
+
     if (bulkAddingRef.current) return; // synchronous guard — blocks rapid/duplicate clicks before React re-renders
     bulkAddingRef.current = true;
     setBulkAdding(true);
@@ -704,7 +726,7 @@ export default function WorkSheetPage() {
         onOpenFilters={() => setFiltersOpen((current) => !current)}
         activeFilterCount={activeFilterCount}
         onAddRow={handleAddRow}
-        canAdd={true}
+        canAdd={canAddToActiveSheet}
         resultCount={filteredItems.length}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}

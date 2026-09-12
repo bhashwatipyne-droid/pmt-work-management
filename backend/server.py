@@ -497,6 +497,24 @@ async def require_manager_or_admin(request: Request) -> User:
     return user
 
 
+DEPARTMENT_TO_STAGE = {
+    "Content": "Content",
+    "Design": "Design",
+    "Animation": "Animate",
+    "Finish": "Finish",
+}
+
+
+def can_user_create_stage(user: User, stage: str) -> bool:
+    if user.role == "admin":
+        return False
+
+    user_stage = DEPARTMENT_TO_STAGE.get(user.department)
+
+    # Managers and members can create rows only for their own department.
+    return bool(user_stage and stage == user_stage)
+
+
 async def get_user_department(user_id: Optional[str]) -> Optional[str]:
     if not user_id:
         return None
@@ -723,6 +741,13 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
     user = await get_acting_user(request)
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
+
+    if not can_user_create_stage(user, payload.stage):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to add rows to this stage",
+        )
+
     data = payload.model_dump()
     work_date = data.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     month = work_date[:7]
@@ -928,6 +953,21 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
     if payload.count < 1 or payload.count > 500:
         raise HTTPException(status_code=400, detail="count must be between 1 and 500")
+
+    requested_stage = payload.template.stage if payload.template else None
+
+    if not requested_stage:
+        raise HTTPException(
+            status_code=400,
+            detail="A stage is required when creating work items",
+        )
+
+    if not can_user_create_stage(user, requested_stage):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to add rows to this stage",
+        )
+
     tpl = (payload.template or WorkItemCreate()).model_dump()
 
     if tpl.get("client_id"):

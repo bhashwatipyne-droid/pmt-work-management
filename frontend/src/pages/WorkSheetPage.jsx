@@ -21,7 +21,8 @@ import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
 import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
-import { History } from "lucide-react";
+import { History, AlertCircle, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
@@ -125,6 +126,7 @@ export default function WorkSheetPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [hideRowsErrorOpen, setHideRowsErrorOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const bulkAddingRef = useRef(false);
   const addingRowRef = useRef(false);
@@ -533,6 +535,21 @@ export default function WorkSheetPage() {
   const handleHideRows = () => {
     if (!selectedIds.length) return;
 
+    const visibleIds = filteredItems.map((item) => item.id);
+    const selectedSet = new Set(selectedIds);
+    const hiddenSet = new Set(hiddenRows);
+
+    const wouldHideEveryVisibleRow =
+      visibleIds.length > 0 &&
+      visibleIds.every(
+        (id) => selectedSet.has(id) || hiddenSet.has(id)
+      );
+
+    if (wouldHideEveryVisibleRow) {
+      setHideRowsErrorOpen(true);
+      return;
+    }
+
     setHiddenRows((current) => [
       ...new Set([...current, ...selectedIds]),
     ]);
@@ -784,6 +801,31 @@ export default function WorkSheetPage() {
           addingRow={addingRow}
           onSelectRange={handleSelectRange}
           sheetKey={activeSheet}
+          onRequestHideRow={(rowId) => {
+            const visibleIds = filteredItems.map((item) => item.id);
+
+            const wouldHideEveryVisibleRow =
+              visibleIds.length === 1 &&
+              visibleIds[0] === rowId &&
+              !hiddenRows.includes(rowId);
+
+            if (wouldHideEveryVisibleRow) {
+              setHideRowsErrorOpen(true);
+              return;
+            }
+
+            setHiddenRows((current) =>
+              current.includes(rowId)
+                ? current
+                : [...current, rowId]
+            );
+
+            if (selectedIds.includes(rowId)) {
+              setSelectedIds((current) =>
+                current.filter((id) => id !== rowId)
+              );
+            }
+          }}
         />
       )}
 
@@ -820,6 +862,64 @@ export default function WorkSheetPage() {
         confirmLabel="Delete Rows"
         loading={deleting}
       />
+
+      {hideRowsErrorOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setHideRowsErrorOpen(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hide-rows-error-title"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50">
+                <AlertCircle className="h-5 w-5 text-amber-600" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <h2
+                    id="hide-rows-error-title"
+                    className="text-base font-semibold text-slate-900"
+                  >
+                    Can't hide every row
+                  </h2>
+
+                  <button
+                    type="button"
+                    onClick={() => setHideRowsErrorOpen(false)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    aria-label="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <p className="mt-2 text-sm leading-5 text-slate-600">
+                  At least one row needs to stay visible on the sheet.
+                  Unhide a row first if you want to hide this one.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => setHideRowsErrorOpen(false)}
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

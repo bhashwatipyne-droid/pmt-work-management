@@ -113,6 +113,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   addingRow = false,
   onSelectRange,
   sheetKey = "Master",
+  onRequestHideRow,
 }, ref) {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -1571,15 +1572,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     }
                     onUnhideRows={restoreHiddenRows}
                     onHideRow={(rowId) => {
-                      setHiddenRows((current) =>
-                        current.includes(rowId)
-                          ? current
-                          : [...current, rowId]
-                      );
-
-                      if (selectedSet.has(rowId)) {
-                        onToggleSelect(rowId);
-                      }
+                      onRequestHideRow?.(rowId);
                     }}
                   />
                 );

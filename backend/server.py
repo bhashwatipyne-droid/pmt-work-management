@@ -121,7 +121,14 @@ STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "
 MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
 MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
-PROJECT_STATUSES = ["Planning", "Active", "In Rework", "Completed"]
+PROJECT_STATUSES = [
+    "Active",
+    "Approval Pending",
+    "Completed",
+    "Raised Invoice",
+    "On Hold",
+    "Scrapped",
+]
 STAGES = ["Content", "Design", "Animate", "Finish"]
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
 CLIENT_STATUSES = ["Active", "Inactive"]
@@ -242,6 +249,11 @@ class BulkProjectIdsPayload(BaseModel):
     project_ids: List[str]
 
 
+class BulkProjectStatusPayload(BaseModel):
+    project_ids: List[str]
+    status: str
+
+
 class Client(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: f"client-{uuid.uuid4().hex[:8]}")
@@ -278,7 +290,7 @@ class ProjectCreate(BaseModel):
     poc_id: Optional[str] = None
     start_date: str
     end_date: str
-    status: Optional[str] = "Planning"
+    status: Optional[str] = "Active"
     deliverables: Optional[List[DeliverableInput]] = []
 
 
@@ -302,7 +314,7 @@ class Project(BaseModel):
     poc_id: Optional[str] = None
     start_date: str
     end_date: str
-    status: str = "Planning"
+    status: str = "Active"
 
     # Visibility
     hidden: bool = False
@@ -2080,7 +2092,7 @@ async def create_project(payload: ProjectCreate, request: Request):
         poc_id=payload.poc_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
-        status=payload.status or "Planning",
+        status=payload.status or "Active",
         created_at=ts,
         updated_at=ts,
     )
@@ -2357,6 +2369,75 @@ async def bulk_unhide_projects(payload: BulkProjectIdsPayload, request: Request)
     return {
         "success": True,
         "count": len(project_ids),
+    }
+
+
+@api_router.post("/projects/bulk-status")
+async def bulk_update_project_status(
+    payload: BulkProjectStatusPayload,
+    request: Request,
+):
+    user = await require_admin(request)
+
+    project_ids = payload.project_ids
+    new_status = payload.status
+
+    if not project_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No projects selected"
+        )
+
+    if new_status not in PROJECT_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid project status"
+        )
+
+    projects = await db.projects.find(
+        {"id": {"$in": project_ids}},
+        {"_id": 0}
+    ).to_list(len(project_ids))
+
+    if not projects:
+        raise HTTPException(
+            status_code=404,
+            detail="No projects found"
+        )
+
+    now = now_iso()
+
+    await db.projects.update_many(
+        {"id": {"$in": project_ids}},
+        {
+            "$set": {
+                "status": new_status,
+                "updated_at": now,
+            }
+        }
+    )
+
+    # Keep project activity history consistent with single-project updates.
+    for project in projects:
+        old_status = project.get("status")
+
+        if old_status == new_status:
+            continue
+
+        await log_activity(
+            collection_name="project_activity_log",
+            entity_id=project["id"],
+            entity_field="project_id",
+            action="PROJECT_STATUS_CHANGED",
+            changed_by=user.id,
+            old_value=old_status,
+            new_value=new_status,
+        )
+
+    return {
+        "success": True,
+        "count": len(projects),
+        "status": new_status,
     }
 
 

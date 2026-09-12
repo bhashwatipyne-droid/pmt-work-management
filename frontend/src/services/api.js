@@ -259,6 +259,18 @@ export const bulkUnhideProjects = (userId, projectIds) =>
     )
     .then((r) => r.data);
 
+export const bulkUpdateProjectStatus = (userId, projectIds, status) =>
+  axios
+    .post(
+      `${API}/projects/bulk-status`,
+      {
+        project_ids: projectIds,
+        status,
+      },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
 export const bulkDeleteProjects = (userId, projectIds) =>
   axios
     .post(

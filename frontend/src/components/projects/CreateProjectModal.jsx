@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { X, Plus, Trash2 } from "lucide-react";
 
 import { PROJECTS } from "@/constants/testIds";
+import { PROJECT_STATUSES } from "@/constants/projectPalette";
 import { createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
 
@@ -38,7 +39,7 @@ export const CreateProjectModal = ({
   const [pocId, setPocId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [status, setStatus] = useState("Planning");
+  const [status, setStatus] = useState(PROJECT_STATUSES[0]);
   const [deliverables, setDeliverables] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -98,7 +99,7 @@ export const CreateProjectModal = ({
     setPocId("");
     setStartDate("");
     setEndDate("");
-    setStatus("Planning");
+    setStatus(PROJECT_STATUSES[0]);
     setDeliverables([]);
   };
 
@@ -312,12 +313,7 @@ export const CreateProjectModal = ({
                   onChange={(e) => setStatus(e.target.value)}
                   className={inputBase}
                 >
-                  {[
-                    "Planning",
-                    "Active",
-                    "In Rework",
-                    "Completed",
-                  ].map((s) => (
+                  {PROJECT_STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>

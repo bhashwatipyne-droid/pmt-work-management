@@ -24,6 +24,7 @@ import {
   deleteProject,
   bulkHideProjects,
   bulkUnhideProjects,
+  bulkUpdateProjectStatus,
   bulkDeleteProjects,
 } from "@/services/api";
 
@@ -310,6 +311,32 @@ export default function ProjectsPage() {
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to restore projects"
+      );
+    }
+  };
+
+  const handleBulkStatusChange = async (newStatus) => {
+    const ids = [...selectedProjects];
+
+    if (!ids.length || !newStatus) return;
+
+    try {
+      await bulkUpdateProjectStatus(
+        currentUserId,
+        ids,
+        newStatus
+      );
+
+      toast.success(
+        `${ids.length} project${ids.length === 1 ? "" : "s"} moved to ${newStatus}`
+      );
+
+      clearSelection();
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail ||
+          "Failed to change project status"
       );
     }
   };
@@ -643,9 +670,11 @@ export default function ProjectsPage() {
         selectedCount={selectedProjects.size}
         totalCount={filtered.length}
         visibility={visibility}
+        statuses={PROJECT_STATUSES}
         onSelectAll={selectAllFiltered}
         onHide={handleBulkHide}
         onUnhide={handleBulkUnhide}
+        onChangeStatus={handleBulkStatusChange}
         onDelete={() => setDeleteTarget("bulk")}
         onClear={clearSelection}
       />

@@ -372,59 +372,73 @@ export default function ProjectsPage() {
       className="flex-1 overflow-auto bg-[#f7f9fc] px-6 py-6 lg:px-8"
     >
       {/* Header */}
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Projects
+      <div className="mb-5">
+        {/* Page header */}
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+              Projects{" "}
+              <span className="text-lg font-medium text-muted-foreground">
+                {projects.length}
+              </span>
             </h1>
 
-            <span className="text-sm font-medium text-muted-foreground">
-              {filtered.length}
-            </span>
+            <p className="mt-1 text-base text-muted-foreground">
+              Manage projects, deliverables and production timelines.
+            </p>
           </div>
 
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage projects, deliverables and production timelines.
-          </p>
+          <button
+            type="button"
+            data-testid={PROJECTS.newProjectBtn}
+            onClick={() => setModalOpen(true)}
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#23239b]"
+          >
+            <Plus className="h-4 w-4" />
+            New Project
+          </button>
         </div>
 
-        {/* Controls */}
-        <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        {/* Filters + view switcher */}
+        <div className="flex w-full items-center gap-2">
+          {/* Search */}
+          <div className="min-w-0 flex-1">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
-            <input
-              data-testid={PROJECTS.searchInput}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search project name..."
-              className="h-10 w-52 rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-            />
+              <input
+                data-testid={PROJECTS.searchInput}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search project name..."
+                className="h-10 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+              />
+            </div>
           </div>
 
+          {/* Status */}
           <select
             data-testid={PROJECTS.statusFilter}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            className="h-10 w-[150px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
           >
             <option value="">All status</option>
-
-            {PROJECT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {PROJECT_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status}
               </option>
             ))}
           </select>
 
+          {/* POC */}
           <select
             value={pocFilter}
             onChange={(e) => setPocFilter(e.target.value)}
-            className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            className="h-10 w-[190px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
           >
             <option value="">All POCs / Owners</option>
-
             {pocOptions.map((poc) => (
               <option key={poc} value={poc}>
                 {poc}
@@ -432,12 +446,13 @@ export default function ProjectsPage() {
             ))}
           </select>
 
+          {/* Date range */}
           <Popover>
             <PopoverTrigger asChild>
               <button
                 type="button"
                 className={[
-                  "inline-flex h-10 min-w-[190px] items-center gap-2 rounded-lg border bg-white px-3 text-sm outline-none transition-colors",
+                  "inline-flex h-10 w-[205px] shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm outline-none transition-colors",
                   "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
                   dateFrom || dateTo
                     ? "border-[#2b2bb5] text-foreground"
@@ -490,61 +505,54 @@ export default function ProjectsPage() {
             </PopoverContent>
           </Popover>
 
+          {/* Visibility */}
           <select
             value={visibility}
             onChange={(e) => {
               setVisibility(e.target.value);
               clearSelection();
             }}
-            className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            className="h-10 w-[165px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
           >
             <option value="visible">Visible projects</option>
             <option value="hidden">Hidden projects</option>
             <option value="all">All projects</option>
           </select>
 
-          {/* View toggle */}
-          <div className="flex h-10 overflow-hidden rounded-lg border border-border bg-white">
+          {/* View switcher — icons only */}
+          <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
             <button
               type="button"
               data-testid={PROJECTS.chartViewBtn}
               onClick={() => setView("chart")}
+              title="Kanban view"
+              aria-label="Kanban view"
               className={[
-                "inline-flex items-center gap-2 px-4 text-sm font-medium transition-colors",
+                "flex h-8 w-9 items-center justify-center rounded-md transition-colors",
                 view === "chart"
-                  ? "bg-[#f0f0fd] text-[#1a1a8a]"
-                  : "text-muted-foreground hover:bg-[#fafbff]",
+                  ? "bg-[#f0f0ff] text-[#2b2bb5]"
+                  : "text-muted-foreground hover:bg-muted",
               ].join(" ")}
             >
               <LayoutGrid className="h-4 w-4" />
-              Kanban
             </button>
 
             <button
               type="button"
               data-testid={PROJECTS.listViewBtn}
               onClick={() => setView("list")}
+              title="List view"
+              aria-label="List view"
               className={[
-                "inline-flex items-center gap-2 px-4 text-sm font-medium transition-colors",
+                "flex h-8 w-9 items-center justify-center rounded-md transition-colors",
                 view === "list"
-                  ? "bg-[#f0f0fd] text-[#1a1a8a]"
-                  : "text-muted-foreground hover:bg-[#fafbff]",
+                  ? "bg-[#f0f0ff] text-[#2b2bb5]"
+                  : "text-muted-foreground hover:bg-muted",
               ].join(" ")}
             >
               <List className="h-4 w-4" />
-              List
             </button>
           </div>
-
-          <button
-            type="button"
-            data-testid={PROJECTS.newProjectBtn}
-            onClick={() => setModalOpen(true)}
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-4 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30"
-          >
-            <Plus className="h-4 w-4" />
-            New Project
-          </button>
         </div>
       </div>
 

@@ -13,10 +13,6 @@ export const STAGE_COLORS = {
     dot: "bg-amber-500",
     text: "text-amber-600",
   },
-  Finish: {
-    dot: "bg-emerald-500",
-    text: "text-emerald-600",
-  },
 };
 
 export const STATUS_COLORS = {
@@ -78,4 +74,4 @@ export const PROJECT_STATUSES = [
   "Scrapped",
 ];
 
-export const STAGES = ["Content", "Design", "Animate", "Finish"];
+export const STAGES = ["Content", "Design", "Animate"];

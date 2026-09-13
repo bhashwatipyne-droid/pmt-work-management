@@ -192,11 +192,11 @@ export const DeliverableModal = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-border px-6 py-4">
+        <div className="flex shrink-0 items-start justify-between border-b border-border px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">
               {isEdit
@@ -222,7 +222,7 @@ export const DeliverableModal = ({
         </div>
 
         {/* Form */}
-        <div className="bg-[#f7f9fc] px-6 py-5">
+        <div className="flex-1 overflow-y-auto bg-[#f7f9fc] px-6 py-5">
           <div className="rounded-xl border border-border bg-white p-5">
             <div className="mb-5 flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0fd] text-xs font-semibold text-[#1a1a8a]">
@@ -396,56 +396,14 @@ export const DeliverableModal = ({
             </div>
           </div>
 
-          <div className="mt-6 border-t border-border pt-5">
-            <div className="mb-3">
-              <h3 className="text-sm font-semibold text-foreground">Approval workflow</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Manager approval is always required. Add any additional
-                approvals this deliverable needs — they run independently,
-                not in sequence.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {[
-                ["LEADERSHIP", "Leadership"],
-                ["CLIENT_SPOC", "Client SPOC"],
-                ["COMPLIANCE", "Compliance"],
-              ].map(([value, label]) => {
-                const checked = approvalTypes.includes(value);
-                return (
-                  <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-white px-3 py-2.5 text-xs hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() =>
-                        setApprovalTypes((prev) =>
-                          checked ? prev.filter((x) => x !== value) : [...prev, value]
-                        )
-                      }
-                      disabled={saving}
-                      className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]/20"
-                    />
-                    <span className="font-medium text-foreground">{label}</span>
-                  </label>
-                );
-              })}
-            </div>
-
-            {approvalTypes.length === 0 && (
-              <p className="mt-2 text-[11px] text-muted-foreground">No additional approvals. Manager sign-off alone will advance the stage.</p>
-            )}
-          </div>
-
           <p className="mt-3 text-[11px] text-muted-foreground">
             Start and end date-time are used for the
-            Content → Design → Animate → Finish stage
-            timeline.
+            selected stage timeline.
           </p>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-white px-6 py-4">
           {isEdit && (
             <button
               type="button"

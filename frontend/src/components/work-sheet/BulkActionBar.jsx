@@ -3,7 +3,7 @@ import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Trash2, X, Link2, EyeOff } from "lucide-react";
 
-const STAGES = ["Content", "Design", "Animate", "Finish"];
+const STAGES = ["Content", "Design", "Animate"];
 const NONE = "__none__";
 
 const BulkAssignPopover = ({ projects, deliverables, onApply, onClose }) => {

@@ -5,7 +5,6 @@ const SHEETS = [
   { key: "Content", label: "Content" },
   { key: "Design", label: "Design" },
   { key: "Animate", label: "Animation" },
-  { key: "Finish", label: "Finish" },
 ];
 
 export const WorkSheetTabs = ({ activeSheet, onChange }) => {

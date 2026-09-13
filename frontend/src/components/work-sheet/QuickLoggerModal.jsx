@@ -6,7 +6,6 @@ const STAGE_BY_DEPARTMENT = {
   Content: "Content",
   Design: "Design",
   Animation: "Animate",
-  Finish: "Finish",
 };
 
 const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];

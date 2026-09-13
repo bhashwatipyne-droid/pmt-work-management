@@ -568,7 +568,7 @@ export const CreateProjectModal = ({
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-6 py-4">
           <span className="text-xs text-muted-foreground">
             Deliverable schedules drive the Content → Design
-            → Animate → Finish stages.
+            → Animate stages.
           </span>
 
           <div className="flex items-center gap-2">

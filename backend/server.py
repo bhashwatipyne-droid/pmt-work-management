@@ -129,7 +129,7 @@ PROJECT_STATUSES = [
     "On Hold",
     "Scrapped",
 ]
-STAGES = ["Content", "Design", "Animate", "Finish"]
+STAGES = ["Content", "Design", "Animate"]
 
 
 def normalize_stages(stages: Optional[List[str]]) -> List[str]:
@@ -175,7 +175,7 @@ def next_selected_stage(
     return stages[index + 1]
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
 CLIENT_STATUSES = ["Active", "Inactive"]
-DEPARTMENTS = ["Content", "Design", "Animation", "Finish", "Administration"]
+DEPARTMENTS = ["Content", "Design", "Animation", "Administration"]
 ROLES = ["admin", "manager", "member"]
 APPROVAL_TYPES = ["MANAGER", "LEADERSHIP", "CLIENT_SPOC", "COMPLIANCE"]
 APPROVAL_STATUSES = ["NOT_STARTED", "PENDING", "APPROVED", "CHANGES_REQUESTED"]
@@ -474,7 +474,6 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
             "Content": "Content",
             "Design": "Design",
             "Animation": "Animate",
-            "Finish": "Finish",
         }.get(user.department)
         if existing.get("stage") and department_stage and existing.get("stage") != department_stage:
             raise HTTPException(status_code=403, detail="You can only edit work items in your department")
@@ -548,7 +547,6 @@ DEPARTMENT_TO_STAGE = {
     "Content": "Content",
     "Design": "Design",
     "Animation": "Animate",
-    "Finish": "Finish",
 }
 
 
@@ -3075,7 +3073,6 @@ async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> b
             "Content": "Content",
             "Design": "Design",
             "Animate": "Animation",
-            "Finish": "Finish",
         }
 
         required_department = stage_to_department.get(
@@ -3307,7 +3304,6 @@ async def _build_implicit_manager_items(user: User):
             "Content": "Content",
             "Design": "Design",
             "Animate": "Animation",
-            "Finish": "Finish",
         }
 
         candidates = [

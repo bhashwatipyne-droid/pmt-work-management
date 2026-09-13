@@ -12,7 +12,7 @@ import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 
 const NONE_VALUE = "__none__";
-const STAGES = ["Content", "Design", "Animate", "Finish"];
+const STAGES = ["Content", "Design", "Animate"];
 
 export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const {
@@ -62,7 +62,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     Content: "Content",
     Design: "Design",
     Animation: "Animate",
-    Finish: "Finish",
   }[currentUser.department];
   const canEditRow = isMember
     ? (!item.stage || item.stage === memberStage)

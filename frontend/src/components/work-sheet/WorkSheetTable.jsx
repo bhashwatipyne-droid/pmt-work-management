@@ -78,12 +78,11 @@ const COLUMN_FIELDS = {
   Status: "status",
 };
 
-const STAGES = ["Content", "Design", "Animate", "Finish"];
+const STAGES = ["Content", "Design", "Animate"];
 const MEMBER_STAGE_BY_DEPARTMENT = {
   Content: "Content",
   Design: "Design",
   Animation: "Animate",
-  Finish: "Finish",
 };
 
 // The worksheet is intentionally virtualized without adding a new dependency.

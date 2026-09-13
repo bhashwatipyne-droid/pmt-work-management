@@ -52,7 +52,6 @@ const DEPARTMENT_TO_STAGE = {
   Content: "Content",
   Design: "Design",
   Animation: "Animate",
-  Finish: "Finish",
 };
 
 const trackWorksheetContext = (item, previousItem, patch) => {
@@ -133,7 +132,6 @@ export default function WorkSheetPage() {
       Content: createFilters(),
       Design: createFilters(),
       Animation: createFilters(),
-      Finish: createFilters(),
     };
   });
 

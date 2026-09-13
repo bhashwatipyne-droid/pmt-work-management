@@ -2206,7 +2206,7 @@ async def create_project(payload: ProjectCreate, request: Request):
             end_dt=d.end_dt,
             required_stages=stages,
             current_stage=stages[0],
-            stage_status="Not Started",
+            stage_status="Ready for Review",
             approval_types=approval_types,
             created_at=ts,
             updated_at=ts,
@@ -2675,7 +2675,7 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
         end_dt=payload.end_dt,
         required_stages=stages,
         current_stage=stages[0],
-        stage_status="Not Started",
+        stage_status="Ready for Review",
         approval_types=approval_types,
     )
     db_doc = d.model_dump()

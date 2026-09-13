@@ -17,8 +17,6 @@ import {
   getOptions,
   updateProject,
   deleteProject,
-  approveDeliverable,
-  rejectDeliverable,
   getClients,
 } from "@/services/api";
 import {
@@ -181,45 +179,6 @@ export default function ProjectDetailPage() {
       );
     } finally {
       setDeletingProject(false);
-    }
-  };
-
-  const decide = async (deliverableId, action) => {
-    try {
-      if (action === "approve") {
-        await approveDeliverable(
-          currentUserId,
-          deliverableId
-        );
-
-        trackEvent("project_deliverable_status_changed", {
-          deliverable_id: deliverableId,
-          to_stage: "Completed",
-        });
-      } else {
-        await rejectDeliverable(
-          currentUserId,
-          deliverableId
-        );
-
-        trackEvent("project_deliverable_status_changed", {
-          deliverable_id: deliverableId,
-          to_stage: "Changes Requested",
-        });
-      }
-
-      toast.success(
-        action === "approve"
-          ? "Approved"
-          : "Sent back"
-      );
-
-      fetchAll();
-    } catch (err) {
-      toast.error(
-        err?.response?.data?.detail ||
-          "Action failed"
-      );
     }
   };
 
@@ -405,11 +364,6 @@ export default function ProjectDetailPage() {
                   STAGE_COLORS[d.current_stage] ||
                   STAGE_COLORS.Content;
 
-                const canReview =
-                  isElevated &&
-                  d.stage_status ===
-                    "Ready for Review";
-
                 return (
                   <div
                     key={d.id}
@@ -475,36 +429,6 @@ export default function ProjectDetailPage() {
                         </button>
                       )}
                     </div>
-
-                    {canReview && (
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          data-testid={`project-detail-approve-${d.id}`}
-                          onClick={() =>
-                            decide(
-                              d.id,
-                              "approve"
-                            )
-                          }
-                          className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-200"
-                        >
-                          Approve
-                        </button>
-
-                        <button
-                          data-testid={`project-detail-reject-${d.id}`}
-                          onClick={() =>
-                            decide(
-                              d.id,
-                              "reject"
-                            )
-                          }
-                          className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-                        >
-                          Send Back
-                        </button>
-                      </div>
-                    )}
                   </div>
                 );
               })}

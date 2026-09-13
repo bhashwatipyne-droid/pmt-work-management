@@ -11,6 +11,8 @@ import {
   Users,
 } from "lucide-react";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
+import { SelectPill } from "@/components/ui/SelectPill";
+import { DatePill } from "@/components/ui/DatePill";
 
 import { createDeliverable, updateDeliverable, deleteDeliverable } from "@/services/api";
 import { trackEvent } from "../../analytics";
@@ -249,86 +251,31 @@ export const DeliverableModal = ({
           />
 
           {/* Meta row: Type / Start date / Target date */}
-          <div className="mt-5 grid grid-cols-1 gap-4 divide-y divide-border sm:grid-cols-3 sm:gap-6 sm:divide-x sm:divide-y-0">
-            <div className="sm:pr-6">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <FileText className="h-3.5 w-3.5" />
-                Type
-              </div>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <SelectPill
+              icon={FileText}
+              value={deliverable.type}
+              onChange={(next) => updateField("type", next)}
+              placeholder="Select content type"
+              options={deliverableTypes.map((type) => ({
+                value: type,
+                label: type,
+              }))}
+            />
 
-              <select
-                value={deliverable.type}
-                onChange={(e) => updateField("type", e.target.value)}
-                className={`${inputBase} h-11`}
-                disabled={saving}
-              >
-                <option value="">Select content type</option>
+            <DatePill
+              icon={CalendarDays}
+              value={deliverable.start_dt}
+              onChange={(next) => updateField("start_dt", next)}
+              placeholder="Start date"
+            />
 
-                {deliverableTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="pt-4 sm:px-6 sm:pt-0">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Start date
-              </div>
-
-              <div className="relative">
-                <input
-                  type="datetime-local"
-                  value={deliverable.start_dt}
-                  onChange={(e) => updateField("start_dt", e.target.value)}
-                  className={`${inputBase} h-11 pr-9`}
-                  disabled={saving}
-                />
-
-                {deliverable.start_dt && (
-                  <button
-                    type="button"
-                    onClick={() => updateField("start_dt", "")}
-                    disabled={saving}
-                    aria-label="Clear start date"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-4 sm:pl-6 sm:pt-0">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Target date
-              </div>
-
-              <div className="relative">
-                <input
-                  type="datetime-local"
-                  value={deliverable.end_dt}
-                  onChange={(e) => updateField("end_dt", e.target.value)}
-                  className={`${inputBase} h-11 pr-9`}
-                  disabled={saving}
-                />
-
-                {deliverable.end_dt && (
-                  <button
-                    type="button"
-                    onClick={() => updateField("end_dt", "")}
-                    disabled={saving}
-                    aria-label="Clear target date"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
+            <DatePill
+              icon={CalendarDays}
+              value={deliverable.end_dt}
+              onChange={(next) => updateField("end_dt", next)}
+              placeholder="Target date"
+            />
           </div>
 
           <div className="my-6 border-t border-border" />

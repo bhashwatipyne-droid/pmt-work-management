@@ -32,6 +32,12 @@ export const SelectPill = ({
         >
           {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
 
+          {selected?.dotClassName && (
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${selected.dotClassName}`}
+            />
+          )}
+
           <span
             className={
               selected ? "text-foreground" : "text-muted-foreground"
@@ -54,9 +60,15 @@ export const SelectPill = ({
                 onChange(option.value);
                 setOpen(false);
               }}
-              className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-slate-100"
             >
-              <span>{option.label}</span>
+              {option.dotClassName && (
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${option.dotClassName}`}
+                />
+              )}
+
+              <span className="flex-1">{option.label}</span>
 
               {option.value === value && (
                 <Check className="h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />

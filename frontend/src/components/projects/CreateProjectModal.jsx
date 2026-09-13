@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { PROJECTS } from "@/constants/testIds";
-import { PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
+import { PROJECT_STATUSES, STAGES, STATUS_COLORS } from "@/constants/projectPalette";
 import { createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
@@ -243,6 +243,7 @@ export const CreateProjectModal = ({
               options={PROJECT_STATUSES.map((s) => ({
                 value: s,
                 label: s,
+                dotClassName: STATUS_COLORS[s]?.dot,
               }))}
             />
 

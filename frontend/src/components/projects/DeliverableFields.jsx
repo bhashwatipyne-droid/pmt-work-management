@@ -1,6 +1,7 @@
 import { FileText, Pencil, Play, Users, CalendarDays } from "lucide-react";
 import { SelectPill } from "@/components/ui/SelectPill";
 import { DatePill } from "@/components/ui/DatePill";
+import { MultiSelectPill } from "@/components/ui/MultiSelectPill";
 import { STAGES } from "@/constants/projectPalette";
 
 const STAGE_ICONS = {
@@ -14,6 +15,13 @@ const STAGE_ICONS = {
 // calls. Used both inside the standalone DeliverableModal and inline
 // in CreateProjectModal's "Create deliverable" card, so the two never
 // drift apart visually.
+//
+// `compact` swaps the large heading-style name field and the
+// always-visible stage picker for a smaller name field and a single
+// stages pill (checkboxes in a popover) — meant for the inline card in
+// CreateProjectModal, which needs to stay small since it lives inside
+// an already-busy form. The standalone DeliverableModal keeps the
+// larger, always-visible layout (compact=false, the default).
 export const DeliverableFields = ({
   deliverable,
   onChange,
@@ -21,7 +29,63 @@ export const DeliverableFields = ({
   deliverableTypes = [],
   disabled = false,
   autoFocusName = true,
+  compact = false,
 }) => {
+  if (compact) {
+    return (
+      <>
+        <input
+          type="text"
+          value={deliverable.name}
+          onChange={(e) => onChange("name", e.target.value)}
+          placeholder="Deliverable name"
+          autoFocus={autoFocusName}
+          disabled={disabled}
+          className="w-full border-none bg-transparent text-base font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+        />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <SelectPill
+            icon={FileText}
+            value={deliverable.type}
+            onChange={(next) => onChange("type", next)}
+            placeholder="Select content type"
+            options={deliverableTypes.map((type) => ({
+              value: type,
+              label: type,
+            }))}
+          />
+
+          <DatePill
+            icon={CalendarDays}
+            value={deliverable.start_dt}
+            onChange={(next) => onChange("start_dt", next)}
+            placeholder="Start date"
+          />
+
+          <DatePill
+            icon={CalendarDays}
+            value={deliverable.end_dt}
+            onChange={(next) => onChange("end_dt", next)}
+            placeholder="Target date"
+          />
+
+          <MultiSelectPill
+            icon={Users}
+            values={deliverable.required_stages || []}
+            onToggle={onToggleStage}
+            placeholder="Select stages"
+            options={STAGES.map((stage) => ({
+              value: stage,
+              label: stage,
+              icon: STAGE_ICONS[stage] || FileText,
+            }))}
+          />
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       {/* Name — large inline-style heading input */}

@@ -367,6 +367,7 @@ export const CreateProjectModal = ({
                   onToggleStage={toggleDraftStage}
                   deliverableTypes={deliverableTypes}
                   autoFocusName
+                  compact
                 />
 
                 <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">

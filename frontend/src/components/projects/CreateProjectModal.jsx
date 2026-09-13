@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { X, Plus, Trash2 } from "lucide-react";
 
 import { PROJECTS } from "@/constants/testIds";
-import { PROJECT_STATUSES } from "@/constants/projectPalette";
+import { PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
 import { createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
@@ -11,9 +11,10 @@ import { trackEvent } from "../../analytics";
 const emptyDeliverable = () => ({
   name: "",
   type: "",
-  owner_id: "",
   start_dt: "",
   end_dt: "",
+  required_stages: ["Content"],
+  approval_types: [],
 });
 
 const inputBase =
@@ -129,9 +130,14 @@ export const CreateProjectModal = ({
         .map((d) => ({
           name: d.name.trim(),
           type: d.type || "",
-          owner_id: d.owner_id || null,
           start_dt: d.start_dt || null,
           end_dt: d.end_dt || null,
+          required_stages:
+            d.required_stages?.length
+              ? d.required_stages
+              : ["Content"],
+          approval_types:
+            d.approval_types || [],
         }));
 
       const created = await createProject(currentUserId, {
@@ -366,7 +372,7 @@ export const CreateProjectModal = ({
                       </th>
 
                       <th className="px-3 py-2.5">
-                        Owner
+                        Stages
                       </th>
 
                       <th className="px-3 py-2.5">
@@ -447,27 +453,48 @@ export const CreateProjectModal = ({
                           </td>
 
                           <td className="px-3 py-2">
-                            <select
-                              value={d.owner_id}
-                              onChange={(e) =>
-                                updateDeliverable(
-                                  i,
-                                  "owner_id",
-                                  e.target.value
-                                )
-                              }
-                              className={smallInputBase}
-                            >
-                              <option value="">
-                                Unassigned
-                              </option>
+                            <div className="flex flex-wrap gap-1">
+                              {STAGES.map((stage) => {
+                                const checked =
+                                  d.required_stages?.includes(
+                                    stage
+                                  );
 
-                              {users.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.name}
-                                </option>
-                              ))}
-                            </select>
+                                return (
+                                  <label
+                                    key={stage}
+                                    className={`flex cursor-pointer items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium transition-colors ${
+                                      checked
+                                        ? "border-[#2b2bb5] bg-[#f0f0fd] text-[#1a1a8a]"
+                                        : "border-border bg-white text-muted-foreground hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(checked)}
+                                      onChange={() => {
+                                        const current =
+                                          d.required_stages || [];
+
+                                        const next = checked
+                                          ? current.filter(
+                                              (s) => s !== stage
+                                            )
+                                          : [...current, stage];
+
+                                        updateDeliverable(
+                                          i,
+                                          "required_stages",
+                                          next
+                                        );
+                                      }}
+                                      className="h-3 w-3"
+                                    />
+                                    {stage}
+                                  </label>
+                                );
+                              })}
+                            </div>
                           </td>
 
                           <td className="px-3 py-2">

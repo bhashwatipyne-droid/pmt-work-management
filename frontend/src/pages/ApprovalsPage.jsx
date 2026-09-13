@@ -374,7 +374,11 @@ export default function ApprovalsPage() {
                         <span>·</span>
 
                         <span>
-                          Owner: {item.owner_name}
+                          {(
+                            item.required_stages || [
+                              item.current_stage,
+                            ]
+                          ).join(" → ")}
                         </span>
                       </div>
 

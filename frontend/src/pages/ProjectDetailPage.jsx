@@ -405,10 +405,6 @@ export default function ProjectDetailPage() {
                   STAGE_COLORS[d.current_stage] ||
                   STAGE_COLORS.Content;
 
-                const owner = users.find(
-                  (u) => u.id === d.owner_id
-                );
-
                 const canReview =
                   isElevated &&
                   d.stage_status ===
@@ -448,9 +444,10 @@ export default function ProjectDetailPage() {
                           </span>
 
                           <span className="text-muted-foreground">
-                            Owner:{" "}
-                            {owner?.name ||
-                              "Unassigned"}
+                            Workflow:{" "}
+                            {(d.required_stages || [d.current_stage]).join(
+                              " → "
+                            )}
                           </span>
 
                           {d.type && (

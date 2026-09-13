@@ -3,19 +3,16 @@ import { toast } from "sonner";
 import { X } from "lucide-react";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 
-import {
-  createDeliverable,
-  updateDeliverable,
-  deleteDeliverable,
-} from "@/services/api";
+import { createDeliverable, updateDeliverable, deleteDeliverable } from "@/services/api";
 import { trackEvent } from "../../analytics";
+import { STAGES } from "@/constants/projectPalette";
 
 const emptyDeliverable = {
   name: "",
   type: "",
-  owner_id: "",
   start_dt: "",
   end_dt: "",
+  required_stages: ["Content"],
 };
 
 const inputBase =
@@ -50,9 +47,12 @@ export const DeliverableModal = ({
       setDeliverable({
         name: initial.name || "",
         type: initial.type || "",
-        owner_id: initial.owner_id || "",
         start_dt: initial.start_dt || "",
         end_dt: initial.end_dt || "",
+        required_stages:
+          initial.required_stages?.length
+            ? initial.required_stages
+            : [initial.current_stage || "Content"],
       });
       setApprovalTypes(initial.approval_types || []);
     } else {
@@ -79,6 +79,12 @@ export const DeliverableModal = ({
       );
     }
 
+    if (!deliverable.required_stages?.length) {
+      return toast.error(
+        "Select at least one production stage"
+      );
+    }
+
     if (
       deliverable.start_dt &&
       deliverable.end_dt &&
@@ -96,9 +102,10 @@ export const DeliverableModal = ({
       const payload = {
         name: deliverable.name.trim(),
         type: deliverable.type || "",
-        owner_id: deliverable.owner_id || null,
         start_dt: deliverable.start_dt || null,
         end_dt: deliverable.end_dt || null,
+        required_stages:
+          deliverable.required_stages || [],
         approval_types: approvalTypes,
       };
 
@@ -282,36 +289,69 @@ export const DeliverableModal = ({
                 </select>
               </div>
 
-              {/* Owner */}
-              <div>
+              {/* Production Stages */}
+              <div className="md:col-span-2">
                 <label className={labelBase}>
-                  Owner
+                  Production Stages
                 </label>
 
-                <select
-                  value={deliverable.owner_id}
-                  onChange={(e) =>
-                    updateField(
-                      "owner_id",
-                      e.target.value
-                    )
-                  }
-                  className={inputBase}
-                  disabled={saving}
-                >
-                  <option value="">
-                    Unassigned
-                  </option>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Select the teams that need to work on this deliverable.
+                  The workflow will follow this order.
+                </p>
 
-                  {users.map((user) => (
-                    <option
-                      key={user.id}
-                      value={user.id}
-                    >
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {STAGES.map((stage) => {
+                    const checked =
+                      deliverable.required_stages?.includes(stage);
+
+                    return (
+                      <label
+                        key={stage}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                          checked
+                            ? "border-[#2b2bb5] bg-[#f0f0fd] text-[#1a1a8a]"
+                            : "border-border bg-white text-muted-foreground hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setDeliverable((prev) => {
+                              const current =
+                                prev.required_stages || [];
+
+                              const next = checked
+                                ? current.filter(
+                                    (s) => s !== stage
+                                  )
+                                : [...current, stage];
+
+                              return {
+                                ...prev,
+                                required_stages: next,
+                              };
+                            });
+                          }}
+                          disabled={saving}
+                          className="h-4 w-4"
+                        />
+
+                        <span>{stage}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                  <span className="font-semibold">
+                    Workflow:
+                  </span>{" "}
+                  {STAGES.filter((stage) =>
+                    deliverable.required_stages?.includes(stage)
+                  ).join(" → ") || "Select at least one stage"}
+                </div>
               </div>
 
               {/* Start */}
@@ -359,12 +399,15 @@ export const DeliverableModal = ({
           <div className="mt-6 border-t border-border pt-5">
             <div className="mb-3">
               <h3 className="text-sm font-semibold text-foreground">Approval workflow</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Choose the approvals this deliverable needs. They run independently, not in sequence.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Manager approval is always required. Add any additional
+                approvals this deliverable needs — they run independently,
+                not in sequence.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
-                ["MANAGER", "Manager"],
                 ["LEADERSHIP", "Leadership"],
                 ["CLIENT_SPOC", "Client SPOC"],
                 ["COMPLIANCE", "Compliance"],
@@ -390,7 +433,7 @@ export const DeliverableModal = ({
             </div>
 
             {approvalTypes.length === 0 && (
-              <p className="mt-2 text-[11px] text-muted-foreground">No additional approvals. A manager can close the deliverable directly.</p>
+              <p className="mt-2 text-[11px] text-muted-foreground">No additional approvals. Manager sign-off alone will advance the stage.</p>
             )}
           </div>
 

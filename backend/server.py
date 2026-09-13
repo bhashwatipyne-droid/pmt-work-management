@@ -130,6 +130,49 @@ PROJECT_STATUSES = [
     "Scrapped",
 ]
 STAGES = ["Content", "Design", "Animate", "Finish"]
+
+
+def normalize_stages(stages: Optional[List[str]]) -> List[str]:
+    """
+    Return selected production stages in the canonical production order.
+    """
+    if not stages:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one production stage is required",
+        )
+
+    selected = set()
+
+    for stage in stages:
+        if stage not in STAGES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid production stage: {stage}",
+            )
+        selected.add(stage)
+
+    return [stage for stage in STAGES if stage in selected]
+
+
+def next_selected_stage(
+    current_stage: str,
+    required_stages: List[str],
+) -> Optional[str]:
+    """
+    Find the next stage from this deliverable's configured pipeline.
+    """
+    stages = normalize_stages(required_stages)
+
+    try:
+        index = stages.index(current_stage)
+    except ValueError:
+        return None
+
+    if index + 1 >= len(stages):
+        return None
+
+    return stages[index + 1]
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
 CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Finish", "Administration"]
@@ -277,9 +320,11 @@ class ClientCreate(BaseModel):
 class DeliverableInput(BaseModel):
     name: str
     type: Optional[str] = ""
-    owner_id: Optional[str] = None
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    required_stages: List[str] = Field(
+        default_factory=lambda: ["Content"]
+    )
     approval_types: Optional[List[str]] = None
 
 
@@ -331,9 +376,11 @@ class Deliverable(BaseModel):
     project_id: str
     name: str
     type: str = ""
-    owner_id: Optional[str] = None
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    required_stages: List[str] = Field(
+        default_factory=lambda: ["Content"]
+    )
     current_stage: str = "Content"
     stage_status: str = "Not Started"
     approval_types: List[str] = Field(default_factory=list)
@@ -1961,9 +2008,6 @@ async def _hydrate_projects(
 
             stage_counts[stage] = stage_counts.get(stage, 0) + 1
 
-            if d.get("owner_id"):
-                collaborators.add(d["owner_id"])
-
         # Resolve client POC.
         # Keep the existing fallback behaviour:
         # selected contact person -> client's default contact_person.
@@ -2154,15 +2198,16 @@ async def create_project(payload: ProjectCreate, request: Request):
         },
     )
     for d in payload.deliverables or []:
+        stages = normalize_stages(d.required_stages)
         approval_types = d.approval_types or []
         deliv = Deliverable(
             project_id=project.id,
             name=d.name,
             type=d.type or "",
-            owner_id=d.owner_id,
             start_dt=d.start_dt,
             end_dt=d.end_dt,
-            current_stage="Content",
+            required_stages=stages,
+            current_stage=stages[0],
             stage_status="Not Started",
             approval_types=approval_types,
             created_at=ts,
@@ -2171,8 +2216,9 @@ async def create_project(payload: ProjectCreate, request: Request):
         db_doc = deliv.model_dump()
         db_doc.pop("approval_types", None)
         await db.deliverables.insert_one(db_doc)
-        if approval_types:
-            await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
+        # Manager approval always exists, even with no additional approval
+        # types selected, so this must run unconditionally.
+        await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
         await log_activity(
             collection_name="deliverable_activity_log",
             entity_id=deliv.id,
@@ -2183,7 +2229,7 @@ async def create_project(payload: ProjectCreate, request: Request):
                 "name": deliv.name,
                 "type": deliv.type,
                 "project_id": deliv.project_id,
-                "owner_id": deliv.owner_id,
+                "required_stages": deliv.required_stages,
                 "current_stage": deliv.current_stage,
                 "stage_status": deliv.stage_status,
             },
@@ -2568,22 +2614,20 @@ class DeliverableCreate(BaseModel):
     project_id: str
     name: str
     type: Optional[str] = ""
-    owner_id: Optional[str] = None
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
-    current_stage: Optional[str] = "Content"
-    stage_status: Optional[str] = "Not Started"
+    required_stages: List[str] = Field(
+        default_factory=lambda: ["Content"]
+    )
     approval_types: Optional[List[str]] = None
 
 
 class DeliverableUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[str] = None
-    owner_id: Optional[str] = None
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
-    current_stage: Optional[str] = None
-    stage_status: Optional[str] = None
+    required_stages: Optional[List[str]] = None
     approval_types: Optional[List[str]] = None
 
 
@@ -2621,14 +2665,27 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
     if not await db.projects.find_one({"id": payload.project_id}, {"_id": 0}):
         raise HTTPException(status_code=400, detail="Project not found")
     ts = now_iso()
-    payload_data = payload.model_dump()
-    approval_types = payload_data.pop("approval_types", None) or []
-    d = Deliverable(created_at=ts, updated_at=ts, **payload_data, approval_types=approval_types)
+    stages = normalize_stages(payload.required_stages)
+    approval_types = payload.approval_types or []
+    d = Deliverable(
+        created_at=ts,
+        updated_at=ts,
+        project_id=payload.project_id,
+        name=payload.name,
+        type=payload.type or "",
+        start_dt=payload.start_dt,
+        end_dt=payload.end_dt,
+        required_stages=stages,
+        current_stage=stages[0],
+        stage_status="Not Started",
+        approval_types=approval_types,
+    )
     db_doc = d.model_dump()
     db_doc.pop("approval_types", None)
     await db.deliverables.insert_one(db_doc)
-    if approval_types:
-        await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
+    # Manager approval always exists, even with no additional approval
+    # types selected, so this must run unconditionally.
+    await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
     await log_activity(
         collection_name="deliverable_activity_log",
         entity_id=d.id,
@@ -2639,7 +2696,7 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
             "name": d.name,
             "type": d.type,
             "project_id": d.project_id,
-            "owner_id": d.owner_id,
+            "required_stages": d.required_stages,
             "current_stage": d.current_stage,
             "stage_status": d.stage_status,
         },
@@ -2655,8 +2712,10 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
         raise HTTPException(status_code=404, detail="Deliverable not found")
     update_fields = payload.model_dump(exclude_unset=True)
     approval_types = update_fields.pop("approval_types", None)
-    if "current_stage" in update_fields and update_fields["current_stage"] not in STAGES:
-        raise HTTPException(status_code=400, detail="Invalid stage")
+    if "required_stages" in update_fields:
+        update_fields["required_stages"] = normalize_stages(
+            update_fields["required_stages"]
+        )
     if "stage_status" in update_fields and update_fields["stage_status"] not in STAGE_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid stage status")
 
@@ -2957,7 +3016,9 @@ async def _get_approval_workflow(deliverable_id: str):
 
 
 async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: List[str], changed_by: Optional[str] = None):
-    normalized = []
+    # Manager approval is mandatory; any additional selected types are
+    # optional and run independently, not sequentially.
+    normalized = ["MANAGER"]
     for value in approval_types or []:
         value = str(value).upper().strip()
         if value not in APPROVAL_TYPES:
@@ -3064,8 +3125,7 @@ async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
     user_ids = list({
         uid
         for uid in (
-            [d.get("owner_id") for d in deliverables.values()]
-            + [x.get("assigned_to") for x in items]
+            [x.get("assigned_to") for x in items]
         )
         if uid
     })
@@ -3097,7 +3157,6 @@ async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
     for item in items:
         d = deliverables.get(item.get("deliverable_id"), {})
         p = projects.get(d.get("project_id"), {})
-        owner = users.get(d.get("owner_id"), {})
         assigned = users.get(item.get("assigned_to"), {})
         client = clients.get(p.get("client_id"), {})
 
@@ -3108,7 +3167,9 @@ async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
             "deliverable_type": d.get("type", ""),
             "current_stage": d.get("current_stage", "Content"),
             "stage_status": d.get("stage_status", "Not Started"),
-            "owner_name": owner.get("name", "Unassigned"),
+            "required_stages": d.get(
+                "required_stages", [d.get("current_stage", "Content")]
+            ),
             "assigned_to_name": assigned.get("name", "Unassigned"),
             "project_name": p.get("name", ""),
             "project_code": p.get("code", ""),
@@ -3438,6 +3499,94 @@ async def configure_approval_workflow(deliverable_id: str, payload: ApprovalWork
     return await get_deliverable_approvals(deliverable_id, request)
 
 
+async def advance_deliverable_stage(
+    deliverable: dict,
+    reviewer_id: str,
+    note: str,
+):
+    ts = now_iso()
+
+    required_stages = (
+        deliverable.get("required_stages")
+        or [deliverable.get("current_stage", "Content")]
+    )
+
+    current_stage = deliverable.get(
+        "current_stage",
+        required_stages[0],
+    )
+
+    next_stage = next_selected_stage(
+        current_stage,
+        required_stages,
+    )
+
+    if next_stage:
+        update = {
+            "current_stage": next_stage,
+            "stage_status": "Not Started",
+            "last_review_action": "approved",
+            "last_reviewer_id": reviewer_id,
+            "last_review_note": note,
+            "updated_at": ts,
+        }
+    else:
+        update = {
+            "stage_status": "Completed",
+            "last_review_action": "approved",
+            "last_reviewer_id": reviewer_id,
+            "last_review_note": note,
+            "updated_at": ts,
+        }
+
+    await db.deliverables.update_one(
+        {"id": deliverable["id"]},
+        {"$set": update},
+    )
+
+    # Approval belongs to the stage that was just reviewed.
+    # Reset approval items so the next stage does not inherit
+    # stale approvals.
+    workflow = await _get_approval_workflow(
+        deliverable["id"]
+    )
+
+    if workflow:
+        await db.approval_items.update_many(
+            {
+                "approval_workflow_id": workflow["id"],
+            },
+            {
+                "$set": {
+                    "status": "NOT_STARTED",
+                    "requested_at": None,
+                    "approved_at": None,
+                    "sent_back_at": None,
+                    "approved_by": None,
+                    "sent_back_by": None,
+                    "comments": "",
+                    "updated_at": ts,
+                }
+            },
+        )
+
+        await db.approval_workflows.update_one(
+            {"id": workflow["id"]},
+            {
+                "$set": {
+                    "status": "COMPLETED",
+                    "completed_at": ts,
+                    "updated_at": ts,
+                }
+            },
+        )
+
+    return await db.deliverables.find_one(
+        {"id": deliverable["id"]},
+        {"_id": 0},
+    )
+
+
 @api_router.post("/approval-items/{approval_item_id}/approve")
 async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
@@ -3456,7 +3605,7 @@ async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision
         raise HTTPException(status_code=403, detail="You are not authorized to approve this item")
     ts = now_iso()
     if item.get("approval_workflow_id") is None:
-        await db.deliverables.update_one({"id": d["id"]}, {"$set": {"stage_status": "Completed", "updated_at": ts, "last_review_action": "approved", "last_reviewer_id": user.id, "last_review_note": payload.note or ""}})
+        await advance_deliverable_stage(d, user.id, payload.note or "")
         await db.approval_history.insert_one({"id": str(uuid.uuid4()), "approval_item_id": approval_item_id, "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id, "comment": payload.note or "", "created_at": ts})
         return await get_deliverable_approvals(d["id"], request)
     await db.approval_items.update_one(
@@ -3466,14 +3615,7 @@ async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision
     workflow = await _get_approval_workflow(d["id"])
     pending = await db.approval_items.count_documents({"approval_workflow_id": workflow["id"], "status": "PENDING"})
     if pending == 0:
-        await db.approval_workflows.update_one(
-            {"id": workflow["id"]},
-            {"$set": {"status": "COMPLETED", "completed_at": ts, "updated_at": ts}},
-        )
-        await db.deliverables.update_one(
-            {"id": d["id"]},
-            {"$set": {"stage_status": "Completed", "updated_at": ts}},
-        )
+        await advance_deliverable_stage(d, user.id, payload.note or "")
     await db.approval_history.insert_one({
         "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
         "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id,
@@ -3604,12 +3746,9 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")
-    cur = existing.get("current_stage", "Content")
-    nxt = _next_stage(cur)
-    update = {"stage_status": "Completed"} if nxt is None else {"current_stage": nxt, "stage_status": "Not Started"}
-    update.update({"updated_at": now_iso(), "last_review_note": payload.note or "", "last_review_action": "approved", "last_reviewer_id": user.id})
-    await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
-    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+    # Use the deliverable's own selected pipeline, not the fixed global
+    # stage order, so this stays consistent with the Approvals Kanban.
+    return await advance_deliverable_stage(existing, user.id, payload.note or "")
 
 
 @api_router.post("/deliverables/{deliverable_id}/reject")

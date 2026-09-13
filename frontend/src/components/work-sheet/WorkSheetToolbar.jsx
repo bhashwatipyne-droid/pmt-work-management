@@ -9,7 +9,6 @@ import {
 import {
   Plus,
   ChevronDown,
-  CheckCircle2,
   Clock3,
   ClipboardCheck,
   History,
@@ -29,7 +28,6 @@ export const WorkSheetToolbar = ({
   resultCount,
   onBulkAdd,
   bulkAdding,
-  onOpenCloseDeliverable,
   onOpenQuickLogger,
   onOpenBulkReview,
   onOpenHistory,
@@ -38,18 +36,6 @@ export const WorkSheetToolbar = ({
     <div className="border-b border-border bg-card">
       {/* ACTIONS ROW */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        {onOpenCloseDeliverable && (
-          <Button
-            data-testid={WORKSHEET.closeDeliverableBtn}
-            onClick={onOpenCloseDeliverable}
-            size="sm"
-            className="h-9 bg-emerald-600 hover:bg-emerald-700"
-          >
-            <CheckCircle2 className="mr-1.5 h-4 w-4" />
-            Deliverable Closed
-          </Button>
-        )}
-
         {onOpenQuickLogger && (
           <Button
             onClick={onOpenQuickLogger}

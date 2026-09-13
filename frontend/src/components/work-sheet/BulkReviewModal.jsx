@@ -32,6 +32,10 @@ export default function BulkReviewModal({
       setItems(data);
       setSelectedIds([]);
       setNotes({});
+
+      trackEvent("bulk_review_opened", {
+        item_count: data.length,
+      });
     } catch (e) {
       toast.error(
         e.response?.data?.detail ||
@@ -44,10 +48,6 @@ export default function BulkReviewModal({
 
   useEffect(() => {
     if (open) {
-      trackEvent("bulk_review_opened", {
-        item_count: items.length,
-      });
-
       fetchItems();
     }
   }, [open, currentUser]);

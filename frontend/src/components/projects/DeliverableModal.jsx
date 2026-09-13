@@ -48,6 +48,8 @@ export const DeliverableModal = ({
   deliverableTypes = [],
   onClose,
   onSaved,
+  draftMode = false,
+  compact = false,
 }) => {
   const [deliverable, setDeliverable] =
     useState(emptyDeliverable);
@@ -126,6 +128,24 @@ export const DeliverableModal = ({
         approval_types: approvalTypes,
       };
 
+      // Draft mode: this deliverable belongs to a project that hasn't
+      // been created yet, so there's nothing to save it against. Just
+      // hand the collected data back to the parent to hold locally.
+      if (draftMode) {
+        const saved = {
+          id: initial?.id || crypto.randomUUID(),
+          ...payload,
+        };
+
+        toast.success(
+          mode === "edit" ? "Deliverable updated" : "Deliverable added"
+        );
+
+        onSaved?.(saved);
+        onClose?.();
+        return;
+      }
+
       let saved;
 
       if (mode === "edit" && initial?.id) {
@@ -178,6 +198,13 @@ export const DeliverableModal = ({
   const handleDelete = async () => {
     if (!initial?.id) return;
 
+    if (draftMode) {
+      toast.success("Deliverable removed");
+      onSaved?.({ deleted: true, id: initial.id });
+      onClose?.();
+      return;
+    }
+
     setDeleting(true);
 
     try {
@@ -205,11 +232,13 @@ export const DeliverableModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className={`flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl ${
+          compact ? "max-h-[85vh] max-w-2xl" : "max-h-[92vh] max-w-4xl"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header: breadcrumb + close */}

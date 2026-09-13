@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { format, parseISO } from "date-fns";
 import {
   X,
   Plus,
   Trash2,
+  Pencil,
   ChevronRight,
   Briefcase,
   Package,
@@ -14,21 +16,18 @@ import {
 } from "lucide-react";
 
 import { PROJECTS } from "@/constants/testIds";
-import { PROJECT_STATUSES, STAGES, STATUS_COLORS } from "@/constants/projectPalette";
+import {
+  PROJECT_STATUSES,
+  STAGES,
+  STATUS_COLORS,
+  STAGE_COLORS,
+} from "@/constants/projectPalette";
 import { createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
 import { SelectPill } from "@/components/ui/SelectPill";
 import { DatePill } from "@/components/ui/DatePill";
-
-const emptyDeliverable = () => ({
-  name: "",
-  type: "",
-  start_dt: "",
-  end_dt: "",
-  required_stages: ["Content"],
-  approval_types: [],
-});
+import { DeliverableModal } from "@/components/projects/DeliverableModal";
 
 const inputBase =
   "w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20";
@@ -56,6 +55,11 @@ export const CreateProjectModal = ({
   const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState(PROJECT_STATUSES[0]);
   const [deliverables, setDeliverables] = useState([]);
+  const [deliverableModal, setDeliverableModal] = useState({
+    open: false,
+    mode: "add",
+    initial: null,
+  });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -75,37 +79,35 @@ export const CreateProjectModal = ({
 
   if (!open) return null;
 
-  const addDeliverable = () => {
-    const last = deliverables[deliverables.length - 1];
-    const next = emptyDeliverable();
-
-    if (last?.start_dt) {
-      const d = new Date(last.start_dt);
-      d.setDate(d.getDate() + 1);
-      next.start_dt = d.toISOString().slice(0, 16);
-    }
-
-    if (last?.end_dt) {
-      const d = new Date(last.end_dt);
-      d.setDate(d.getDate() + 1);
-      next.end_dt = d.toISOString().slice(0, 16);
-    }
-
-    setDeliverables([...deliverables, next]);
+  const openAddDeliverable = () => {
+    setDeliverableModal({ open: true, mode: "add", initial: null });
   };
 
-  const updateDeliverable = (i, key, value) => {
-    setDeliverables((prev) =>
-      prev.map((d, idx) =>
-        idx === i ? { ...d, [key]: value } : d
-      )
-    );
+  const openEditDeliverable = (d) => {
+    setDeliverableModal({ open: true, mode: "edit", initial: d });
   };
 
-  const removeDeliverable = (i) => {
-    setDeliverables((prev) =>
-      prev.filter((_, idx) => idx !== i)
-    );
+  const closeDeliverableModal = () => {
+    setDeliverableModal({ open: false, mode: "add", initial: null });
+  };
+
+  const handleDeliverableSaved = (saved) => {
+    if (saved?.deleted) {
+      setDeliverables((prev) => prev.filter((d) => d.id !== saved.id));
+      return;
+    }
+
+    setDeliverables((prev) => {
+      const exists = prev.some((d) => d.id === saved.id);
+
+      return exists
+        ? prev.map((d) => (d.id === saved.id ? saved : d))
+        : [...prev, saved];
+    });
+  };
+
+  const removeDeliverable = (id) => {
+    setDeliverables((prev) => prev.filter((d) => d.id !== id));
   };
 
   const reset = () => {
@@ -116,6 +118,7 @@ export const CreateProjectModal = ({
     setEndDate("");
     setStatus(PROJECT_STATUSES[0]);
     setDeliverables([]);
+    closeDeliverableModal();
   };
 
   const handleSubmit = async () => {
@@ -139,8 +142,8 @@ export const CreateProjectModal = ({
 
     try {
       const cleanedDeliverables = deliverables
-        .filter((d) => d.name.trim())
-        .map((d) => ({
+        .filter((d) => d.name?.trim())
+        .map(({ id, ...d }) => ({
           name: d.name.trim(),
           type: d.type || "",
           start_dt: d.start_dt || null,
@@ -310,7 +313,7 @@ export const CreateProjectModal = ({
               <button
                 type="button"
                 data-testid={PROJECTS.addDeliverableBtn}
-                onClick={addDeliverable}
+                onClick={openAddDeliverable}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -333,143 +336,79 @@ export const CreateProjectModal = ({
                 </p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-b-xl bg-white">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] text-left text-xs">
-                    <thead className="bg-[#f7f9fc] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="w-10 px-3 py-2.5">#</th>
-                        <th className="w-[30%] px-3 py-2.5">Name *</th>
-                        <th className="px-3 py-2.5">Type</th>
-                        <th className="px-3 py-2.5">Stages</th>
-                        <th className="px-3 py-2.5">Start · Date & Time</th>
-                        <th className="px-3 py-2.5">End · Date & Time</th>
-                        <th className="w-10 px-2 py-2.5" />
-                      </tr>
-                    </thead>
+              <div className="divide-y divide-border rounded-b-xl bg-white">
+                {deliverables.map((d) => (
+                  <div
+                    key={d.id}
+                    data-testid={`${PROJECTS.deliverableRowPrefix}-${d.id}`}
+                    className="flex items-center justify-between gap-3 px-5 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="truncate text-sm font-semibold text-foreground">
+                          {d.name}
+                        </span>
 
-                    <tbody>
-                      {deliverables.map((d, i) => (
-                        <tr
-                          key={i}
-                          data-testid={`${PROJECTS.deliverableRowPrefix}-${i}`}
-                          className="border-t border-border"
-                        >
-                          <td className="px-3 py-2 text-xs text-muted-foreground">
-                            {i + 1}
-                          </td>
+                        {d.type && (
+                          <span className="text-xs text-muted-foreground">
+                            · {d.type}
+                          </span>
+                        )}
+                      </div>
 
-                          <td className="w-[30%] px-3 py-2">
-                            <input
-                              value={d.name}
-                              onChange={(e) =>
-                                updateDeliverable(i, "name", e.target.value)
-                              }
-                              placeholder="Task name"
-                              className={smallInputBase}
-                            />
-                          </td>
-
-                          <td className="px-3 py-2">
-                            <select
-                              value={d.type}
-                              onChange={(e) =>
-                                updateDeliverable(i, "type", e.target.value)
-                              }
-                              className={smallInputBase}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(d.required_stages || []).map((stage) => (
+                            <span
+                              key={stage}
+                              className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground"
                             >
-                              <option value="">—</option>
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  STAGE_COLORS[stage]?.dot || "bg-slate-400"
+                                }`}
+                              />
+                              {stage}
+                            </span>
+                          ))}
+                        </div>
 
-                              {deliverableTypes.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
+                        {(d.start_dt || d.end_dt) && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {d.start_dt
+                              ? format(parseISO(d.start_dt), "dd MMM yyyy")
+                              : "—"}
+                            {" – "}
+                            {d.end_dt
+                              ? format(parseISO(d.end_dt), "dd MMM yyyy")
+                              : "—"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-                          <td className="px-3 py-2">
-                            <div className="flex flex-wrap gap-1">
-                              {STAGES.map((stage) => {
-                                const checked =
-                                  d.required_stages?.includes(stage);
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEditDeliverable(d)}
+                        aria-label={`Edit ${d.name}`}
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
 
-                                return (
-                                  <label
-                                    key={stage}
-                                    className={`flex cursor-pointer items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium transition-colors ${
-                                      checked
-                                        ? "border-[#2b2bb5] bg-[#f0f0fd] text-[#1a1a8a]"
-                                        : "border-border bg-white text-muted-foreground hover:bg-slate-50"
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(checked)}
-                                      onChange={() => {
-                                        const current =
-                                          d.required_stages || [];
-
-                                        const next = checked
-                                          ? current.filter((s) => s !== stage)
-                                          : [...current, stage];
-
-                                        updateDeliverable(
-                                          i,
-                                          "required_stages",
-                                          next
-                                        );
-                                      }}
-                                      className="h-3 w-3"
-                                    />
-                                    {stage}
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </td>
-
-                          <td className="px-3 py-2">
-                            <input
-                              type="datetime-local"
-                              value={d.start_dt}
-                              onChange={(e) =>
-                                updateDeliverable(
-                                  i,
-                                  "start_dt",
-                                  e.target.value
-                                )
-                              }
-                              className={smallInputBase}
-                            />
-                          </td>
-
-                          <td className="px-3 py-2">
-                            <input
-                              type="datetime-local"
-                              value={d.end_dt}
-                              onChange={(e) =>
-                                updateDeliverable(i, "end_dt", e.target.value)
-                              }
-                              className={smallInputBase}
-                            />
-                          </td>
-
-                          <td className="px-2 py-2">
-                            <button
-                              type="button"
-                              data-testid={`${PROJECTS.deliverableRemovePrefix}-${i}`}
-                              onClick={() => removeDeliverable(i)}
-                              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      <button
+                        type="button"
+                        data-testid={`${PROJECTS.deliverableRemovePrefix}-${d.id}`}
+                        onClick={() => removeDeliverable(d.id)}
+                        aria-label={`Remove ${d.name}`}
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -497,6 +436,21 @@ export const CreateProjectModal = ({
           </button>
         </div>
       </div>
+
+      {deliverableModal.open && (
+        <DeliverableModal
+          open={deliverableModal.open}
+          mode={deliverableModal.mode}
+          initial={deliverableModal.initial}
+          currentUserId={currentUserId}
+          users={users}
+          deliverableTypes={deliverableTypes}
+          onClose={closeDeliverableModal}
+          onSaved={handleDeliverableSaved}
+          draftMode
+          compact
+        />
+      )}
     </div>
   );
 };

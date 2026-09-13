@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, Clock, Save, Check, AlertCircle } from "lucide-react";
+import { trackEvent } from "../../analytics";
 
 const STAGE_BY_DEPARTMENT = {
   Content: "Content",
@@ -87,6 +88,8 @@ export default function QuickLoggerModal({
   const entryCardRef = useRef(null);
   const suggestionRefs = useRef([]);
   const committingRef = useRef(false);
+  const entryStartedRef = useRef(false);
+  const savedSuccessfullyRef = useRef(false);
 
   const stage =
     STAGE_BY_DEPARTMENT[currentUser?.department] ||
@@ -251,6 +254,15 @@ export default function QuickLoggerModal({
     setError("");
     setShowRemark(false);
     committingRef.current = false;
+
+    entryStartedRef.current = false;
+    savedSuccessfullyRef.current = false;
+
+    trackEvent("quick_logger_opened", {
+      source: "worksheet",
+      stage: stage || null,
+    });
+
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
@@ -311,7 +323,29 @@ export default function QuickLoggerModal({
   }, [highlightedIndex]);
 
   const updateDraft = (patch) => {
-    setDraft((prev) => ({ ...prev, ...patch }));
+    setDraft((prev) => {
+      const next = { ...prev, ...patch };
+
+      const hasStartedEntry =
+        Boolean(next.text?.trim()) ||
+        Boolean(next.client_id) ||
+        Boolean(next.project_id) ||
+        Boolean(next.deliverable_id) ||
+        Boolean(next.deliverable_type) ||
+        Boolean(next.time_taken_minutes);
+
+      if (hasStartedEntry && !entryStartedRef.current) {
+        entryStartedRef.current = true;
+
+        trackEvent("quick_logger_entry_started", {
+          source: "worksheet",
+          stage: stage || null,
+        });
+      }
+
+      return next;
+    });
+
     setError("");
   };
 
@@ -333,6 +367,11 @@ export default function QuickLoggerModal({
         time_taken_minutes: "",
         text: `${parts.client} / ${item.name} / `,
       });
+
+      trackEvent("quick_logger_project_selected", {
+        project_id: item.id,
+        stage: stage || null,
+      });
     } else if (currentStep === "deliverable") {
       const name = item.name || item.deliverable_name || "";
       updateDraft({
@@ -340,6 +379,12 @@ export default function QuickLoggerModal({
         deliverable_type: "",
         time_taken_minutes: "",
         text: `${parts.client} / ${parts.project} / ${name} / `,
+      });
+
+      trackEvent("quick_logger_deliverable_selected", {
+        project_id: resolvedProject?.id || null,
+        deliverable_id: item.id,
+        stage: stage || null,
       });
     } else if (currentStep === "type") {
       updateDraft({
@@ -409,7 +454,18 @@ export default function QuickLoggerModal({
 
     committingRef.current = true;
 
-    setSavedEntries((prev) => [entry, ...prev]);
+    setSavedEntries((prev) => {
+      const nextEntries = [entry, ...prev];
+
+      trackEvent("quick_logger_entry_added", {
+        entry_count: nextEntries.length,
+        duration_minutes: entry.time_taken_minutes,
+        stage: stage || null,
+      });
+
+      return nextEntries;
+    });
+
     setDraft(emptyDraft());
     setSuggestions([]);
     setShowRemark(false);
@@ -462,11 +518,30 @@ export default function QuickLoggerModal({
 
       await onSave(payloads);
 
+      const durationTotalMinutes = entriesToSave.reduce(
+        (total, entry) => total + Number(entry.time_taken_minutes || 0),
+        0
+      );
+
+      trackEvent("quick_logger_saved", {
+        entry_count: entriesToSave.length,
+        duration_total_minutes: durationTotalMinutes,
+        stage: stage || null,
+      });
+
+      savedSuccessfullyRef.current = true;
+
       setDraft(emptyDraft());
       setSavedEntries([]);
       onClose();
     } catch (saveError) {
       console.error("Quick Logger save failed:", saveError);
+
+      trackEvent("quick_logger_save_failed", {
+        entry_count: entriesToSave.length,
+        stage: stage || null,
+      });
+
       setError("Could not save the entries. Please try again.");
     } finally {
       setSaving(false);
@@ -485,7 +560,7 @@ export default function QuickLoggerModal({
 
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      handleClose();
       return;
     }
 
@@ -557,6 +632,18 @@ export default function QuickLoggerModal({
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+  const handleClose = () => {
+    if (!savedSuccessfullyRef.current) {
+      trackEvent("quick_logger_closed", {
+        entry_count: savedEntries.length,
+        has_draft: Boolean(draft.text.trim()),
+        stage: stage || null,
+      });
+    }
+
+    onClose();
+  };
+
   if (!open) return null;
 
   return (
@@ -580,7 +667,7 @@ export default function QuickLoggerModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={saving}
             aria-label="Close"
             className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
@@ -825,7 +912,7 @@ export default function QuickLoggerModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={saving}
               className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
             >

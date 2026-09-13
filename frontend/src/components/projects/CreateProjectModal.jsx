@@ -18,6 +18,8 @@ import { PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
 import { createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
+import { SelectPill } from "@/components/ui/SelectPill";
+import { DatePill } from "@/components/ui/DatePill";
 
 const emptyDeliverable = () => ({
   name: "",
@@ -36,9 +38,6 @@ const smallInputBase =
 
 const labelBase =
   "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-
-const pillControlBase =
-  "w-full min-w-0 border-none bg-transparent p-0 text-sm text-foreground outline-none focus:ring-0";
 
 export const CreateProjectModal = ({
   open,
@@ -191,7 +190,7 @@ export const CreateProjectModal = ({
     >
       <div
         data-testid={PROJECTS.modal}
-        className="flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header: breadcrumb + close */}
@@ -237,78 +236,59 @@ export const CreateProjectModal = ({
 
           {/* Pill row: Status / POC / Client / Start date / End date */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
-              <CircleDot className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className={pillControlBase}
-              >
-                {PROJECT_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SelectPill
+              icon={CircleDot}
+              value={status}
+              onChange={setStatus}
+              options={PROJECT_STATUSES.map((s) => ({
+                value: s,
+                label: s,
+              }))}
+            />
 
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
-              <User className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <select
-                value={pocId}
-                onChange={(e) => setPocId(e.target.value)}
-                className={pillControlBase}
-              >
-                <option value="">No POC</option>
+            <SelectPill
+              icon={User}
+              value={pocId}
+              onChange={setPocId}
+              placeholder="No POC"
+              options={[
+                { value: "", label: "No POC" },
+                ...availablePocs.map((contact) => ({
+                  value: contact.id,
+                  label: contact.name,
+                })),
+              ]}
+            />
 
-                {availablePocs.map((contact) => (
-                  <option key={contact.id} value={contact.id}>
-                    {contact.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SelectPill
+              icon={Building2}
+              value={clientId}
+              onChange={(next) => {
+                setClientId(next);
+                setPocId("");
+              }}
+              triggerTestId={PROJECTS.fieldClient}
+              options={clients.map((c) => ({
+                value: c.id,
+                label: c.name,
+              }))}
+            />
 
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
-              <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <select
-                data-testid={PROJECTS.fieldClient}
-                value={clientId}
-                onChange={(e) => {
-                  setClientId(e.target.value);
-                  setPocId("");
-                }}
-                className={pillControlBase}
-              >
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <DatePill
+              icon={CalendarDays}
+              value={startDate}
+              onChange={setStartDate}
+              placeholder="Start date"
+              triggerTestId={PROJECTS.fieldStart}
+            />
 
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
-              <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                data-testid={PROJECTS.fieldStart}
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className={pillControlBase}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
-              <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                data-testid={PROJECTS.fieldEnd}
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className={pillControlBase}
-              />
-            </div>
+            <DatePill
+              icon={CalendarDays}
+              value={endDate}
+              onChange={setEndDate}
+              placeholder="End date"
+              triggerTestId={PROJECTS.fieldEnd}
+            />
           </div>
 
           <div className="my-6 border-t border-border" />

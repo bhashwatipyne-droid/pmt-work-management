@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useUser } from "@/context/UserContext";
 import { Eye, EyeOff, Layers, Loader2 } from "lucide-react";
+import { trackEvent } from "@/analytics";
 
 export default function LoginPage() {
   const { login } = useUser();
@@ -19,6 +20,12 @@ export default function LoginPage() {
       await login(loginId.trim(), password);
     } catch (err) {
       const detail = err.response?.data?.detail;
+
+      trackEvent("login_failed", {
+        login_method: "password",
+        reason: typeof detail === "string" ? detail : "invalid_credentials",
+      });
+
       setError(
         typeof detail === "string"
           ? detail

@@ -13,7 +13,7 @@ if (
   posthog.init(process.env.REACT_APP_POSTHOG_KEY, {
     api_host: process.env.REACT_APP_POSTHOG_HOST,
     defaults: "2026-05-30",
-    capture_pageview: true,
+    capture_pageview: false,
     capture_pageleave: true,
   });
 }

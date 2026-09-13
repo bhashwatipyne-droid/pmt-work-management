@@ -1,6 +1,13 @@
+import { useEffect, useRef } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useLocation,
+} from "react-router-dom";
 import { UserProvider, useUser } from "@/context/UserContext";
+import { trackEvent } from "@/analytics";
 import { Toaster } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/LoginPage";
@@ -14,8 +21,47 @@ import ClientsPage from "@/pages/ClientsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import { Loader2 } from "lucide-react";
 
+const PAGE_NAMES = {
+  "/": "Work Sheet",
+  "/dashboard": "Dashboard",
+  "/projects": "Projects",
+  "/team": "Team",
+  "/approvals": "Approvals",
+  "/clients": "Clients",
+  "/profile": "Profile",
+};
+
 function AppShell() {
-  const { loading, isAuthenticated } = useUser();
+  const { loading, isAuthenticated, currentUser } = useUser();
+  const location = useLocation();
+  const lastTrackedPath = useRef(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.id) return;
+
+    const pathname = location.pathname;
+
+    // Prevent duplicate events for the same route.
+    if (lastTrackedPath.current === pathname) return;
+
+    lastTrackedPath.current = pathname;
+
+    const pageName = pathname.startsWith("/projects/")
+      ? "Project Detail"
+      : PAGE_NAMES[pathname] || "Unknown Page";
+
+    trackEvent("page_view", {
+      user_id: String(currentUser.id),
+      role: currentUser.role,
+      path: pathname,
+      page_name: pageName,
+    });
+  }, [
+    location.pathname,
+    isAuthenticated,
+    currentUser?.id,
+    currentUser?.role,
+  ]);
 
   if (loading) {
     return (

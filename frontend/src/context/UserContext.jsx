@@ -1,5 +1,17 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { getUsers, getMe, loginUser, logoutUser, updateProfile } from "@/services/api";
+import {
+  getUsers,
+  getMe,
+  loginUser,
+  logoutUser,
+  updateProfile,
+} from "@/services/api";
+
+import {
+  trackEvent,
+  identifyUser,
+  resetAnalytics,
+} from "@/analytics";
 
 const UserContext = createContext(null);
 
@@ -12,6 +24,14 @@ export const UserProvider = ({ children }) => {
     getMe()
       .then(async (data) => {
         setAuthUser(data);
+
+        identifyUser(data);
+
+        trackEvent("session_restored", {
+          user_id: String(data.id),
+          role: data.role,
+        });
+
         try {
           setUsers(await getUsers());
         } catch (_) {
@@ -24,17 +44,43 @@ export const UserProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const data = await loginUser(email, password);
+
     setAuthUser(data);
+
+    identifyUser(data);
+
+    trackEvent("login_success", {
+      user_id: String(data.id),
+      role: data.role,
+      login_method: "password",
+    });
+
     try {
       setUsers(await getUsers());
     } catch (_) {}
+
     return data;
   };
 
   const logout = async () => {
+    const user = authUser;
+
     try {
       await logoutUser();
-    } catch (_) {}
+
+      trackEvent("logout_success", {
+        user_id: user?.id ? String(user.id) : undefined,
+        role: user?.role,
+      });
+    } catch (_) {
+      trackEvent("logout_failed", {
+        user_id: user?.id ? String(user.id) : undefined,
+        role: user?.role,
+      });
+    }
+
+    resetAnalytics();
+
     setAuthUser(null);
     setUsers([]);
   };

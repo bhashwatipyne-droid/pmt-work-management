@@ -6,6 +6,7 @@ import { PROJECTS } from "@/constants/testIds";
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
 import { createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
+import { trackEvent } from "../../analytics";
 
 const emptyDeliverable = () => ({
   name: "",
@@ -141,6 +142,11 @@ export const CreateProjectModal = ({
         end_date: endDate,
         status,
         deliverables: cleanedDeliverables,
+      });
+
+      trackEvent("project_created", {
+        project_id: created.id,
+        status: created.status,
       });
 
       toast.success(`Project "${created.name}" created`);

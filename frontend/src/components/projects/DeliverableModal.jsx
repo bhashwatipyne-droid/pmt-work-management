@@ -8,6 +8,7 @@ import {
   updateDeliverable,
   deleteDeliverable,
 } from "@/services/api";
+import { trackEvent } from "../../analytics";
 
 const emptyDeliverable = {
   name: "",
@@ -123,6 +124,17 @@ export const DeliverableModal = ({
         toast.success("Deliverable added");
       }
 
+      trackEvent(
+        mode === "edit"
+          ? "project_deliverable_edited"
+          : "project_deliverable_created",
+        {
+          project_id: projectId,
+          deliverable_id: saved.id,
+          stage: saved.current_stage,
+        }
+      );
+
       onSaved?.(saved);
       onClose?.();
     } catch (err) {
@@ -146,6 +158,11 @@ export const DeliverableModal = ({
 
     try {
       await deleteDeliverable(currentUserId, initial.id);
+
+      trackEvent("project_deliverable_deleted", {
+        project_id: projectId,
+        deliverable_id: initial.id,
+      });
 
       toast.success("Deliverable deleted");
       onSaved?.({ deleted: true, id: initial.id });

@@ -30,6 +30,7 @@ import {
 import { DeliverableModal } from "@/components/projects/DeliverableModal";
 import ProjectEditModal from "@/components/projects/ProjectEditModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
+import { trackEvent } from "../analytics";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -119,7 +120,13 @@ export default function ProjectDetailPage() {
   };
 
   useEffect(() => {
-    if (currentUser) fetchAll();
+    if (currentUser) {
+      fetchAll();
+
+      trackEvent("project_detail_opened", {
+        project_id: projectId,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, currentUserId]);
 
@@ -130,6 +137,11 @@ export default function ProjectDetailPage() {
         projectId,
         { status }
       );
+
+      trackEvent("project_status_changed", {
+        project_id: projectId,
+        to_status: status,
+      });
 
       setProject((p) => ({
         ...p,
@@ -179,11 +191,21 @@ export default function ProjectDetailPage() {
           currentUserId,
           deliverableId
         );
+
+        trackEvent("project_deliverable_status_changed", {
+          deliverable_id: deliverableId,
+          to_stage: "Completed",
+        });
       } else {
         await rejectDeliverable(
           currentUserId,
           deliverableId
         );
+
+        trackEvent("project_deliverable_status_changed", {
+          deliverable_id: deliverableId,
+          to_stage: "Changes Requested",
+        });
       }
 
       toast.success(

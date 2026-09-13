@@ -38,6 +38,7 @@ import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { Calendar } from "@/components/ui/calendar";
+import { trackEvent } from "../analytics";
 import {
   Popover,
   PopoverContent,
@@ -114,6 +115,14 @@ export default function ProjectsPage() {
     if (currentUser?.role === "admin") fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, currentUser?.role, visibility]);
+
+  useEffect(() => {
+    if (currentUser) {
+      trackEvent("projects_opened", {
+        role: currentUser.role,
+      });
+    }
+  }, [currentUser?.id]);
 
   const pocOptions = useMemo(() => {
     return [
@@ -768,9 +777,14 @@ export default function ProjectsPage() {
                   onSelectProject={toggleProjectSelection}
                   onSelectAll={() => toggleColumnSelection(columnProjects)}
                   allSelected={allColumnProjectsSelected}
-                  onOpenProject={(project) =>
-                    navigate(`/projects/${project.id}`)
-                  }
+                  onOpenProject={(project) => {
+                    trackEvent("project_opened", {
+                      project_id: project.id,
+                      status: project.status,
+                    });
+
+                    navigate(`/projects/${project.id}`);
+                  }}
                   onToggleVisibility={toggleColumnVisibility}
                 />
               );
@@ -784,7 +798,14 @@ export default function ProjectsPage() {
           selectedProjects={selectedProjects}
           onSelectProject={toggleProjectSelection}
           onSelectPage={selectPage}
-          onOpenProject={(p) => navigate(`/projects/${p.id}`)}
+          onOpenProject={(p) => {
+            trackEvent("project_opened", {
+              project_id: p.id,
+              status: p.status,
+            });
+
+            navigate(`/projects/${p.id}`);
+          }}
           onHideProject={handleHideProject}
           onUnhideProject={handleUnhideProject}
           onDeleteProject={(p) => setDeleteTarget(p)}

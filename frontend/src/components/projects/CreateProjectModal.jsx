@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { X, Plus, Trash2 } from "lucide-react";
+import {
+  X,
+  Plus,
+  Trash2,
+  ChevronRight,
+  Briefcase,
+  Package,
+  CircleDot,
+  User,
+  Building2,
+  CalendarDays,
+} from "lucide-react";
 
 import { PROJECTS } from "@/constants/testIds";
 import { PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
@@ -25,6 +36,9 @@ const smallInputBase =
 
 const labelBase =
   "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+
+const pillControlBase =
+  "w-full min-w-0 border-none bg-transparent p-0 text-sm text-foreground outline-none focus:ring-0";
 
 export const CreateProjectModal = ({
   open,
@@ -177,235 +191,184 @@ export const CreateProjectModal = ({
     >
       <div
         data-testid={PROJECTS.modal}
-        className="flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-none flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex shrink-0 items-start justify-between border-b border-border px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              Create Project
-            </h2>
-
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Set the project details, then schedule its
-              deliverables.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-medium text-muted-foreground">
-              {deliverables.length} deliverable
-              {deliverables.length === 1 ? "" : "s"}
+        {/* Header: breadcrumb + close */}
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0f0fd] text-[#2b2bb5]">
+              <Briefcase className="h-3.5 w-3.5" />
             </span>
 
-            <button
-              type="button"
-              data-testid={PROJECTS.modalClose}
-              onClick={onClose}
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <span>Projects</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+            <span className="font-medium text-foreground">
+              New project
+            </span>
           </div>
+
+          <button
+            type="button"
+            data-testid={PROJECTS.modalClose}
+            onClick={onClose}
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f7f9fc] px-6 py-5">
-          {/* Section 1 */}
-          <div className="mb-5 rounded-xl border border-border bg-white p-5">
-            <div className="mb-5 flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0fd] text-xs font-semibold text-[#1a1a8a]">
-                1
-              </span>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          {/* Icon + large inline title */}
+          <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#f0f0fd] text-[#2b2bb5]">
+            <Package className="h-5 w-5" />
+          </span>
 
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">
-                  Project Details
-                </h3>
+          <input
+            data-testid={PROJECTS.fieldName}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Project name"
+            autoFocus
+            className="w-full border-none bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+          />
 
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Basic information about the project.
-                </p>
-              </div>
+          {/* Pill row: Status / POC / Client / Start date / End date */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
+              <CircleDot className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className={pillControlBase}
+              >
+                {PROJECT_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-              <div className="md:col-span-2">
-                <label className={labelBase}>
-                  Project Name *
-                </label>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
+              <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <select
+                value={pocId}
+                onChange={(e) => setPocId(e.target.value)}
+                className={pillControlBase}
+              >
+                <option value="">No POC</option>
 
-                <input
-                  data-testid={PROJECTS.fieldName}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Diwali SIP push"
-                  className={inputBase}
-                />
-              </div>
+                {availablePocs.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              <div>
-                <label className={labelBase}>
-                  Client *
-                </label>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
+              <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <select
+                data-testid={PROJECTS.fieldClient}
+                value={clientId}
+                onChange={(e) => {
+                  setClientId(e.target.value);
+                  setPocId("");
+                }}
+                className={pillControlBase}
+              >
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-                <select
-                  data-testid={PROJECTS.fieldClient}
-                  value={clientId}
-                  onChange={(e) => {
-                    setClientId(e.target.value);
-                    setPocId("");
-                  }}
-                  className={inputBase}
-                >
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
+              <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                data-testid={PROJECTS.fieldStart}
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={pillControlBase}
+              />
+            </div>
 
-              <div>
-                <label className={labelBase}>
-                  Start Date *
-                </label>
-
-                <input
-                  data-testid={PROJECTS.fieldStart}
-                  type="date"
-                  value={startDate}
-                  onChange={(e) =>
-                    setStartDate(e.target.value)
-                  }
-                  className={inputBase}
-                />
-              </div>
-
-              <div>
-                <label className={labelBase}>
-                  End Date *
-                </label>
-
-                <input
-                  data-testid={PROJECTS.fieldEnd}
-                  type="date"
-                  value={endDate}
-                  onChange={(e) =>
-                    setEndDate(e.target.value)
-                  }
-                  className={inputBase}
-                />
-              </div>
-
-              <div>
-                <label className={labelBase}>POC</label>
-
-                <select
-                  value={pocId}
-                  onChange={(e) => setPocId(e.target.value)}
-                  className={inputBase}
-                >
-                  <option value="">No POC selected</option>
-
-                  {availablePocs.map((contact) => (
-                    <option key={contact.id} value={contact.id}>
-                      {contact.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={labelBase}>Status</label>
-
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className={inputBase}
-                >
-                  {PROJECT_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2">
+              <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                data-testid={PROJECTS.fieldEnd}
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className={pillControlBase}
+              />
             </div>
           </div>
 
-          {/* Section 2 */}
-          <div className="rounded-xl border border-border bg-white p-5">
-            <div className="mb-4 flex items-start gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd] text-xs font-semibold text-[#1a1a8a]">
-                2
-              </span>
+          <div className="my-6 border-t border-border" />
 
+          {/* Deliverables */}
+          <div className="rounded-xl border border-border bg-[#f7f9fc]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
-                  Deliverables
+                  Deliverables ({deliverables.length})
                 </h3>
 
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Start and end date-time are used for the
-                  stage timeline.
+                  Break the project into deliverables to track progress.
                 </p>
               </div>
+
+              <button
+                type="button"
+                data-testid={PROJECTS.addDeliverableBtn}
+                onClick={addDeliverable}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add deliverable
+              </button>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-border">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px] text-left text-xs">
-                  <thead className="bg-[#f7f9fc] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="w-10 px-3 py-2.5">
-                        #
-                      </th>
+            {deliverables.length === 0 ? (
+              <div className="flex flex-col items-center justify-center px-5 py-10 text-center">
+                <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-muted-foreground">
+                  <Package className="h-4.5 w-4.5" />
+                </span>
 
-                      <th className="w-[30%] px-3 py-2.5">
-                        Name *
-                      </th>
+                <p className="text-sm font-semibold text-foreground">
+                  No deliverables added yet
+                </p>
 
-                      <th className="px-3 py-2.5">
-                        Type
-                      </th>
-
-                      <th className="px-3 py-2.5">
-                        Stages
-                      </th>
-
-                      <th className="px-3 py-2.5">
-                        Start · Date & Time
-                      </th>
-
-                      <th className="px-3 py-2.5">
-                        End · Date & Time
-                      </th>
-
-                      <th className="w-10 px-2 py-2.5" />
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {deliverables.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={7}
-                          className="px-3 py-10 text-center"
-                        >
-                          <div className="text-sm font-medium text-foreground">
-                            No deliverables added yet
-                          </div>
-
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Add a deliverable to start
-                            building the project timeline.
-                          </div>
-                        </td>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Add deliverables to define key stages of this project.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-b-xl bg-white">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-left text-xs">
+                    <thead className="bg-[#f7f9fc] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <tr className="border-b border-border">
+                        <th className="w-10 px-3 py-2.5">#</th>
+                        <th className="w-[30%] px-3 py-2.5">Name *</th>
+                        <th className="px-3 py-2.5">Type</th>
+                        <th className="px-3 py-2.5">Stages</th>
+                        <th className="px-3 py-2.5">Start · Date & Time</th>
+                        <th className="px-3 py-2.5">End · Date & Time</th>
+                        <th className="w-10 px-2 py-2.5" />
                       </tr>
-                    ) : (
-                      deliverables.map((d, i) => (
+                    </thead>
+
+                    <tbody>
+                      {deliverables.map((d, i) => (
                         <tr
                           key={i}
                           data-testid={`${PROJECTS.deliverableRowPrefix}-${i}`}
@@ -419,11 +382,7 @@ export const CreateProjectModal = ({
                             <input
                               value={d.name}
                               onChange={(e) =>
-                                updateDeliverable(
-                                  i,
-                                  "name",
-                                  e.target.value
-                                )
+                                updateDeliverable(i, "name", e.target.value)
                               }
                               placeholder="Task name"
                               className={smallInputBase}
@@ -434,11 +393,7 @@ export const CreateProjectModal = ({
                             <select
                               value={d.type}
                               onChange={(e) =>
-                                updateDeliverable(
-                                  i,
-                                  "type",
-                                  e.target.value
-                                )
+                                updateDeliverable(i, "type", e.target.value)
                               }
                               className={smallInputBase}
                             >
@@ -456,9 +411,7 @@ export const CreateProjectModal = ({
                             <div className="flex flex-wrap gap-1">
                               {STAGES.map((stage) => {
                                 const checked =
-                                  d.required_stages?.includes(
-                                    stage
-                                  );
+                                  d.required_stages?.includes(stage);
 
                                 return (
                                   <label
@@ -477,9 +430,7 @@ export const CreateProjectModal = ({
                                           d.required_stages || [];
 
                                         const next = checked
-                                          ? current.filter(
-                                              (s) => s !== stage
-                                            )
+                                          ? current.filter((s) => s !== stage)
                                           : [...current, stage];
 
                                         updateDeliverable(
@@ -517,11 +468,7 @@ export const CreateProjectModal = ({
                               type="datetime-local"
                               value={d.end_dt}
                               onChange={(e) =>
-                                updateDeliverable(
-                                  i,
-                                  "end_dt",
-                                  e.target.value
-                                )
+                                updateDeliverable(i, "end_dt", e.target.value)
                               }
                               className={smallInputBase}
                             />
@@ -538,59 +485,35 @@ export const CreateProjectModal = ({
                             </button>
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                data-testid={PROJECTS.addDeliverableBtn}
-                onClick={addDeliverable}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-[#b8b8df] bg-[#f0f0fd] px-3 py-2 text-xs font-semibold text-[#1a1a8a] transition-colors hover:bg-[#dcdcf8] focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Deliverable
-              </button>
-
-              <span className="text-xs text-muted-foreground">
-                Duplicates the last row's schedule, shifted
-                by a day.
-              </span>
-            </div>
+            )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-6 py-4">
-          <span className="text-xs text-muted-foreground">
-            Deliverable schedules drive the Content → Design
-            → Animate stages.
-          </span>
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-white px-6 py-4">
+          <button
+            type="button"
+            data-testid={PROJECTS.modalCancel}
+            onClick={onClose}
+            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+          >
+            Cancel
+          </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid={PROJECTS.modalCancel}
-              onClick={onClose}
-              className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              data-testid={PROJECTS.modalSubmit}
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="rounded-lg bg-[#2b2bb5] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]"
-            >
-              {submitting ? "Creating..." : "Create Project"}
-            </button>
-          </div>
+          <button
+            type="button"
+            data-testid={PROJECTS.modalSubmit}
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="rounded-lg bg-[#2b2bb5] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]"
+          >
+            {submitting ? "Creating..." : "Create Project"}
+          </button>
         </div>
       </div>
     </div>

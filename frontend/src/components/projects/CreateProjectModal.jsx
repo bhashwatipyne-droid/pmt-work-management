@@ -18,7 +18,6 @@ import {
 import { PROJECTS } from "@/constants/testIds";
 import {
   PROJECT_STATUSES,
-  STAGES,
   STATUS_COLORS,
   STAGE_COLORS,
 } from "@/constants/projectPalette";
@@ -27,16 +26,17 @@ import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
 import { SelectPill } from "@/components/ui/SelectPill";
 import { DatePill } from "@/components/ui/DatePill";
-import { DeliverableModal } from "@/components/projects/DeliverableModal";
+import { DeliverableFields } from "@/components/projects/DeliverableFields";
 
-const inputBase =
-  "w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20";
-
-const smallInputBase =
-  "w-full min-w-0 rounded-md border border-input bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15";
-
-const labelBase =
-  "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+const emptyDraftDeliverable = () => ({
+  id: null,
+  name: "",
+  type: "",
+  start_dt: "",
+  end_dt: "",
+  required_stages: ["Content"],
+  approval_types: [],
+});
 
 export const CreateProjectModal = ({
   open,
@@ -55,11 +55,7 @@ export const CreateProjectModal = ({
   const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState(PROJECT_STATUSES[0]);
   const [deliverables, setDeliverables] = useState([]);
-  const [deliverableModal, setDeliverableModal] = useState({
-    open: false,
-    mode: "add",
-    initial: null,
-  });
+  const [draftDeliverable, setDraftDeliverable] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -80,22 +76,55 @@ export const CreateProjectModal = ({
   if (!open) return null;
 
   const openAddDeliverable = () => {
-    setDeliverableModal({ open: true, mode: "add", initial: null });
+    setDraftDeliverable(emptyDraftDeliverable());
   };
 
   const openEditDeliverable = (d) => {
-    setDeliverableModal({ open: true, mode: "edit", initial: d });
+    setDraftDeliverable({ ...d });
   };
 
-  const closeDeliverableModal = () => {
-    setDeliverableModal({ open: false, mode: "add", initial: null });
+  const closeDraftDeliverable = () => {
+    setDraftDeliverable(null);
   };
 
-  const handleDeliverableSaved = (saved) => {
-    if (saved?.deleted) {
-      setDeliverables((prev) => prev.filter((d) => d.id !== saved.id));
-      return;
+  const updateDraftField = (field, value) => {
+    setDraftDeliverable((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const toggleDraftStage = (stage) => {
+    setDraftDeliverable((prev) => {
+      const current = prev.required_stages || [];
+
+      const next = current.includes(stage)
+        ? current.filter((s) => s !== stage)
+        : [...current, stage];
+
+      return { ...prev, required_stages: next };
+    });
+  };
+
+  const commitDraftDeliverable = () => {
+    if (!draftDeliverable.name.trim()) {
+      return toast.error("Deliverable name is required");
     }
+
+    if (!draftDeliverable.required_stages?.length) {
+      return toast.error("Select at least one production stage");
+    }
+
+    if (
+      draftDeliverable.start_dt &&
+      draftDeliverable.end_dt &&
+      draftDeliverable.end_dt < draftDeliverable.start_dt
+    ) {
+      return toast.error("End date must be after start date");
+    }
+
+    const saved = {
+      ...draftDeliverable,
+      id: draftDeliverable.id || crypto.randomUUID(),
+      name: draftDeliverable.name.trim(),
+    };
 
     setDeliverables((prev) => {
       const exists = prev.some((d) => d.id === saved.id);
@@ -104,6 +133,8 @@ export const CreateProjectModal = ({
         ? prev.map((d) => (d.id === saved.id ? saved : d))
         : [...prev, saved];
     });
+
+    setDraftDeliverable(null);
   };
 
   const removeDeliverable = (id) => {
@@ -118,7 +149,7 @@ export const CreateProjectModal = ({
     setEndDate("");
     setStatus(PROJECT_STATUSES[0]);
     setDeliverables([]);
-    closeDeliverableModal();
+    setDraftDeliverable(null);
   };
 
   const handleSubmit = async () => {
@@ -310,18 +341,55 @@ export const CreateProjectModal = ({
                 </p>
               </div>
 
-              <button
-                type="button"
-                data-testid={PROJECTS.addDeliverableBtn}
-                onClick={openAddDeliverable}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add deliverable
-              </button>
+              {!draftDeliverable && (
+                <button
+                  type="button"
+                  data-testid={PROJECTS.addDeliverableBtn}
+                  onClick={openAddDeliverable}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add deliverable
+                </button>
+              )}
             </div>
 
-            {deliverables.length === 0 ? (
+            {/* Inline create/edit card — no modal-over-modal */}
+            {draftDeliverable && (
+              <div className="border-b border-border bg-white p-5">
+                <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {draftDeliverable.id ? "Edit deliverable" : "Create deliverable"}
+                </p>
+
+                <DeliverableFields
+                  deliverable={draftDeliverable}
+                  onChange={updateDraftField}
+                  onToggleStage={toggleDraftStage}
+                  deliverableTypes={deliverableTypes}
+                  autoFocusName
+                />
+
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
+                  <button
+                    type="button"
+                    onClick={closeDraftDeliverable}
+                    className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={commitDraftDeliverable}
+                    className="rounded-lg bg-[#2b2bb5] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30"
+                  >
+                    {draftDeliverable.id ? "Save changes" : "Add deliverable"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {deliverables.length === 0 && !draftDeliverable ? (
               <div className="flex flex-col items-center justify-center px-5 py-10 text-center">
                 <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-muted-foreground">
                   <Package className="h-4.5 w-4.5" />
@@ -336,80 +404,82 @@ export const CreateProjectModal = ({
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-border rounded-b-xl bg-white">
-                {deliverables.map((d) => (
-                  <div
-                    key={d.id}
-                    data-testid={`${PROJECTS.deliverableRowPrefix}-${d.id}`}
-                    className="flex items-center justify-between gap-3 px-5 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="truncate text-sm font-semibold text-foreground">
-                          {d.name}
-                        </span>
-
-                        {d.type && (
-                          <span className="text-xs text-muted-foreground">
-                            · {d.type}
+              deliverables.length > 0 && (
+                <div className="divide-y divide-border rounded-b-xl bg-white">
+                  {deliverables.map((d) => (
+                    <div
+                      key={d.id}
+                      data-testid={`${PROJECTS.deliverableRowPrefix}-${d.id}`}
+                      className="flex items-center justify-between gap-3 px-5 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="truncate text-sm font-semibold text-foreground">
+                            {d.name}
                           </span>
-                        )}
-                      </div>
 
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {(d.required_stages || []).map((stage) => (
-                            <span
-                              key={stage}
-                              className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground"
-                            >
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full ${
-                                  STAGE_COLORS[stage]?.dot || "bg-slate-400"
-                                }`}
-                              />
-                              {stage}
+                          {d.type && (
+                            <span className="text-xs text-muted-foreground">
+                              · {d.type}
                             </span>
-                          ))}
+                          )}
                         </div>
 
-                        {(d.start_dt || d.end_dt) && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {d.start_dt
-                              ? format(parseISO(d.start_dt), "dd MMM yyyy")
-                              : "—"}
-                            {" – "}
-                            {d.end_dt
-                              ? format(parseISO(d.end_dt), "dd MMM yyyy")
-                              : "—"}
-                          </span>
-                        )}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(d.required_stages || []).map((stage) => (
+                              <span
+                                key={stage}
+                                className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground"
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    STAGE_COLORS[stage]?.dot || "bg-slate-400"
+                                  }`}
+                                />
+                                {stage}
+                              </span>
+                            ))}
+                          </div>
+
+                          {(d.start_dt || d.end_dt) && (
+                            <span className="text-[11px] text-muted-foreground">
+                              {d.start_dt
+                                ? format(parseISO(d.start_dt), "dd MMM yyyy")
+                                : "—"}
+                              {" – "}
+                              {d.end_dt
+                                ? format(parseISO(d.end_dt), "dd MMM yyyy")
+                                : "—"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditDeliverable(d)}
+                          aria-label={`Edit ${d.name}`}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          data-testid={`${PROJECTS.deliverableRemovePrefix}-${d.id}`}
+                          onClick={() => removeDeliverable(d.id)}
+                          aria-label={`Remove ${d.name}`}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => openEditDeliverable(d)}
-                        aria-label={`Edit ${d.name}`}
-                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-
-                      <button
-                        type="button"
-                        data-testid={`${PROJECTS.deliverableRemovePrefix}-${d.id}`}
-                        onClick={() => removeDeliverable(d.id)}
-                        aria-label={`Remove ${d.name}`}
-                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         </div>
@@ -436,21 +506,6 @@ export const CreateProjectModal = ({
           </button>
         </div>
       </div>
-
-      {deliverableModal.open && (
-        <DeliverableModal
-          open={deliverableModal.open}
-          mode={deliverableModal.mode}
-          initial={deliverableModal.initial}
-          currentUserId={currentUserId}
-          users={users}
-          deliverableTypes={deliverableTypes}
-          onClose={closeDeliverableModal}
-          onSaved={handleDeliverableSaved}
-          draftMode
-          compact
-        />
-      )}
     </div>
   );
 };

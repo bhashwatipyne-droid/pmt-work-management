@@ -19,6 +19,7 @@ import {
 import { APPROVALS } from "@/constants/testIds";
 import { KanbanBoard } from "@/components/ui/KanbanBoard";
 import { KanbanColumn } from "@/components/ui/KanbanColumn";
+import { trackEvent } from "../analytics";
 
 const COLUMNS = [
   {
@@ -76,6 +77,14 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     if (currentUser && currentUser.role !== "member") {
+      trackEvent("approvals_opened", {
+        role: currentUser.role,
+      });
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (currentUser && currentUser.role !== "member") {
       fetchBoard();
     }
 
@@ -100,6 +109,16 @@ export default function ApprovalsPage() {
       } else {
         await sendBackApprovalItem(currentUserId, item.id, note);
       }
+
+      trackEvent(
+        action === "approve"
+          ? "approval_approved"
+          : "approval_sent_back",
+        {
+          approval_item_id: item.id,
+          approval_type: item.approval_type,
+        }
+      );
 
       toast.success(
         action === "approve"
@@ -188,6 +207,12 @@ export default function ApprovalsPage() {
         approvalItemId,
         targetType
       );
+
+      trackEvent("approval_assignee_changed", {
+        approval_item_id: approvalItemId,
+        from_approval_type: sourceType,
+        to_approval_type: targetType,
+      });
 
       toast.success(
         `Moved to ${

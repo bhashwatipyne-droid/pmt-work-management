@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { getBulkReview, reviewWorkItem } from "@/services/api";
 import { toast } from "sonner";
+import { trackEvent } from "../../analytics";
 
 export default function BulkReviewModal({
   open,
@@ -43,24 +44,48 @@ export default function BulkReviewModal({
 
   useEffect(() => {
     if (open) {
+      trackEvent("bulk_review_opened", {
+        item_count: items.length,
+      });
+
       fetchItems();
     }
   }, [open, currentUser]);
 
   const toggleSelect = (id) => {
-    setSelectedIds((prev) =>
-      prev.includes(id)
+    setSelectedIds((prev) => {
+      const isSelected = prev.includes(id);
+
+      const nextSelectedIds = isSelected
         ? prev.filter((itemId) => itemId !== id)
-        : [...prev, id]
-    );
+        : [...prev, id];
+
+      trackEvent("bulk_review_item_selected", {
+        item_id: id,
+        selected: !isSelected,
+        selected_count: nextSelectedIds.length,
+      });
+
+      return nextSelectedIds;
+    });
   };
 
   const toggleSelectAll = () => {
-    setSelectedIds((prev) =>
-      prev.length === items.length
-        ? []
-        : items.map((item) => item.id)
-    );
+    setSelectedIds((prev) => {
+      const selectingAll = prev.length !== items.length;
+
+      const nextSelectedIds = selectingAll
+        ? items.map((item) => item.id)
+        : [];
+
+      trackEvent("bulk_review_select_all", {
+        selected: selectingAll,
+        selected_count: nextSelectedIds.length,
+        item_count: items.length,
+      });
+
+      return nextSelectedIds;
+    });
   };
 
   const updateNote = (id, value) => {
@@ -82,6 +107,15 @@ export default function BulkReviewModal({
         action,
         currentUser.id,
         notes[itemId] || ""
+      );
+
+      trackEvent(
+        action === "approve"
+          ? "bulk_review_approved"
+          : "bulk_review_sent_back",
+        {
+          item_id: itemId,
+        }
       );
 
       const message =
@@ -148,6 +182,10 @@ export default function BulkReviewModal({
         )
       );
 
+      trackEvent("bulk_review_bulk_approved", {
+        item_count: selectedIds.length,
+      });
+
       toast.success(
         `${selectedIds.length} item${
           selectedIds.length === 1 ? "" : "s"
@@ -203,6 +241,10 @@ export default function BulkReviewModal({
           )
         )
       );
+
+      trackEvent("bulk_review_bulk_sent_back", {
+        item_count: selectedIds.length,
+      });
 
       toast.success(
         `${selectedIds.length} item${

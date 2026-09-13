@@ -55,6 +55,55 @@ const DEPARTMENT_TO_STAGE = {
   Finish: "Finish",
 };
 
+const trackWorksheetContext = (item, previousItem, patch) => {
+  const contextFields = ["client_id", "project_id", "deliverable_id"];
+
+  // Do not track unrelated edits such as remarks, status, date, etc.
+  const changedContextField = contextFields.some(
+    (field) => patch[field] !== undefined
+  );
+
+  if (!changedContextField || !item) return;
+
+  const hasClient = Boolean(item.client_id);
+  const hasProject = Boolean(item.project_id);
+  const hasDeliverable = Boolean(item.deliverable_id);
+
+  const previousHasClient = Boolean(previousItem?.client_id);
+  const previousHasProject = Boolean(previousItem?.project_id);
+  const previousHasDeliverable = Boolean(previousItem?.deliverable_id);
+
+  const contextStatus =
+    hasClient && hasProject && hasDeliverable
+      ? "complete"
+      : hasClient && !hasProject && !hasDeliverable
+        ? "client_only"
+        : !hasClient
+          ? "missing_client"
+          : "incomplete";
+
+  // Avoid repeatedly tracking the same incomplete state on every edit.
+  const contextChanged =
+    hasClient !== previousHasClient ||
+    hasProject !== previousHasProject ||
+    hasDeliverable !== previousHasDeliverable;
+
+  if (!contextChanged) return;
+
+  trackEvent("worksheet_context_saved", {
+    row_id: item.id,
+    context_status: contextStatus,
+    has_client: hasClient,
+    has_project: hasProject,
+    has_deliverable: hasDeliverable,
+    missing_fields: [
+      ...(!hasClient ? ["client"] : []),
+      ...(!hasProject ? ["project"] : []),
+      ...(!hasDeliverable ? ["deliverable"] : []),
+    ],
+  });
+};
+
 export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
   const [items, setItems] = useState([]);
@@ -448,7 +497,12 @@ export default function WorkSheetPage() {
       );
 
       // The backend returns the complete updated work item.
-      // Use it as the source of truth once persistence succeeds.
+      // Use it as the source of truth once persistence succeeded.
+      const persistedItem = updated || {
+        ...currentItem,
+        ...patch,
+      };
+
       if (updated) {
         setItems((prev) =>
           prev.map((item) =>
@@ -456,6 +510,8 @@ export default function WorkSheetPage() {
           )
         );
       }
+
+      trackWorksheetContext(persistedItem, currentItem, patch);
 
       trackEvent("cell_edited", {
         row_id: id,

@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { X, Trash2, CalendarDays } from "lucide-react";
+import {
+  X,
+  Trash2,
+  CalendarDays,
+  ChevronRight,
+  FileText,
+  Pencil,
+  Play,
+  Users,
+} from "lucide-react";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 
 import { createDeliverable, updateDeliverable, deleteDeliverable } from "@/services/api";
@@ -20,6 +29,12 @@ const inputBase =
 
 const labelBase =
   "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+
+const STAGE_ICONS = {
+  Content: FileText,
+  Design: Pencil,
+  Animate: Play,
+};
 
 export const DeliverableModal = ({
   open,
@@ -195,22 +210,18 @@ export const DeliverableModal = ({
         className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex shrink-0 items-start justify-between border-b border-border px-6 py-5">
-          <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              {isEdit ? "Deliverable" : "New deliverable"}
-            </p>
+        {/* Header: breadcrumb + close */}
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0f0fd] text-[#2b2bb5]">
+              <FileText className="h-3.5 w-3.5" />
+            </span>
 
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">
-              {isEdit ? "Edit Deliverable" : "Add Deliverable"}
-            </h2>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              {isEdit
-                ? "Update the details and timeline for this deliverable."
-                : "Define what needs to be created and which teams are involved."}
-            </p>
+            <span>Deliverable</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+            <span className="font-medium text-foreground">
+              {isEdit ? "Edit" : "New"}
+            </span>
           </div>
 
           <button
@@ -225,100 +236,166 @@ export const DeliverableModal = ({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto bg-[#f8fafc] px-6 py-6">
-          <div className="space-y-5">
-            {/* Basic details */}
-            <section className="rounded-xl border border-border bg-white p-5">
-              <div className="mb-5">
-                <h3 className="text-base font-semibold text-foreground">
-                  Deliverable details
-                </h3>
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          {/* Name — large inline-style heading input */}
+          <input
+            type="text"
+            value={deliverable.name}
+            onChange={(e) => updateField("name", e.target.value)}
+            placeholder="Deliverable name"
+            autoFocus
+            disabled={saving}
+            className="w-full border-none bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+          />
 
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Give this deliverable a clear name and content type.
-                </p>
+          {/* Meta row: Type / Start date / Target date */}
+          <div className="mt-5 grid grid-cols-1 gap-4 divide-y divide-border sm:grid-cols-3 sm:gap-6 sm:divide-x sm:divide-y-0">
+            <div className="sm:pr-6">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <FileText className="h-3.5 w-3.5" />
+                Type
               </div>
 
-              <div className="space-y-4">
-                {/* Name */}
-                <div>
-                  <label className={labelBase}>
-                    Deliverable name *
-                  </label>
+              <select
+                value={deliverable.type}
+                onChange={(e) => updateField("type", e.target.value)}
+                className={`${inputBase} h-11`}
+                disabled={saving}
+              >
+                <option value="">Select content type</option>
 
-                  <input
-                    type="text"
-                    value={deliverable.name}
-                    onChange={(e) =>
-                      updateField("name", e.target.value)
-                    }
-                    placeholder="e.g. Diwali SIP Reel"
-                    className={`${inputBase} h-12 text-base`}
-                    autoFocus
+                {deliverableTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pt-4 sm:px-6 sm:pt-0">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Start date
+              </div>
+
+              <div className="relative">
+                <input
+                  type="datetime-local"
+                  value={deliverable.start_dt}
+                  onChange={(e) => updateField("start_dt", e.target.value)}
+                  className={`${inputBase} h-11 pr-9`}
+                  disabled={saving}
+                />
+
+                {deliverable.start_dt && (
+                  <button
+                    type="button"
+                    onClick={() => updateField("start_dt", "")}
                     disabled={saving}
-                  />
-                </div>
-
-                {/* Type */}
-                <div>
-                  <label className={labelBase}>
-                    Content type
-                  </label>
-
-                  <select
-                    value={deliverable.type}
-                    onChange={(e) =>
-                      updateField("type", e.target.value)
-                    }
-                    className={`${inputBase} h-11`}
-                    disabled={saving}
+                    aria-label="Clear start date"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    <option value="">Select content type</option>
-
-                    {deliverableTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
-            </section>
+            </div>
 
-            {/* Production stages */}
-            <section className="rounded-xl border border-border bg-white p-5">
-              <div className="mb-4">
-                <h3 className="text-base font-semibold text-foreground">
-                  Production stages
-                </h3>
-
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Select the teams required to complete this deliverable.
-                  The stages will follow the order shown below.
-                </p>
+            <div className="pt-4 sm:pl-6 sm:pt-0">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Target date
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {STAGES.map((stage, index) => {
+              <div className="relative">
+                <input
+                  type="datetime-local"
+                  value={deliverable.end_dt}
+                  onChange={(e) => updateField("end_dt", e.target.value)}
+                  className={`${inputBase} h-11 pr-9`}
+                  disabled={saving}
+                />
+
+                {deliverable.end_dt && (
+                  <button
+                    type="button"
+                    onClick={() => updateField("end_dt", "")}
+                    disabled={saving}
+                    aria-label="Clear target date"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="my-6 border-t border-border" />
+
+          {/* Production stages */}
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-muted-foreground">
+              <Users className="h-4 w-4" />
+            </span>
+
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-foreground">
+                Production stages
+              </h3>
+
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Select the teams that need to work on this deliverable.
+              </p>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {STAGES.map((stage) => {
                   const checked =
                     deliverable.required_stages?.includes(stage);
+
+                  const StageIcon = STAGE_ICONS[stage] || FileText;
 
                   return (
                     <label
                       key={stage}
-                      className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${
+                      className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
                         checked
                           ? "border-[#2b2bb5] bg-[#f0f0fd] text-[#1a1a8a] ring-1 ring-[#2b2bb5]/20"
-                          : "border-border bg-white text-muted-foreground hover:border-slate-300 hover:bg-slate-50"
+                          : "border-border bg-white text-foreground hover:bg-slate-50"
                       }`}
                     >
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs ${
+                          checked
+                            ? "border-[#2b2bb5] bg-white text-[#2b2bb5]"
+                            : "border-border bg-white text-muted-foreground"
+                        }`}
+                      >
+                        {checked ? (
+                          <svg
+                            viewBox="0 0 16 16"
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                          >
+                            <path
+                              d="M3 8.5L6.5 12L13 4.5"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        ) : (
+                          <StageIcon className="h-3.5 w-3.5" />
+                        )}
+                      </span>
+
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => {
                           setDeliverable((prev) => {
-                            const current =
-                              prev.required_stages || [];
+                            const current = prev.required_stages || [];
 
                             const next = checked
                               ? current.filter((s) => s !== stage)
@@ -331,104 +408,20 @@ export const DeliverableModal = ({
                           });
                         }}
                         disabled={saving}
-                        className="h-4 w-4 accent-[#2b2bb5]"
+                        className="sr-only"
                       />
 
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">
-                          {stage}
-                        </p>
-
-                        <p className="mt-0.5 text-xs opacity-70">
-                          Stage {index + 1}
-                        </p>
-                      </div>
+                      {stage}
                     </label>
                   );
                 })}
               </div>
-
-              {deliverable.required_stages?.length > 0 && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    Selected:
-                  </span>
-
-                  {STAGES.filter((stage) =>
-                    deliverable.required_stages?.includes(stage)
-                  ).map((stage, index, selectedStages) => (
-                    <span key={stage}>
-                      {stage}
-                      {index < selectedStages.length - 1 && " → "}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {/* Timeline */}
-            <section className="rounded-xl border border-border bg-white p-5">
-              <div className="mb-4 flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f0f0fd] text-[#2b2bb5]">
-                  <CalendarDays className="h-4 w-4" />
-                </div>
-
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">
-                    Timeline
-                  </h3>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Set the working window for this deliverable.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {/* Start */}
-                <div>
-                  <label className={labelBase}>
-                    Start date and time
-                  </label>
-
-                  <input
-                    type="datetime-local"
-                    value={deliverable.start_dt}
-                    onChange={(e) =>
-                      updateField("start_dt", e.target.value)
-                    }
-                    className={`${inputBase} h-11`}
-                    disabled={saving}
-                  />
-                </div>
-
-                {/* End */}
-                <div>
-                  <label className={labelBase}>
-                    Target date and time
-                  </label>
-
-                  <input
-                    type="datetime-local"
-                    value={deliverable.end_dt}
-                    onChange={(e) =>
-                      updateField("end_dt", e.target.value)
-                    }
-                    className={`${inputBase} h-11`}
-                    disabled={saving}
-                  />
-                </div>
-              </div>
-
-              <p className="mt-3 text-xs text-muted-foreground">
-                The target date is used to plan the selected production stages.
-              </p>
-            </section>
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-white px-6 py-4">
           {isEdit ? (
             <button
               type="button"
@@ -436,7 +429,7 @@ export const DeliverableModal = ({
               disabled={saving || deleting}
               aria-label="Delete deliverable"
               title="Delete deliverable"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-red-200 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -465,8 +458,8 @@ export const DeliverableModal = ({
                   ? "Saving..."
                   : "Adding..."
                 : isEdit
-                  ? "Save Changes"
-                  : "Add Deliverable"}
+                  ? "Save changes"
+                  : "Add deliverable"}
             </button>
           </div>
         </div>

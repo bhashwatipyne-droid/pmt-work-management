@@ -2641,6 +2641,10 @@ class ApprovalMove(BaseModel):
     approval_type: str
 
 
+class BulkApprovalItemIdsPayload(BaseModel):
+    approval_item_ids: List[str]
+
+
 @api_router.get("/deliverables", response_model=List[Deliverable])
 async def list_deliverables(
     request: Request,
@@ -3039,7 +3043,7 @@ async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: L
     existing_types = {x.get("approval_type") for x in existing}
     for approval_type in normalized:
         if approval_type not in existing_types:
-            item = {"id": str(uuid.uuid4()), "approval_workflow_id": workflow["id"], "deliverable_id": deliverable["id"], "approval_type": approval_type, "status": "PENDING" if deliverable.get("stage_status") == "Ready for Review" else "NOT_STARTED", "assigned_to": None, "department": "Administration" if approval_type == "COMPLIANCE" else None, "requested_at": ts if deliverable.get("stage_status") == "Ready for Review" else None, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "created_at": ts, "updated_at": ts}
+            item = {"id": str(uuid.uuid4()), "approval_workflow_id": workflow["id"], "deliverable_id": deliverable["id"], "approval_type": approval_type, "status": "PENDING" if deliverable.get("stage_status") == "Ready for Review" else "NOT_STARTED", "assigned_to": None, "department": "Administration" if approval_type == "COMPLIANCE" else None, "requested_at": ts if deliverable.get("stage_status") == "Ready for Review" else None, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "created_at": ts, "updated_at": ts}
             await db.approval_items.insert_one(item)
     await db.approval_items.delete_many({"approval_workflow_id": workflow["id"], "approval_type": {"$nin": normalized}})
     return await _get_approval_workflow(deliverable["id"])
@@ -3319,6 +3323,9 @@ async def _build_implicit_manager_items(user: User):
             "approved_by": None,
             "sent_back_by": None,
             "comments": "",
+            "hidden": False,
+            "hidden_at": None,
+            "hidden_by": None,
             "created_at": d.get("created_at"),
             "updated_at": d.get("updated_at"),
         }
@@ -3387,26 +3394,44 @@ async def list_approvals(request: Request):
 
 
 @api_router.get("/approvals/board")
-async def approval_board(request: Request):
+async def approval_board(request: Request, visibility: Optional[str] = "visible"):
     """Return pending approval cards grouped by approval authority."""
 
     user = await get_acting_user(request)
 
     query = {"status": "PENDING"}
 
-    if user.role != "admin":
-        query["$or"] = [
-            {"assigned_to": user.id},
-            {
-                "approval_type": "MANAGER",
-                "assigned_to": None,
-            },
-            {
-                "approval_type": "COMPLIANCE",
-                "assigned_to": None,
-                "department": "Administration",
-            },
+    if visibility == "visible":
+        query["$and"] = [
+            {"$or": [{"hidden": False}, {"hidden": {"$exists": False}}]}
         ]
+    elif visibility == "hidden":
+        query["hidden"] = True
+    elif visibility == "all":
+        pass
+    else:
+        raise HTTPException(status_code=400, detail="Invalid visibility")
+
+    if user.role != "admin":
+        role_filter = {
+            "$or": [
+                {"assigned_to": user.id},
+                {
+                    "approval_type": "MANAGER",
+                    "assigned_to": None,
+                },
+                {
+                    "approval_type": "COMPLIANCE",
+                    "assigned_to": None,
+                    "department": "Administration",
+                },
+            ]
+        }
+
+        if "$and" in query:
+            query["$and"].append(role_filter)
+        else:
+            query["$and"] = [role_filter]
 
     items = await db.approval_items.find(
         query,
@@ -3416,10 +3441,13 @@ async def approval_board(request: Request):
         -1,
     ).to_list(500)
 
-    # Build implicit manager approvals efficiently.
-    items.extend(
-        (await _build_implicit_manager_items(user))[:200]
-    )
+    # Build implicit manager approvals efficiently. These have no real
+    # document backing them, so they're always effectively "visible" —
+    # excluded whenever the requested visibility is "hidden".
+    if visibility != "hidden":
+        items.extend(
+            (await _build_implicit_manager_items(user))[:200]
+        )
 
     hydrated = await _hydrate_approval_items(items)
 
@@ -3723,6 +3751,138 @@ async def move_approval_item(approval_item_id: str, payload: ApprovalMove, reque
         "comment": "", "old_value": old_type, "new_value": target, "created_at": ts,
     })
     return await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
+
+
+async def _resolve_real_approval_item(approval_item_id: str, user: User):
+    """
+    Hide/unhide need a real document to flag — implicit manager items
+    have no backing document, so materialize one first, same as move
+    already does.
+    """
+    item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
+
+    if item:
+        return item
+
+    if not approval_item_id.startswith("implicit-manager-"):
+        raise HTTPException(status_code=404, detail="Approval item not found")
+
+    deliverable_id = approval_item_id.removeprefix("implicit-manager-")
+    d0 = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
+
+    if not d0:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+
+    await _create_or_sync_approval_workflow(d0, ["MANAGER"], user.id)
+
+    return await db.approval_items.find_one(
+        {"deliverable_id": deliverable_id, "approval_type": "MANAGER"},
+        {"_id": 0},
+    )
+
+
+@api_router.post("/approval-items/{approval_item_id}/hide")
+async def hide_approval_item(approval_item_id: str, request: Request):
+    user = await require_manager_or_admin(request)
+
+    item = await _resolve_real_approval_item(approval_item_id, user)
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Approval item not found")
+
+    await db.approval_items.update_one(
+        {"id": item["id"]},
+        {
+            "$set": {
+                "hidden": True,
+                "hidden_at": now_iso(),
+                "hidden_by": user.id,
+                "updated_at": now_iso(),
+            }
+        },
+    )
+
+    return {"success": True}
+
+
+@api_router.post("/approval-items/{approval_item_id}/unhide")
+async def unhide_approval_item(approval_item_id: str, request: Request):
+    user = await require_manager_or_admin(request)
+
+    item = await _resolve_real_approval_item(approval_item_id, user)
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Approval item not found")
+
+    await db.approval_items.update_one(
+        {"id": item["id"]},
+        {
+            "$set": {
+                "hidden": False,
+                "hidden_at": None,
+                "hidden_by": None,
+                "updated_at": now_iso(),
+            }
+        },
+    )
+
+    return {"success": True}
+
+
+@api_router.post("/approval-items/bulk-hide")
+async def bulk_hide_approval_items(payload: BulkApprovalItemIdsPayload, request: Request):
+    user = await require_manager_or_admin(request)
+
+    ids = payload.approval_item_ids
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="No approvals selected")
+
+    resolved_ids = []
+
+    for approval_item_id in ids:
+        item = await _resolve_real_approval_item(approval_item_id, user)
+
+        if item:
+            resolved_ids.append(item["id"])
+
+    await db.approval_items.update_many(
+        {"id": {"$in": resolved_ids}},
+        {
+            "$set": {
+                "hidden": True,
+                "hidden_at": now_iso(),
+                "hidden_by": user.id,
+                "updated_at": now_iso(),
+            }
+        },
+    )
+
+    return {"success": True, "count": len(resolved_ids)}
+
+
+@api_router.post("/approval-items/bulk-unhide")
+async def bulk_unhide_approval_items(payload: BulkApprovalItemIdsPayload, request: Request):
+    user = await require_manager_or_admin(request)
+
+    ids = payload.approval_item_ids
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="No approvals selected")
+
+    await db.approval_items.update_many(
+        {"id": {"$in": ids}},
+        {
+            "$set": {
+                "hidden": False,
+                "hidden_at": None,
+                "hidden_by": None,
+                "updated_at": now_iso(),
+            }
+        },
+    )
+
+    return {"success": True, "count": len(ids)}
 
 
 # Legacy endpoints remain for the existing stage-based Close Stage UI.

@@ -23,9 +23,23 @@ export const APPROVALS = {
   page: 'approvals-page',
   emptyState: 'approvals-empty-state',
   cardPrefix: 'approvals-card',
+  checkboxPrefix: 'approvals-card-checkbox',
   approvePrefix: 'approvals-approve-btn',
   rejectPrefix: 'approvals-reject-btn',
   notePrefix: 'approvals-note-input',
+  searchInput: 'approvals-search-input',
+  filterAuthority: 'approvals-filter-authority',
+  filterStage: 'approvals-filter-stage',
+  filterStatus: 'approvals-filter-status',
+  filterProject: 'approvals-filter-project',
+  gridViewBtn: 'approvals-grid-view-btn',
+  listViewBtn: 'approvals-list-view-btn',
+  bulkApproveBtn: 'approvals-bulk-approve-btn',
+  bulkSendBackBtn: 'approvals-bulk-sendback-btn',
+  bulkReassignSelect: 'approvals-bulk-reassign-select',
+  bulkHideBtn: 'approvals-bulk-hide-btn',
+  columnSelectAllPrefix: 'approvals-column-select-all',
+  listRowPrefix: 'approvals-list-row',
 };
 
 export const CLIENTS = {

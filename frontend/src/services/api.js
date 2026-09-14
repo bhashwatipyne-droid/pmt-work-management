@@ -333,10 +333,11 @@ export const getApprovals = (userId) =>
     })
     .then((r) => r.data);
 
-export const getApprovalBoard = (userId) =>
+export const getApprovalBoard = (userId, params = {}) =>
   axios
     .get(`${API}/approvals/board`, {
       headers: authHeaders(userId),
+      params,
     })
     .then((r) => r.data);
 
@@ -395,6 +396,42 @@ export const moveApprovalItem = (
     .patch(
       `${API}/approval-items/${approvalItemId}/move`,
       { approval_type: approvalType },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const hideApprovalItem = (userId, approvalItemId) =>
+  axios
+    .post(
+      `${API}/approval-items/${approvalItemId}/hide`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const unhideApprovalItem = (userId, approvalItemId) =>
+  axios
+    .post(
+      `${API}/approval-items/${approvalItemId}/unhide`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const bulkHideApprovalItems = (userId, approvalItemIds) =>
+  axios
+    .post(
+      `${API}/approval-items/bulk-hide`,
+      { approval_item_ids: approvalItemIds },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const bulkUnhideApprovalItems = (userId, approvalItemIds) =>
+  axios
+    .post(
+      `${API}/approval-items/bulk-unhide`,
+      { approval_item_ids: approvalItemIds },
       { headers: authHeaders(userId) }
     )
     .then((r) => r.data);

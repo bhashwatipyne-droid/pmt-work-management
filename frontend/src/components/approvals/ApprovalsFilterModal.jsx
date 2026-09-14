@@ -12,7 +12,6 @@ import { APPROVALS } from "@/constants/testIds";
 const EMPTY_VALUES = {
   authorityFilter: "",
   stageFilter: "",
-  visibility: "visible",
   projectFilter: "",
   dateFrom: "",
   dateTo: "",
@@ -147,23 +146,6 @@ export default function ApprovalsFilterModal({
                   {s}
                 </option>
               ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Status
-            </label>
-
-            <select
-              data-testid={APPROVALS.filterStatus}
-              value={draft.visibility}
-              onChange={(e) => setField("visibility")(e.target.value)}
-              className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-            >
-              <option value="visible">Pending</option>
-              <option value="hidden">Hidden</option>
-              <option value="all">All</option>
             </select>
           </div>
 

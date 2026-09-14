@@ -208,15 +208,13 @@ export default function ApprovalsPage() {
     Boolean(stageFilter) ||
     Boolean(projectFilter) ||
     Boolean(dateFrom) ||
-    Boolean(dateTo) ||
-    visibility !== "all";
+    Boolean(dateTo);
 
   const activeFilterCount = [
     authorityFilter,
     stageFilter,
     projectFilter,
     dateFrom || dateTo ? "date" : "",
-    visibility !== "all" ? "status" : "",
   ].filter(Boolean).length;
 
   const clearAllFilters = () => {
@@ -226,19 +224,12 @@ export default function ApprovalsPage() {
     setProjectFilter("");
     setDateFrom("");
     setDateTo("");
-    setVisibility("all");
     clearSelection();
   };
 
   const handleApplyFilters = (values) => {
     setAuthorityFilter(values.authorityFilter);
     setStageFilter(values.stageFilter);
-
-    if (values.visibility !== visibility) {
-      setVisibility(values.visibility);
-      clearSelection();
-    }
-
     setProjectFilter(values.projectFilter);
     setDateFrom(values.dateFrom);
     setDateTo(values.dateTo);
@@ -612,7 +603,6 @@ export default function ApprovalsPage() {
           initialValues={{
             authorityFilter,
             stageFilter,
-            visibility,
             projectFilter,
             dateFrom,
             dateTo,
@@ -620,6 +610,22 @@ export default function ApprovalsPage() {
           onApply={handleApplyFilters}
           activeFilterCount={activeFilterCount}
         />
+
+        {/* Visibility — a view mode, not a filter, so it lives on its own
+            (same pattern as the Projects page's Visible/Hidden/All select). */}
+        <select
+          data-testid={APPROVALS.filterStatus}
+          value={visibility}
+          onChange={(e) => {
+            setVisibility(e.target.value);
+            clearSelection();
+          }}
+          className="h-10 w-[170px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+        >
+          <option value="visible">Visible approvals</option>
+          <option value="hidden">Hidden approvals</option>
+          <option value="all">All approvals</option>
+        </select>
 
         {/* View toggle */}
         <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
@@ -678,20 +684,6 @@ export default function ApprovalsPage() {
               className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
             >
               Authority: {COLUMNS.find((c) => c.key === authorityFilter)?.label}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {visibility !== "all" && (
-            <button
-              type="button"
-              onClick={() => {
-                setVisibility("all");
-                clearSelection();
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Status: {visibility === "hidden" ? "Hidden" : "Pending"}
               <X className="h-3 w-3" />
             </button>
           )}

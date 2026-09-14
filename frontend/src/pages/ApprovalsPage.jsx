@@ -15,7 +15,6 @@ import {
   MoreVertical,
   LayoutGrid,
   List,
-  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
@@ -90,9 +89,6 @@ export default function ApprovalsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [view, setView] = useState("grid");
-
-  // Filters modal
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Selection + bulk actions
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -609,26 +605,21 @@ export default function ApprovalsPage() {
           />
         </div>
 
-        <button
-          type="button"
-          data-testid={APPROVALS.filterButton}
-          onClick={() => setFiltersOpen(true)}
-          className={[
-            "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm font-medium outline-none transition-colors",
-            "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
-            activeFilterCount > 0
-              ? "border-[#2b2bb5] text-[#2b2bb5]"
-              : "border-input text-foreground hover:bg-slate-50",
-          ].join(" ")}
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#eef0ff] px-1.5 text-[11px] font-semibold text-[#2b2bb5]">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+        <ApprovalsFilterModal
+          columns={COLUMNS}
+          stages={STAGES}
+          projectOptions={projectOptions}
+          initialValues={{
+            authorityFilter,
+            stageFilter,
+            visibility,
+            projectFilter,
+            dateFrom,
+            dateTo,
+          }}
+          onApply={handleApplyFilters}
+          activeFilterCount={activeFilterCount}
+        />
 
         {/* View toggle */}
         <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
@@ -665,23 +656,6 @@ export default function ApprovalsPage() {
           </button>
         </div>
       </div>
-
-      <ApprovalsFilterModal
-        open={filtersOpen}
-        onOpenChange={setFiltersOpen}
-        columns={COLUMNS}
-        stages={STAGES}
-        projectOptions={projectOptions}
-        initialValues={{
-          authorityFilter,
-          stageFilter,
-          visibility,
-          projectFilter,
-          dateFrom,
-          dateTo,
-        }}
-        onApply={handleApplyFilters}
-      />
 
       {/* Active filter chips */}
       {hasActiveFilters && (

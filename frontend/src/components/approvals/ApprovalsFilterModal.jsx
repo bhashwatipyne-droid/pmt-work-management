@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
-import { CalendarDays } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { CalendarDays, SlidersHorizontal } from "lucide-react";
 import {
   Popover,
   PopoverTrigger,
@@ -26,24 +19,27 @@ const EMPTY_VALUES = {
 };
 
 /**
- * Filters modal for the Approvals board.
+ * Filters control for the Approvals board.
  *
- * Owns its own draft state so opening/closing without hitting
- * "Apply filters" never mutates the parent's committed filters.
+ * Self-contained: renders its own trigger button (with the active-filter
+ * count badge) and its own Popover, so the panel anchors to the button
+ * instead of opening as a centered page-level dialog. Owns its own draft
+ * state so opening/closing without hitting "Apply filters" never mutates
+ * the parent's committed filters.
  */
 export default function ApprovalsFilterModal({
-  open,
-  onOpenChange,
   columns,
   stages,
   projectOptions,
   initialValues,
   onApply,
+  activeFilterCount = 0,
 }) {
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ ...EMPTY_VALUES, ...initialValues });
 
   // Re-sync the draft to whatever is currently applied every time the
-  // modal is opened, so it always starts from the committed filters.
+  // panel is opened, so it always starts from the committed filters.
   useEffect(() => {
     if (open) {
       setDraft({ ...EMPTY_VALUES, ...initialValues });
@@ -58,7 +54,7 @@ export default function ApprovalsFilterModal({
 
   const handleApply = () => {
     onApply(draft);
-    onOpenChange(false);
+    setOpen(false);
   };
 
   const dateRangeValue = {
@@ -75,21 +71,43 @@ export default function ApprovalsFilterModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <div className="flex items-center justify-between pr-6">
-            <DialogTitle>Filters</DialogTitle>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-testid={APPROVALS.filterButton}
+          className={[
+            "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm font-medium outline-none transition-colors",
+            "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
+            activeFilterCount > 0
+              ? "border-[#2b2bb5] text-[#2b2bb5]"
+              : "border-input text-foreground hover:bg-slate-50",
+          ].join(" ")}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#eef0ff] px-1.5 text-[11px] font-semibold text-[#2b2bb5]">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
 
-            <button
-              type="button"
-              onClick={clearDraft}
-              className="text-xs font-medium text-[#2b2bb5] hover:underline"
-            >
-              Clear all
-            </button>
-          </div>
-        </DialogHeader>
+      <PopoverContent align="start" className="w-80 rounded-xl p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-sm font-semibold text-foreground">
+            Filters
+          </span>
+
+          <button
+            type="button"
+            onClick={clearDraft}
+            className="text-xs font-medium text-[#2b2bb5] hover:underline"
+          >
+            Clear all
+          </button>
+        </div>
 
         <div className="space-y-4">
           <div>
@@ -229,16 +247,14 @@ export default function ApprovalsFilterModal({
           </div>
         </div>
 
-        <DialogFooter>
-          <button
-            type="button"
-            onClick={handleApply}
-            className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white hover:bg-[#1a1a8a]"
-          >
-            Apply filters
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <button
+          type="button"
+          onClick={handleApply}
+          className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white hover:bg-[#1a1a8a]"
+        >
+          Apply filters
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }

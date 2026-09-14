@@ -7,7 +7,7 @@ import {
   Calendar,
   Plus,
   Pencil,
-  CircleDot,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,7 +30,6 @@ import { DeliverableModal } from "@/components/projects/DeliverableModal";
 import ProjectEditModal from "@/components/projects/ProjectEditModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { trackEvent } from "../analytics";
-import { SelectPill } from "@/components/ui/SelectPill";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -250,9 +249,11 @@ export default function ProjectDetailPage() {
             <button
               type="button"
               onClick={() => setEditProjectOpen(true)}
-              className="inline-flex h-10 items-center rounded-lg border border-border bg-white px-4 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+              aria-label="Edit project"
+              title="Edit project"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-white text-muted-foreground transition-colors hover:bg-slate-50 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
             >
-              Edit Project
+              <Pencil className="h-4 w-4" />
             </button>
           )}
 
@@ -260,25 +261,30 @@ export default function ProjectDetailPage() {
             <button
               type="button"
               onClick={() => setDeleteProjectOpen(true)}
-              className="inline-flex h-10 items-center rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200"
+              aria-label="Delete project"
+              title="Delete project"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200"
             >
-              Delete Project
+              <Trash2 className="h-4 w-4" />
             </button>
           )}
 
           {isElevated &&
           currentUser.role === "admin" ? (
-            <SelectPill
-              triggerTestId="project-detail-status-select"
-              icon={CircleDot}
+            <select
+              data-testid="project-detail-status-select"
               value={project.status}
-              onChange={handleStatusChange}
-              options={PROJECT_STATUSES.map((s) => ({
-                value: s,
-                label: s,
-                dotClassName: STATUS_COLORS[s]?.dot,
-              }))}
-            />
+              onChange={(e) =>
+                handleStatusChange(e.target.value)
+              }
+              className={`h-10 rounded-lg border border-transparent px-3 text-xs font-semibold uppercase tracking-wide outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 ${statusColor.badge}`}
+            >
+              {PROJECT_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           ) : (
             <span
               className={`rounded-md px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${statusColor.badge}`}

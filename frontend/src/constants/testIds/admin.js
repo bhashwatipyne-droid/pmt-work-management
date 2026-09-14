@@ -28,6 +28,7 @@ export const APPROVALS = {
   rejectPrefix: 'approvals-reject-btn',
   notePrefix: 'approvals-note-input',
   searchInput: 'approvals-search-input',
+  filterButton: 'approvals-filter-button',
   filterAuthority: 'approvals-filter-authority',
   filterStage: 'approvals-filter-stage',
   filterStatus: 'approvals-filter-status',

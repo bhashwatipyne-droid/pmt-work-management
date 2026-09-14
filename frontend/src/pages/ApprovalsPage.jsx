@@ -15,7 +15,7 @@ import {
   MoreVertical,
   LayoutGrid,
   List,
-  CalendarDays,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
@@ -38,12 +38,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import ApprovalsFilterModal from "@/components/approvals/ApprovalsFilterModal";
 import { STAGES } from "@/constants/projectPalette";
 import { trackEvent } from "../analytics";
 
@@ -95,6 +90,9 @@ export default function ApprovalsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [view, setView] = useState("grid");
+
+  // Filters modal
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Selection + bulk actions
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -214,7 +212,16 @@ export default function ApprovalsPage() {
     Boolean(stageFilter) ||
     Boolean(projectFilter) ||
     Boolean(dateFrom) ||
-    Boolean(dateTo);
+    Boolean(dateTo) ||
+    visibility !== "all";
+
+  const activeFilterCount = [
+    authorityFilter,
+    stageFilter,
+    projectFilter,
+    dateFrom || dateTo ? "date" : "",
+    visibility !== "all" ? "status" : "",
+  ].filter(Boolean).length;
 
   const clearAllFilters = () => {
     setSearch("");
@@ -223,16 +230,22 @@ export default function ApprovalsPage() {
     setProjectFilter("");
     setDateFrom("");
     setDateTo("");
+    setVisibility("all");
+    clearSelection();
   };
 
-  const dateRange = {
-    from: dateFrom ? parseISO(dateFrom) : undefined,
-    to: dateTo ? parseISO(dateTo) : undefined,
-  };
+  const handleApplyFilters = (values) => {
+    setAuthorityFilter(values.authorityFilter);
+    setStageFilter(values.stageFilter);
 
-  const handleDateRangeChange = (range) => {
-    setDateFrom(range?.from ? format(range.from, "yyyy-MM-dd") : "");
-    setDateTo(range?.to ? format(range.to, "yyyy-MM-dd") : "");
+    if (values.visibility !== visibility) {
+      setVisibility(values.visibility);
+      clearSelection();
+    }
+
+    setProjectFilter(values.projectFilter);
+    setDateFrom(values.dateFrom);
+    setDateTo(values.dateTo);
   };
 
   // ---------- Selection ----------
@@ -596,111 +609,26 @@ export default function ApprovalsPage() {
           />
         </div>
 
-        <select
-          data-testid={APPROVALS.filterAuthority}
-          value={authorityFilter}
-          onChange={(e) => setAuthorityFilter(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+        <button
+          type="button"
+          data-testid={APPROVALS.filterButton}
+          onClick={() => setFiltersOpen(true)}
+          className={[
+            "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm font-medium outline-none transition-colors",
+            "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
+            activeFilterCount > 0
+              ? "border-[#2b2bb5] text-[#2b2bb5]"
+              : "border-input text-foreground hover:bg-slate-50",
+          ].join(" ")}
         >
-          <option value="">Approval authority: All</option>
-          {COLUMNS.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          data-testid={APPROVALS.filterStage}
-          value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-        >
-          <option value="">Production stage: All</option>
-          {STAGES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-
-        <select
-          data-testid={APPROVALS.filterStatus}
-          value={visibility}
-          onChange={(e) => {
-            setVisibility(e.target.value);
-            clearSelection();
-          }}
-          className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-        >
-          <option value="visible">Status: Pending</option>
-          <option value="hidden">Status: Hidden</option>
-          <option value="all">Status: All</option>
-        </select>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className={[
-                "inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-3 text-sm outline-none transition-colors",
-                "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
-                dateFrom || dateTo
-                  ? "border-[#2b2bb5] text-foreground"
-                  : "border-input text-muted-foreground",
-              ].join(" ")}
-            >
-              <CalendarDays className="h-4 w-4 shrink-0" />
-              {dateFrom && dateTo ? (
-                <span>
-                  {format(parseISO(dateFrom), "dd MMM")} –{" "}
-                  {format(parseISO(dateTo), "dd MMM")}
-                </span>
-              ) : (
-                <span>Select date range</span>
-              )}
-            </button>
-          </PopoverTrigger>
-
-          <PopoverContent align="start" className="w-auto rounded-xl p-0">
-            <Calendar
-              mode="range"
-              selected={dateRange}
-              onSelect={handleDateRangeChange}
-              numberOfMonths={1}
-              initialFocus
-            />
-
-            {(dateFrom || dateTo) && (
-              <div className="border-t border-border px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDateFrom("");
-                    setDateTo("");
-                  }}
-                  className="text-xs font-medium text-[#2b2bb5] hover:underline"
-                >
-                  Clear date range
-                </button>
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-
-        <select
-          data-testid={APPROVALS.filterProject}
-          value={projectFilter}
-          onChange={(e) => setProjectFilter(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-        >
-          <option value="">Project: All</option>
-          {projectOptions.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#eef0ff] px-1.5 text-[11px] font-semibold text-[#2b2bb5]">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
 
         {/* View toggle */}
         <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
@@ -738,6 +666,23 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
+      <ApprovalsFilterModal
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        columns={COLUMNS}
+        stages={STAGES}
+        projectOptions={projectOptions}
+        initialValues={{
+          authorityFilter,
+          stageFilter,
+          visibility,
+          projectFilter,
+          dateFrom,
+          dateTo,
+        }}
+        onApply={handleApplyFilters}
+      />
+
       {/* Active filter chips */}
       {hasActiveFilters && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -759,6 +704,20 @@ export default function ApprovalsPage() {
               className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
             >
               Authority: {COLUMNS.find((c) => c.key === authorityFilter)?.label}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+
+          {visibility !== "all" && (
+            <button
+              type="button"
+              onClick={() => {
+                setVisibility("all");
+                clearSelection();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
+            >
+              Status: {visibility === "hidden" ? "Hidden" : "Pending"}
               <X className="h-3 w-3" />
             </button>
           )}

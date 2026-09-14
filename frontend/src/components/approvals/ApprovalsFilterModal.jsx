@@ -12,7 +12,7 @@ import { APPROVALS } from "@/constants/testIds";
 const EMPTY_VALUES = {
   authorityFilter: "",
   stageFilter: "",
-  visibility: "all",
+  visibility: "visible",
   projectFilter: "",
   dateFrom: "",
   dateTo: "",

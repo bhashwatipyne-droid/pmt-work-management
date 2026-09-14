@@ -43,7 +43,6 @@ export const CreateProjectModal = ({
   onClose,
   onCreated,
   clients,
-  users,
   deliverableTypes,
 }) => {
   const { currentUserId } = useUser();

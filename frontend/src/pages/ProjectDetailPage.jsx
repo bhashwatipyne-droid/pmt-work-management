@@ -7,6 +7,7 @@ import {
   Calendar,
   Plus,
   Pencil,
+  CircleDot,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +30,7 @@ import { DeliverableModal } from "@/components/projects/DeliverableModal";
 import ProjectEditModal from "@/components/projects/ProjectEditModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { trackEvent } from "../analytics";
+import { SelectPill } from "@/components/ui/SelectPill";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -266,20 +268,17 @@ export default function ProjectDetailPage() {
 
           {isElevated &&
           currentUser.role === "admin" ? (
-            <select
-              data-testid="project-detail-status-select"
+            <SelectPill
+              triggerTestId="project-detail-status-select"
+              icon={CircleDot}
               value={project.status}
-              onChange={(e) =>
-                handleStatusChange(e.target.value)
-              }
-              className={`h-10 rounded-lg border border-transparent px-3 text-xs font-semibold uppercase tracking-wide outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 ${statusColor.badge}`}
-            >
-              {PROJECT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              onChange={handleStatusChange}
+              options={PROJECT_STATUSES.map((s) => ({
+                value: s,
+                label: s,
+                dotClassName: STATUS_COLORS[s]?.dot,
+              }))}
+            />
           ) : (
             <span
               className={`rounded-md px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${statusColor.badge}`}
@@ -525,7 +524,6 @@ export default function ProjectDetailPage() {
         projectId={projectId}
         initial={delivModal.initial}
         currentUserId={currentUserId}
-        users={users}
         deliverableTypes={deliverableTypes}
         onClose={() =>
           setDelivModal((m) => ({
@@ -542,7 +540,6 @@ export default function ProjectDetailPage() {
         onSaved={handleProjectEditSave}
         project={project}
         clients={clients}
-        currentUserId={currentUserId}
       />
 
       <ConfirmDeleteModal

@@ -21,7 +21,6 @@ export const DeliverableModal = ({
   projectId,
   initial,
   currentUserId,
-  users = [],
   deliverableTypes = [],
   onClose,
   onSaved,

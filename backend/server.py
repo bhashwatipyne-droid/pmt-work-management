@@ -3177,14 +3177,6 @@ async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
 
 
 # ---------------- Approvals (deliverable review queue) ----------------
-def _next_stage(stage: str) -> Optional[str]:
-    try:
-        idx = STAGES.index(stage)
-        return STAGES[idx + 1] if idx + 1 < len(STAGES) else None
-    except ValueError:
-        return None
-
-
 @api_router.get("/bulk-review")
 async def list_bulk_review(request: Request):
     """Work items assigned to the logged-in manager and ready for review."""

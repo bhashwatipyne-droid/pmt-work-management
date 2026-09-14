@@ -1,4 +1,7 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { X, ChevronRight, Briefcase, User, Building2, CalendarDays } from "lucide-react";
+import { SelectPill } from "@/components/ui/SelectPill";
+import { DatePill } from "@/components/ui/DatePill";
 
 const ProjectEditModal = ({
   open,
@@ -6,7 +9,6 @@ const ProjectEditModal = ({
   onSaved,
   project,
   clients = [],
-  currentUserId,
 }) => {
   const [name, setName] = useState("");
   const [clientId, setClientId] = useState("");
@@ -81,12 +83,6 @@ const ProjectEditModal = ({
     }
   };
 
-  const inputBase =
-    "w-full rounded-lg border border-input bg-white px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20 disabled:cursor-not-allowed disabled:opacity-60";
-
-  const labelBase =
-    "mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm"
@@ -99,166 +95,103 @@ const ProjectEditModal = ({
         }
       }}
     >
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-white shadow-2xl">
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-border px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              Edit Project
-            </h2>
+      <div
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header: breadcrumb + close */}
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0f0fd] text-[#2b2bb5]">
+              <Briefcase className="h-3.5 w-3.5" />
+            </span>
 
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Update project details.
-            </p>
+            <span>Projects</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+            <span className="font-medium text-foreground">
+              Edit
+            </span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
+            aria-label="Close modal"
             className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 disabled:opacity-50"
           >
-            ×
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="space-y-5 bg-[#f7f9fc] px-6 py-6">
-          <div className="rounded-xl border border-border bg-white p-5">
-            <div className="mb-5">
-              <h3 className="text-sm font-semibold text-foreground">
-                Project Details
-              </h3>
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          {/* Large inline title */}
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Project name"
+            disabled={saving}
+            autoFocus
+            className="w-full border-none bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
+          />
 
-              <p className="mt-1 text-xs text-muted-foreground">
-                Update the project's basic information.
-              </p>
-            </div>
+          {/* Pill row: POC / Client / Start date / End date */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <SelectPill
+              icon={User}
+              value={pocId}
+              onChange={setPocId}
+              placeholder="No POC"
+              options={[
+                { value: "", label: "No POC" },
+                ...availablePocs.map((contact) => ({
+                  value: contact.id,
+                  label: contact.name,
+                })),
+              ]}
+            />
 
-            {/* Project Name */}
-            <div className="mb-5">
-              <label className={labelBase}>
-                Project Name
-              </label>
+            <SelectPill
+              icon={Building2}
+              value={clientId}
+              onChange={(next) => {
+                setClientId(next);
+                setPocId("");
+              }}
+              placeholder="Select client"
+              options={clients.map((c) => ({
+                value: c.id,
+                label: c.name,
+              }))}
+            />
 
-              <input
-                type="text"
-                value={name}
-                onChange={(e) =>
-                  setName(e.target.value)
-                }
-                className={inputBase}
-                placeholder="Enter project name"
-                disabled={saving}
-              />
-            </div>
+            <DatePill
+              icon={CalendarDays}
+              value={startDate}
+              onChange={setStartDate}
+              placeholder="Start date"
+            />
 
-            {/* Client + POC */}
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div>
-                <label className={labelBase}>
-                  Client
-                </label>
-
-                <select
-                  value={clientId}
-                  onChange={(e) => {
-                    setClientId(e.target.value);
-                    setPocId("");
-                  }}
-                  disabled={saving}
-                  className={inputBase}
-                >
-                  <option value="">
-                    Select client
-                  </option>
-
-                  {clients.map((client) => (
-                    <option
-                      key={client.id}
-                      value={client.id}
-                    >
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={labelBase}>
-                  POC
-                </label>
-
-                <select
-                  value={pocId}
-                  onChange={(e) =>
-                    setPocId(e.target.value)
-                  }
-                  disabled={saving}
-                  className={inputBase}
-                >
-                  <option value="">
-                    No POC selected
-                  </option>
-
-                  {availablePocs.map((contact) => (
-                    <option
-                      key={contact.id}
-                      value={contact.id}
-                    >
-                      {contact.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Dates */}
-            <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div>
-                <label className={labelBase}>
-                  Start Date
-                </label>
-
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) =>
-                    setStartDate(e.target.value)
-                  }
-                  disabled={saving}
-                  className={inputBase}
-                />
-              </div>
-
-              <div>
-                <label className={labelBase}>
-                  End Date
-                </label>
-
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) =>
-                    setEndDate(e.target.value)
-                  }
-                  disabled={saving}
-                  className={inputBase}
-                />
-              </div>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600">
-                {error}
-              </div>
-            )}
+            <DatePill
+              icon={CalendarDays}
+              value={endDate}
+              onChange={setEndDate}
+              placeholder="End date"
+            />
           </div>
+
+          {/* Error */}
+          {error && (
+            <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600">
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-white px-6 py-4">
           <button
             type="button"
             onClick={onClose}

@@ -10,7 +10,6 @@ import {
 import {
   ChevronsLeftRight,
   Hand,
-  Plus,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { FilterMultiSelect } from "./FilterMultiSelect";

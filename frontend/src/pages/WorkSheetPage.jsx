@@ -21,7 +21,7 @@ import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
 import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
-import { History, AlertCircle, X } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";

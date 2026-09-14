@@ -819,7 +819,6 @@ export default function ProjectsPage() {
         onClose={() => setModalOpen(false)}
         onCreated={fetchAll}
         clients={clients}
-        users={users}
         deliverableTypes={deliverableTypes}
       />
 

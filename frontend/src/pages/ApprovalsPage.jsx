@@ -943,7 +943,22 @@ export default function ApprovalsPage() {
                           </span>
                         )}
 
-                        {renderCardMenu(item)}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleHide(item);
+                          }}
+                          aria-label={item.hidden ? "Unhide" : "Hide"}
+                          title={item.hidden ? "Unhide" : "Hide"}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+                        >
+                          {item.hidden ? (
+                            <Eye className="h-3.5 w-3.5" />
+                          ) : (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          )}
+                        </button>
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">

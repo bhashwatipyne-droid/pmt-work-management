@@ -490,6 +490,7 @@ export const getDashboardOverview = (userId) =>
       headers: authHeaders(userId),
     })
     .then((r) => r.data);
+
 // -------- Efficiency --------
 export const getEfficiencyOverview = (month) =>
   axios.get(`${API}/efficiency/overview`, { params: { month } }).then((r) => r.data);
@@ -520,19 +521,19 @@ export const updateMonthlyCapacity = (id, payload) =>
 export const deleteMonthlyCapacity = (id) =>
   axios.delete(`${API}/efficiency/monthly-capacity/${id}`).then((r) => r.data);
 
-export const getActivityTargets = (includeInactive = true) =>
+export const getActivityCatalog = () =>
+  axios.get(`${API}/efficiency/activity-catalog`).then((r) => r.data);
+
+export const getEmployeeTargets = (userId) =>
   axios
-    .get(`${API}/efficiency/activity-targets`, { params: { include_inactive: includeInactive } })
+    .get(`${API}/efficiency/employee-targets`, { params: { user_id: userId } })
     .then((r) => r.data);
 
-export const createActivityTarget = (payload) =>
-  axios.post(`${API}/efficiency/activity-targets`, payload).then((r) => r.data);
+export const upsertEmployeeTarget = (payload) =>
+  axios.post(`${API}/efficiency/employee-targets`, payload).then((r) => r.data);
 
-export const updateActivityTarget = (id, payload) =>
-  axios.put(`${API}/efficiency/activity-targets/${id}`, payload).then((r) => r.data);
+export const updateEmployeeTarget = (id, payload) =>
+  axios.put(`${API}/efficiency/employee-targets/${id}`, payload).then((r) => r.data);
 
-export const deleteActivityTarget = (id) =>
-  axios.delete(`${API}/efficiency/activity-targets/${id}`).then((r) => r.data);
-
-export const syncActivityTargets = () =>
-  axios.post(`${API}/efficiency/activity-targets/sync-deliverable-types`).then((r) => r.data);
+export const deleteEmployeeTarget = (id) =>
+  axios.delete(`${API}/efficiency/employee-targets/${id}`).then((r) => r.data);

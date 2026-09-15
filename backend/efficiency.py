@@ -1,13 +1,21 @@
 """
-Efficiency module — monthly capacity, core activity targets and productivity reporting.
+Efficiency module — monthly capacity, per-employee activity potential, and productivity reporting.
 
-Designed as a *router factory* so it can live outside server.py without a circular
-import. server.py calls `create_efficiency_router(...)` and includes the result.
+Router factory so it can live outside server.py without a circular import.
+server.py calls `create_efficiency_router(...)` and includes the result.
 
 Collections used:
-  efficiency_capacity          one doc per (user_id, month)
-  efficiency_activity_targets  one doc per core activity
+  efficiency_capacity          one doc per (user_id, month)          -- capacity setup
+  efficiency_employee_targets  one doc per (user_id, activity_name)  -- potential, set by manager
   work_items                   existing collection (source of actuals + non-core time)
+
+Permission model:
+  - Monthly capacity: manager or admin (department-scoped for managers).
+  - Employee activity targets (potential): MANAGER ONLY. Admins cannot create, edit, or
+    delete these — only view them, same as any report. A manager may only set potential
+    for employees in their own department.
+  - Reporting (overview / employee detail / activity breakdown / trend): admin sees the
+    whole org, manager sees their department, everyone else sees only themselves.
 """
 
 import uuid
@@ -60,9 +68,11 @@ class EmployeeWorkingCalendarUpdate(BaseModel):
     working_hours_per_day: Optional[float] = None
 
 
-class EfficiencyActivityConfig(BaseModel):
+class EmployeeActivityTarget(BaseModel):
+    """One employee's potential for one core activity. This is what a manager sets."""
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
     activity_name: str
     category: str = "Core"
     daily_potential: float = 0
@@ -73,17 +83,15 @@ class EfficiencyActivityConfig(BaseModel):
     updated_by: Optional[str] = None
 
 
-class EfficiencyActivityConfigCreate(BaseModel):
+class EmployeeActivityTargetCreate(BaseModel):
+    user_id: str
     activity_name: str
-    category: Optional[str] = "Core"
-    daily_potential: float = 0
+    daily_potential: float
     time_per_unit_minutes: float = 0
     active: Optional[bool] = True
 
 
-class EfficiencyActivityConfigUpdate(BaseModel):
-    activity_name: Optional[str] = None
-    category: Optional[str] = None
+class EmployeeActivityTargetUpdate(BaseModel):
     daily_potential: Optional[float] = None
     time_per_unit_minutes: Optional[float] = None
     active: Optional[bool] = None
@@ -209,7 +217,21 @@ def create_efficiency_router(
 
     router = APIRouter(prefix="/efficiency", tags=["efficiency"])
 
+    core_activity_names = sorted(
+        name for name, cat in deliverable_type_categories.items() if cat == "Core"
+    )
+
     # ---------- shared helpers (need db) ----------
+
+    async def require_manager(request: Request):
+        """Potential-setting is a manager-only action. Admins can view but not edit."""
+        user = await get_acting_user(request)
+        if user.role != "manager":
+            raise HTTPException(
+                status_code=403,
+                detail="Only managers can configure activity potential",
+            )
+        return user
 
     async def _visible_users(user) -> List[dict]:
         """Employees this user is allowed to see efficiency data for."""
@@ -231,16 +253,33 @@ def create_efficiency_router(
                 return
         raise HTTPException(status_code=403, detail="You cannot view this employee's efficiency")
 
-    async def _active_targets() -> List[dict]:
-        return await db.efficiency_activity_targets.find(
-            {"active": True, "category": "Core"}, {"_id": 0}
-        ).sort("activity_name", 1).to_list(500)
+    async def _assert_manages(manager, target_user_id: str):
+        """A manager may only set potential for members of their own department."""
+        if manager.id == target_user_id:
+            return
+        target = await db.users.find_one(
+            {"id": target_user_id}, {"_id": 0, "department": 1}
+        )
+        if not target or target.get("department") != manager.department:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only set potential for employees in your own department",
+            )
 
     async def _capacity_map(month: str, user_ids: List[str]) -> Dict[str, dict]:
         docs = await db.efficiency_capacity.find(
             {"month": month, "user_id": {"$in": user_ids}}, {"_id": 0}
         ).to_list(1000)
         return {d["user_id"]: d for d in docs}
+
+    async def _employee_targets_map(user_ids: List[str]) -> Dict[str, List[dict]]:
+        docs = await db.efficiency_employee_targets.find(
+            {"user_id": {"$in": user_ids}, "active": True}, {"_id": 0}
+        ).sort("activity_name", 1).to_list(10000)
+        by_user: Dict[str, List[dict]] = {uid: [] for uid in user_ids}
+        for d in docs:
+            by_user.setdefault(d["user_id"], []).append(d)
+        return by_user
 
     async def _month_work_items(month: str, user_ids: List[str]) -> List[dict]:
         return await db.work_items.find(
@@ -298,7 +337,7 @@ def create_efficiency_router(
             monthly_potential = round(daily_potential * breakdown["core_days"], 2)
             actual = closed_by_type.get(t["activity_name"], 0)
             activity_rows.append({
-                "activity_id": t.get("id"),
+                "target_id": t.get("id"),
                 "activity_name": t["activity_name"],
                 "daily_potential": daily_potential,
                 "time_per_unit_minutes": float(t.get("time_per_unit_minutes") or 0),
@@ -309,7 +348,6 @@ def create_efficiency_router(
 
         productivity = calculate_employee_productivity(activity_rows) if has_capacity else 0.0
 
-        # Closed core deliverables that are not part of any configured target.
         target_names = {t["activity_name"] for t in targets}
         untracked_closed = sum(v for k, v in closed_by_type.items() if k not in target_names)
 
@@ -319,6 +357,7 @@ def create_efficiency_router(
             "department": user_doc.get("department") or "",
             "role": user_doc.get("role"),
             "has_capacity": has_capacity,
+            "has_targets": len(activity_rows) > 0,
             "productivity": productivity,
             "closed_deliverables": closed_total,
             "untracked_closed_deliverables": untracked_closed,
@@ -330,28 +369,31 @@ def create_efficiency_router(
             **breakdown,
         }
 
-    async def _build_month(month: str, user, employee_id: Optional[str] = None):
+    async def _build_month(month: str, user, employee_id: Optional[str] = None) -> List[dict]:
         users = await _visible_users(user)
         if employee_id:
             users = [u for u in users if u["id"] == employee_id]
         if not users:
-            return [], []
+            return []
         user_ids = [u["id"] for u in users]
-        targets = await _active_targets()
         capacities = await _capacity_map(month, user_ids)
+        targets_map = await _employee_targets_map(user_ids)
         items = await _month_work_items(month, user_ids)
 
         by_user: Dict[str, List[dict]] = {uid: [] for uid in user_ids}
         for it in items:
             by_user.setdefault(it.get("creator_id"), []).append(it)
 
-        rows = [
-            _compute_employee(u, capacities.get(u["id"]), by_user.get(u["id"], []), targets)
+        return [
+            _compute_employee(
+                u, capacities.get(u["id"]), by_user.get(u["id"], []), targets_map.get(u["id"], [])
+            )
             for u in users
         ]
-        return rows, targets
 
     # ---------- Monthly capacity ----------
+    # NOTE: left as manager-or-admin, unchanged from before. Tell me if this should
+    # also be locked to managers only, matching activity potential below.
 
     @router.get("/monthly-capacity")
     async def list_monthly_capacity(
@@ -369,8 +411,7 @@ def create_efficiency_router(
             query["user_id"] = user_id
         else:
             query["user_id"] = {"$in": list(visible)}
-        docs = await db.efficiency_capacity.find(query, {"_id": 0}).to_list(1000)
-        return docs
+        return await db.efficiency_capacity.find(query, {"_id": 0}).to_list(1000)
 
     @router.get("/monthly-capacity/{user_id}/{month}")
     async def get_monthly_capacity(user_id: str, month: str, request: Request):
@@ -463,117 +504,114 @@ def create_efficiency_router(
         )
         return {"deleted": True, "id": capacity_id}
 
-    # ---------- Activity targets ----------
+    # ---------- Activity catalog (read-only reference list) ----------
 
-    @router.get("/activity-targets")
-    async def list_activity_targets(request: Request, include_inactive: bool = True):
+    @router.get("/activity-catalog")
+    async def activity_catalog(request: Request):
+        """Core deliverable type names a manager can pick from when setting potential."""
         await get_acting_user(request)
-        query = {} if include_inactive else {"active": True}
-        return await db.efficiency_activity_targets.find(query, {"_id": 0}).sort(
-            "activity_name", 1
-        ).to_list(500)
+        return core_activity_names
 
-    @router.post("/activity-targets", response_model=EfficiencyActivityConfig)
-    async def create_activity_target(payload: EfficiencyActivityConfigCreate, request: Request):
-        user = await require_manager_or_admin(request)
+    # ---------- Employee activity targets (potential) — MANAGER ONLY to write ----------
+
+    @router.get("/employee-targets")
+    async def list_employee_targets(request: Request, user_id: str = Query(...)):
+        user = await get_acting_user(request)
+        await _assert_can_view(user, user_id)
+        return await db.efficiency_employee_targets.find(
+            {"user_id": user_id}, {"_id": 0}
+        ).sort("activity_name", 1).to_list(500)
+
+    @router.post("/employee-targets", response_model=EmployeeActivityTarget)
+    async def upsert_employee_target(payload: EmployeeActivityTargetCreate, request: Request):
+        manager = await require_manager(request)
+        await _assert_manages(manager, payload.user_id)
+
         name = (payload.activity_name or "").strip()
-        if not name:
-            raise HTTPException(status_code=400, detail="Activity name is required")
-        if payload.daily_potential is not None and payload.daily_potential < 0:
+        if name not in core_activity_names:
+            raise HTTPException(
+                status_code=400,
+                detail="Activity must be one of the configured core deliverable types",
+            )
+        if payload.daily_potential is None or payload.daily_potential < 0:
             raise HTTPException(status_code=400, detail="Daily potential cannot be negative")
         if payload.time_per_unit_minutes is not None and payload.time_per_unit_minutes < 0:
             raise HTTPException(status_code=400, detail="Time per unit cannot be negative")
-        clash = await db.efficiency_activity_targets.find_one({"activity_name": name}, {"_id": 0, "id": 1})
-        if clash:
-            raise HTTPException(status_code=400, detail="This activity is already configured")
 
         ts = now_iso()
-        doc = EfficiencyActivityConfig(
+        existing = await db.efficiency_employee_targets.find_one(
+            {"user_id": payload.user_id, "activity_name": name}, {"_id": 0}
+        )
+        doc = EmployeeActivityTarget(
+            id=existing["id"] if existing else str(uuid.uuid4()),
+            user_id=payload.user_id,
             activity_name=name,
-            category=payload.category or "Core",
-            daily_potential=payload.daily_potential or 0,
+            category="Core",
+            daily_potential=payload.daily_potential,
             time_per_unit_minutes=payload.time_per_unit_minutes or 0,
             active=True if payload.active is None else payload.active,
-            created_at=ts,
+            created_at=existing["created_at"] if existing else ts,
             updated_at=ts,
-            updated_by=user.id,
+            updated_by=manager.id,
         )
-        await db.efficiency_activity_targets.insert_one(doc.model_dump())
+        await db.efficiency_employee_targets.update_one(
+            {"user_id": payload.user_id, "activity_name": name},
+            {"$set": doc.model_dump()},
+            upsert=True,
+        )
         await log_activity(
-            "efficiency_activity_log", doc.id, "activity_target_created", user.id,
-            new_value=doc.model_dump(),
+            "efficiency_activity_log", doc.id,
+            "employee_target_updated" if existing else "employee_target_created",
+            manager.id, old_value=existing, new_value=doc.model_dump(),
         )
         return doc
 
-    @router.put("/activity-targets/{target_id}", response_model=EfficiencyActivityConfig)
-    async def update_activity_target(
-        target_id: str, payload: EfficiencyActivityConfigUpdate, request: Request
+    @router.put("/employee-targets/{target_id}", response_model=EmployeeActivityTarget)
+    async def update_employee_target(
+        target_id: str, payload: EmployeeActivityTargetUpdate, request: Request
     ):
-        user = await require_manager_or_admin(request)
-        existing = await db.efficiency_activity_targets.find_one({"id": target_id}, {"_id": 0})
+        manager = await require_manager(request)
+        existing = await db.efficiency_employee_targets.find_one({"id": target_id}, {"_id": 0})
         if not existing:
-            raise HTTPException(status_code=404, detail="Activity target not found")
+            raise HTTPException(status_code=404, detail="Target not found")
+        await _assert_manages(manager, existing["user_id"])
 
         patch = {k: v for k, v in payload.model_dump().items() if v is not None}
         if "daily_potential" in patch and patch["daily_potential"] < 0:
             raise HTTPException(status_code=400, detail="Daily potential cannot be negative")
         if "time_per_unit_minutes" in patch and patch["time_per_unit_minutes"] < 0:
             raise HTTPException(status_code=400, detail="Time per unit cannot be negative")
-        if "activity_name" in patch:
-            patch["activity_name"] = patch["activity_name"].strip()
-            clash = await db.efficiency_activity_targets.find_one(
-                {"activity_name": patch["activity_name"], "id": {"$ne": target_id}}, {"_id": 0, "id": 1}
-            )
-            if clash:
-                raise HTTPException(status_code=400, detail="This activity is already configured")
 
-        merged = {**existing, **patch, "updated_at": now_iso(), "updated_by": user.id}
-        await db.efficiency_activity_targets.update_one({"id": target_id}, {"$set": merged})
+        old_daily = existing.get("daily_potential")
+        merged = {**existing, **patch, "updated_at": now_iso(), "updated_by": manager.id}
+        await db.efficiency_employee_targets.update_one({"id": target_id}, {"$set": merged})
         await log_activity(
-            "efficiency_activity_log", target_id, "activity_target_updated", user.id,
+            "efficiency_activity_log", target_id, "employee_target_updated", manager.id,
             old_value=existing, new_value=merged,
+            metadata={"daily_potential_changed": old_daily != merged.get("daily_potential")},
         )
-        return EfficiencyActivityConfig(**merged)
+        return EmployeeActivityTarget(**merged)
 
-    @router.delete("/activity-targets/{target_id}")
-    async def delete_activity_target(target_id: str, request: Request):
-        user = await require_manager_or_admin(request)
-        existing = await db.efficiency_activity_targets.find_one({"id": target_id}, {"_id": 0})
+    @router.delete("/employee-targets/{target_id}")
+    async def delete_employee_target(target_id: str, request: Request):
+        manager = await require_manager(request)
+        existing = await db.efficiency_employee_targets.find_one({"id": target_id}, {"_id": 0})
         if not existing:
-            raise HTTPException(status_code=404, detail="Activity target not found")
-        await db.efficiency_activity_targets.delete_one({"id": target_id})
+            raise HTTPException(status_code=404, detail="Target not found")
+        await _assert_manages(manager, existing["user_id"])
+        await db.efficiency_employee_targets.delete_one({"id": target_id})
         await log_activity(
-            "efficiency_activity_log", target_id, "activity_target_deleted", user.id,
+            "efficiency_activity_log", target_id, "employee_target_deleted", manager.id,
             old_value=existing,
         )
         return {"deleted": True, "id": target_id}
-
-    @router.post("/activity-targets/sync-deliverable-types")
-    async def sync_activity_targets(request: Request):
-        """Create an inactive, zero-target row for every Core deliverable type not yet configured."""
-        user = await require_manager_or_admin(request)
-        existing = await db.efficiency_activity_targets.find({}, {"_id": 0, "activity_name": 1}).to_list(500)
-        known = {e["activity_name"] for e in existing}
-        ts = now_iso()
-        new_docs = [
-            EfficiencyActivityConfig(
-                activity_name=name, category="Core", daily_potential=0,
-                time_per_unit_minutes=0, active=False,
-                created_at=ts, updated_at=ts, updated_by=user.id,
-            ).model_dump()
-            for name, cat in deliverable_type_categories.items()
-            if cat == "Core" and name not in known
-        ]
-        if new_docs:
-            await db.efficiency_activity_targets.insert_many(new_docs)
-        return {"created": len(new_docs)}
 
     # ---------- Reporting ----------
 
     @router.get("/overview")
     async def efficiency_overview(request: Request, month: str = Query(...)):
         user = await get_acting_user(request)
-        rows, targets = await _build_month(month, user)
+        rows = await _build_month(month, user)
 
         configured = [r for r in rows if r["has_capacity"]]
         total_core_hours = round(sum(r["core_hours"] for r in configured), 2)
@@ -587,6 +625,10 @@ def create_efficiency_router(
             "missing_capacity": [
                 {"user_id": r["user_id"], "name": r["name"]} for r in rows if not r["has_capacity"]
             ],
+            "missing_targets": [
+                {"user_id": r["user_id"], "name": r["name"]}
+                for r in rows if r["has_capacity"] and not r["has_targets"]
+            ],
             "excessive_non_core": [
                 {"user_id": r["user_id"], "name": r["name"], "non_core_hours": r["non_core_hours"]}
                 for r in rows
@@ -597,15 +639,10 @@ def create_efficiency_router(
                 {"user_id": r["user_id"], "name": r["name"]}
                 for r in rows if r["has_capacity"] and r["closed_deliverables"] == 0
             ],
-            "missing_activity_targets": [
-                t["activity_name"] for t in targets if not (t.get("daily_potential") or 0)
-            ],
-            "no_active_targets": len(targets) == 0,
         }
 
-        # Month-over-month delta for the headline number.
         prev = _prev_months(month, 2)[0]
-        prev_rows, _ = await _build_month(prev, user)
+        prev_rows = await _build_month(prev, user)
         prev_productivity = calculate_team_productivity(prev_rows)
         team_productivity = calculate_team_productivity(rows)
 
@@ -625,8 +662,8 @@ def create_efficiency_router(
             "employees": [
                 {
                     k: r[k] for k in (
-                        "user_id", "name", "department", "has_capacity", "productivity",
-                        "working_days", "leave_days", "working_days_after_leave",
+                        "user_id", "name", "department", "has_capacity", "has_targets",
+                        "productivity", "working_days", "leave_days", "working_days_after_leave",
                         "core_days", "core_hours", "non_core_hours", "closed_deliverables",
                     )
                 }
@@ -639,7 +676,7 @@ def create_efficiency_router(
     async def employee_efficiency(user_id: str, request: Request, month: str = Query(...)):
         user = await get_acting_user(request)
         await _assert_can_view(user, user_id)
-        rows, _targets = await _build_month(month, user, employee_id=user_id)
+        rows = await _build_month(month, user, employee_id=user_id)
         if not rows:
             raise HTTPException(status_code=404, detail="Employee not found")
         row = rows[0]
@@ -661,7 +698,7 @@ def create_efficiency_router(
                 "non_core_hours": "Sum of Non-Core time logged ÷ 60",
                 "core_hours": "Monthly working hours − Non-core hours",
                 "core_days": "Core hours ÷ Working hours/day",
-                "monthly_potential": "Daily potential × Core days",
+                "monthly_potential": "This employee's daily potential × Core days",
                 "activity_productivity": "Actual closed ÷ Monthly potential × 100",
                 "employee_productivity": {
                     "weighted": "Total actual closed ÷ Total monthly potential × 100",
@@ -674,24 +711,17 @@ def create_efficiency_router(
     @router.get("/activity-breakdown")
     async def activity_breakdown(request: Request, month: str = Query(...)):
         user = await get_acting_user(request)
-        rows, targets = await _build_month(month, user)
+        rows = await _build_month(month, user)
 
-        agg: Dict[str, Dict[str, Any]] = {
-            t["activity_name"]: {
-                "activity_name": t["activity_name"],
-                "daily_potential": float(t.get("daily_potential") or 0),
-                "time_per_unit_minutes": float(t.get("time_per_unit_minutes") or 0),
-                "monthly_potential": 0.0,
-                "actual_closed": 0,
-                "employees": [],
-            }
-            for t in targets
-        }
+        agg: Dict[str, Dict[str, Any]] = {}
         for r in rows:
             for a in r["activities"]:
-                bucket = agg.get(a["activity_name"])
-                if not bucket:
-                    continue
+                bucket = agg.setdefault(a["activity_name"], {
+                    "activity_name": a["activity_name"],
+                    "monthly_potential": 0.0,
+                    "actual_closed": 0,
+                    "employees": [],
+                })
                 bucket["monthly_potential"] = round(
                     bucket["monthly_potential"] + a["monthly_potential"], 2
                 )
@@ -700,6 +730,7 @@ def create_efficiency_router(
                     bucket["employees"].append({
                         "user_id": r["user_id"],
                         "name": r["name"],
+                        "daily_potential": a["daily_potential"],
                         "actual_closed": a["actual_closed"],
                         "monthly_potential": a["monthly_potential"],
                         "productivity": a["productivity"],
@@ -719,7 +750,7 @@ def create_efficiency_router(
             "kpis": {
                 "total_potential": round(sum(a["monthly_potential"] for a in activities), 2),
                 "total_actual": sum(a["actual_closed"] for a in activities),
-                "activities_tracked": len([a for a in activities if a["daily_potential"]]),
+                "activities_tracked": len(activities),
             },
             "activities": activities,
         }
@@ -734,7 +765,7 @@ def create_efficiency_router(
 
         out = []
         for m in _prev_months(month, months):
-            rows, _ = await _build_month(m, user)
+            rows = await _build_month(m, user)
             out.append({
                 "month": m,
                 "team_productivity": calculate_team_productivity(rows),

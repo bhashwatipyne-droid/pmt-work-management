@@ -17,7 +17,13 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from efficiency import create_efficiency_router  # noqa: F401
+try:
+    # Works when the working directory is backend/ (e.g. `uvicorn server:app`)
+    from efficiency import create_efficiency_router  # noqa: F401
+except ImportError:
+    # Works when uvicorn imports this as a package member from the repo root
+    # (e.g. Render's `uvicorn backend.server:app`)
+    from backend.efficiency import create_efficiency_router  # noqa: F401
 
 
 ROOT_DIR = Path(__file__).parent

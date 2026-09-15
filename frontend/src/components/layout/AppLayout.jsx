@@ -8,7 +8,6 @@ const CRUMBS = {
   "/": "Work Sheet",
   "/dashboard": "Dashboard",
   "/efficiency": "Efficiency",
-  "/efficiency/settings": "Efficiency Settings",
   "/efficiency/settings/monthly-capacity": "Monthly Capacity",
   "/efficiency/settings/activity-targets": "Core Activity Targets",
   "/projects": "Projects",

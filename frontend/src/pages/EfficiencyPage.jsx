@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Loader2, Settings2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, Settings2, CalendarRange, Target, ChevronDown } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
 import { getEfficiencyOverview, getEfficiencyTrend } from "@/services/api";
@@ -15,9 +15,16 @@ import { TeamEfficiencyTable } from "@/components/efficiency/TeamEfficiencyTable
 import { EfficiencyTrendChart } from "@/components/efficiency/EfficiencyTrendChart";
 import { EfficiencyAttentionPanel } from "@/components/efficiency/EfficiencyAttentionPanel";
 import { EmployeeEfficiencyDrawer } from "@/components/efficiency/EmployeeEfficiencyDrawer";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 export default function EfficiencyPage() {
   const { currentUser, loading: userLoading } = useUser();
+  const navigate = useNavigate();
 
   const [month, setMonth] = useState(currentMonth());
   const [department, setDepartment] = useState("");
@@ -31,6 +38,7 @@ export default function EfficiencyPage() {
   const [drawerUserId, setDrawerUserId] = useState(null);
 
   const canConfigure = ["admin", "manager"].includes(currentUser?.role);
+  const isManager = currentUser?.role === "manager";
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -84,13 +92,36 @@ export default function EfficiencyPage() {
         </div>
 
         {canConfigure && (
-          <Link
-            to="/efficiency/settings"
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#23239a] hover:shadow-md"
-          >
-            <Settings2 className="h-4 w-4" />
-            Efficiency settings
-          </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#23239a] hover:shadow-md"
+              >
+                <Settings2 className="h-4 w-4" />
+                Efficiency settings
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => navigate("/efficiency/settings/monthly-capacity")}
+              >
+                <CalendarRange className="mr-2 h-4 w-4" />
+                Monthly capacity
+              </DropdownMenuItem>
+
+              {isManager && (
+                <DropdownMenuItem
+                  onClick={() => navigate("/efficiency/settings/activity-targets")}
+                >
+                  <Target className="mr-2 h-4 w-4" />
+                  Team potential
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 

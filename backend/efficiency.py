@@ -236,21 +236,22 @@ def create_efficiency_router(
     async def _visible_users(user) -> List[dict]:
         """Employees this user is allowed to see efficiency data for.
 
-        Members are read-only viewers of the whole team's efficiency data (same
-        breadth as admin) — they just can't hit any of the write endpoints below,
-        which are gated separately via require_manager_or_admin / require_manager.
+        Members are read-only viewers of their own department's efficiency data
+        (same breadth as a manager) — they just can't hit any of the write
+        endpoints below, which are gated separately via
+        require_manager_or_admin / require_manager.
         """
         query: Dict[str, Any] = {"role": {"$ne": "admin"}, "active": {"$ne": False}}
-        if user.role == "manager":
+        if user.role in {"manager", "member"}:
             query["department"] = user.department
         return await db.users.find(query, {"_id": 0}).to_list(1000)
 
     async def _assert_can_view(user, target_user_id: str):
-        if user.role in {"admin", "member"}:
+        if user.role == "admin":
             return
         if user.id == target_user_id:
             return
-        if user.role == "manager":
+        if user.role in {"manager", "member"}:
             target = await db.users.find_one({"id": target_user_id}, {"_id": 0, "department": 1})
             if target and target.get("department") == user.department:
                 return

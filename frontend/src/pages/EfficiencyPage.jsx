@@ -235,6 +235,7 @@ export default function EfficiencyPage() {
             employees={employees}
             departments={departments}
             month={month}
+            canManageCapacity={canConfigure}
             canSetPotential={isManager}
             onSelect={(e) => setDrawerUserId(e.user_id)}
           />

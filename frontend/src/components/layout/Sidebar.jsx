@@ -105,7 +105,7 @@ export const Sidebar = () => {
           </NavLink>
         )}
 
-        {(isAdmin || currentUser?.role === "manager") && (
+        {currentUser?.role && (
           <NavLink
             to="/efficiency"
             data-testid="sidebar-nav-efficiency"

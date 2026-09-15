@@ -78,6 +78,7 @@ export const TeamEfficiencyTable = ({
   employees = [],
   departments = [],
   month,
+  canManageCapacity = false,
   canSetPotential = false,
   onSelect,
 }) => {
@@ -321,12 +322,14 @@ export const TeamEfficiencyTable = ({
                         <DropdownMenuItem onClick={() => onSelect?.(e)}>
                           View details
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => navigate("/efficiency/settings/monthly-capacity")}
-                        >
-                          <Settings2 className="mr-2 h-3.5 w-3.5" />
-                          Set capacity
-                        </DropdownMenuItem>
+                        {canManageCapacity && (
+                          <DropdownMenuItem
+                            onClick={() => navigate("/efficiency/settings/monthly-capacity")}
+                          >
+                            <Settings2 className="mr-2 h-3.5 w-3.5" />
+                            Set capacity
+                          </DropdownMenuItem>
+                        )}
                         {canSetPotential && (
                           <DropdownMenuItem
                             onClick={() => navigate("/efficiency/settings/activity-targets")}

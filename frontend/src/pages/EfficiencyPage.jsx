@@ -85,7 +85,7 @@ export default function EfficiencyPage() {
 
         {canConfigure && (
           <Link
-            to="/efficiency/settings/monthly-capacity"
+            to="/efficiency/settings"
             className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#23239a] hover:shadow-md"
           >
             <Settings2 className="h-4 w-4" />

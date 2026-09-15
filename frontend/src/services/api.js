@@ -490,3 +490,49 @@ export const getDashboardOverview = (userId) =>
       headers: authHeaders(userId),
     })
     .then((r) => r.data);
+// -------- Efficiency --------
+export const getEfficiencyOverview = (month) =>
+  axios.get(`${API}/efficiency/overview`, { params: { month } }).then((r) => r.data);
+
+export const getEmployeeEfficiency = (employeeId, month) =>
+  axios
+    .get(`${API}/efficiency/employee/${employeeId}`, { params: { month } })
+    .then((r) => r.data);
+
+export const getEfficiencyActivityBreakdown = (month) =>
+  axios.get(`${API}/efficiency/activity-breakdown`, { params: { month } }).then((r) => r.data);
+
+export const getEfficiencyTrend = (month, months = 6) =>
+  axios.get(`${API}/efficiency/trend`, { params: { month, months } }).then((r) => r.data);
+
+export const getMonthlyCapacityList = (params = {}) =>
+  axios.get(`${API}/efficiency/monthly-capacity`, { params }).then((r) => r.data);
+
+export const getMonthlyCapacity = (userId, month) =>
+  axios.get(`${API}/efficiency/monthly-capacity/${userId}/${month}`).then((r) => r.data);
+
+export const saveMonthlyCapacity = (payload) =>
+  axios.post(`${API}/efficiency/monthly-capacity`, payload).then((r) => r.data);
+
+export const updateMonthlyCapacity = (id, payload) =>
+  axios.put(`${API}/efficiency/monthly-capacity/${id}`, payload).then((r) => r.data);
+
+export const deleteMonthlyCapacity = (id) =>
+  axios.delete(`${API}/efficiency/monthly-capacity/${id}`).then((r) => r.data);
+
+export const getActivityTargets = (includeInactive = true) =>
+  axios
+    .get(`${API}/efficiency/activity-targets`, { params: { include_inactive: includeInactive } })
+    .then((r) => r.data);
+
+export const createActivityTarget = (payload) =>
+  axios.post(`${API}/efficiency/activity-targets`, payload).then((r) => r.data);
+
+export const updateActivityTarget = (id, payload) =>
+  axios.put(`${API}/efficiency/activity-targets/${id}`, payload).then((r) => r.data);
+
+export const deleteActivityTarget = (id) =>
+  axios.delete(`${API}/efficiency/activity-targets/${id}`).then((r) => r.data);
+
+export const syncActivityTargets = () =>
+  axios.post(`${API}/efficiency/activity-targets/sync-deliverable-types`).then((r) => r.data);

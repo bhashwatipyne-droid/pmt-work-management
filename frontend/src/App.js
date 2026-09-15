@@ -19,11 +19,19 @@ import TeamPage from "@/pages/TeamPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";
 import ClientsPage from "@/pages/ClientsPage";
 import ProfilePage from "@/pages/ProfilePage";
+import EfficiencyPage from "@/pages/EfficiencyPage";
+import EfficiencySettingsPage from "@/pages/EfficiencySettingsPage";
+import EfficiencyMonthlyCapacityPage from "@/pages/EfficiencyMonthlyCapacityPage";
+import EfficiencyActivityTargetsPage from "@/pages/EfficiencyActivityTargetsPage";
 import { Loader2 } from "lucide-react";
 
 const PAGE_NAMES = {
   "/": "Work Sheet",
   "/dashboard": "Dashboard",
+  "/efficiency": "Efficiency",
+  "/efficiency/settings": "Efficiency Settings",
+  "/efficiency/settings/monthly-capacity": "Monthly Capacity",
+  "/efficiency/settings/activity-targets": "Activity Targets",
   "/projects": "Projects",
   "/team": "Team",
   "/approvals": "Approvals",
@@ -80,6 +88,19 @@ function AppShell() {
       <Routes>
         <Route path="/" element={<WorkSheetPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/efficiency" element={<EfficiencyPage />} />
+        <Route
+          path="/efficiency/settings"
+          element={<EfficiencySettingsPage />}
+        />
+        <Route
+          path="/efficiency/settings/monthly-capacity"
+          element={<EfficiencyMonthlyCapacityPage />}
+        />
+        <Route
+          path="/efficiency/settings/activity-targets"
+          element={<EfficiencyActivityTargetsPage />}
+        />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route
           path="/projects/:projectId"

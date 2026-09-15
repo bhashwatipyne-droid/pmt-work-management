@@ -8,6 +8,7 @@ import {
   CheckSquare,
   Building2,
   Table2,
+  Gauge,
   LogOut,
   Layers,
   ChevronLeft,
@@ -101,6 +102,22 @@ export const Sidebar = () => {
           >
             <LayoutDashboard className="h-4 w-4 flex-shrink-0" />
             {!collapsed && "Dashboard"}
+          </NavLink>
+        )}
+
+        {(isAdmin || currentUser?.role === "manager") && (
+          <NavLink
+            to="/efficiency"
+            data-testid="sidebar-nav-efficiency"
+            className={({ isActive }) =>
+              `${navItemClass({ isActive })} ${
+                collapsed ? "justify-center px-2" : "gap-3 px-3"
+              }`
+            }
+            title={collapsed ? "Efficiency" : undefined}
+          >
+            <Gauge className="h-4 w-4 flex-shrink-0" />
+            {!collapsed && "Efficiency"}
           </NavLink>
         )}
 

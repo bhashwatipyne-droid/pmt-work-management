@@ -17,6 +17,8 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 
+from efficiency import create_efficiency_router  # noqa: F401
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -463,6 +465,28 @@ def gen_project_code() -> str:
     return "proj" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
 
 
+def validate_work_category_rules(merged: dict):
+    """
+    Efficiency rules for work items.
+
+    Core     -> only counts toward productivity when status == "Closed"
+                (enforced at read time in the efficiency module).
+    Non-Core -> time_taken_minutes is mandatory and must be > 0 before the row
+                can be closed. Blank draft rows stay editable.
+    """
+    category = merged.get("work_category")
+    if not category:
+        category = DELIVERABLE_TYPE_CATEGORIES.get(merged.get("deliverable_type") or "")
+
+    if category == "Non-Core" and merged.get("status") == "Closed":
+        minutes = merged.get("time_taken_minutes") or 0
+        if float(minutes) <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Non-core work needs time taken (in minutes) before it can be closed",
+            )
+
+
 async def scoped_update_fields(user: User, existing: dict, update_fields: dict, creator_department: Optional[str] = None) -> dict:
     """Apply role-based restrictions to a raw update payload. Raises HTTPException on violation."""
     if user.role == "admin":
@@ -523,6 +547,8 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
 
     if "stage" in update_fields and update_fields["stage"] and update_fields["stage"] not in STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
+
+    validate_work_category_rules({**existing, **update_fields})
     return update_fields
 
 
@@ -818,6 +844,8 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
         if data.get("client_id") and data["client_id"] != project.get("client_id"):
             raise HTTPException(status_code=400, detail="Project does not belong to selected client")
         data["client_id"] = project.get("client_id")
+
+    validate_work_category_rules({**data, "work_date": work_date})
 
     ts = now_iso()
     item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
@@ -3911,6 +3939,17 @@ async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, req
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
     return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
 
+
+api_router.include_router(
+    create_efficiency_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        require_manager_or_admin=require_manager_or_admin,
+        now_iso=now_iso,
+        log_activity=log_activity,
+        deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,
+    )
+)
 
 app.include_router(api_router)
 

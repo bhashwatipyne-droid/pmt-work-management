@@ -3,35 +3,42 @@ import { ArrowLeft, ArrowRight, CalendarRange, Target } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
 
-const CARDS = [
-  {
-    to: "/efficiency/settings/monthly-capacity",
-    icon: CalendarRange,
-    title: "Monthly capacity",
-    description:
-      "Set working days and leave per employee per month. Core hours and core days are derived from this.",
-  },
-  {
-    to: "/efficiency/settings/activity-targets",
-    icon: Target,
-    title: "Core activity targets",
-    description:
-      "Define daily potential and time per unit for each core activity. This is what 100% productivity means.",
-  },
-];
-
 export default function EfficiencySettingsPage() {
   const { currentUser, loading } = useUser();
 
   if (loading || !currentUser) return null;
 
-  if (!["admin", "manager"].includes(currentUser.role)) {
+  const isAdmin = currentUser.role === "admin";
+  const isManager = currentUser.role === "manager";
+
+  if (!isAdmin && !isManager) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
         Efficiency settings are available to managers and admins only
       </div>
     );
   }
+
+  const cards = [
+    {
+      to: "/efficiency/settings/monthly-capacity",
+      icon: CalendarRange,
+      title: "Monthly capacity",
+      description:
+        "Set working days and leave per employee per month. Core hours and core days are derived from this.",
+      // Unchanged: admin and manager both allowed.
+      visible: true,
+    },
+    {
+      to: "/efficiency/settings/activity-targets",
+      icon: Target,
+      title: "Team potential",
+      description:
+        "Set each team member's daily potential per core activity. This is what 100% productivity means for them.",
+      // Manager-only: admins can view reports but cannot set potential.
+      visible: isManager,
+    },
+  ].filter((c) => c.visible);
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-6">
@@ -53,7 +60,7 @@ export default function EfficiencySettingsPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {CARDS.map(({ to, icon: Icon, title, description }) => (
+        {cards.map(({ to, icon: Icon, title, description }) => (
           <Link
             key={to}
             to={to}
@@ -71,10 +78,12 @@ export default function EfficiencySettingsPage() {
         ))}
       </div>
 
-      <p className="mt-4 text-xs text-slate-400">
-        Working hours per day defaults to 8.5 and can be overridden per employee per month. It will
-        move to Profile once stable employee settings are added there.
-      </p>
+      {isAdmin && (
+        <p className="mt-4 text-xs text-slate-400">
+          Team potential is set by each department's manager and isn't editable from an admin
+          account — only monthly capacity is shown here for you.
+        </p>
+      )}
     </div>
   );
 }

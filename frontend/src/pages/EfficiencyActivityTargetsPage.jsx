@@ -1,49 +1,81 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
 import {
-  createActivityTarget,
-  deleteActivityTarget,
-  getActivityTargets,
-  syncActivityTargets,
-  updateActivityTarget,
+  getActivityCatalog,
+  getEfficiencyOverview,
+  getEmployeeTargets,
+  upsertEmployeeTarget,
+  updateEmployeeTarget,
+  deleteEmployeeTarget,
 } from "@/services/api";
+
+import { currentMonth } from "@/components/efficiency/EfficiencyFilters";
 
 const inputClass =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 " +
   "focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/20";
 
-const emptyDraft = {
-  activity_name: "",
-  daily_potential: "",
-  time_per_unit_minutes: "",
-};
+const emptyDraft = { activity_name: "", daily_potential: "", time_per_unit_minutes: "" };
 
 export default function EfficiencyActivityTargetsPage() {
   const { currentUser, loading: userLoading } = useUser();
+  const isManager = currentUser?.role === "manager";
 
+  const [employees, setEmployees] = useState([]);
+  const [employeeId, setEmployeeId] = useState("");
+  const [catalog, setCatalog] = useState([]);
   const [targets, setTargets] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
+  const [loadingTargets, setLoadingTargets] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [edit, setEdit] = useState({});
   const [draft, setDraft] = useState(emptyDraft);
   const [adding, setAdding] = useState(false);
 
-  const canConfigure = ["admin", "manager"].includes(currentUser?.role);
+  // Employees this manager can set potential for — the overview endpoint is already
+  // department-scoped for managers, so it doubles as "my team" here.
+  useEffect(() => {
+    if (!isManager) {
+      setLoadingEmployees(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingEmployees(true);
+    Promise.all([getEfficiencyOverview(currentMonth()), getActivityCatalog()])
+      .then(([overview, activityCatalog]) => {
+        if (cancelled) return;
+        setEmployees(overview.employees || []);
+        setCatalog(activityCatalog || []);
+        setEmployeeId((prev) => prev || overview.employees?.[0]?.user_id || "");
+      })
+      .catch(() => !cancelled && toast.error("Could not load your team"))
+      .finally(() => !cancelled && setLoadingEmployees(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [isManager]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    getActivityTargets()
+  const loadTargets = useCallback(() => {
+    if (!employeeId) return;
+    setLoadingTargets(true);
+    getEmployeeTargets(employeeId)
       .then(setTargets)
-      .catch(() => toast.error("Could not load activity targets"))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch(() => toast.error("Could not load potential for this employee"))
+      .finally(() => setLoadingTargets(false));
+  }, [employeeId]);
 
-  useEffect(() => load(), [load]);
+  useEffect(() => loadTargets(), [loadTargets]);
+
+  const availableToAdd = useMemo(() => {
+    const used = new Set(targets.map((t) => t.activity_name));
+    return catalog.filter((name) => !used.has(name));
+  }, [catalog, targets]);
 
   const startEdit = (t) => {
     setEditingId(t.id);
@@ -65,7 +97,7 @@ export default function EfficiencyActivityTargetsPage() {
     if (
       (t.daily_potential || 0) !== nextDaily &&
       !window.confirm(
-        `Changing the daily potential for "${t.activity_name}" will change every productivity score that uses it, including past months. Continue?`
+        `Changing "${t.activity_name}" potential will change this employee's productivity score for every month that uses it, including past months. Continue?`
       )
     ) {
       return;
@@ -73,15 +105,15 @@ export default function EfficiencyActivityTargetsPage() {
 
     setBusyId(t.id);
     try {
-      await updateActivityTarget(t.id, {
+      await updateEmployeeTarget(t.id, {
         daily_potential: nextDaily,
         time_per_unit_minutes: nextTime,
       });
-      toast.success("Target updated");
+      toast.success("Potential updated");
       setEditingId(null);
-      load();
+      loadTargets();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not update target");
+      toast.error(err?.response?.data?.detail || "Could not update potential");
     } finally {
       setBusyId(null);
     }
@@ -90,22 +122,23 @@ export default function EfficiencyActivityTargetsPage() {
   const toggleActive = async (t) => {
     setBusyId(t.id);
     try {
-      await updateActivityTarget(t.id, { active: !t.active });
-      load();
+      await updateEmployeeTarget(t.id, { active: !t.active });
+      loadTargets();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not update target");
+      toast.error(err?.response?.data?.detail || "Could not update potential");
     } finally {
       setBusyId(null);
     }
   };
 
   const remove = async (t) => {
-    if (!window.confirm(`Remove "${t.activity_name}" from productivity tracking?`)) return;
+    if (!window.confirm(`Remove "${t.activity_name}" from ${activeEmployeeName}'s tracked activities?`))
+      return;
     setBusyId(t.id);
     try {
-      await deleteActivityTarget(t.id);
-      toast.success("Activity removed");
-      load();
+      await deleteEmployeeTarget(t.id);
+      toast.success("Removed");
+      loadTargets();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Could not remove activity");
     } finally {
@@ -114,49 +147,37 @@ export default function EfficiencyActivityTargetsPage() {
   };
 
   const add = async () => {
-    if (!draft.activity_name.trim()) {
-      toast.error("Activity name is required");
+    if (!draft.activity_name) {
+      toast.error("Choose an activity");
       return;
     }
     setAdding(true);
     try {
-      await createActivityTarget({
-        activity_name: draft.activity_name.trim(),
-        category: "Core",
+      await upsertEmployeeTarget({
+        user_id: employeeId,
+        activity_name: draft.activity_name,
         daily_potential: Number(draft.daily_potential || 0),
         time_per_unit_minutes: Number(draft.time_per_unit_minutes || 0),
         active: true,
       });
-      toast.success("Activity added");
+      toast.success("Potential added");
       setDraft(emptyDraft);
-      load();
+      loadTargets();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not add activity");
+      toast.error(err?.response?.data?.detail || "Could not add potential");
     } finally {
       setAdding(false);
     }
   };
 
-  const sync = async () => {
-    try {
-      const res = await syncActivityTargets();
-      toast.success(
-        res.created
-          ? `${res.created} core deliverable type${res.created > 1 ? "s" : ""} imported as inactive`
-          : "All core deliverable types are already listed"
-      );
-      load();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not import deliverable types");
-    }
-  };
+  const activeEmployeeName = employees.find((e) => e.user_id === employeeId)?.name || "this employee";
 
   if (userLoading || !currentUser) return null;
 
-  if (!canConfigure) {
+  if (!isManager) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
-        Activity targets are configurable by managers and admins only
+        Setting activity potential is available to managers only.
       </div>
     );
   }
@@ -171,196 +192,249 @@ export default function EfficiencyActivityTargetsPage() {
         Back to Efficiency
       </Link>
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-            Core activity targets
-          </h1>
-          <p className="text-sm text-slate-500">
-            Define what 100% productivity means for each core activity
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={sync}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Import deliverable types
-        </button>
-      </div>
-
-      {/* Add new */}
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold text-slate-800">Add activity</h3>
-        <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
-          <input
-            placeholder="Activity name, e.g. Carousel"
-            value={draft.activity_name}
-            onChange={(e) => setDraft({ ...draft, activity_name: e.target.value })}
-            className={inputClass}
-            data-testid="activity-target-name"
-          />
-          <input
-            type="number"
-            min="0"
-            placeholder="Daily potential"
-            value={draft.daily_potential}
-            onChange={(e) => setDraft({ ...draft, daily_potential: e.target.value })}
-            className={inputClass}
-          />
-          <input
-            type="number"
-            min="0"
-            placeholder="Minutes per unit"
-            value={draft.time_per_unit_minutes}
-            onChange={(e) => setDraft({ ...draft, time_per_unit_minutes: e.target.value })}
-            className={inputClass}
-          />
-          <button
-            type="button"
-            onClick={add}
-            disabled={adding}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-xs font-semibold text-white hover:bg-[#23239a] disabled:opacity-50"
-          >
-            {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            Add
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-slate-400">
-          The activity name must match the deliverable type used on the Work Sheet, otherwise closed
-          deliverables will not be counted against it.
+      <div className="mb-5">
+        <h1 className="text-xl font-semibold tracking-tight text-slate-900">Team potential</h1>
+        <p className="text-sm text-slate-500">
+          Set each team member's daily potential per core activity — this is what 100% looks like
+          for them
         </p>
       </div>
 
-      {loading ? (
+      {loadingEmployees ? (
         <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {targets.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 sm:col-span-2 xl:col-span-3">
-              No activities configured yet. Add one above or import the core deliverable types.
+        <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+          {/* Team list */}
+          <div className="rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800">
+              Your team
             </div>
-          )}
+            <div className="max-h-[520px] overflow-y-auto">
+              {employees.map((e) => (
+                <button
+                  key={e.user_id}
+                  type="button"
+                  onClick={() => setEmployeeId(e.user_id)}
+                  className={`flex w-full items-center gap-2.5 border-b border-slate-100 px-4 py-3 text-left text-sm last:border-0 ${
+                    e.user_id === employeeId ? "bg-[#f0f0fd]" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-semibold text-[#1a1a8a] ring-1 ring-slate-200">
+                    {(e.name || "?").charAt(0).toUpperCase()}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-slate-800">{e.name}</span>
+                    <span className="block truncate text-xs text-slate-400">
+                      {e.department || "—"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+              {employees.length === 0 && (
+                <div className="px-4 py-6 text-sm text-slate-500">No team members found.</div>
+              )}
+            </div>
+          </div>
 
-          {targets.map((t) => {
-            const isEditing = editingId === t.id;
-
-            return (
-              <div
-                key={t.id}
-                className={`rounded-xl border p-4 ${
-                  t.active ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-70"
-                }`}
-                data-testid={`activity-target-${t.id}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{t.activity_name}</div>
-                    <div className="text-xs text-slate-400">{t.category} activity</div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleActive(t)}
-                    disabled={busyId === t.id}
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      t.active
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-slate-200 text-slate-600"
-                    }`}
-                  >
-                    {t.active ? "Active" : "Inactive"}
-                  </button>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                      Daily potential
-                    </div>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min="0"
-                        value={edit.daily_potential}
-                        onChange={(e) => setEdit({ ...edit, daily_potential: e.target.value })}
-                        className={`${inputClass} mt-1`}
-                      />
-                    ) : (
-                      <div className="mt-0.5 text-xl font-semibold text-slate-900">
-                        {t.daily_potential}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                      Time per unit
-                    </div>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min="0"
-                        value={edit.time_per_unit_minutes}
-                        onChange={(e) =>
-                          setEdit({ ...edit, time_per_unit_minutes: e.target.value })
-                        }
-                        className={`${inputClass} mt-1`}
-                      />
-                    ) : (
-                      <div className="mt-0.5 text-xl font-semibold text-slate-900">
-                        {t.time_per_unit_minutes} min
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between">
-                  {isEditing ? (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => saveEdit(t)}
-                        disabled={busyId === t.id}
-                        className="rounded-md bg-[#2b2bb5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#23239a] disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingId(null)}
-                        className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
+          {/* Potential editor */}
+          <div>
+            {!employeeId ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+                Select a team member to configure their potential.
+              </div>
+            ) : (
+              <>
+                <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">
+                    Add activity for {activeEmployeeName}
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
+                    <select
+                      value={draft.activity_name}
+                      onChange={(e) => setDraft({ ...draft, activity_name: e.target.value })}
+                      className={inputClass}
+                    >
+                      <option value="">Choose activity…</option>
+                      {availableToAdd.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Daily potential"
+                      value={draft.daily_potential}
+                      onChange={(e) => setDraft({ ...draft, daily_potential: e.target.value })}
+                      className={inputClass}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Minutes per unit"
+                      value={draft.time_per_unit_minutes}
+                      onChange={(e) =>
+                        setDraft({ ...draft, time_per_unit_minutes: e.target.value })
+                      }
+                      className={inputClass}
+                    />
                     <button
                       type="button"
-                      onClick={() => startEdit(t)}
-                      className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                      onClick={add}
+                      disabled={adding || availableToAdd.length === 0}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-xs font-semibold text-white hover:bg-[#23239a] disabled:opacity-50"
                     >
-                      Edit
+                      {adding ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                      Add
                     </button>
+                  </div>
+                  {availableToAdd.length === 0 && catalog.length > 0 && (
+                    <p className="mt-2 text-xs text-slate-400">
+                      Every core activity already has potential set for this employee.
+                    </p>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={() => remove(t)}
-                    disabled={busyId === t.id}
-                    aria-label="Remove activity"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
-              </div>
-            );
-          })}
+
+                {loadingTargets ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {targets.length === 0 && (
+                      <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 sm:col-span-2">
+                        No potential configured yet for {activeEmployeeName}. This employee's
+                        productivity will read 0% until at least one activity is added above.
+                      </div>
+                    )}
+
+                    {targets.map((t) => {
+                      const isEditing = editingId === t.id;
+                      return (
+                        <div
+                          key={t.id}
+                          className={`rounded-xl border p-4 ${
+                            t.active
+                              ? "border-slate-200 bg-white"
+                              : "border-slate-200 bg-slate-50 opacity-70"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="text-sm font-semibold text-slate-900">
+                              {t.activity_name}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleActive(t)}
+                              disabled={busyId === t.id}
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                t.active
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : "bg-slate-200 text-slate-600"
+                              }`}
+                            >
+                              {t.active ? "Active" : "Inactive"}
+                            </button>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                                Daily potential
+                              </div>
+                              {isEditing ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={edit.daily_potential}
+                                  onChange={(e) =>
+                                    setEdit({ ...edit, daily_potential: e.target.value })
+                                  }
+                                  className={`${inputClass} mt-1`}
+                                />
+                              ) : (
+                                <div className="mt-0.5 text-xl font-semibold text-slate-900">
+                                  {t.daily_potential}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                                Time per unit
+                              </div>
+                              {isEditing ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={edit.time_per_unit_minutes}
+                                  onChange={(e) =>
+                                    setEdit({ ...edit, time_per_unit_minutes: e.target.value })
+                                  }
+                                  className={`${inputClass} mt-1`}
+                                />
+                              ) : (
+                                <div className="mt-0.5 text-xl font-semibold text-slate-900">
+                                  {t.time_per_unit_minutes} min
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between">
+                            {isEditing ? (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => saveEdit(t)}
+                                  disabled={busyId === t.id}
+                                  className="rounded-md bg-[#2b2bb5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#23239a] disabled:opacity-50"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingId(null)}
+                                  className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => startEdit(t)}
+                                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                              >
+                                Edit
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => remove(t)}
+                              disabled={busyId === t.id}
+                              aria-label="Remove activity"
+                              className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -162,7 +162,7 @@ export const TeamEfficiencyTable = ({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 px-4 py-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
@@ -197,7 +197,7 @@ export const TeamEfficiencyTable = ({
           <option value="not_set">Capacity not set</option>
         </select>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2.5">
           <span className="text-xs text-slate-400">Sort by</span>
           <select
             value={sortBy}
@@ -221,25 +221,60 @@ export const TeamEfficiencyTable = ({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <Table data-testid="efficiency-team-table">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Employee</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Working days</TableHead>
-              <TableHead>Leave</TableHead>
-              <TableHead>Core days</TableHead>
-              <TableHead>Core hours</TableHead>
-              <TableHead>Non-core hours</TableHead>
-              <TableHead>Deliverables</TableHead>
-              <TableHead>Productivity</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+      <Table data-testid="efficiency-team-table" className="table-fixed min-w-[1090px]">
+        <colgroup>
+          <col className="w-[165px]" /> {/* Employee */}
+          <col className="w-[100px]" /> {/* Department */}
+          <col className="w-[85px]" />  {/* Working days */}
+          <col className="w-[65px]" />  {/* Leave */}
+          <col className="w-[85px]" />  {/* Core days */}
+          <col className="w-[90px]" />  {/* Core hours */}
+          <col className="w-[100px]" /> {/* Non-core hours */}
+          <col className="w-[85px]" />  {/* Deliverables */}
+          <col className="w-[140px]" /> {/* Productivity */}
+          <col className="w-[140px]" /> {/* Status */}
+          <col className="w-[45px]" />  {/* Actions */}
+        </colgroup>
 
-          <TableBody>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Employee
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Department
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Working days
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Leave
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Core days
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Core hours
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Non-core hours
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Deliverables
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Productivity
+            </TableHead>
+            <TableHead className="h-12 px-3 text-xs font-medium leading-4 text-slate-500">
+              Status
+            </TableHead>
+            <TableHead className="h-12 px-3 text-right text-xs font-medium leading-4 text-slate-500">
+              Actions
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
             {pageRows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={11} className="py-8 text-center text-sm text-slate-500">
@@ -255,33 +290,33 @@ export const TeamEfficiencyTable = ({
                 <TableRow
                   key={e.user_id}
                   onClick={() => onSelect?.(e)}
-                  className="cursor-pointer"
+                  className="h-[60px] cursor-pointer"
                   data-testid={`efficiency-row-${e.user_id}`}
                 >
-                  <TableCell className="font-medium text-slate-800">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0fd] text-[11px] font-semibold text-[#1a1a8a]">
+                  <TableCell className="px-3 py-3 font-medium text-slate-800">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd] text-[11px] font-semibold text-[#1a1a8a]">
                         {(e.name || "?").charAt(0).toUpperCase()}
                       </span>
-                      {e.name}
+                      <span className="truncate whitespace-nowrap">{e.name}</span>
                     </div>
                   </TableCell>
 
-                  <TableCell className="text-slate-500">{e.department || "—"}</TableCell>
-                  <TableCell>{e.has_capacity ? e.working_days : "—"}</TableCell>
-                  <TableCell>{e.has_capacity ? e.leave_days : "—"}</TableCell>
-                  <TableCell>{e.has_capacity ? e.core_days : "—"}</TableCell>
-                  <TableCell>{e.has_capacity ? fmtHours(e.core_hours) : "—"}</TableCell>
-                  <TableCell>{fmtHours(e.non_core_hours)}</TableCell>
-                  <TableCell>{e.closed_deliverables}</TableCell>
+                  <TableCell className="px-3 py-3 text-slate-500">{e.department || "—"}</TableCell>
+                  <TableCell className="px-3 py-3">{e.has_capacity ? e.working_days : "—"}</TableCell>
+                  <TableCell className="px-3 py-3">{e.has_capacity ? e.leave_days : "—"}</TableCell>
+                  <TableCell className="px-3 py-3">{e.has_capacity ? e.core_days : "—"}</TableCell>
+                  <TableCell className="px-3 py-3">{e.has_capacity ? fmtHours(e.core_hours) : "—"}</TableCell>
+                  <TableCell className="px-3 py-3">{fmtHours(e.non_core_hours)}</TableCell>
+                  <TableCell className="px-3 py-3">{e.closed_deliverables}</TableCell>
 
-                  <TableCell>
+                  <TableCell className="px-3 py-3">
                     {e.has_capacity ? (
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${tone.text}`}>
+                      <div className="flex items-center gap-2.5 whitespace-nowrap">
+                        <span className={`min-w-[42px] text-sm font-semibold ${tone.text}`}>
                           {fmtPct(e.productivity)}
                         </span>
-                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-slate-100">
                           <div
                             className={`h-full rounded-full ${tone.bar}`}
                             style={{ width: `${Math.min(100, Math.max(0, e.productivity))}%` }}
@@ -293,26 +328,29 @@ export const TeamEfficiencyTable = ({
                     )}
                   </TableCell>
 
-                  <TableCell>
+                  <TableCell className="px-3 py-3">
                     {e.has_capacity ? (
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.pill}`}>
+                      <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone.pill}`}>
                         {tone.label}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                        <AlertCircle className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
                         Capacity not set
                       </span>
                     )}
                   </TableCell>
 
-                  <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
+                  <TableCell
+                    className="px-3 py-3 text-right"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
                           aria-label="Row actions"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                         >
                           <MoreVertical className="h-4 w-4" />
                         </button>
@@ -344,9 +382,8 @@ export const TeamEfficiencyTable = ({
                 </TableRow>
               );
             })}
-          </TableBody>
-        </Table>
-      </div>
+        </TableBody>
+      </Table>
 
       <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
         <span>

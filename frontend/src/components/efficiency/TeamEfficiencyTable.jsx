@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -32,6 +33,11 @@ const PAGE_SIZE = 8;
 
 const fieldClass =
   "h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 " +
+  "focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/20";
+
+const selectClass =
+  "h-9 appearance-none rounded-lg border border-slate-200 bg-white " +
+  "pl-3 pr-9 text-sm text-slate-800 " +
   "focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/20";
 
 const productivityTone = (v) => {
@@ -174,41 +180,59 @@ export const TeamEfficiencyTable = ({
           />
         </div>
 
-        <select
-          value={department}
-          onChange={(e) => resetToFirstPage(setDepartment)(e.target.value)}
-          className={fieldClass}
-        >
-          <option value="">All departments</option>
-          {departments.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
+        <div className="relative w-[155px]">
+          <select
+            value={department}
+            onChange={(e) => resetToFirstPage(setDepartment)(e.target.value)}
+            className={`${selectClass} w-full`}
+          >
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+            strokeWidth={2}
+          />
+        </div>
 
-        <select
-          value={capacityStatus}
-          onChange={(e) => resetToFirstPage(setCapacityStatus)(e.target.value)}
-          className={fieldClass}
-        >
-          <option value="">All capacity status</option>
-          <option value="set">Capacity set</option>
-          <option value="not_set">Capacity not set</option>
-        </select>
+        <div className="relative w-[172px]">
+          <select
+            value={capacityStatus}
+            onChange={(e) => resetToFirstPage(setCapacityStatus)(e.target.value)}
+            className={`${selectClass} w-full`}
+          >
+            <option value="">All capacity status</option>
+            <option value="set">Capacity set</option>
+            <option value="not_set">Capacity not set</option>
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+            strokeWidth={2}
+          />
+        </div>
 
         <div className="ml-auto flex items-center gap-2.5">
           <span className="text-xs text-slate-400">Sort by</span>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className={fieldClass}
-          >
-            <option value="productivity_desc">Productivity (high to low)</option>
-            <option value="productivity_asc">Productivity (low to high)</option>
-            <option value="name_asc">Name (A–Z)</option>
-            <option value="deliverables_desc">Deliverables (high to low)</option>
-          </select>
+          <div className="relative w-[218px]">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className={`${selectClass} w-full`}
+            >
+              <option value="productivity_desc">Productivity (high to low)</option>
+              <option value="productivity_asc">Productivity (low to high)</option>
+              <option value="name_asc">Name (A–Z)</option>
+              <option value="deliverables_desc">Deliverables (high to low)</option>
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+              strokeWidth={2}
+            />
+          </div>
 
           <button
             type="button"

@@ -231,6 +231,7 @@ class WorkItem(BaseModel):
     work_category: str = "Core"
     version: str = ""
     time_taken_minutes: float = 0
+    quantity: float = 1.0
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
@@ -252,6 +253,7 @@ class WorkItemCreate(BaseModel):
     work_category: Optional[str] = "Core"
     version: Optional[str] = ""
     time_taken_minutes: Optional[float] = 0
+    quantity: Optional[float] = 1.0
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None

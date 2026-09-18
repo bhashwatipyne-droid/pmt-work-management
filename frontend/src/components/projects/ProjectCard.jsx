@@ -8,6 +8,7 @@ import { PROJECTS } from "@/constants/testIds";
 import {
   ArrowRight,
   Building2,
+  GripVertical,
   User as UserIcon,
 } from "lucide-react";
 
@@ -35,6 +36,11 @@ export const ProjectCard = ({
   onOpen,
   selected = false,
   onSelect,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragTarget = false,
 }) => {
   const status =
     STATUS_COLORS[project.status] || STATUS_COLORS.Active;
@@ -49,35 +55,50 @@ export const ProjectCard = ({
   return (
     <div
       data-testid={`${PROJECTS.cardPrefix}-${project.id}`}
+      draggable
+      onDragStart={(event) => onDragStart?.(event, project)}
+      onDragEnd={onDragEnd}
+      onDragOver={(event) => onDragOver?.(event, project)}
+      onDrop={(event) => onDrop?.(event, project)}
       className={[
         "w-full rounded-xl border bg-white p-4 text-left transition-all",
+        "cursor-grab active:cursor-grabbing",
         "hover:-translate-y-0.5 hover:border-[#c8c8ee] hover:shadow-md",
         selected
           ? "border-[#aaaaf0] bg-[#fafaff] ring-1 ring-[#d8d8ff]"
           : "border-border",
+        isDragTarget ? "border-[#2b2bb5] ring-2 ring-[#d8d8ff]" : "",
       ].join(" ")}
     >
-      {/* Selection */}
+      {/* Selection + drag affordance */}
       <div className="flex items-center justify-between">
         <input
           type="checkbox"
           checked={selected}
           onChange={() => onSelect?.(project.id)}
           onClick={(e) => e.stopPropagation()}
+          draggable={false}
           className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
           aria-label={`Select ${project.name}`}
         />
 
-        <span
-          className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
-        >
-          {project.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <GripVertical
+            className="h-4 w-4 text-slate-300"
+            aria-hidden="true"
+          />
+          <span
+            className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
+          >
+            {project.status}
+          </span>
+        </div>
       </div>
 
       {/* Project name */}
       <button
         type="button"
+        draggable={false}
         onClick={onOpen}
         className="mt-3 block w-full text-left line-clamp-2 text-sm font-semibold leading-5 text-foreground hover:text-[#2b2bb5]"
       >
@@ -155,6 +176,7 @@ export const ProjectCard = ({
 
         <button
           type="button"
+          draggable={false}
           onClick={onOpen}
           className="inline-flex items-center gap-1 text-xs font-medium text-[#2b2bb5]"
         >

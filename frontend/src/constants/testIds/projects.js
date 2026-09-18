@@ -4,6 +4,7 @@ export const PROJECTS = {
   page: 'projects-page',
   searchInput: 'projects-search-input',
   statusFilter: 'projects-status-filter',
+  filtersButton: 'projects-filters-button',
   chartViewBtn: 'projects-chart-view-btn',
   listViewBtn: 'projects-list-view-btn',
   newProjectBtn: 'projects-new-project-btn',

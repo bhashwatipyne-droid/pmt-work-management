@@ -307,6 +307,12 @@ class BulkProjectStatusPayload(BaseModel):
     status: str
 
 
+class ProjectReorderPayload(BaseModel):
+    project_id: str
+    target_status: str
+    target_index: int = 0
+
+
 class Client(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: f"client-{uuid.uuid4().hex[:8]}")
@@ -370,6 +376,10 @@ class Project(BaseModel):
     start_date: str
     end_date: str
     status: str = "Active"
+
+    # Kanban ordering. Lower values render first within a status column.
+    kanban_order: int = 0
+    status_changed_at: Optional[str] = None
 
     # Visibility
     hidden: bool = False
@@ -599,6 +609,210 @@ async def get_user_department(user_id: Optional[str]) -> Optional[str]:
         return None
     doc = await db.users.find_one({"id": user_id}, {"_id": 0, "department": 1})
     return doc.get("department") if doc else None
+
+
+# ---------------- Notifications ----------------
+async def _production_users_for_stages(stages: List[str]) -> list[dict]:
+    departments = [
+        department
+        for department, stage in DEPARTMENT_TO_STAGE.items()
+        if stage in stages
+    ]
+
+    if not departments:
+        return []
+
+    return await db.users.find(
+        {
+            "active": {"$ne": False},
+            "department": {"$in": departments},
+        },
+        {"_id": 0, "id": 1, "name": 1, "department": 1},
+    ).to_list(1000)
+
+
+async def _upsert_notification(notification: dict):
+    dedupe_key = notification.get("dedupe_key")
+    if not dedupe_key:
+        dedupe_key = str(uuid.uuid4())
+        notification["dedupe_key"] = dedupe_key
+
+    await db.notifications.update_one(
+        {
+            "user_id": notification["user_id"],
+            "dedupe_key": dedupe_key,
+        },
+        {"$setOnInsert": notification},
+        upsert=True,
+    )
+
+
+async def _notify_new_project(project: dict, deliverables: list[dict]):
+    """Create one notification per project/deliverable/stage/user."""
+    client_doc = await db.clients.find_one(
+        {"id": project.get("client_id")},
+        {"_id": 0, "name": 1},
+    )
+    client_name = client_doc.get("name", "") if client_doc else ""
+
+    if not deliverables:
+        recipients = await _production_users_for_stages(list(STAGES))
+        for recipient in recipients:
+            await _upsert_notification({
+                "id": str(uuid.uuid4()),
+                "user_id": recipient["id"],
+                "type": "new_project",
+                "title": "New project added",
+                "message": (
+                    f'{project.get("name", "Project")} has been created.'
+                    + (f' Client: {client_name}.' if client_name else "")
+                    + " Add deliverables when the production plan is ready."
+                ),
+                "project_id": project.get("id"),
+                "deliverable_id": None,
+                "client_id": project.get("client_id"),
+                "stage": DEPARTMENT_TO_STAGE.get(recipient.get("department")),
+                "action_type": None,
+                "created_at": now_iso(),
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f'new-project:{project.get("id")}:{recipient["id"]}',
+            })
+        return
+
+    for deliverable in deliverables:
+        stages = normalize_stages(deliverable.get("required_stages") or [])
+        recipients = await _production_users_for_stages(stages)
+
+        for recipient in recipients:
+            stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"), stages[0])
+            await _upsert_notification({
+                "id": str(uuid.uuid4()),
+                "user_id": recipient["id"],
+                "type": "new_project",
+                "title": "New project added",
+                "message": (
+                    f'{project.get("name", "Project")} · '
+                    f'{deliverable.get("name", "Deliverable")} '
+                    f'is ready for {stage}.'
+                    + (f' Client: {client_name}.' if client_name else "")
+                ),
+                "project_id": project.get("id"),
+                "deliverable_id": deliverable.get("id"),
+                "client_id": project.get("client_id"),
+                "stage": stage,
+                "action_type": "add_work_row",
+                "created_at": now_iso(),
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f'new-project:{project.get("id")}:{deliverable.get("id")}:{recipient["id"]}',
+            })
+
+
+_last_overdue_notification_check: Optional[datetime] = None
+
+
+async def _ensure_overdue_notifications():
+    """Materialize overdue deadline notifications without requiring a scheduler."""
+    global _last_overdue_notification_check
+
+    check_now = datetime.now(timezone.utc)
+    if (
+        _last_overdue_notification_check
+        and check_now - _last_overdue_notification_check < timedelta(minutes=1)
+    ):
+        return
+
+    _last_overdue_notification_check = check_now
+    today = check_now.date().isoformat()
+
+    projects = await db.projects.find(
+        {
+            "end_date": {"$lt": today},
+            "status": {"$nin": ["Completed", "Raised Invoice", "Scrapped"]},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+
+    for project in projects:
+        deliverables = await db.deliverables.find(
+            {"project_id": project["id"]},
+            {"_id": 0},
+        ).to_list(5000)
+
+        stages = []
+        for deliverable in deliverables:
+            stages.extend(deliverable.get("required_stages") or [])
+
+        stages = normalize_stages(list(dict.fromkeys(stages))) if stages else list(STAGES)
+        recipients = await _production_users_for_stages(stages)
+
+        for recipient in recipients:
+            await _upsert_notification({
+                "id": str(uuid.uuid4()),
+                "user_id": recipient["id"],
+                "type": "delayed_deadline",
+                "title": "Project deadline delayed",
+                "message": (
+                    f'{project.get("name", "Project")} was due on '
+                    f'{project.get("end_date", "")} and is still {project.get("status", "active").lower()}. '
+                    "Please review the project timeline."
+                ),
+                "project_id": project.get("id"),
+                "deliverable_id": None,
+                "client_id": project.get("client_id"),
+                "stage": DEPARTMENT_TO_STAGE.get(recipient.get("department")),
+                "action_type": None,
+                "created_at": now_iso(),
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f'project-overdue:{project.get("id")}:{project.get("end_date")}:{recipient["id"]}',
+            })
+
+    overdue_deliverables = await db.deliverables.find(
+        {
+            "end_dt": {"$lt": today},
+            "stage_status": {"$ne": "Completed"},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+
+    for deliverable in overdue_deliverables:
+        project = await db.projects.find_one(
+            {"id": deliverable.get("project_id")},
+            {"_id": 0, "name": 1, "client_id": 1, "status": 1},
+        )
+        if not project:
+            continue
+
+        stages = normalize_stages(deliverable.get("required_stages") or [])
+        recipients = await _production_users_for_stages(stages)
+
+        for recipient in recipients:
+            stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"))
+            if stage not in stages:
+                continue
+
+            await _upsert_notification({
+                "id": str(uuid.uuid4()),
+                "user_id": recipient["id"],
+                "type": "delayed_deadline",
+                "title": "Deliverable deadline delayed",
+                "message": (
+                    f'{deliverable.get("name", "Deliverable")} in '
+                    f'{project.get("name", "Project")} was due on '
+                    f'{deliverable.get("end_dt", "")} and is not completed.'
+                ),
+                "project_id": deliverable.get("project_id"),
+                "deliverable_id": deliverable.get("id"),
+                "client_id": project.get("client_id"),
+                "stage": stage,
+                "action_type": None,
+                "created_at": now_iso(),
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f'deliverable-overdue:{deliverable.get("id")}:{deliverable.get("end_dt")}:{recipient["id"]}',
+            })
 
 
 # ---------------- Routes ----------------
@@ -1933,6 +2147,127 @@ async def delete_contact_person(
     return {"message": "Contact person deleted"}
 
 
+# ---------------- Notifications routes ----------------
+@api_router.get("/notifications")
+async def list_notifications(request: Request, limit: int = 50):
+    user = await get_acting_user(request)
+    await _ensure_overdue_notifications()
+
+    limit = max(1, min(limit, 100))
+    return await db.notifications.find(
+        {"user_id": user.id},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(limit)
+
+
+@api_router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, request: Request):
+    user = await get_acting_user(request)
+    result = await db.notifications.update_one(
+        {"id": notification_id, "user_id": user.id},
+        {"$set": {"read_at": now_iso()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"success": True}
+
+
+@api_router.post("/notifications/read-all")
+async def mark_all_notifications_read(request: Request):
+    user = await get_acting_user(request)
+    result = await db.notifications.update_many(
+        {"user_id": user.id, "read_at": None},
+        {"$set": {"read_at": now_iso()}},
+    )
+    return {"success": True, "count": result.modified_count}
+
+
+@api_router.post("/notifications/{notification_id}/add-row")
+async def add_work_row_from_notification(notification_id: str, request: Request):
+    user = await get_acting_user(request)
+    if user.role == "admin":
+        raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
+
+    notification = await db.notifications.find_one(
+        {"id": notification_id, "user_id": user.id},
+        {"_id": 0},
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    if notification.get("action_type") != "add_work_row":
+        raise HTTPException(status_code=400, detail="This notification has no row action")
+
+    if notification.get("actioned_at"):
+        raise HTTPException(status_code=409, detail="A worksheet row has already been added from this notification")
+
+    project = await db.projects.find_one(
+        {"id": notification.get("project_id")},
+        {"_id": 0},
+    )
+    deliverable = await db.deliverables.find_one(
+        {"id": notification.get("deliverable_id")},
+        {"_id": 0},
+    )
+
+    if not project or not deliverable:
+        raise HTTPException(status_code=404, detail="Project or deliverable no longer exists")
+
+    stage = notification.get("stage") or DEPARTMENT_TO_STAGE.get(user.department)
+    if not can_user_create_stage(user, stage):
+        raise HTTPException(status_code=403, detail="You can only add rows for your production stage")
+
+    work_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    item = WorkItem(
+        work_date=work_date,
+        month=work_date[:7],
+        deliverable_name=deliverable.get("name", ""),
+        deliverable_type=deliverable.get("type", ""),
+        work_category=DELIVERABLE_TYPE_CATEGORIES.get(
+            deliverable.get("type") or "",
+            "Core",
+        ),
+        creator_id=user.id,
+        reviewer_id=None,
+        manager_id=None,
+        client_id=project.get("client_id"),
+        project_id=project.get("id"),
+        deliverable_id=deliverable.get("id"),
+        stage=stage,
+        remarks="",
+        status="Not Started",
+        created_at=now_iso(),
+        updated_at=now_iso(),
+    )
+
+    validate_work_category_rules(item.model_dump())
+
+    # Reserve the notification action atomically so two rapid clicks/tabs
+    # cannot create duplicate worksheet rows.
+    actioned_at = now_iso()
+    reserved = await db.notifications.update_one(
+        {"id": notification_id, "user_id": user.id, "actioned_at": None},
+        {"$set": {"actioned_at": actioned_at, "read_at": actioned_at}},
+    )
+    if reserved.matched_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="A worksheet row has already been added from this notification",
+        )
+
+    try:
+        await db.work_items.insert_one(item.model_dump())
+    except Exception:
+        # Allow a retry if the actual row insert failed.
+        await db.notifications.update_one(
+            {"id": notification_id, "user_id": user.id, "actioned_at": actioned_at},
+            {"$set": {"actioned_at": None, "read_at": None}},
+        )
+        raise
+
+    return item
+
+
 # ---------------- Projects ----------------
 def _project_code_exists_query(code: str) -> dict:
     return {"code": code}
@@ -1944,6 +2279,72 @@ async def _generate_unique_project_code() -> str:
         if not await db.projects.find_one(_project_code_exists_query(code), {"_id": 0}):
             return code
     return gen_project_code()
+
+
+async def _reindex_project_status(status: str, ordered_ids: Optional[List[str]] = None):
+    """Persist a contiguous Kanban order for one status column."""
+    if ordered_ids is None:
+        projects = await db.projects.find(
+            {"status": status},
+            {"_id": 0, "id": 1, "kanban_order": 1, "created_at": 1},
+        ).sort([("kanban_order", 1), ("created_at", -1)]).to_list(5000)
+        ordered_ids = [p["id"] for p in projects]
+
+    if not ordered_ids:
+        return
+
+    await db.projects.bulk_write([
+        UpdateOne(
+            {"id": project_id, "status": status},
+            {"$set": {"kanban_order": index}},
+        )
+        for index, project_id in enumerate(ordered_ids)
+    ])
+
+
+async def _move_project_to_status(project_id: str, new_status: str, target_index: int = 0):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0, "status": 1})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    old_status = project.get("status") or new_status
+
+    statuses = [old_status] if old_status == new_status else [old_status, new_status]
+    columns = {}
+
+    for status in statuses:
+        rows = await db.projects.find(
+            {"status": status},
+            {"_id": 0, "id": 1, "kanban_order": 1, "created_at": 1},
+        ).sort([("kanban_order", 1), ("created_at", -1)]).to_list(5000)
+        columns[status] = [row["id"] for row in rows if row.get("id") != project_id]
+
+    if old_status != new_status:
+        target_ids = columns[new_status]
+        target_index = max(0, min(target_index, len(target_ids)))
+        target_ids.insert(target_index, project_id)
+
+        await db.projects.update_one(
+            {"id": project_id},
+            {
+                "$set": {
+                    "status": new_status,
+                    "status_changed_at": now_iso(),
+                    "kanban_order": target_index,
+                    "updated_at": now_iso(),
+                }
+            },
+        )
+
+        await _reindex_project_status(old_status, columns[old_status])
+        await _reindex_project_status(new_status, target_ids)
+        return old_status
+
+    ids = columns[old_status]
+    target_index = max(0, min(target_index, len(ids)))
+    ids.insert(target_index, project_id)
+    await _reindex_project_status(old_status, ids)
+    return old_status
 
 
 async def _hydrate_projects(
@@ -2211,10 +2612,15 @@ async def create_project(payload: ProjectCreate, request: Request):
         start_date=payload.start_date,
         end_date=payload.end_date,
         status=payload.status or "Active",
+        kanban_order=0,
+        status_changed_at=ts,
         created_at=ts,
         updated_at=ts,
     )
     await db.projects.insert_one(project.model_dump())
+
+    # New projects always enter the top of their status column.
+    await _move_project_to_status(project.id, project.status, 0)
     await log_activity(
         collection_name="project_activity_log",
         entity_id=project.id,
@@ -2268,6 +2674,12 @@ async def create_project(payload: ProjectCreate, request: Request):
                 "stage_status": deliv.stage_status,
             },
         )
+    created_deliverables = await db.deliverables.find(
+        {"project_id": project.id},
+        {"_id": 0},
+    ).to_list(5000)
+    await _notify_new_project(project.model_dump(), created_deliverables)
+
     p = await db.projects.find_one({"id": project.id}, {"_id": 0})
     return await _hydrate_project(p)
 
@@ -2282,6 +2694,10 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
 
     if "status" in update_fields and update_fields["status"] not in PROJECT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid project status")
+
+    old_status = existing.get("status")
+    new_status = update_fields.get("status")
+    status_changed = "status" in update_fields and new_status != old_status
 
     # Validate POC against the project's client
     if "poc_id" in update_fields and update_fields["poc_id"]:
@@ -2319,10 +2735,20 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
 
     update_fields["updated_at"] = now_iso()
 
-    await db.projects.update_one(
-        {"id": project_id},
-        {"$set": update_fields}
-    )
+    if status_changed:
+        # Move status changes to the top of the destination column while
+        # preserving all other edits made in the same request.
+        update_fields.pop("status", None)
+        await db.projects.update_one(
+            {"id": project_id},
+            {"$set": update_fields}
+        )
+        await _move_project_to_status(project_id, new_status, 0)
+    else:
+        await db.projects.update_one(
+            {"id": project_id},
+            {"$set": update_fields}
+        )
 
     # Log actual project changes
     changed_fields = {
@@ -2330,6 +2756,8 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
         for key, value in update_fields.items()
         if key != "updated_at"
     }
+    if status_changed:
+        changed_fields["status"] = new_status
 
     old_value = {
         key: existing.get(key)
@@ -2492,6 +2920,56 @@ async def bulk_unhide_projects(payload: BulkProjectIdsPayload, request: Request)
     }
 
 
+@api_router.post("/projects/reorder")
+async def reorder_project(payload: ProjectReorderPayload, request: Request):
+    user = await require_admin(request)
+
+    if payload.target_status not in PROJECT_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid project status")
+
+    project = await db.projects.find_one(
+        {"id": payload.project_id},
+        {"_id": 0},
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    old_status = await _move_project_to_status(
+        payload.project_id,
+        payload.target_status,
+        payload.target_index,
+    )
+
+    if old_status != payload.target_status:
+        await log_activity(
+            collection_name="project_activity_log",
+            entity_id=payload.project_id,
+            entity_field="project_id",
+            action="PROJECT_STATUS_CHANGED",
+            changed_by=user.id,
+            old_value=old_status,
+            new_value=payload.target_status,
+        )
+    else:
+        await log_activity(
+            collection_name="project_activity_log",
+            entity_id=payload.project_id,
+            entity_field="project_id",
+            action="PROJECT_KANBAN_REORDERED",
+            changed_by=user.id,
+            new_value={
+                "status": payload.target_status,
+                "target_index": payload.target_index,
+            },
+        )
+
+    updated = await db.projects.find_one(
+        {"id": payload.project_id},
+        {"_id": 0},
+    )
+    return await _hydrate_project(updated)
+
+
 @api_router.post("/projects/bulk-status")
 async def bulk_update_project_status(
     payload: BulkProjectStatusPayload,
@@ -2527,15 +3005,15 @@ async def bulk_update_project_status(
 
     now = now_iso()
 
-    await db.projects.update_many(
-        {"id": {"$in": project_ids}},
-        {
-            "$set": {
-                "status": new_status,
-                "updated_at": now,
-            }
-        }
-    )
+    # Preserve the selected order while moving the batch to the top of the
+    # destination column. Each project is reindexed through the same helper
+    # used by drag/drop and single-project status changes.
+    for project_id in project_ids:
+        await _move_project_to_status(project_id, new_status, 0)
+        await db.projects.update_one(
+            {"id": project_id},
+            {"$set": {"updated_at": now}},
+        )
 
     # Keep project activity history consistent with single-project updates.
     for project in projects:
@@ -3976,9 +4454,44 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def migrate_project_kanban_order():
+    """Backfill persistent Kanban order for projects created before ordering existed."""
+    projects = await db.projects.find(
+        {},
+        {"_id": 0, "id": 1, "status": 1, "kanban_order": 1, "created_at": 1},
+    ).sort([("created_at", -1)]).to_list(5000)
+
+    grouped = {}
+    for project in projects:
+        grouped.setdefault(project.get("status") or "Active", []).append(project)
+
+    for status, rows in grouped.items():
+        existing = [row for row in rows if row.get("kanban_order") is not None]
+        missing = [row for row in rows if row.get("kanban_order") is None]
+        existing.sort(key=lambda row: row.get("kanban_order", 0))
+        # The original query is newest-first, so missing orders naturally
+        # inherit the historical newest-first ordering.
+        rows = existing + missing
+
+        for index, row in enumerate(rows):
+            if row.get("kanban_order") is None:
+                await db.projects.update_one(
+                    {"id": row["id"]},
+                    {"$set": {"kanban_order": index}},
+                )
+
+
 @app.on_event("startup")
 async def run_startup_migrations():
     await migrate_client_contacts()
+    await migrate_project_kanban_order()
+    await db.projects.create_index([("status", 1), ("kanban_order", 1)])
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.notifications.create_index(
+        [("user_id", 1), ("dedupe_key", 1)],
+        unique=True,
+    )
+    await db.notifications.create_index([("user_id", 1), ("read_at", 1)])
     await db.approval_workflows.create_index("deliverable_id", unique=True)
     await db.approval_items.create_index([("approval_workflow_id", 1), ("approval_type", 1)], unique=True)
     await db.approval_items.create_index([("status", 1), ("approval_type", 1), ("assigned_to", 1)])

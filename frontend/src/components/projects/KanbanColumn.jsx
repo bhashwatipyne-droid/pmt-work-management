@@ -24,6 +24,14 @@ export const KanbanColumn = ({
   onSelectAll,
   allSelected,
   onToggleVisibility,
+  onDragOverColumn,
+  onDropColumn,
+  onDragStartProject,
+  onDragEndProject,
+  onDragOverProject,
+  onDropProject,
+  dragOverProjectId,
+  isDropTarget = false,
 }) => {
   const c = STATUS_COLORS[status];
 
@@ -70,7 +78,10 @@ export const KanbanColumn = ({
           </button>
         </div>
       }
-      empty={projects.length === 0 ? "No projects" : null}
+      empty={projects.length === 0 ? "Drop a project here" : null}
+      isDropTarget={isDropTarget}
+      onDragOver={(event) => onDragOverColumn?.(event, status)}
+      onDrop={(event) => onDropColumn?.(event, status)}
     >
       {projects.length > 0 && (
         <div
@@ -85,6 +96,11 @@ export const KanbanColumn = ({
               selected={selectedProjects?.has(project.id)}
               onSelect={onSelectProject}
               onOpen={() => onOpenProject?.(project)}
+              onDragStart={onDragStartProject}
+              onDragEnd={onDragEndProject}
+              onDragOver={onDragOverProject}
+              onDrop={onDropProject}
+              isDragTarget={dragOverProjectId === project.id}
             />
           ))}
         </div>

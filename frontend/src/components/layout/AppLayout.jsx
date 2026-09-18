@@ -1,8 +1,9 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, Bug, User } from "lucide-react";
+import { Bug, User } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
 import { Sidebar } from "./Sidebar";
+import NotificationCenter from "@/components/notifications/NotificationCenter";
 
 const CRUMBS = {
   "/": "Work Sheet",
@@ -76,24 +77,7 @@ export const AppLayout = ({ children }) => {
               <Bug className="h-4 w-4" />
               Report a bug
             </button>
-            <button
-              type="button"
-              data-testid="topbar-notifications"
-              className={[
-                "flex h-9 w-9 items-center justify-center",
-                "rounded-lg",
-                "text-slate-500",
-                "transition-colors",
-                "hover:bg-[#f0f0fd]",
-                "hover:text-[#1a1a8a]",
-                "focus:outline-none",
-                "focus:ring-[3px]",
-                "focus:ring-[#2b2bb5]/20",
-              ].join(" ")}
-              aria-label="Notifications"
-            >
-              <Bell className="h-4 w-4" />
-            </button>
+            <NotificationCenter />
 
             <button
               type="button"

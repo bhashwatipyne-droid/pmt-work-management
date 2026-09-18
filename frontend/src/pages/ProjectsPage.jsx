@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { format, parseISO } from "date-fns";
 import {
   Search,
   Plus,
@@ -9,7 +8,7 @@ import {
   LayoutGrid,
   List,
   X,
-  CalendarDays,
+  Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,6 +25,7 @@ import {
   bulkUnhideProjects,
   bulkUpdateProjectStatus,
   bulkDeleteProjects,
+  reorderProjects,
 } from "@/services/api";
 
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
@@ -37,8 +37,8 @@ import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
-import { Calendar } from "@/components/ui/calendar";
 import { trackEvent } from "../analytics";
+import { ProjectFilterPanel } from "@/components/projects/ProjectFilterPanel";
 import {
   Popover,
   PopoverContent,
@@ -61,10 +61,12 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
   const [pocFilter, setPocFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [visibility, setVisibility] = useState("visible");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState("chart");
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -84,6 +86,9 @@ export default function ProjectsPage() {
   });
 
   const [listPage, setListPage] = useState(1);
+  const [draggedProjectId, setDraggedProjectId] = useState(null);
+  const [dragOverProjectId, setDragOverProjectId] = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState(null);
 
   const fetchAll = async () => {
     if (!currentUserId) return;
@@ -139,6 +144,8 @@ export default function ProjectsPage() {
       .filter((p) => {
         if (statusFilter && p.status !== statusFilter) return false;
 
+        if (clientFilter && p.client_id !== clientFilter) return false;
+
         if (
           pocFilter &&
           (p.client_poc || "").toLowerCase() !== pocFilter.toLowerCase()
@@ -163,7 +170,7 @@ export default function ProjectsPage() {
         const dateB = new Date(b.start_date || 0).getTime();
         return dateB - dateA;
       });
-  }, [projects, search, statusFilter, pocFilter, dateFrom, dateTo]);
+  }, [projects, search, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -176,12 +183,27 @@ export default function ProjectsPage() {
       }
     });
 
+    Object.values(map).forEach((items) => {
+      items.sort((a, b) => {
+        const orderA = Number.isFinite(Number(a.kanban_order))
+          ? Number(a.kanban_order)
+          : Number.MAX_SAFE_INTEGER;
+        const orderB = Number.isFinite(Number(b.kanban_order))
+          ? Number(b.kanban_order)
+          : Number.MAX_SAFE_INTEGER;
+
+        if (orderA !== orderB) return orderA - orderB;
+
+        return new Date(b.start_date || 0).getTime() - new Date(a.start_date || 0).getTime();
+      });
+    });
+
     return map;
   }, [filtered]);
 
   useEffect(() => {
     setListPage(1);
-  }, [search, statusFilter, pocFilter, dateFrom, dateTo, visibility]);
+  }, [search, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, visibility]);
 
   const toggleColumnVisibility = (status) => {
     setHiddenColumns((current) => {
@@ -392,14 +414,173 @@ export default function ProjectsPage() {
     }
   };
 
-  const dateRange = {
-    from: dateFrom ? parseISO(dateFrom) : undefined,
-    to: dateTo ? parseISO(dateTo) : undefined,
+  const activeFilterCount =
+    Number(Boolean(statusFilter)) +
+    Number(Boolean(clientFilter)) +
+    Number(Boolean(pocFilter)) +
+    Number(Boolean(dateFrom || dateTo)) +
+    Number(visibility !== "visible");
+
+  const clearFilters = () => {
+    setStatusFilter("");
+    setClientFilter("");
+    setPocFilter("");
+    setDateFrom("");
+    setDateTo("");
+    setVisibility("visible");
+    clearSelection();
   };
 
-  const handleDateRangeChange = (range) => {
-    setDateFrom(range?.from ? format(range.from, "yyyy-MM-dd") : "");
-    setDateTo(range?.to ? format(range.to, "yyyy-MM-dd") : "");
+  const handleVisibilityChange = (value) => {
+    setVisibility(value);
+    clearSelection();
+  };
+
+  const getColumnProjectIds = (status) =>
+    projects
+      .filter((project) => project.status === status)
+      .sort((a, b) => {
+        const orderA = Number.isFinite(Number(a.kanban_order))
+          ? Number(a.kanban_order)
+          : Number.MAX_SAFE_INTEGER;
+        const orderB = Number.isFinite(Number(b.kanban_order))
+          ? Number(b.kanban_order)
+          : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return new Date(b.start_date || 0).getTime() - new Date(a.start_date || 0).getTime();
+      })
+      .map((project) => project.id);
+
+  const handleProjectDragStart = (event, project) => {
+    setDraggedProjectId(project.id);
+    setDragOverProjectId(null);
+    setDragOverStatus(project.status);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/project-id", project.id);
+  };
+
+  const handleProjectDragEnd = () => {
+    setDraggedProjectId(null);
+    setDragOverProjectId(null);
+    setDragOverStatus(null);
+  };
+
+  const handleProjectDragOver = (event, project) => {
+    if (!draggedProjectId || draggedProjectId === project.id) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverProjectId(project.id);
+    setDragOverStatus(project.status);
+  };
+
+  const handleColumnDragOver = (event, status) => {
+    if (!draggedProjectId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverProjectId(null);
+    setDragOverStatus(status);
+  };
+
+  const persistProjectDrop = async (status, targetIndex) => {
+    if (!draggedProjectId) return;
+
+    const draggedProject = projects.find((project) => project.id === draggedProjectId);
+    if (!draggedProject) return;
+
+    const oldStatus = draggedProject.status;
+    const sourceIds = getColumnProjectIds(oldStatus).filter(
+      (id) => id !== draggedProjectId
+    );
+    const targetIds = getColumnProjectIds(status).filter(
+      (id) => id !== draggedProjectId
+    );
+
+    if (oldStatus === status) {
+      targetIndex = Math.max(0, Math.min(targetIndex, targetIds.length));
+      targetIds.splice(targetIndex, 0, draggedProjectId);
+    } else {
+      targetIndex = Math.max(0, Math.min(targetIndex, targetIds.length));
+      targetIds.splice(targetIndex, 0, draggedProjectId);
+    }
+
+    // Optimistic update so the board moves immediately.
+    const sourceOrder = oldStatus === status
+      ? targetIds
+      : sourceIds;
+    const targetOrder = targetIds;
+    const orderById = new Map();
+
+    if (oldStatus !== status) {
+      sourceOrder.forEach((id, index) => orderById.set(id, index));
+      targetOrder.forEach((id, index) => orderById.set(id, index));
+    } else {
+      targetOrder.forEach((id, index) => orderById.set(id, index));
+    }
+
+    setProjects((current) =>
+      current.map((project) => {
+        if (project.id === draggedProjectId) {
+          return {
+            ...project,
+            status,
+            kanban_order: targetIndex,
+          };
+        }
+
+        if (project.status === status && orderById.has(project.id)) {
+          return { ...project, kanban_order: orderById.get(project.id) };
+        }
+
+        if (oldStatus !== status && project.status === oldStatus && orderById.has(project.id)) {
+          return { ...project, kanban_order: orderById.get(project.id) };
+        }
+
+        return project;
+      })
+    );
+
+    try {
+      await reorderProjects(currentUserId, draggedProjectId, status, targetIndex);
+      toast.success(
+        oldStatus === status ? "Project order updated" : `Project moved to ${status}`
+      );
+      await fetchAll();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Could not move project"
+      );
+      await fetchAll();
+    } finally {
+      handleProjectDragEnd();
+    }
+  };
+
+  const handleProjectDrop = async (event, targetProject) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!draggedProjectId || draggedProjectId === targetProject.id) {
+      handleProjectDragEnd();
+      return;
+    }
+
+    const targetProjects = getColumnProjectIds(targetProject.status).filter(
+      (id) => id !== draggedProjectId
+    );
+    const targetIndex = targetProjects.indexOf(targetProject.id);
+    await persistProjectDrop(targetProject.status, targetIndex < 0 ? 0 : targetIndex);
+  };
+
+  const handleColumnDrop = async (event, status) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!draggedProjectId) return;
+
+    const targetIds = getColumnProjectIds(status).filter(
+      (id) => id !== draggedProjectId
+    );
+    await persistProjectDrop(status, targetIds.length);
   };
 
   if (userLoading || !currentUser) return null;
@@ -473,107 +654,55 @@ export default function ProjectsPage() {
             </div>
           </div>
 
-          {/* Status */}
-          <select
-            data-testid={PROJECTS.statusFilter}
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-10 w-[150px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-          >
-            <option value="">All status</option>
-            {PROJECT_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-
-          {/* POC */}
-          <select
-            value={pocFilter}
-            onChange={(e) => setPocFilter(e.target.value)}
-            className="h-10 w-[190px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-          >
-            <option value="">All POCs / Owners</option>
-            {pocOptions.map((poc) => (
-              <option key={poc} value={poc}>
-                {poc}
-              </option>
-            ))}
-          </select>
-
-          {/* Date range */}
-          <Popover>
+          {/* Filters */}
+          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
+                data-testid={PROJECTS.filtersButton || "projects-filters-button"}
                 className={[
-                  "inline-flex h-10 w-[205px] shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm outline-none transition-colors",
+                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm font-medium outline-none transition-colors",
                   "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
-                  dateFrom || dateTo
-                    ? "border-[#2b2bb5] text-foreground"
-                    : "border-input text-muted-foreground",
+                  activeFilterCount > 0
+                    ? "border-[#2b2bb5] text-[#2b2bb5]"
+                    : "border-input text-foreground hover:bg-slate-50",
                 ].join(" ")}
               >
-                <CalendarDays className="h-4 w-4 shrink-0" />
-
-                {dateFrom && dateTo ? (
-                  <span>
-                    {format(parseISO(dateFrom), "dd MMM")} –{" "}
-                    {format(parseISO(dateTo), "dd MMM")}
+                <Filter className="h-4 w-4" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2b2bb5] px-1.5 text-[10px] font-bold text-white">
+                    {activeFilterCount}
                   </span>
-                ) : dateFrom ? (
-                  <span>
-                    From {format(parseISO(dateFrom), "dd MMM")}
-                  </span>
-                ) : (
-                  <span>Select date range</span>
                 )}
               </button>
             </PopoverTrigger>
-
             <PopoverContent
-              align="start"
-              className="w-auto rounded-xl p-0"
+              align="end"
+              sideOffset={8}
+              className="w-[360px] rounded-xl border border-slate-200 bg-white p-0 shadow-xl"
             >
-              <Calendar
-                mode="range"
-                selected={dateRange}
-                onSelect={handleDateRangeChange}
-                numberOfMonths={1}
-                initialFocus
+              <ProjectFilterPanel
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                clientFilter={clientFilter}
+                setClientFilter={setClientFilter}
+                pocFilter={pocFilter}
+                setPocFilter={setPocFilter}
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                setDateFrom={setDateFrom}
+                setDateTo={setDateTo}
+                visibility={visibility}
+                setVisibility={handleVisibilityChange}
+                clients={clients}
+                pocOptions={pocOptions}
+                activeFilterCount={activeFilterCount}
+                onClear={clearFilters}
+                onClose={() => setFiltersOpen(false)}
               />
-
-              {(dateFrom || dateTo) && (
-                <div className="border-t border-border px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDateFrom("");
-                      setDateTo("");
-                    }}
-                    className="text-xs font-medium text-[#2b2bb5] hover:underline"
-                  >
-                    Clear date range
-                  </button>
-                </div>
-              )}
             </PopoverContent>
           </Popover>
-
-          {/* Visibility */}
-          <select
-            value={visibility}
-            onChange={(e) => {
-              setVisibility(e.target.value);
-              clearSelection();
-            }}
-            className="h-10 w-[165px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-          >
-            <option value="visible">Visible projects</option>
-            <option value="hidden">Hidden projects</option>
-            <option value="all">All projects</option>
-          </select>
 
           {/* View switcher — icons only */}
           <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
@@ -613,7 +742,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Active filter chips */}
-      {(pocFilter || statusFilter || dateFrom || dateTo) && (
+      {(pocFilter || clientFilter || statusFilter || dateFrom || dateTo || visibility !== "visible") && (
         <div className="mb-5 flex flex-wrap items-center gap-2">
           {pocFilter && (
             <button
@@ -622,6 +751,17 @@ export default function ProjectsPage() {
               className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
             >
               POC: {pocFilter}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+
+          {clientFilter && (
+            <button
+              type="button"
+              onClick={() => setClientFilter("")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
+            >
+              Client: {clients.find((client) => client.id === clientFilter)?.name || clientFilter}
               <X className="h-3 w-3" />
             </button>
           )}
@@ -651,13 +791,21 @@ export default function ProjectsPage() {
             </button>
           )}
 
+          {visibility !== "visible" && (
+            <button
+              type="button"
+              onClick={() => handleVisibilityChange("visible")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
+            >
+              {visibility === "hidden" ? "Hidden projects" : "All projects"}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
-              setPocFilter("");
-              setStatusFilter("");
-              setDateFrom("");
-              setDateTo("");
+              clearFilters();
               setSearch("");
             }}
             className="ml-1 text-xs font-medium text-[#2b2bb5] hover:underline"
@@ -786,6 +934,14 @@ export default function ProjectsPage() {
                     navigate(`/projects/${project.id}`);
                   }}
                   onToggleVisibility={toggleColumnVisibility}
+                  onDragStartProject={handleProjectDragStart}
+                  onDragEndProject={handleProjectDragEnd}
+                  onDragOverProject={handleProjectDragOver}
+                  onDropProject={handleProjectDrop}
+                  onDragOverColumn={handleColumnDragOver}
+                  onDropColumn={handleColumnDrop}
+                  dragOverProjectId={dragOverProjectId}
+                  isDropTarget={dragOverStatus === status}
                 />
               );
             })}

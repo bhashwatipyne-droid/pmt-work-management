@@ -2664,7 +2664,10 @@ async def project_metrics(request: Request):
 
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str, request: Request):
-    await get_acting_user(request)
+    # The only frontend consumer of this endpoint is ProjectDetailPage,
+    # which is admin-only — enforce that here too, since a frontend-only
+    # gate doesn't stop a direct API call from any authenticated user.
+    await require_admin(request)
     p = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")

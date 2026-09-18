@@ -185,6 +185,23 @@ export default function ProjectDetailPage() {
 
   if (userLoading || !currentUser) return null;
 
+  if (currentUser.role !== "admin") {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <p className="text-sm font-medium text-foreground">
+          Projects is available to Admins only
+        </p>
+
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-[#2b2bb5] transition-colors hover:bg-[#f0f0fd] hover:text-[#1a1a8a]"
+        >
+          Go to Work Sheet
+        </Link>
+      </div>
+    );
+  }
+
   if (loading || !project) {
     return (
       <div className="flex flex-1 items-center justify-center bg-[#f7f9fc] py-16 text-sm text-muted-foreground">

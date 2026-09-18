@@ -174,7 +174,10 @@ export default function NotificationCenter() {
   const handleNotificationClick = async (notification) => {
     await handleRead(notification);
 
-    if (notification.project_id) {
+    // The project detail page is admin-only. Non-admins can't open it, so
+    // don't bounce them into a blocked page — just mark the notification
+    // read and leave them where they are.
+    if (notification.project_id && currentUser?.role === "admin") {
       setOpen(false);
       navigate(`/projects/${notification.project_id}`);
     }

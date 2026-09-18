@@ -631,20 +631,37 @@ async def _production_users_for_stages(stages: List[str]) -> list[dict]:
     ).to_list(1000)
 
 
-async def _upsert_notification(notification: dict):
-    dedupe_key = notification.get("dedupe_key")
-    if not dedupe_key:
-        dedupe_key = str(uuid.uuid4())
-        notification["dedupe_key"] = dedupe_key
+async def _upsert_notifications_batch(notifications: list[dict]):
+    """Write many notifications in a single round trip instead of one
+    update_one() per notification. Each op is an independent upsert keyed
+    on (user_id, dedupe_key), so ordered=False lets the rest of the batch
+    succeed even if one entry races with a concurrent insert."""
+    if not notifications:
+        return
 
-    await db.notifications.update_one(
-        {
-            "user_id": notification["user_id"],
-            "dedupe_key": dedupe_key,
-        },
-        {"$setOnInsert": notification},
-        upsert=True,
-    )
+    ops = []
+    for notification in notifications:
+        dedupe_key = notification.get("dedupe_key")
+        if not dedupe_key:
+            dedupe_key = str(uuid.uuid4())
+            notification["dedupe_key"] = dedupe_key
+
+        ops.append(
+            UpdateOne(
+                {
+                    "user_id": notification["user_id"],
+                    "dedupe_key": dedupe_key,
+                },
+                {"$setOnInsert": notification},
+                upsert=True,
+            )
+        )
+
+    await db.notifications.bulk_write(ops, ordered=False)
+
+
+async def _upsert_notification(notification: dict):
+    await _upsert_notifications_batch([notification])
 
 
 async def _notify_new_project(project: dict, deliverables: list[dict]):
@@ -655,10 +672,12 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
     )
     client_name = client_doc.get("name", "") if client_doc else ""
 
+    pending_notifications: list[dict] = []
+
     if not deliverables:
         recipients = await _production_users_for_stages(list(STAGES))
         for recipient in recipients:
-            await _upsert_notification({
+            pending_notifications.append({
                 "id": str(uuid.uuid4()),
                 "user_id": recipient["id"],
                 "type": "new_project",
@@ -678,6 +697,7 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
                 "actioned_at": None,
                 "dedupe_key": f'new-project:{project.get("id")}:{recipient["id"]}',
             })
+        await _upsert_notifications_batch(pending_notifications)
         return
 
     for deliverable in deliverables:
@@ -686,7 +706,7 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
 
         for recipient in recipients:
             stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"), stages[0])
-            await _upsert_notification({
+            pending_notifications.append({
                 "id": str(uuid.uuid4()),
                 "user_id": recipient["id"],
                 "type": "new_project",
@@ -708,12 +728,26 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
                 "dedupe_key": f'new-project:{project.get("id")}:{deliverable.get("id")}:{recipient["id"]}',
             })
 
+    await _upsert_notifications_batch(pending_notifications)
+
 
 _last_overdue_notification_check: Optional[datetime] = None
 
 
 async def _ensure_overdue_notifications():
-    """Materialize overdue deadline notifications without requiring a scheduler."""
+    """Materialize overdue deadline notifications without requiring a scheduler.
+
+    Rewritten to avoid N+1 queries: the original version issued one
+    deliverables lookup per overdue project, one project lookup per overdue
+    deliverable, one users lookup per project/deliverable, and one DB round
+    trip per individual notification. On any account with more than a
+    handful of overdue items, that turned every ~60s check into dozens or
+    hundreds of sequential awaits — which is what made the bell noticeably
+    slow to open on the request that happened to land outside the throttle
+    window. This version does a fixed, small number of batched queries plus
+    a single bulk write, regardless of how many projects/deliverables are
+    overdue.
+    """
     global _last_overdue_notification_check
 
     check_now = datetime.now(timezone.utc)
@@ -726,6 +760,34 @@ async def _ensure_overdue_notifications():
     _last_overdue_notification_check = check_now
     today = check_now.date().isoformat()
 
+    # Load every active user once and group by department in memory, instead
+    # of re-querying db.users for every overdue project/deliverable below.
+    all_users = await db.users.find(
+        {"active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "department": 1},
+    ).to_list(1000)
+
+    users_by_department: dict = {}
+    for user in all_users:
+        users_by_department.setdefault(user.get("department"), []).append(user)
+
+    def recipients_for_stages(stages: List[str]) -> list[dict]:
+        departments = [
+            department
+            for department, stage in DEPARTMENT_TO_STAGE.items()
+            if stage in stages
+        ]
+        recipients = []
+        seen_ids = set()
+        for department in departments:
+            for user in users_by_department.get(department, []):
+                if user["id"] not in seen_ids:
+                    seen_ids.add(user["id"])
+                    recipients.append(user)
+        return recipients
+
+    pending_notifications: list[dict] = []
+
     projects = await db.projects.find(
         {
             "end_date": {"$lt": today},
@@ -734,40 +796,53 @@ async def _ensure_overdue_notifications():
         {"_id": 0},
     ).to_list(5000)
 
-    for project in projects:
-        deliverables = await db.deliverables.find(
-            {"project_id": project["id"]},
-            {"_id": 0},
-        ).to_list(5000)
+    if projects:
+        project_ids = [p["id"] for p in projects]
 
-        stages = []
-        for deliverable in deliverables:
-            stages.extend(deliverable.get("required_stages") or [])
+        # One batched query for all overdue projects' deliverables, instead
+        # of one query per project.
+        all_deliverables = await db.deliverables.find(
+            {"project_id": {"$in": project_ids}},
+            {"_id": 0, "project_id": 1, "required_stages": 1},
+        ).to_list(20000)
 
-        stages = normalize_stages(list(dict.fromkeys(stages))) if stages else list(STAGES)
-        recipients = await _production_users_for_stages(stages)
+        deliverables_by_project: dict = {}
+        for deliverable in all_deliverables:
+            deliverables_by_project.setdefault(
+                deliverable["project_id"], []
+            ).append(deliverable)
 
-        for recipient in recipients:
-            await _upsert_notification({
-                "id": str(uuid.uuid4()),
-                "user_id": recipient["id"],
-                "type": "delayed_deadline",
-                "title": "Project deadline delayed",
-                "message": (
-                    f'{project.get("name", "Project")} was due on '
-                    f'{project.get("end_date", "")} and is still {project.get("status", "active").lower()}. '
-                    "Please review the project timeline."
-                ),
-                "project_id": project.get("id"),
-                "deliverable_id": None,
-                "client_id": project.get("client_id"),
-                "stage": DEPARTMENT_TO_STAGE.get(recipient.get("department")),
-                "action_type": None,
-                "created_at": now_iso(),
-                "read_at": None,
-                "actioned_at": None,
-                "dedupe_key": f'project-overdue:{project.get("id")}:{project.get("end_date")}:{recipient["id"]}',
-            })
+        for project in projects:
+            deliverables = deliverables_by_project.get(project["id"], [])
+
+            stages = []
+            for deliverable in deliverables:
+                stages.extend(deliverable.get("required_stages") or [])
+
+            stages = normalize_stages(list(dict.fromkeys(stages))) if stages else list(STAGES)
+            recipients = recipients_for_stages(stages)
+
+            for recipient in recipients:
+                pending_notifications.append({
+                    "id": str(uuid.uuid4()),
+                    "user_id": recipient["id"],
+                    "type": "delayed_deadline",
+                    "title": "Project deadline delayed",
+                    "message": (
+                        f'{project.get("name", "Project")} was due on '
+                        f'{project.get("end_date", "")} and is still {project.get("status", "active").lower()}. '
+                        "Please review the project timeline."
+                    ),
+                    "project_id": project.get("id"),
+                    "deliverable_id": None,
+                    "client_id": project.get("client_id"),
+                    "stage": DEPARTMENT_TO_STAGE.get(recipient.get("department")),
+                    "action_type": None,
+                    "created_at": now_iso(),
+                    "read_at": None,
+                    "actioned_at": None,
+                    "dedupe_key": f'project-overdue:{project.get("id")}:{project.get("end_date")}:{recipient["id"]}',
+                })
 
     overdue_deliverables = await db.deliverables.find(
         {
@@ -777,42 +852,54 @@ async def _ensure_overdue_notifications():
         {"_id": 0},
     ).to_list(5000)
 
-    for deliverable in overdue_deliverables:
-        project = await db.projects.find_one(
-            {"id": deliverable.get("project_id")},
-            {"_id": 0, "name": 1, "client_id": 1, "status": 1},
-        )
-        if not project:
-            continue
+    if overdue_deliverables:
+        parent_ids = list({
+            d.get("project_id") for d in overdue_deliverables if d.get("project_id")
+        })
 
-        stages = normalize_stages(deliverable.get("required_stages") or [])
-        recipients = await _production_users_for_stages(stages)
+        # One batched query for all the parent projects, instead of one
+        # find_one() per overdue deliverable.
+        parent_projects = await db.projects.find(
+            {"id": {"$in": parent_ids}},
+            {"_id": 0, "id": 1, "name": 1, "client_id": 1, "status": 1},
+        ).to_list(5000)
+        projects_by_id = {p["id"]: p for p in parent_projects}
 
-        for recipient in recipients:
-            stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"))
-            if stage not in stages:
+        for deliverable in overdue_deliverables:
+            project = projects_by_id.get(deliverable.get("project_id"))
+            if not project:
                 continue
 
-            await _upsert_notification({
-                "id": str(uuid.uuid4()),
-                "user_id": recipient["id"],
-                "type": "delayed_deadline",
-                "title": "Deliverable deadline delayed",
-                "message": (
-                    f'{deliverable.get("name", "Deliverable")} in '
-                    f'{project.get("name", "Project")} was due on '
-                    f'{deliverable.get("end_dt", "")} and is not completed.'
-                ),
-                "project_id": deliverable.get("project_id"),
-                "deliverable_id": deliverable.get("id"),
-                "client_id": project.get("client_id"),
-                "stage": stage,
-                "action_type": None,
-                "created_at": now_iso(),
-                "read_at": None,
-                "actioned_at": None,
-                "dedupe_key": f'deliverable-overdue:{deliverable.get("id")}:{deliverable.get("end_dt")}:{recipient["id"]}',
-            })
+            stages = normalize_stages(deliverable.get("required_stages") or [])
+            recipients = recipients_for_stages(stages)
+
+            for recipient in recipients:
+                stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"))
+                if stage not in stages:
+                    continue
+
+                pending_notifications.append({
+                    "id": str(uuid.uuid4()),
+                    "user_id": recipient["id"],
+                    "type": "delayed_deadline",
+                    "title": "Deliverable deadline delayed",
+                    "message": (
+                        f'{deliverable.get("name", "Deliverable")} in '
+                        f'{project.get("name", "Project")} was due on '
+                        f'{deliverable.get("end_dt", "")} and is not completed.'
+                    ),
+                    "project_id": deliverable.get("project_id"),
+                    "deliverable_id": deliverable.get("id"),
+                    "client_id": project.get("client_id"),
+                    "stage": stage,
+                    "action_type": None,
+                    "created_at": now_iso(),
+                    "read_at": None,
+                    "actioned_at": None,
+                    "dedupe_key": f'deliverable-overdue:{deliverable.get("id")}:{deliverable.get("end_dt")}:{recipient["id"]}',
+                })
+
+    await _upsert_notifications_batch(pending_notifications)
 
 
 # ---------------- Routes ----------------
@@ -4486,6 +4573,11 @@ async def run_startup_migrations():
     await migrate_client_contacts()
     await migrate_project_kanban_order()
     await db.projects.create_index([("status", 1), ("kanban_order", 1)])
+    # Speeds up the overdue-deadline scan in _ensure_overdue_notifications,
+    # which range-queries on these date fields every ~60s.
+    await db.projects.create_index([("end_date", 1)])
+    await db.deliverables.create_index([("end_dt", 1)])
+    await db.deliverables.create_index([("project_id", 1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.notifications.create_index(
         [("user_id", 1), ("dedupe_key", 1)],

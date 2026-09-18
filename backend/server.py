@@ -631,6 +631,17 @@ async def _production_users_for_stages(stages: List[str]) -> list[dict]:
     ).to_list(1000)
 
 
+async def _admin_users() -> list[dict]:
+    """Recipients for notifications that only an admin can act on: creating
+    deliverables and editing project status/timeline both require the admin
+    role, so notifying production staff about them left those recipients
+    with nothing they could actually do."""
+    return await db.users.find(
+        {"active": {"$ne": False}, "role": "admin"},
+        {"_id": 0, "id": 1, "name": 1, "department": 1},
+    ).to_list(1000)
+
+
 async def _upsert_notifications_batch(notifications: list[dict]):
     """Write many notifications in a single round trip instead of one
     update_one() per notification. Each op is an independent upsert keyed
@@ -675,7 +686,10 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
     pending_notifications: list[dict] = []
 
     if not deliverables:
-        recipients = await _production_users_for_stages(list(STAGES))
+        # No deliverables yet means there's nothing for production staff to
+        # act on — only an admin can add deliverables to a project, so only
+        # admins are notified here.
+        recipients = await _admin_users()
         for recipient in recipients:
             pending_notifications.append({
                 "id": str(uuid.uuid4()),
@@ -690,7 +704,7 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
                 "project_id": project.get("id"),
                 "deliverable_id": None,
                 "client_id": project.get("client_id"),
-                "stage": DEPARTMENT_TO_STAGE.get(recipient.get("department")),
+                "stage": None,
                 "action_type": None,
                 "created_at": now_iso(),
                 "read_at": None,
@@ -764,12 +778,14 @@ async def _ensure_overdue_notifications():
     # of re-querying db.users for every overdue project/deliverable below.
     all_users = await db.users.find(
         {"active": {"$ne": False}},
-        {"_id": 0, "id": 1, "name": 1, "department": 1},
+        {"_id": 0, "id": 1, "name": 1, "department": 1, "role": 1},
     ).to_list(1000)
 
     users_by_department: dict = {}
     for user in all_users:
         users_by_department.setdefault(user.get("department"), []).append(user)
+
+    admin_users = [user for user in all_users if user.get("role") == "admin"]
 
     def recipients_for_stages(stages: List[str]) -> list[dict]:
         departments = [
@@ -796,53 +812,31 @@ async def _ensure_overdue_notifications():
         {"_id": 0},
     ).to_list(5000)
 
-    if projects:
-        project_ids = [p["id"] for p in projects]
-
-        # One batched query for all overdue projects' deliverables, instead
-        # of one query per project.
-        all_deliverables = await db.deliverables.find(
-            {"project_id": {"$in": project_ids}},
-            {"_id": 0, "project_id": 1, "required_stages": 1},
-        ).to_list(20000)
-
-        deliverables_by_project: dict = {}
-        for deliverable in all_deliverables:
-            deliverables_by_project.setdefault(
-                deliverable["project_id"], []
-            ).append(deliverable)
-
-        for project in projects:
-            deliverables = deliverables_by_project.get(project["id"], [])
-
-            stages = []
-            for deliverable in deliverables:
-                stages.extend(deliverable.get("required_stages") or [])
-
-            stages = normalize_stages(list(dict.fromkeys(stages))) if stages else list(STAGES)
-            recipients = recipients_for_stages(stages)
-
-            for recipient in recipients:
-                pending_notifications.append({
-                    "id": str(uuid.uuid4()),
-                    "user_id": recipient["id"],
-                    "type": "delayed_deadline",
-                    "title": "Project deadline delayed",
-                    "message": (
-                        f'{project.get("name", "Project")} was due on '
-                        f'{project.get("end_date", "")} and is still {project.get("status", "active").lower()}. '
-                        "Please review the project timeline."
-                    ),
-                    "project_id": project.get("id"),
-                    "deliverable_id": None,
-                    "client_id": project.get("client_id"),
-                    "stage": DEPARTMENT_TO_STAGE.get(recipient.get("department")),
-                    "action_type": None,
-                    "created_at": now_iso(),
-                    "read_at": None,
-                    "actioned_at": None,
-                    "dedupe_key": f'project-overdue:{project.get("id")}:{project.get("end_date")}:{recipient["id"]}',
-                })
+    # Project-level timeline health is an admin concern — only an admin can
+    # change a project's status or dates (PATCH /projects/{id} requires
+    # require_admin), so production staff had no way to act on these.
+    for project in projects:
+        for recipient in admin_users:
+            pending_notifications.append({
+                "id": str(uuid.uuid4()),
+                "user_id": recipient["id"],
+                "type": "delayed_deadline",
+                "title": "Project deadline delayed",
+                "message": (
+                    f'{project.get("name", "Project")} was due on '
+                    f'{project.get("end_date", "")} and is still {project.get("status", "active").lower()}. '
+                    "Please review the project timeline."
+                ),
+                "project_id": project.get("id"),
+                "deliverable_id": None,
+                "client_id": project.get("client_id"),
+                "stage": None,
+                "action_type": None,
+                "created_at": now_iso(),
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f'project-overdue:{project.get("id")}:{project.get("end_date")}:{recipient["id"]}',
+            })
 
     overdue_deliverables = await db.deliverables.find(
         {
@@ -4571,10 +4565,35 @@ async def migrate_project_kanban_order():
                 )
 
 
+async def migrate_admin_only_notifications():
+    """Project-level status/timeline management and adding deliverables are
+    both admin-only actions, but earlier notification logic sent the
+    project-level 'delayed_deadline' notice and the no-deliverables-yet
+    'new_project' notice to production staff, who had no way to act on
+    either. Remove any such notifications already delivered to non-admin
+    users before this fix landed; going forward, _notify_new_project and
+    _ensure_overdue_notifications only target admins for these two cases."""
+    non_admin_ids = [
+        u["id"]
+        for u in await db.users.find(
+            {"role": {"$ne": "admin"}}, {"_id": 0, "id": 1}
+        ).to_list(5000)
+    ]
+    if not non_admin_ids:
+        return
+
+    await db.notifications.delete_many({
+        "user_id": {"$in": non_admin_ids},
+        "deliverable_id": None,
+        "type": {"$in": ["delayed_deadline", "new_project"]},
+    })
+
+
 @app.on_event("startup")
 async def run_startup_migrations():
     await migrate_client_contacts()
     await migrate_project_kanban_order()
+    await migrate_admin_only_notifications()
     await db.projects.create_index([("status", 1), ("kanban_order", 1)])
     # Speeds up the overdue-deadline scan in _ensure_overdue_notifications,
     # which range-queries on these date fields every ~60s.

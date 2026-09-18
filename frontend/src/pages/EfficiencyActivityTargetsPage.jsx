@@ -38,7 +38,7 @@ const inputClass =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 " +
   "focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/20";
 
-const emptyDraft = { activity_name: "", daily_potential: "", time_per_unit_minutes: "" };
+const emptyDraft = { activity_name: "", time_per_unit_minutes: "" };
 
 export default function EfficiencyActivityTargetsPage() {
   const { currentUser, loading: userLoading } = useUser();
@@ -85,11 +85,11 @@ export default function EfficiencyActivityTargetsPage() {
   const loadTargets = useCallback(() => {
     if (!employeeId) return;
     setLoadingTargets(true);
-    getEmployeeTargets(employeeId)
+    getEmployeeTargets(employeeId, month)
       .then(setTargets)
       .catch(() => toast.error("Could not load potential for this employee"))
       .finally(() => setLoadingTargets(false));
-  }, [employeeId]);
+  }, [employeeId, month]);
 
   useEffect(() => loadTargets(), [loadTargets]);
 
@@ -106,25 +106,21 @@ export default function EfficiencyActivityTargetsPage() {
 
   const startEdit = (t) => {
     setEditingId(t.id);
-    setEdit({
-      daily_potential: String(t.daily_potential ?? 0),
-      time_per_unit_minutes: String(t.time_per_unit_minutes ?? 0),
-    });
+    setEdit({ time_per_unit_minutes: String(t.time_per_unit_minutes ?? 0) });
   };
 
   const saveEdit = async (t) => {
-    const nextDaily = Number(edit.daily_potential || 0);
     const nextTime = Number(edit.time_per_unit_minutes || 0);
 
-    if (nextDaily < 0 || nextTime < 0) {
-      toast.error("Values cannot be negative");
+    if (nextTime <= 0) {
+      toast.error("Minutes per unit must be greater than zero");
       return;
     }
 
     if (
-      (t.daily_potential || 0) !== nextDaily &&
+      (t.time_per_unit_minutes || 0) !== nextTime &&
       !window.confirm(
-        `Changing "${t.activity_name}" potential will change this employee's productivity score for every month that uses it, including past months. Continue?`
+        `Changing the time for "${t.activity_name}" recalculates this employee's potential — and therefore their productivity score — for every month that uses it, including past months. Continue?`
       )
     ) {
       return;
@@ -132,10 +128,7 @@ export default function EfficiencyActivityTargetsPage() {
 
     setBusyId(t.id);
     try {
-      await updateEmployeeTarget(t.id, {
-        daily_potential: nextDaily,
-        time_per_unit_minutes: nextTime,
-      });
+      await updateEmployeeTarget(t.id, { time_per_unit_minutes: nextTime });
       toast.success("Potential updated");
       setEditingId(null);
       loadTargets();
@@ -178,13 +171,17 @@ export default function EfficiencyActivityTargetsPage() {
       toast.error("Choose an activity");
       return;
     }
+    const minutes = Number(draft.time_per_unit_minutes || 0);
+    if (minutes <= 0) {
+      toast.error("Enter minutes per unit greater than zero");
+      return;
+    }
     setAdding(true);
     try {
       await upsertEmployeeTarget({
         user_id: employeeId,
         activity_name: draft.activity_name,
-        daily_potential: Number(draft.daily_potential || 0),
-        time_per_unit_minutes: Number(draft.time_per_unit_minutes || 0),
+        time_per_unit_minutes: minutes,
         active: true,
       });
       toast.success("Potential added");
@@ -226,16 +223,17 @@ export default function EfficiencyActivityTargetsPage() {
             Core activity targets
           </h1>
           <p className="text-sm text-slate-500">
-            Set each team member's daily potential per core activity — this is what 100% looks
-            like for them.
+            Set how long each core activity takes this person — their daily and monthly
+            potential is calculated automatically from their capacity, not entered by hand.
           </p>
         </div>
 
         <div className="flex max-w-sm items-start gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
           <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           <span>
-            <span className="font-semibold">How this works:</span> Daily potential × minutes per
-            unit defines the employee's expected core activity capacity.
+            <span className="font-semibold">How this works:</span> Potential = this month's Core
+            hours ÷ minutes per unit for the activity. It updates automatically as capacity
+            changes each month.
           </span>
         </div>
       </div>
@@ -311,7 +309,7 @@ export default function EfficiencyActivityTargetsPage() {
                 </div>
 
                 <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
+                  <div className="grid gap-3 sm:grid-cols-[2fr_1fr_auto]">
                     <label className="flex flex-col gap-1.5">
                       <span className="text-xs font-medium text-slate-600">Activity</span>
                       <select
@@ -326,18 +324,6 @@ export default function EfficiencyActivityTargetsPage() {
                           </option>
                         ))}
                       </select>
-                    </label>
-
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-xs font-medium text-slate-600">Daily potential</span>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="e.g. 2"
-                        value={draft.daily_potential}
-                        onChange={(e) => setDraft({ ...draft, daily_potential: e.target.value })}
-                        className={inputClass}
-                      />
                     </label>
 
                     <label className="flex flex-col gap-1.5">
@@ -445,21 +431,12 @@ export default function EfficiencyActivityTargetsPage() {
                               <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
                                 Daily potential
                               </div>
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={edit.daily_potential}
-                                  onChange={(e) =>
-                                    setEdit({ ...edit, daily_potential: e.target.value })
-                                  }
-                                  className={`${inputClass} mt-1`}
-                                />
-                              ) : (
-                                <div className="mt-0.5 text-xl font-semibold text-slate-900">
-                                  {t.daily_potential}
-                                </div>
-                              )}
+                              <div className="mt-0.5 text-xl font-semibold text-slate-900">
+                                {t.daily_potential ?? 0}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                Calculated from this month's core hours
+                              </div>
                             </div>
 
                             <div>

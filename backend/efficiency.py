@@ -30,10 +30,10 @@ from pydantic import BaseModel, Field, ConfigDict
 DEFAULT_WORKING_HOURS_PER_DAY = 8.5
 
 # How an employee's overall productivity is rolled up from per-activity scores.
-#   "sum"      -> sum of activity productivity percentages (matches the Excel sheet)
-#   "weighted" -> total actual / total monthly potential
+#   "weighted" -> total actual / total monthly potential   (recommended, caps at a sane number)
 #   "average"  -> mean of activity productivity percentages
-PRODUCTIVITY_AGGREGATION = "sum"
+#   "sum"      -> sum of activity productivity percentages (as written in the original spec)
+PRODUCTIVITY_AGGREGATION = "weighted"
 
 # Non-core hours above this share of monthly hours get flagged on the overview.
 NON_CORE_ALERT_RATIO = 0.35
@@ -49,7 +49,6 @@ class EmployeeWorkingCalendar(BaseModel):
     working_days: float = 0
     leave_days: float = 0
     working_hours_per_day: float = DEFAULT_WORKING_HOURS_PER_DAY
-    include_in_team_average: bool = True
     created_at: str
     updated_at: str
     updated_by: Optional[str] = None
@@ -61,24 +60,27 @@ class EmployeeWorkingCalendarCreate(BaseModel):
     working_days: float
     leave_days: float = 0
     working_hours_per_day: Optional[float] = None
-    include_in_team_average: Optional[bool] = True
 
 
 class EmployeeWorkingCalendarUpdate(BaseModel):
     working_days: Optional[float] = None
     leave_days: Optional[float] = None
     working_hours_per_day: Optional[float] = None
-    include_in_team_average: Optional[bool] = None
 
 
 class EmployeeActivityTarget(BaseModel):
-    """One employee's potential for one core activity. This is what a manager sets."""
+    """One employee's benchmark time-per-unit for one core activity.
+
+    Potential (daily/monthly) is intentionally NOT stored here anymore. It's derived
+    at read time from that month's Core hours ÷ time_per_unit_minutes, so it moves
+    automatically as an employee's capacity changes month to month, instead of being
+    a number a manager has to keep in sync by hand.
+    """
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
     activity_name: str
     category: str = "Core"
-    daily_potential: float = 0
     time_per_unit_minutes: float = 0
     active: bool = True
     created_at: str
@@ -89,13 +91,11 @@ class EmployeeActivityTarget(BaseModel):
 class EmployeeActivityTargetCreate(BaseModel):
     user_id: str
     activity_name: str
-    daily_potential: float
-    time_per_unit_minutes: float = 0
+    time_per_unit_minutes: float
     active: Optional[bool] = True
 
 
 class EmployeeActivityTargetUpdate(BaseModel):
-    daily_potential: Optional[float] = None
     time_per_unit_minutes: Optional[float] = None
     active: Optional[bool] = None
 
@@ -124,6 +124,24 @@ def calculate_core_days(core_hours: float, hours_per_day: float) -> float:
     return round(float(core_hours) / float(hours_per_day), 2)
 
 
+def calculate_activity_monthly_potential(core_hours: float, time_per_unit_minutes: float) -> float:
+    """How many units of this activity fit in the month if 100% of core hours went to it.
+
+    = (Core hours × 60) ÷ minutes per unit. This is the same arithmetic as the
+    reference spreadsheet: core hours divided by the per-creative time taken.
+    """
+    if not time_per_unit_minutes:
+        return 0.0
+    return round((float(core_hours) * 60.0) / float(time_per_unit_minutes), 2)
+
+
+def calculate_activity_daily_potential(monthly_potential: float, core_days: float) -> float:
+    """Display-only per-day figure: Monthly potential ÷ Core days."""
+    if not core_days:
+        return 0.0
+    return round(float(monthly_potential) / float(core_days), 2)
+
+
 def calculate_activity_productivity(actual_closed: float, monthly_potential: float) -> float:
     if not monthly_potential:
         return 0.0
@@ -150,13 +168,7 @@ def calculate_employee_productivity(activity_rows: List[Dict[str, Any]]) -> floa
 
 
 def calculate_team_productivity(employee_rows: List[Dict[str, Any]]) -> float:
-    # include_in_team_average defaults True; set False on an employee's monthly
-    # capacity to exclude them from this specific number (e.g. probation, part-time)
-    # without hiding their individual efficiency data anywhere else.
-    scored = [
-        e for e in employee_rows
-        if e.get("has_capacity") and e.get("include_in_team_average", True)
-    ]
+    scored = [e for e in employee_rows if e.get("has_capacity")]
     if not scored:
         return 0.0
     return round(sum(e.get("productivity") or 0 for e in scored) / len(scored), 2)
@@ -167,7 +179,6 @@ def build_capacity_breakdown(
     leave_days: float,
     hours_per_day: float,
     non_core_minutes: float,
-    include_in_team_average: bool = True,
 ) -> Dict[str, float]:
     after_leave = calculate_working_days_after_leave(working_days, leave_days)
     monthly_hours = calculate_monthly_working_hours(after_leave, hours_per_day)
@@ -183,7 +194,6 @@ def build_capacity_breakdown(
         "non_core_hours": non_core_hours,
         "core_hours": core_hours,
         "core_days": core_days,
-        "include_in_team_average": bool(include_in_team_average),
     }
 
 
@@ -312,6 +322,27 @@ def create_efficiency_router(
             return explicit
         return deliverable_type_categories.get(item.get("deliverable_type") or "", "Core")
 
+    async def _breakdown_for_user(month: str, user_id: str) -> Dict[str, float]:
+        """Same capacity math as _compute_employee, for exactly one employee/month —
+        used by the targets list endpoint to show live daily/monthly potential
+        without a manager having to enter it by hand."""
+        capacity = (await _capacity_map(month, [user_id])).get(user_id)
+        items = await _month_work_items(month, [user_id])
+        non_core_minutes = sum(
+            float(it.get("time_taken_minutes") or 0)
+            for it in items
+            if _category_of(it) == "Non-Core"
+        )
+        hours_per_day = float(
+            (capacity or {}).get("working_hours_per_day") or DEFAULT_WORKING_HOURS_PER_DAY
+        )
+        return build_capacity_breakdown(
+            working_days=(capacity or {}).get("working_days") or 0,
+            leave_days=(capacity or {}).get("leave_days") or 0,
+            hours_per_day=hours_per_day,
+            non_core_minutes=non_core_minutes,
+        )
+
     def _compute_employee(
         user_doc: dict,
         capacity: Optional[dict],
@@ -320,8 +351,8 @@ def create_efficiency_router(
     ) -> dict:
         non_core_minutes = 0.0
         non_core_by_type: Dict[str, float] = {}
-        closed_by_type: Dict[str, float] = {}
-        closed_total = 0.0
+        closed_by_type: Dict[str, int] = {}
+        closed_total = 0
 
         for it in items:
             category = _category_of(it)
@@ -332,9 +363,8 @@ def create_efficiency_router(
                 non_core_by_type[key] = non_core_by_type.get(key, 0.0) + mins
             elif it.get("status") == "Closed":
                 key = it.get("deliverable_type") or "Other"
-                qty = float(it.get("quantity") or 1.0)
-                closed_by_type[key] = closed_by_type.get(key, 0.0) + qty
-                closed_total += qty
+                closed_by_type[key] = closed_by_type.get(key, 0) + 1
+                closed_total += 1
 
         has_capacity = bool(capacity)
         hours_per_day = float(
@@ -345,19 +375,21 @@ def create_efficiency_router(
             leave_days=(capacity or {}).get("leave_days") or 0,
             hours_per_day=hours_per_day,
             non_core_minutes=non_core_minutes,
-            include_in_team_average=(capacity or {}).get("include_in_team_average", True),
         )
 
         activity_rows = []
+        core_hours_value = breakdown["core_hours"]
+        core_days_value = breakdown["core_days"]
         for t in targets:
-            daily_potential = float(t.get("daily_potential") or 0)
-            monthly_potential = round(daily_potential * breakdown["core_days"], 2)
+            per_unit = float(t.get("time_per_unit_minutes") or 0)
+            monthly_potential = calculate_activity_monthly_potential(core_hours_value, per_unit)
+            daily_potential = calculate_activity_daily_potential(monthly_potential, core_days_value)
             actual = closed_by_type.get(t["activity_name"], 0)
             activity_rows.append({
                 "target_id": t.get("id"),
                 "activity_name": t["activity_name"],
                 "daily_potential": daily_potential,
-                "time_per_unit_minutes": float(t.get("time_per_unit_minutes") or 0),
+                "time_per_unit_minutes": per_unit,
                 "monthly_potential": monthly_potential,
                 "actual_closed": actual,
                 "productivity": calculate_activity_productivity(actual, monthly_potential),
@@ -532,12 +564,32 @@ def create_efficiency_router(
     # ---------- Employee activity targets (potential) — MANAGER ONLY to write ----------
 
     @router.get("/employee-targets")
-    async def list_employee_targets(request: Request, user_id: str = Query(...)):
+    async def list_employee_targets(
+        request: Request,
+        user_id: str = Query(...),
+        month: Optional[str] = Query(
+            None, description="If given, attaches live daily_potential/monthly_potential for that month."
+        ),
+    ):
         user = await get_acting_user(request)
         await _assert_can_view(user, user_id)
-        return await db.efficiency_employee_targets.find(
+        docs = await db.efficiency_employee_targets.find(
             {"user_id": user_id}, {"_id": 0}
         ).sort("activity_name", 1).to_list(500)
+
+        if not month:
+            return docs
+
+        breakdown = await _breakdown_for_user(month, user_id)
+        core_hours_value = breakdown["core_hours"]
+        core_days_value = breakdown["core_days"]
+
+        for d in docs:
+            per_unit = float(d.get("time_per_unit_minutes") or 0)
+            monthly_potential = calculate_activity_monthly_potential(core_hours_value, per_unit)
+            d["monthly_potential"] = monthly_potential
+            d["daily_potential"] = calculate_activity_daily_potential(monthly_potential, core_days_value)
+        return docs
 
     @router.post("/employee-targets", response_model=EmployeeActivityTarget)
     async def upsert_employee_target(payload: EmployeeActivityTargetCreate, request: Request):
@@ -550,10 +602,11 @@ def create_efficiency_router(
                 status_code=400,
                 detail="Activity must be one of the configured core deliverable types",
             )
-        if payload.daily_potential is None or payload.daily_potential < 0:
-            raise HTTPException(status_code=400, detail="Daily potential cannot be negative")
-        if payload.time_per_unit_minutes is not None and payload.time_per_unit_minutes < 0:
-            raise HTTPException(status_code=400, detail="Time per unit cannot be negative")
+        if payload.time_per_unit_minutes is None or payload.time_per_unit_minutes <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Time per unit must be greater than zero — potential is calculated from it",
+            )
 
         ts = now_iso()
         existing = await db.efficiency_employee_targets.find_one(
@@ -564,8 +617,7 @@ def create_efficiency_router(
             user_id=payload.user_id,
             activity_name=name,
             category="Core",
-            daily_potential=payload.daily_potential,
-            time_per_unit_minutes=payload.time_per_unit_minutes or 0,
+            time_per_unit_minutes=payload.time_per_unit_minutes,
             active=True if payload.active is None else payload.active,
             created_at=existing["created_at"] if existing else ts,
             updated_at=ts,
@@ -594,18 +646,19 @@ def create_efficiency_router(
         await _assert_manages(manager, existing["user_id"])
 
         patch = {k: v for k, v in payload.model_dump().items() if v is not None}
-        if "daily_potential" in patch and patch["daily_potential"] < 0:
-            raise HTTPException(status_code=400, detail="Daily potential cannot be negative")
-        if "time_per_unit_minutes" in patch and patch["time_per_unit_minutes"] < 0:
-            raise HTTPException(status_code=400, detail="Time per unit cannot be negative")
+        if "time_per_unit_minutes" in patch and patch["time_per_unit_minutes"] <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Time per unit must be greater than zero — potential is calculated from it",
+            )
 
-        old_daily = existing.get("daily_potential")
+        old_time_per_unit = existing.get("time_per_unit_minutes")
         merged = {**existing, **patch, "updated_at": now_iso(), "updated_by": manager.id}
         await db.efficiency_employee_targets.update_one({"id": target_id}, {"$set": merged})
         await log_activity(
             "efficiency_activity_log", target_id, "employee_target_updated", manager.id,
             old_value=existing, new_value=merged,
-            metadata={"daily_potential_changed": old_daily != merged.get("daily_potential")},
+            metadata={"time_per_unit_minutes_changed": old_time_per_unit != merged.get("time_per_unit_minutes")},
         )
         return EmployeeActivityTarget(**merged)
 
@@ -715,7 +768,7 @@ def create_efficiency_router(
                 "non_core_hours": "Sum of Non-Core time logged ÷ 60",
                 "core_hours": "Monthly working hours − Non-core hours",
                 "core_days": "Core hours ÷ Working hours/day",
-                "monthly_potential": "This employee's daily potential × Core days",
+                "monthly_potential": "(Core hours × 60) ÷ minutes per unit for that activity",
                 "activity_productivity": "Actual closed ÷ Monthly potential × 100",
                 "employee_productivity": {
                     "weighted": "Total actual closed ÷ Total monthly potential × 100",

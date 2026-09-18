@@ -114,7 +114,9 @@ export default function ProjectsPage() {
         err?.response?.data?.detail || "Failed to load projects"
       );
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
 
@@ -304,7 +306,7 @@ export default function ProjectsPage() {
         return next;
       });
 
-      await fetchAll();
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to hide project"
@@ -318,7 +320,7 @@ export default function ProjectsPage() {
 
       toast.success("Project restored");
 
-      await fetchAll();
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to unhide project"
@@ -339,7 +341,7 @@ export default function ProjectsPage() {
       );
 
       clearSelection();
-      await fetchAll();
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to hide projects"
@@ -360,7 +362,7 @@ export default function ProjectsPage() {
       );
 
       clearSelection();
-      await fetchAll();
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to restore projects"
@@ -385,7 +387,7 @@ export default function ProjectsPage() {
       );
 
       clearSelection();
-      await fetchAll();
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail ||
@@ -408,7 +410,7 @@ export default function ProjectsPage() {
 
       setDeleteTarget(null);
       clearSelection();
-      await fetchAll();
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to delete projects"
@@ -977,7 +979,7 @@ export default function ProjectsPage() {
       <CreateProjectModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onCreated={fetchAll}
+        onCreated={() => fetchAll(false)}
         clients={clients}
         deliverableTypes={deliverableTypes}
       />
@@ -995,7 +997,7 @@ export default function ProjectsPage() {
                   toast.success("Project deleted");
 
                   setDeleteTarget(null);
-                  await fetchAll();
+                  await fetchAll(false);
                 } catch (err) {
                   toast.error(
                     err?.response?.data?.detail ||

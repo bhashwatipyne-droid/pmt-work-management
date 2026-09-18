@@ -90,10 +90,12 @@ export default function ProjectsPage() {
   const [dragOverProjectId, setDragOverProjectId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState(null);
 
-  const fetchAll = async () => {
+  const fetchAll = async (showLoading = true) => {
     if (!currentUserId) return;
 
-    setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+    }
 
     try {
       const [p, m, c, opts] = await Promise.all([
@@ -544,12 +546,14 @@ export default function ProjectsPage() {
       toast.success(
         oldStatus === status ? "Project order updated" : `Project moved to ${status}`
       );
-      await fetchAll();
+      // Refresh data without replacing the Kanban with the full-page loader.
+      await fetchAll(false);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Could not move project"
       );
-      await fetchAll();
+      // Revert/refresh silently without showing the full-page loader.
+      await fetchAll(false);
     } finally {
       handleProjectDragEnd();
     }

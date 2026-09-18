@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import {
   bulkDeleteWorkItems,
@@ -105,6 +106,8 @@ const trackWorksheetContext = (item, previousItem, patch) => {
 
 export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [activeSheet, setActiveSheet] = useState("Master");
   const [options, setOptions] = useState({});
@@ -233,6 +236,22 @@ export default function WorkSheetPage() {
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
+
+  // A notification's "Add row" action creates the work item server-side
+  // from a different part of the tree (NotificationCenter, mounted in
+  // AppLayout) and then navigates here. Since this page loads `items`
+  // once on mount and doesn't poll, navigating to a route we're already
+  // on wouldn't otherwise trigger a refetch — the new row would exist in
+  // the database but never appear until a manual reload. The notification
+  // flags that with router state; consume it once, then clear it so a
+  // normal visit to "/" later doesn't keep re-triggering this.
+  useEffect(() => {
+    if (location.state?.refreshWorkSheet) {
+      fetchItems();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.key]);
 
   // Selection is tied to whatever's currently visible — clear it whenever
   // the visible set could change underneath it, even though this no

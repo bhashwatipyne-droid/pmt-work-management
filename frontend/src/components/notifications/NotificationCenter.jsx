@@ -203,7 +203,7 @@ export default function NotificationCenter() {
 
       toast.success("Row added to your worksheet");
       setOpen(false);
-      navigate("/");
+      navigate("/", { state: { refreshWorkSheet: true } });
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Could not add the worksheet row"

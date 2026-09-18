@@ -280,6 +280,54 @@ export const bulkDeleteProjects = (userId, projectIds) =>
     )
     .then((r) => r.data);
 
+export const reorderProjects = (userId, projectId, targetStatus, targetIndex) =>
+  axios
+    .post(
+      `${API}/projects/reorder`,
+      {
+        project_id: projectId,
+        target_status: targetStatus,
+        target_index: targetIndex,
+      },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+// -------- Notifications --------
+export const getNotifications = (userId) =>
+  axios
+    .get(`${API}/notifications`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
+export const markNotificationRead = (userId, notificationId) =>
+  axios
+    .post(
+      `${API}/notifications/${notificationId}/read`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const markAllNotificationsRead = (userId) =>
+  axios
+    .post(
+      `${API}/notifications/read-all`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
+export const addWorkRowFromNotification = (userId, notificationId) =>
+  axios
+    .post(
+      `${API}/notifications/${notificationId}/add-row`,
+      {},
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
 // -------- Deliverables --------
 export const getDeliverables = (userId, params) =>
   axios

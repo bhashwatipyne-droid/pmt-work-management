@@ -30,10 +30,10 @@ from pydantic import BaseModel, Field, ConfigDict
 DEFAULT_WORKING_HOURS_PER_DAY = 8.5
 
 # How an employee's overall productivity is rolled up from per-activity scores.
-#   "weighted" -> total actual / total monthly potential   (recommended, caps at a sane number)
+#   "sum"      -> sum of activity productivity percentages (matches the Excel sheet)
+#   "weighted" -> total actual / total monthly potential
 #   "average"  -> mean of activity productivity percentages
-#   "sum"      -> sum of activity productivity percentages (as written in the original spec)
-PRODUCTIVITY_AGGREGATION = "weighted"
+PRODUCTIVITY_AGGREGATION = "sum"
 
 # Non-core hours above this share of monthly hours get flagged on the overview.
 NON_CORE_ALERT_RATIO = 0.35
@@ -49,6 +49,7 @@ class EmployeeWorkingCalendar(BaseModel):
     working_days: float = 0
     leave_days: float = 0
     working_hours_per_day: float = DEFAULT_WORKING_HOURS_PER_DAY
+    include_in_team_average: bool = True
     created_at: str
     updated_at: str
     updated_by: Optional[str] = None
@@ -60,12 +61,14 @@ class EmployeeWorkingCalendarCreate(BaseModel):
     working_days: float
     leave_days: float = 0
     working_hours_per_day: Optional[float] = None
+    include_in_team_average: Optional[bool] = True
 
 
 class EmployeeWorkingCalendarUpdate(BaseModel):
     working_days: Optional[float] = None
     leave_days: Optional[float] = None
     working_hours_per_day: Optional[float] = None
+    include_in_team_average: Optional[bool] = None
 
 
 class EmployeeActivityTarget(BaseModel):
@@ -127,8 +130,8 @@ def calculate_core_days(core_hours: float, hours_per_day: float) -> float:
 def calculate_activity_monthly_potential(core_hours: float, time_per_unit_minutes: float) -> float:
     """How many units of this activity fit in the month if 100% of core hours went to it.
 
-    = (Core hours × 60) ÷ minutes per unit. This is the same arithmetic as the
-    reference spreadsheet: core hours divided by the per-creative time taken.
+    = (Core hours × 60) ÷ minutes per unit. Same arithmetic as the reference
+    spreadsheet: core hours divided by the per-creative time taken.
     """
     if not time_per_unit_minutes:
         return 0.0
@@ -168,7 +171,13 @@ def calculate_employee_productivity(activity_rows: List[Dict[str, Any]]) -> floa
 
 
 def calculate_team_productivity(employee_rows: List[Dict[str, Any]]) -> float:
-    scored = [e for e in employee_rows if e.get("has_capacity")]
+    # include_in_team_average defaults True; set False on an employee's monthly
+    # capacity to exclude them from this specific number (e.g. probation, part-time)
+    # without hiding their individual efficiency data anywhere else.
+    scored = [
+        e for e in employee_rows
+        if e.get("has_capacity") and e.get("include_in_team_average", True)
+    ]
     if not scored:
         return 0.0
     return round(sum(e.get("productivity") or 0 for e in scored) / len(scored), 2)
@@ -179,6 +188,7 @@ def build_capacity_breakdown(
     leave_days: float,
     hours_per_day: float,
     non_core_minutes: float,
+    include_in_team_average: bool = True,
 ) -> Dict[str, float]:
     after_leave = calculate_working_days_after_leave(working_days, leave_days)
     monthly_hours = calculate_monthly_working_hours(after_leave, hours_per_day)
@@ -194,6 +204,7 @@ def build_capacity_breakdown(
         "non_core_hours": non_core_hours,
         "core_hours": core_hours,
         "core_days": core_days,
+        "include_in_team_average": bool(include_in_team_average),
     }
 
 
@@ -341,6 +352,7 @@ def create_efficiency_router(
             leave_days=(capacity or {}).get("leave_days") or 0,
             hours_per_day=hours_per_day,
             non_core_minutes=non_core_minutes,
+            include_in_team_average=(capacity or {}).get("include_in_team_average", True),
         )
 
     def _compute_employee(
@@ -351,8 +363,8 @@ def create_efficiency_router(
     ) -> dict:
         non_core_minutes = 0.0
         non_core_by_type: Dict[str, float] = {}
-        closed_by_type: Dict[str, int] = {}
-        closed_total = 0
+        closed_by_type: Dict[str, float] = {}
+        closed_total = 0.0
 
         for it in items:
             category = _category_of(it)
@@ -363,8 +375,9 @@ def create_efficiency_router(
                 non_core_by_type[key] = non_core_by_type.get(key, 0.0) + mins
             elif it.get("status") == "Closed":
                 key = it.get("deliverable_type") or "Other"
-                closed_by_type[key] = closed_by_type.get(key, 0) + 1
-                closed_total += 1
+                qty = float(it.get("quantity") or 1.0)
+                closed_by_type[key] = closed_by_type.get(key, 0.0) + qty
+                closed_total += qty
 
         has_capacity = bool(capacity)
         hours_per_day = float(
@@ -375,6 +388,7 @@ def create_efficiency_router(
             leave_days=(capacity or {}).get("leave_days") or 0,
             hours_per_day=hours_per_day,
             non_core_minutes=non_core_minutes,
+            include_in_team_average=(capacity or {}).get("include_in_team_average", True),
         )
 
         activity_rows = []

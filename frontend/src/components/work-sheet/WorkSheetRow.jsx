@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { ChevronsUpDown, EyeOff, Hand, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Copy, EyeOff, Hand, Trash2 } from "lucide-react";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -29,6 +29,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     deliverablesByProject = {},
     onUpdate,
     onDelete,
+    onDuplicate,
     onHideRow,
     selected,
     onToggleSelect,
@@ -998,6 +999,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               aria-label="Hide row"
             >
               <EyeOff className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDuplicate?.(item);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              title="Duplicate row"
+              aria-label="Duplicate row"
+            >
+              <Copy className="h-4 w-4" />
             </button>
 
             <button

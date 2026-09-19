@@ -693,6 +693,112 @@ export default function WorkSheetPage() {
 
     setSelectedIds([]);
   };
+
+  const handleInsertRow = async (position) => {
+    if (!canAddToActiveSheet) {
+      toast.error(`You cannot add rows to the ${activeSheet} sheet.`);
+      return;
+    }
+
+    if (!selectedIds.length) return;
+
+    // Anchor on whichever selected row is currently topmost/bottommost in
+    // the visible order — "insert above/below" a multi-row selection reads
+    // naturally as "above the whole block" / "below the whole block."
+    const selectedSet = new Set(selectedIds);
+    const selectedIndices = sortedItems.reduce((acc, item, idx) => {
+      if (selectedSet.has(item.id)) acc.push(idx);
+      return acc;
+    }, []);
+
+    if (!selectedIndices.length) return;
+
+    const anchorIndex =
+      position === "above"
+        ? Math.min(...selectedIndices)
+        : Math.max(...selectedIndices);
+    const anchorItem = sortedItems[anchorIndex];
+    if (!anchorItem) return;
+
+    try {
+      const created = await createWorkItem(currentUser.id, {
+        work_date: new Date().toISOString().slice(0, 10),
+        deliverable_name: "",
+        deliverable_type: "",
+        work_category: "",
+        creator_id: currentUser.id,
+        status: "Not Started",
+        client_id: null,
+        project_id: null,
+        deliverable_id: null,
+        stage:
+          activeSheet === "Master"
+            ? (DEPARTMENT_TO_STAGE[currentUser.department] || null)
+            : (DEPARTMENT_TO_STAGE[activeSheet] || activeSheet),
+      });
+
+      setItems((prev) => [created, ...prev]);
+      // Land the new row next to the anchor in the same manual drag order
+      // that reordering rows already maintains, rather than wherever the
+      // default date sort would place it.
+      tableRef.current?.resetColumnSort();
+      tableRef.current?.insertRowNear(created.id, anchorItem.id, position);
+
+      trackEvent("row_added", {
+        worksheet: activeSheet,
+        row_id: created.id,
+        inserted: position,
+      });
+
+      toast.success(
+        position === "above" ? "Row inserted above" : "Row inserted below"
+      );
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Could not insert row");
+    }
+  };
+
+  const handleDuplicateRow = async (item) => {
+    if (!item) return;
+
+    try {
+      const created = await createWorkItem(currentUser.id, {
+        work_date: new Date().toISOString().slice(0, 10),
+        deliverable_name: item.deliverable_name || "",
+        deliverable_type: item.deliverable_type || "",
+        deliverable_link: item.deliverable_link || "",
+        work_category: item.work_category || "",
+        version: item.version || "",
+        quantity: 1.0,
+        time_taken_minutes: 0,
+        creator_id: currentUser.id,
+        reviewer_id: item.reviewer_id || null,
+        manager_id: item.manager_id || null,
+        client_id: item.client_id || null,
+        project_id: item.project_id || null,
+        deliverable_id: item.deliverable_id || null,
+        stage: item.stage || null,
+        remarks: "",
+        status: "Not Started",
+      });
+
+      setItems((prev) => [created, ...prev]);
+      tableRef.current?.resetColumnSort();
+      tableRef.current?.scrollToTop();
+
+      trackEvent("row_added", {
+        worksheet: activeSheet,
+        row_id: created.id,
+        duplicated_from: item.id,
+      });
+
+      toast.success("Row duplicated");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Could not duplicate row");
+    }
+  };
+
+
   const toggleSelectAll = () => {
     const visibleIds = filteredItems.map((item) => item.id);
 
@@ -909,6 +1015,8 @@ export default function WorkSheetPage() {
           onApplyStatus={handleBulkStatus}
           onApplyAssign={handleBulkAssign}
           onHideRows={handleHideRows}
+          onInsertAbove={() => handleInsertRow("above")}
+          onInsertBelow={() => handleInsertRow("below")}
           onDelete={handleBulkDelete}
           onClear={() => setSelectedIds([])}
         />
@@ -930,6 +1038,7 @@ export default function WorkSheetPage() {
           deliverables={deliverables}
           onUpdate={handleUpdate}
           onDelete={setDeleteTarget}
+          onDuplicateRow={handleDuplicateRow}
           onFill={handleFill}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}

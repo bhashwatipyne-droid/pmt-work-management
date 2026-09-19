@@ -53,22 +53,49 @@ const playNotificationSound = () => {
   const context = ensureAudioContext();
   if (!context) return;
 
-  try {
+  // An original two-note chime (not a reproduction of any existing
+  // product's sound) in the same general style as most chat-app
+  // notification dings: a short, bright, two-note "knock" rather than
+  // the single fading tone this used before.
+  const playNote = (frequency, startTime, duration, peakGain) => {
     const oscillator = context.createOscillator();
+    const harmonic = context.createOscillator();
     const gain = context.createGain();
+    const harmonicGain = context.createGain();
 
     oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, context.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(660, context.currentTime + 0.12);
+    oscillator.frequency.setValueAtTime(frequency, startTime);
 
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+    // A quiet upper harmonic gives the tone a touch of "bell" brightness
+    // instead of sounding like a flat, synthetic sine sweep.
+    harmonic.type = "triangle";
+    harmonic.frequency.setValueAtTime(frequency * 2, startTime);
+
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(peakGain, startTime + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+    harmonicGain.gain.setValueAtTime(0.0001, startTime);
+    harmonicGain.gain.exponentialRampToValueAtTime(peakGain * 0.25, startTime + 0.012);
+    harmonicGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     oscillator.connect(gain);
     gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.18);
+    harmonic.connect(harmonicGain);
+    harmonicGain.connect(context.destination);
+
+    oscillator.start(startTime);
+    oscillator.stop(startTime + duration);
+    harmonic.start(startTime);
+    harmonic.stop(startTime + duration);
+  };
+
+  try {
+    const now = context.currentTime;
+    // Two quick ascending notes — "knock, knock" — rather than one note
+    // sliding down.
+    playNote(740, now, 0.11, 0.09);
+    playNote(1108.73, now + 0.1, 0.16, 0.09);
   } catch (_) {
     // Browsers can block audio until the user has interacted with the page.
   }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Trash2, X, Link2, EyeOff } from "lucide-react";
+import { Trash2, X, Link2, EyeOff, ArrowUpToLine, ArrowDownToLine } from "lucide-react";
 
 const STAGES = ["Content", "Design", "Animate"];
 const NONE = "__none__";
@@ -60,6 +60,8 @@ export const BulkActionBar = ({
   onApplyStatus,
   onApplyAssign,
   onHideRows,
+  onInsertAbove,
+  onInsertBelow,
   onDelete,
   onClear,
 }) => {
@@ -98,6 +100,32 @@ export const BulkActionBar = ({
           <EyeOff className="h-3.5 w-3.5" />
           Hide Rows
         </Button>
+
+        {onInsertAbove && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onInsertAbove}
+            title="Insert a blank row above the selection"
+            className="h-8 gap-1.5 border-slate-300 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          >
+            <ArrowUpToLine className="h-3.5 w-3.5" />
+            Insert Above
+          </Button>
+        )}
+
+        {onInsertBelow && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onInsertBelow}
+            title="Insert a blank row below the selection"
+            className="h-8 gap-1.5 border-slate-300 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          >
+            <ArrowDownToLine className="h-3.5 w-3.5" />
+            Insert Below
+          </Button>
+        )}
 
         <Button
           type="button"

@@ -100,6 +100,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   clients = [],
   onUpdate,
   onDelete,
+  onDuplicateRow,
   onFill,
   filters,
   setFilters,
@@ -203,6 +204,32 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         scrollRef.current.scrollTop = 0;
       }
       setScrollTop(0);
+    },
+    // Used by "Insert row above/below" in the bulk action bar. Places a
+    // newly-created row's id into the same manual drag order that
+    // right-click-drag already maintains (rowOrder), immediately next to
+    // an anchor row, rather than introducing a second, separate notion of
+    // row position.
+    insertRowNear: (newItemId, anchorItemId, position) => {
+      setRowOrder((current) => {
+        const base = current.length
+          ? [...current]
+          : sortedItemsRef.current.map((item) => item.id);
+        const withoutNew = base.filter((id) => id !== newItemId);
+        const anchorIndex = withoutNew.indexOf(anchorItemId);
+
+        if (anchorIndex === -1) {
+          // Anchor row isn't in the order we know about (e.g. it was
+          // filtered/hidden between selection and now) — fall back to the
+          // front, matching how a brand-new row normally surfaces.
+          return [newItemId, ...withoutNew];
+        }
+
+        const insertAt = position === "below" ? anchorIndex + 1 : anchorIndex;
+        const next = [...withoutNew];
+        next.splice(insertAt, 0, newItemId);
+        return next;
+      });
     },
   }), []);
 
@@ -1351,7 +1378,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-auto bg-white sheet-mode"
+      className="flex-1 min-h-0 overflow-auto bg-white sheet-mode [&>div]:!w-max [&>div]:!overflow-visible"
     >
       <Table
         data-testid={WORKSHEET.table}
@@ -1561,6 +1588,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     deliverablesByProject={deliverablesByProject}
                     onUpdate={onUpdate}
                     onDelete={onDelete}
+                    onDuplicate={onDuplicateRow}
                     hiddenColumns={hiddenColumns}
                     columnOrder={columnOrder}
                     columnWidths={columnWidths}

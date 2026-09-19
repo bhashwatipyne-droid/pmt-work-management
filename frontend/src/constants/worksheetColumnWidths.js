@@ -22,7 +22,7 @@ export const COLUMN_WIDTHS = {
 
 export const ROW_NUM_WIDTH = "44px";
 export const CHECKBOX_WIDTH = "44px";
-export const ROW_ACTIONS_WIDTH = "76px";
+export const ROW_ACTIONS_WIDTH = "104px";
 
 export const buildGridTemplateColumns = (
   visibleColumns,

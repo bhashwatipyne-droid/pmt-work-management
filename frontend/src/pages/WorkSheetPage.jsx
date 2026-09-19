@@ -215,9 +215,11 @@ export default function WorkSheetPage() {
       .catch(() => {});
   }, [currentUserId]);
 
-  const fetchItems = () => {
+  const fetchItems = (showLoading = true) => {
     if (!currentUser) return;
-    setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+    }
 
     // Fetches the whole dataset once, unfiltered. Every filter and tab
     // switch below is applied client-side against this single copy —
@@ -229,7 +231,11 @@ export default function WorkSheetPage() {
         setItems(Array.isArray(data) ? data : []);
       })
       .catch(() => toast.error("Could not load work items"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (showLoading) {
+          setLoading(false);
+        }
+      });
   };
 
   useEffect(() => {
@@ -245,9 +251,14 @@ export default function WorkSheetPage() {
   // the database but never appear until a manual reload. The notification
   // flags that with router state; consume it once, then clear it so a
   // normal visit to "/" later doesn't keep re-triggering this.
+  //
+  // Refresh silently (showLoading=false): the row was already created
+  // before we navigated here, so there's real data to show immediately —
+  // swapping the whole table for "Loading rows..." on arrival is jarring
+  // and unnecessary, same as the equivalent fix on the Projects Kanban.
   useEffect(() => {
     if (location.state?.refreshWorkSheet) {
-      fetchItems();
+      fetchItems(false);
       navigate(location.pathname, { replace: true, state: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1020,6 +1020,26 @@ async def get_options():
     }
 
 
+@api_router.get("/work-items/pending-count")
+async def work_items_pending_count(request: Request):
+    """Lightweight count for the sidebar's Work Sheet badge: items not yet
+    Closed. Scoped to the user's own production stage the same way the
+    worksheet already scopes what a member/manager can add rows for
+    (DEPARTMENT_TO_STAGE) — admins, who have sheet-wide view-only access,
+    see the total across every stage."""
+    user = await get_acting_user(request)
+
+    query = {"status": {"$ne": "Closed"}}
+
+    if user.role != "admin":
+        stage = DEPARTMENT_TO_STAGE.get(user.department)
+        if stage:
+            query["stage"] = stage
+
+    count = await db.work_items.count_documents(query)
+    return {"count": count}
+
+
 @api_router.get("/work-items", response_model=List[WorkItem])
 async def list_work_items(
     request: Request,
@@ -3779,6 +3799,25 @@ async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
 
 
 # ---------------- Approvals (deliverable review queue) ----------------
+@api_router.get("/bulk-review/count")
+async def bulk_review_count(request: Request):
+    """Lightweight count for the Bulk Review button's badge — same scoping
+    as GET /bulk-review, without fetching/hydrating the actual rows."""
+    user = await get_acting_user(request)
+
+    if user.role not in ("admin", "manager"):
+        return {"count": 0}
+
+    query = {"status": "Ready for Review"}
+
+    # Managers only see work explicitly assigned to them; admins see all.
+    if user.role == "manager":
+        query["reviewer_id"] = user.id
+
+    count = await db.work_items.count_documents(query)
+    return {"count": count}
+
+
 @api_router.get("/bulk-review")
 async def list_bulk_review(request: Request):
     """Work items assigned to the logged-in manager and ready for review."""
@@ -3989,6 +4028,41 @@ async def list_approvals(request: Request):
         item.pop("_deliverable", None)
 
     return result
+
+
+@api_router.get("/approvals/pending-count")
+async def approval_pending_count(request: Request):
+    """Lightweight count for the sidebar's Approvals badge — same scoping
+    as GET /approvals/board's default (visible, pending) query, without
+    the join-heavy hydration since only a number is needed here."""
+    user = await get_acting_user(request)
+
+    query = {
+        "status": "PENDING",
+        "$and": [{"$or": [{"hidden": False}, {"hidden": {"$exists": False}}]}],
+    }
+
+    if user.role != "admin":
+        query["$and"].append({
+            "$or": [
+                {"assigned_to": user.id},
+                {"approval_type": "MANAGER", "assigned_to": None},
+                {
+                    "approval_type": "COMPLIANCE",
+                    "assigned_to": None,
+                    "department": "Administration",
+                },
+            ]
+        })
+
+    count = await db.approval_items.count_documents(query)
+    # Implicit manager approvals (ready deliverables with no workflow yet)
+    # aren't real documents, so they can't be counted with the query above —
+    # _build_implicit_manager_items already does this cheaply in batched
+    # queries, same as approval_board uses for the full board.
+    count += len(await _build_implicit_manager_items(user))
+
+    return {"count": count}
 
 
 @api_router.get("/approvals/board")

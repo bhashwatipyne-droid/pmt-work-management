@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import {
@@ -17,6 +17,12 @@ import {
 
 import { useUser } from "@/context/UserContext";
 import { LAYOUT } from "@/constants/testIds";
+import { CountBadge } from "@/components/ui/CountBadge";
+import { onCountsRefresh } from "@/lib/countsBus";
+import {
+  getApprovalsPendingCount,
+  getWorkItemsPendingCount,
+} from "@/services/api";
 
 const navItemClass = ({ isActive }) =>
   `flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors ${
@@ -24,6 +30,16 @@ const navItemClass = ({ isActive }) =>
       ? "bg-white text-[#1a1a8a] shadow-sm"
       : "text-slate-300 hover:bg-white/10 hover:text-white"
   }`;
+
+// Background safety-net cadence for the sidebar's badge counts, in case
+// they were changed by someone else / another tab. Anything the current
+// user does themselves (approve, close a row, finish a bulk review)
+// refreshes instantly instead via the countsBus event — see the actions
+// on ApprovalsPage/WorkSheetPage that call refreshCounts(). Polling this
+// often is still cheap (a couple of indexed count_documents() calls), and
+// it has the side benefit of keeping the Render free-tier backend from
+// spinning down between visits.
+const COUNT_POLL_MS = 5000;
 
 export const Sidebar = () => {
   const { currentUser, logout } = useUser();
@@ -34,7 +50,43 @@ export const Sidebar = () => {
   });
 
   const isAdmin = currentUser?.role === "admin";
+  const canSeeApprovals = isAdmin || currentUser?.role === "manager";
   const initial = (currentUser?.name || "?").trim().charAt(0).toUpperCase();
+
+  const [approvalsCount, setApprovalsCount] = useState(0);
+  const [worksheetCount, setWorksheetCount] = useState(0);
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+
+    let cancelled = false;
+
+    const fetchCounts = () => {
+      getWorkItemsPendingCount(currentUser.id)
+        .then((data) => {
+          if (!cancelled) setWorksheetCount(data?.count || 0);
+        })
+        .catch(() => {});
+
+      if (canSeeApprovals) {
+        getApprovalsPendingCount(currentUser.id)
+          .then((data) => {
+            if (!cancelled) setApprovalsCount(data?.count || 0);
+          })
+          .catch(() => {});
+      }
+    };
+
+    fetchCounts();
+    const timer = window.setInterval(fetchCounts, COUNT_POLL_MS);
+    const unsubscribe = onCountsRefresh(fetchCounts);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      unsubscribe();
+    };
+  }, [currentUser?.id, canSeeApprovals]);
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {
@@ -164,8 +216,21 @@ export const Sidebar = () => {
             }
             title={collapsed ? "Approvals" : undefined}
           >
-            <CheckSquare className="h-4 w-4 flex-shrink-0" />
-            {!collapsed && "Approvals"}
+            <span className="relative flex-shrink-0">
+              <CheckSquare className="h-4 w-4" />
+              {collapsed && (
+                <CountBadge
+                  count={approvalsCount}
+                  className="absolute -right-2 -top-2 h-4 min-w-[16px] px-1 text-[9px]"
+                />
+              )}
+            </span>
+            {!collapsed && (
+              <>
+                <span className="flex-1">Approvals</span>
+                <CountBadge count={approvalsCount} />
+              </>
+            )}
           </NavLink>
         )}
 
@@ -195,8 +260,21 @@ export const Sidebar = () => {
           }
           title={collapsed ? "Work Sheet" : undefined}
         >
-          <Table2 className="h-4 w-4 flex-shrink-0" />
-          {!collapsed && "Work Sheet"}
+          <span className="relative flex-shrink-0">
+            <Table2 className="h-4 w-4" />
+            {collapsed && (
+              <CountBadge
+                count={worksheetCount}
+                className="absolute -right-2 -top-2 h-4 min-w-[16px] px-1 text-[9px]"
+              />
+            )}
+          </span>
+          {!collapsed && (
+            <>
+              <span className="flex-1">Work Sheet</span>
+              <CountBadge count={worksheetCount} />
+            </>
+          )}
         </NavLink>
       </nav>
 

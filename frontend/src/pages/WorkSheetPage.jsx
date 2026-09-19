@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
+import { refreshCounts, onCountsRefresh } from "@/lib/countsBus";
 import {
   bulkDeleteWorkItems,
   bulkUpdateWorkItems,
@@ -9,6 +10,7 @@ import {
   deleteWorkItem,
   getOptions,
   getWorkItems,
+  getBulkReviewCount,
   updateWorkItem,
   getClients,
   getProjects,
@@ -194,6 +196,40 @@ export default function WorkSheetPage() {
     currentUser?.role !== "admin" &&
     (activeSheet === "Master" ||
       activeSheet === DEPARTMENT_TO_STAGE[currentUser?.department]);
+
+  const [bulkReviewCount, setBulkReviewCount] = useState(0);
+
+  // Extracted (rather than kept inline in the effect below) so the Bulk
+  // Review modal's onClose can also call it directly for an immediate
+  // refresh — otherwise the badge would lag up to 15s behind an action
+  // that just changed it, which is exactly the moment it's most likely
+  // to be stale.
+  const fetchBulkReviewCount = useCallback(() => {
+    if (!currentUser?.id || !isManager) return;
+
+    getBulkReviewCount(currentUser.id)
+      .then((data) => setBulkReviewCount(data?.count || 0))
+      .catch(() => {});
+  }, [currentUser?.id, isManager]);
+
+  // Same audience as the Bulk Review button itself (isManager ? ... :
+  // undefined, below) — admins can technically call the endpoint too, but
+  // the button is manager-only, so there's no point polling for a count
+  // admins would never see a badge for. The 5s interval is a safety net
+  // for changes made elsewhere (another manager, another tab); this
+  // user's own actions refresh it instantly via the countsBus event.
+  useEffect(() => {
+    if (!currentUser?.id || !isManager) return undefined;
+
+    fetchBulkReviewCount();
+    const timer = window.setInterval(fetchBulkReviewCount, 5000);
+    const unsubscribe = onCountsRefresh(fetchBulkReviewCount);
+
+    return () => {
+      window.clearInterval(timer);
+      unsubscribe();
+    };
+  }, [currentUser?.id, isManager, fetchBulkReviewCount]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -413,6 +449,7 @@ export default function WorkSheetPage() {
     } finally {
       addingRowRef.current = false;
       setAddingRow(false);
+      refreshCounts();
     }
   };
 
@@ -426,6 +463,7 @@ export default function WorkSheetPage() {
     }
 
     await fetchItems();
+    refreshCounts();
   };
 
   const handleBulkAddRows = async (count) => {
@@ -463,6 +501,7 @@ export default function WorkSheetPage() {
     } finally {
       bulkAddingRef.current = false;
       setBulkAdding(false);
+      refreshCounts();
     }
   };
 
@@ -552,6 +591,10 @@ export default function WorkSheetPage() {
           old_status: currentItem?.status,
           new_status: patch.status,
         });
+        // A status change is exactly what the sidebar's "not closed" count
+        // and the Bulk Review badge track — refresh them immediately
+        // instead of waiting on their own poll tick.
+        refreshCounts();
       }
 
       return {
@@ -591,6 +634,7 @@ export default function WorkSheetPage() {
 
       toast.success("Entry deleted");
       setDeleteTarget(null);
+      refreshCounts();
     } catch (e) {
       toast.error(
         e.response?.data?.detail || "Could not delete entry"
@@ -753,6 +797,7 @@ export default function WorkSheetPage() {
       toast.success(
         position === "above" ? "Row inserted above" : "Row inserted below"
       );
+      refreshCounts();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not insert row");
     }
@@ -793,6 +838,7 @@ export default function WorkSheetPage() {
       });
 
       toast.success("Row duplicated");
+      refreshCounts();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not duplicate row");
     }
@@ -826,6 +872,7 @@ export default function WorkSheetPage() {
       setItems((prev) => prev.map((it) => byId[it.id] || it));
       toast.success(`Updated ${updated.length} row${updated.length === 1 ? "" : "s"}`);
       setSelectedIds([]);
+      refreshCounts();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Bulk update failed");
     }
@@ -877,6 +924,7 @@ export default function WorkSheetPage() {
 
       setSelectedIds([]);
       setBulkDeleteConfirmOpen(false);
+      refreshCounts();
     } catch (e) {
       toast.error(
         e.response?.data?.detail || "Bulk delete failed"
@@ -963,6 +1011,7 @@ export default function WorkSheetPage() {
         onOpenBulkReview={
           isManager ? () => setBulkReviewOpen(true) : undefined
         }
+        bulkReviewCount={bulkReviewCount}
         onOpenHistory={() => setHistoryOpen(true)}
       />
 
@@ -995,7 +1044,11 @@ export default function WorkSheetPage() {
 
       <BulkReviewModal
         open={bulkReviewOpen}
-        onClose={() => setBulkReviewOpen(false)}
+        onClose={() => {
+          setBulkReviewOpen(false);
+          fetchBulkReviewCount();
+          refreshCounts();
+        }}
         currentUser={currentUser}
       />
 

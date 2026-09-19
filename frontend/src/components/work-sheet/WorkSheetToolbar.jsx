@@ -16,6 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import { WORKSHEET } from "@/constants/testIds";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 export const WorkSheetToolbar = ({
   filters,
@@ -30,6 +31,7 @@ export const WorkSheetToolbar = ({
   bulkAdding,
   onOpenQuickLogger,
   onOpenBulkReview,
+  bulkReviewCount = 0,
   onOpenHistory,
 }) => {
   return (
@@ -53,10 +55,11 @@ export const WorkSheetToolbar = ({
             onClick={onOpenBulkReview}
             size="sm"
             variant="outline"
-            className="h-9"
+            className="h-9 gap-2"
           >
-            <ClipboardCheck className="mr-2 h-4 w-4" />
+            <ClipboardCheck className="h-4 w-4" />
             Bulk Review
+            <CountBadge count={bulkReviewCount} />
           </Button>
         )}
 

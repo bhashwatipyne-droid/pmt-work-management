@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
+import { refreshCounts } from "@/lib/countsBus";
 import {
   getApprovalBoard,
   approveApprovalItem,
@@ -101,6 +102,11 @@ export default function ApprovalsPage() {
       const data = await getApprovalBoard(currentUserId, { visibility });
       setBoard(data);
       setSelectedIds(new Set());
+      // Every mutating action on this page (approve, send back, reassign,
+      // hide, drag-drop) already funnels through this one function, so
+      // hooking the sidebar's instant-refresh here covers all of them
+      // without needing a call at each individual action site.
+      refreshCounts();
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to load approvals"

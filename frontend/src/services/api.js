@@ -61,6 +61,13 @@ export const getWorkItems = (userId, params = {}) =>
     })
     .then((r) => r.data);
 
+export const getWorkItemsPendingCount = (userId) =>
+  axios
+    .get(`${API}/work-items/pending-count`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
 export const createWorkItem = (userId, payload) =>
   axios
     .post(`${API}/work-items`, payload, {
@@ -381,6 +388,13 @@ export const getApprovals = (userId) =>
     })
     .then((r) => r.data);
 
+export const getApprovalsPendingCount = (userId) =>
+  axios
+    .get(`${API}/approvals/pending-count`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
 export const getApprovalBoard = (userId, params = {}) =>
   axios
     .get(`${API}/approvals/board`, {
@@ -482,6 +496,13 @@ export const bulkUnhideApprovalItems = (userId, approvalItemIds) =>
       { approval_item_ids: approvalItemIds },
       { headers: authHeaders(userId) }
     )
+    .then((r) => r.data);
+
+export const getBulkReviewCount = (userId) =>
+  axios
+    .get(`${API}/bulk-review/count`, {
+      headers: authHeaders(userId),
+    })
     .then((r) => r.data);
 
 export const getBulkReview = (userId) =>

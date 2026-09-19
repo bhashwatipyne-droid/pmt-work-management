@@ -58,6 +58,7 @@ function AppShell() {
 
     trackEvent("page_view", {
       user_id: String(currentUser.id),
+      username: currentUser.username,
       role: currentUser.role,
       path: pathname,
       page_name: pageName,

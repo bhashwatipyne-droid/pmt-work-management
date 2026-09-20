@@ -167,6 +167,17 @@ def normalize_stages(stages: Optional[List[str]]) -> List[str]:
     return [stage for stage in STAGES if stage in selected]
 
 
+def stored_stages(raw) -> List[str]:
+    """normalize_stages() for data already in the database. A legacy or
+    hand-edited deliverable with missing/invalid stages yields [] here instead
+    of raising an HTTP 400, which would otherwise abort a notification scan
+    (and fail whichever user's request happened to trigger it)."""
+    try:
+        return normalize_stages(raw or [])
+    except HTTPException:
+        return []
+
+
 def next_selected_stage(
     current_stage: str,
     required_stages: List[str],
@@ -906,7 +917,7 @@ async def _notify_new_project(
         return
 
     for deliverable in deliverables:
-        stages = normalize_stages(deliverable.get("required_stages") or [])
+        stages = stored_stages(deliverable.get("required_stages"))
         recipients = await _production_users_for_stages(stages)
 
         for recipient in recipients:
@@ -1055,7 +1066,7 @@ async def _ensure_overdue_notifications():
             if not project:
                 continue
 
-            stages = normalize_stages(deliverable.get("required_stages") or [])
+            stages = stored_stages(deliverable.get("required_stages"))
             recipients = recipients_for_stages(stages)
 
             for recipient in recipients:
@@ -2711,7 +2722,12 @@ async def delete_contact_person(
 @api_router.get("/notifications")
 async def list_notifications(request: Request, limit: int = 50):
     user = await get_acting_user(request)
-    await _ensure_overdue_notifications()
+    try:
+        await _ensure_overdue_notifications()
+    except Exception:
+        # Creating overdue notices is best-effort; the user's own list must
+        # still load even if that scan trips over bad data.
+        logger.exception("Overdue notification scan failed")
     await _ensure_reminder_notifications()
 
     limit = max(1, min(limit, 100))

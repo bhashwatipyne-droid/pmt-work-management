@@ -335,6 +335,15 @@ export const addWorkRowFromNotification = (userId, notificationId) =>
     )
     .then((r) => r.data);
 
+// -------- Push notifications (Firebase Cloud Messaging) --------
+export const registerPushToken = (token) =>
+  axios
+    .post(`${API}/push/register`, { token, platform: "web" })
+    .then((r) => r.data);
+
+export const unregisterPushToken = (token) =>
+  axios.post(`${API}/push/unregister`, { token }).then((r) => r.data);
+
 // -------- Deliverables --------
 export const getDeliverables = (userId, params) =>
   axios

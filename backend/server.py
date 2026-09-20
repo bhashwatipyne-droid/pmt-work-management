@@ -3,7 +3,9 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
+from pymongo.errors import DuplicateKeyError
 import asyncio
+import json
 import os
 import certifi
 import logging
@@ -611,6 +613,112 @@ async def get_user_department(user_id: Optional[str]) -> Optional[str]:
     return doc.get("department") if doc else None
 
 
+# ---------------- Push (Firebase Cloud Messaging) ----------------
+_firebase_app = None
+_firebase_init_attempted = False
+_background_tasks: set = set()
+
+
+def _fire_and_forget(coro):
+    """Run a coroutine without blocking the request. The set keeps a strong
+    reference so the task isn't garbage-collected mid-flight."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+def _get_firebase_app():
+    """Lazily initialise firebase-admin from FIREBASE_SERVICE_ACCOUNT_JSON
+    (the full service-account key file contents as a single-line JSON string).
+    Returns None when it isn't configured, which simply disables push."""
+    global _firebase_app, _firebase_init_attempted
+    if _firebase_init_attempted:
+        return _firebase_app
+    _firebase_init_attempted = True
+
+    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if not raw:
+        logger.info("FIREBASE_SERVICE_ACCOUNT_JSON not set; push notifications disabled")
+        return None
+
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+
+        _firebase_app = firebase_admin.initialize_app(
+            credentials.Certificate(json.loads(raw))
+        )
+    except Exception:
+        logger.exception("Could not initialise Firebase Admin; push notifications disabled")
+        _firebase_app = None
+    return _firebase_app
+
+
+async def _send_push_for_notifications(notifications: list[dict]):
+    """Send one FCM web-push per (notification, registered browser). Never
+    raises: a push failure must not affect the request that created the
+    in-app notification."""
+    try:
+        firebase_app = _get_firebase_app()
+        if not firebase_app or not notifications:
+            return
+
+        user_ids = list({n["user_id"] for n in notifications})
+        token_docs = await db.push_tokens.find(
+            {"user_id": {"$in": user_ids}},
+            {"_id": 0, "token": 1, "user_id": 1},
+        ).to_list(5000)
+        if not token_docs:
+            return
+
+        tokens_by_user: dict[str, list[str]] = {}
+        for doc in token_docs:
+            tokens_by_user.setdefault(doc["user_id"], []).append(doc["token"])
+
+        from firebase_admin import messaging
+
+        # Data-only messages: the service worker builds the visible
+        # notification, so title/body/link all travel in `data` (strings only).
+        messages = []
+        for notification in notifications:
+            project_id = notification.get("project_id")
+            data = {
+                "title": str(notification.get("title") or "TheFinpedia PMT"),
+                "body": str(notification.get("message") or ""),
+                "notification_id": str(notification.get("id") or ""),
+                "type": str(notification.get("type") or ""),
+                "link": f"/projects/{project_id}" if project_id else "/",
+            }
+            for token in tokens_by_user.get(notification["user_id"], []):
+                messages.append(
+                    messaging.Message(
+                        token=token,
+                        data=data,
+                        webpush=messaging.WebpushConfig(
+                            headers={"TTL": "86400", "Urgency": "high"}
+                        ),
+                    )
+                )
+
+        dead_tokens: list[str] = []
+        for start in range(0, len(messages), 500):  # FCM batch limit
+            chunk = messages[start:start + 500]
+            response = await asyncio.to_thread(
+                messaging.send_each, chunk, app=firebase_app
+            )
+            for message, result in zip(chunk, response.responses):
+                if not result.success and isinstance(
+                    result.exception,
+                    (messaging.UnregisteredError, messaging.SenderIdMismatchError),
+                ):
+                    dead_tokens.append(message.token)
+
+        if dead_tokens:
+            await db.push_tokens.delete_many({"token": {"$in": dead_tokens}})
+    except Exception:
+        logger.exception("Push notification send failed")
+
+
 # ---------------- Notifications ----------------
 async def _production_users_for_stages(stages: List[str]) -> list[dict]:
     departments = [
@@ -668,7 +776,14 @@ async def _upsert_notifications_batch(notifications: list[dict]):
             )
         )
 
-    await db.notifications.bulk_write(ops, ordered=False)
+    result = await db.notifications.bulk_write(ops, ordered=False)
+
+    # Push only the rows that were actually inserted. Upserts that matched an
+    # existing (user_id, dedupe_key) are re-runs of a notification the user
+    # already has, e.g. the periodic overdue scan.
+    created = [notifications[index] for index in (result.upserted_ids or {})]
+    if created:
+        _fire_and_forget(_send_push_for_notifications(created))
 
 
 async def _upsert_notification(notification: dict):
@@ -2281,6 +2396,48 @@ async def mark_all_notifications_read(request: Request):
         {"$set": {"read_at": now_iso()}},
     )
     return {"success": True, "count": result.modified_count}
+
+
+class PushTokenPayload(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+    platform: str = "web"
+
+
+@api_router.post("/push/register")
+async def register_push_token(payload: PushTokenPayload, request: Request):
+    """Attach this browser's FCM token to the logged-in user. Keyed by token,
+    so a browser that switches accounts is simply re-assigned."""
+    user = await get_acting_user(request)
+    now = now_iso()
+
+    for attempt in range(2):
+        try:
+            await db.push_tokens.update_one(
+                {"token": payload.token},
+                {
+                    "$set": {
+                        "user_id": user.id,
+                        "platform": payload.platform,
+                        "last_seen_at": now,
+                    },
+                    "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now},
+                },
+                upsert=True,
+            )
+            break
+        except DuplicateKeyError:
+            # Two concurrent registrations of a brand-new token raced on the
+            # unique index; the retry takes the update path.
+            if attempt == 1:
+                raise
+    return {"success": True}
+
+
+@api_router.post("/push/unregister")
+async def unregister_push_token(payload: PushTokenPayload, request: Request):
+    user = await get_acting_user(request)
+    await db.push_tokens.delete_one({"token": payload.token, "user_id": user.id})
+    return {"success": True}
 
 
 @api_router.post("/notifications/{notification_id}/add-row")
@@ -4680,6 +4837,8 @@ async def run_startup_migrations():
         unique=True,
     )
     await db.notifications.create_index([("user_id", 1), ("read_at", 1)])
+    await db.push_tokens.create_index("token", unique=True)
+    await db.push_tokens.create_index("user_id")
     await db.approval_workflows.create_index("deliverable_id", unique=True)
     await db.approval_items.create_index([("approval_workflow_id", 1), ("approval_type", 1)], unique=True)
     await db.approval_items.create_index([("status", 1), ("approval_type", 1), ("assigned_to", 1)])

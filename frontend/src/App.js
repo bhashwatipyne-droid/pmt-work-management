@@ -10,6 +10,7 @@ import { UserProvider, useUser } from "@/context/UserContext";
 import { trackEvent } from "@/analytics";
 import { Toaster } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
+import PushNotifications from "@/components/notifications/PushNotifications";
 import LoginPage from "@/pages/LoginPage";
 import WorkSheetPage from "@/pages/WorkSheetPage";
 import DashboardPage from "@/pages/DashboardPage";
@@ -118,6 +119,7 @@ function App() {
           <AppShell />
         </BrowserRouter>
         <Toaster position="top-right" />
+        <PushNotifications />
       </UserProvider>
     </div>
   );

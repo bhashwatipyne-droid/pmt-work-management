@@ -12,6 +12,7 @@ import {
   identifyUser,
   resetAnalytics,
 } from "@/analytics";
+import { unregisterPush } from "@/lib/push";
 
 const UserContext = createContext(null);
 
@@ -64,6 +65,9 @@ export const UserProvider = ({ children }) => {
 
   const logout = async () => {
     const user = authUser;
+
+    // Must run while the session cookie is still valid.
+    await unregisterPush();
 
     try {
       await logoutUser();

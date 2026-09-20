@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 
+import { trackEvent } from "@/analytics";
 import { useUser } from "@/context/UserContext";
 import { isPushSupported } from "@/lib/firebase";
 import { PROMPT_DISMISSED_KEY, syncPushToken } from "@/lib/push";
@@ -36,9 +37,10 @@ export default function PushNotifications() {
 
     const register = async () => {
       try {
-        await syncPushToken(userId);
+        return Boolean(await syncPushToken(userId));
       } catch (error) {
         console.warn("Push notification setup failed:", error);
+        return false;
       }
     };
 
@@ -63,9 +65,13 @@ export default function PushNotifications() {
           onClick: async () => {
             const permission = await Notification.requestPermission();
             if (permission === "granted") {
-              await register();
+              trackEvent("notification_push_permission_granted");
+              if (await register()) {
+                trackEvent("notification_push_registered", { platform: "web" });
+              }
               toast.success("Push notifications enabled");
             } else {
+              trackEvent("notification_push_permission_denied");
               rememberPromptDismissed();
             }
           },

@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck, CircleAlert, FolderPlus, X } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  CircleAlert,
+  ClipboardList,
+  Clock,
+  FolderPlus,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { trackEvent } from "@/analytics";
 import { useUser } from "@/context/UserContext";
 import {
   addWorkRowFromNotification,
@@ -12,26 +21,6 @@ import {
 } from "@/services/api";
 
 const POLL_MS = 10000;
-let notificationAudioContext = null;
-
-const ensureAudioContext = () => {
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return null;
-
-    if (!notificationAudioContext) {
-      notificationAudioContext = new AudioContextClass();
-    }
-
-    if (notificationAudioContext.state === "suspended") {
-      notificationAudioContext.resume().catch(() => {});
-    }
-
-    return notificationAudioContext;
-  } catch (_) {
-    return null;
-  }
-};
 
 const relativeTime = (iso) => {
   if (!iso) return "";
@@ -49,64 +38,53 @@ const relativeTime = (iso) => {
   return `${days}d ago`;
 };
 
+// Custom chime (frontend/public/sounds/pmt-notification.mp3). Plays only
+// while PMT is open; background pushes use the operating system's sound.
+let notificationAudio = null;
+
 const playNotificationSound = () => {
-  const context = ensureAudioContext();
-  if (!context) return;
-
-  // An original two-note chime (not a reproduction of any existing
-  // product's sound) in the same general style as most chat-app
-  // notification dings: a short, bright, two-note "knock" rather than
-  // the single fading tone this used before.
-  const playNote = (frequency, startTime, duration, peakGain) => {
-    const oscillator = context.createOscillator();
-    const harmonic = context.createOscillator();
-    const gain = context.createGain();
-    const harmonicGain = context.createGain();
-
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(frequency, startTime);
-
-    // A quiet upper harmonic gives the tone a touch of "bell" brightness
-    // instead of sounding like a flat, synthetic sine sweep.
-    harmonic.type = "triangle";
-    harmonic.frequency.setValueAtTime(frequency * 2, startTime);
-
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.exponentialRampToValueAtTime(peakGain, startTime + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-    harmonicGain.gain.setValueAtTime(0.0001, startTime);
-    harmonicGain.gain.exponentialRampToValueAtTime(peakGain * 0.25, startTime + 0.012);
-    harmonicGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    harmonic.connect(harmonicGain);
-    harmonicGain.connect(context.destination);
-
-    oscillator.start(startTime);
-    oscillator.stop(startTime + duration);
-    harmonic.start(startTime);
-    harmonic.stop(startTime + duration);
-  };
-
   try {
-    const now = context.currentTime;
-    // Two quick ascending notes — "knock, knock" — rather than one note
-    // sliding down.
-    playNote(740, now, 0.11, 0.09);
-    playNote(1108.73, now + 0.1, 0.16, 0.09);
+    if (!notificationAudio) {
+      notificationAudio = new Audio(
+        `${process.env.PUBLIC_URL || ""}/sounds/pmt-notification.mp3`
+      );
+      notificationAudio.preload = "auto";
+      notificationAudio.volume = 0.65;
+    }
+
+    notificationAudio.currentTime = 0;
+    const playback = notificationAudio.play();
+
+    if (playback && playback.catch) {
+      // Browsers block audio until the user has interacted with the page.
+      playback.catch(() => {});
+    }
   } catch (_) {
-    // Browsers can block audio until the user has interacted with the page.
+    // A sound problem must never interrupt PMT.
   }
 };
 
-const notificationIcon = (type) =>
-  type === "new_project" ? (
-    <FolderPlus className="h-4 w-4" />
-  ) : (
-    <CircleAlert className="h-4 w-4" />
-  );
+const NOTIFICATION_STYLES = {
+  new_project: { icon: FolderPlus, tone: "bg-indigo-50 text-indigo-600" },
+  worksheet_inactivity: {
+    icon: ClipboardList,
+    tone: "bg-sky-50 text-sky-600",
+  },
+  approval_stuck: { icon: Clock, tone: "bg-rose-50 text-rose-600" },
+};
+
+const DEFAULT_NOTIFICATION_STYLE = {
+  icon: CircleAlert,
+  tone: "bg-amber-50 text-amber-600",
+};
+
+const notificationStyle = (type) =>
+  NOTIFICATION_STYLES[type] || DEFAULT_NOTIFICATION_STYLE;
+
+const notificationIcon = (type) => {
+  const Icon = notificationStyle(type).icon;
+  return <Icon className="h-4 w-4" />;
+};
 
 export default function NotificationCenter() {
   const { currentUser, currentUserId } = useUser();
@@ -130,12 +108,20 @@ export default function NotificationCenter() {
       const unread = next.filter((item) => !item.read_at);
 
       if (initializedRef.current) {
-        const hasNewUnread = unread.some(
+        const newlyArrived = unread.filter(
           (item) => !previousIdsRef.current.has(item.id)
         );
 
-        if (hasNewUnread) {
+        if (newlyArrived.length > 0) {
           playNotificationSound();
+
+          newlyArrived.forEach((item) => {
+            trackEvent("notification_received", {
+              notification_id: item.id,
+              notification_type: item.type,
+              action_type: item.action_type || null,
+            });
+          });
         }
       }
 
@@ -158,15 +144,6 @@ export default function NotificationCenter() {
 
     return () => window.clearInterval(timer);
   }, [fetchNotifications]);
-
-  useEffect(() => {
-    const unlockAudio = () => {
-      ensureAudioContext();
-    };
-
-    window.addEventListener("pointerdown", unlockAudio, { once: true });
-    return () => window.removeEventListener("pointerdown", unlockAudio);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -199,7 +176,28 @@ export default function NotificationCenter() {
   };
 
   const handleNotificationClick = async (notification) => {
+    const wasUnread = !notification.read_at;
+
     await handleRead(notification);
+
+    trackEvent("notification_clicked", {
+      notification_id: notification.id,
+      notification_type: notification.type,
+      action_type: notification.action_type || null,
+      was_unread: wasUnread,
+    });
+
+    if (notification.action_type === "open_worksheet") {
+      setOpen(false);
+      navigate("/");
+      return;
+    }
+
+    if (notification.action_type === "open_approvals") {
+      setOpen(false);
+      navigate("/approvals");
+      return;
+    }
 
     // The project detail page is admin-only. Non-admins can't open it, so
     // don't bounce them into a blocked page — just mark the notification
@@ -230,6 +228,12 @@ export default function NotificationCenter() {
             : item
         )
       );
+
+      trackEvent("notification_action_completed", {
+        notification_id: notification.id,
+        notification_type: notification.type,
+        action_type: notification.action_type,
+      });
 
       toast.success("Row added to your worksheet");
       setOpen(false);
@@ -339,9 +343,7 @@ export default function NotificationCenter() {
                     <div
                       className={[
                         "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                        notification.type === "new_project"
-                          ? "bg-indigo-50 text-indigo-600"
-                          : "bg-amber-50 text-amber-600",
+                        notificationStyle(notification.type).tone,
                       ].join(" ")}
                     >
                       {notificationIcon(notification.type)}

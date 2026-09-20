@@ -6,6 +6,7 @@ from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
 import json
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
 import certifi
 import logging
@@ -666,6 +667,21 @@ def _get_firebase_app():
     return _firebase_app
 
 
+MAX_PUSHES_PER_USER_BATCH = 3
+
+
+def _push_link(notification: dict, is_admin: bool) -> str:
+    """Where clicking the push should take this recipient."""
+    action_type = notification.get("action_type")
+    if action_type == "open_approvals":
+        return "/approvals"
+    if action_type in ("open_worksheet", "add_work_row"):
+        return "/"
+    if notification.get("project_id") and is_admin:
+        return f"/projects/{notification['project_id']}"
+    return "/"
+
+
 async def _send_push_for_notifications(notifications: list[dict]):
     """Send one FCM web-push per (notification, registered browser). Never
     raises: a push failure must not affect the request that created the
@@ -687,30 +703,63 @@ async def _send_push_for_notifications(notifications: list[dict]):
         for doc in token_docs:
             tokens_by_user.setdefault(doc["user_id"], []).append(doc["token"])
 
+        # Only admins can open project detail pages, so only they get a
+        # project deep link; everyone else lands on the page they can use.
+        admin_ids = {
+            u["id"]
+            for u in await db.users.find(
+                {"id": {"$in": list(tokens_by_user)}, "role": "admin"},
+                {"_id": 0, "id": 1},
+            ).to_list(5000)
+        }
+
+        notifications_by_user: dict[str, list[dict]] = {}
+        for notification in notifications:
+            notifications_by_user.setdefault(notification["user_id"], []).append(notification)
+
         from firebase_admin import messaging
 
         # Data-only messages: the service worker builds the visible
         # notification, so title/body/link all travel in `data` (strings only).
         messages = []
-        for notification in notifications:
-            project_id = notification.get("project_id")
-            data = {
-                "title": str(notification.get("title") or "TheFinpedia PMT"),
-                "body": str(notification.get("message") or ""),
-                "notification_id": str(notification.get("id") or ""),
-                "type": str(notification.get("type") or ""),
-                "link": f"/projects/{project_id}" if project_id else "/",
-            }
-            for token in tokens_by_user.get(notification["user_id"], []):
-                messages.append(
-                    messaging.Message(
-                        token=token,
-                        data=data,
-                        webpush=messaging.WebpushConfig(
-                            headers={"TTL": "86400", "Urgency": "high"}
-                        ),
+        for user_id, user_notifications in notifications_by_user.items():
+            user_tokens = tokens_by_user.get(user_id)
+            if not user_tokens:
+                continue
+
+            if len(user_notifications) > MAX_PUSHES_PER_USER_BATCH:
+                # A backlog (e.g. several approvals crossing the reminder
+                # threshold at once) becomes one push instead of a pile.
+                payloads = [{
+                    "title": f"{len(user_notifications)} new notifications",
+                    "body": "Open PMT to review them.",
+                    "notification_id": "",
+                    "type": "summary",
+                    "link": "/",
+                }]
+            else:
+                payloads = [
+                    {
+                        "title": str(n.get("title") or "TheFinpedia PMT"),
+                        "body": str(n.get("message") or ""),
+                        "notification_id": str(n.get("id") or ""),
+                        "type": str(n.get("type") or ""),
+                        "link": _push_link(n, is_admin=user_id in admin_ids),
+                    }
+                    for n in user_notifications
+                ]
+
+            for data in payloads:
+                for token in user_tokens:
+                    messages.append(
+                        messaging.Message(
+                            token=token,
+                            data=data,
+                            webpush=messaging.WebpushConfig(
+                                headers={"TTL": "86400", "Urgency": "high"}
+                            ),
+                        )
                     )
-                )
 
         dead_tokens: list[str] = []
         for start in range(0, len(messages), 500):  # FCM batch limit
@@ -1021,6 +1070,267 @@ async def _ensure_overdue_notifications():
                 })
 
     await _upsert_notifications_batch(pending_notifications)
+
+
+# ---------------- Reminder notifications ----------------
+# Rule-based reminders, materialised lazily (same no-scheduler approach as
+# _ensure_overdue_notifications): worksheet inactivity and stuck approvals.
+try:
+    REMINDER_TIMEZONE = ZoneInfo("Asia/Kolkata")
+except ZoneInfoNotFoundError:  # tz database missing (e.g. Windows without tzdata)
+    REMINDER_TIMEZONE = timezone(timedelta(hours=5, minutes=30))  # IST has no DST
+# Inactivity reminders go out on/after this local hour of the next working day,
+# so nobody is pinged at midnight just because the first poll of the day landed.
+INACTIVITY_REMINDER_HOUR = 10
+APPROVAL_STUCK_DAYS = 2
+REMINDER_CHECK_INTERVAL = timedelta(minutes=5)
+
+APPROVAL_TYPE_LABELS = {
+    "MANAGER": "manager",
+    "LEADERSHIP": "leadership",
+    "CLIENT_SPOC": "client SPOC",
+    "COMPLIANCE": "compliance",
+}
+
+_last_reminder_check: Optional[datetime] = None
+_inactivity_processed_day: Optional[str] = None
+
+
+def _parse_utc(value) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _previous_working_day(day):
+    """Previous Monday-Friday before `day` (Monday -> the prior Friday)."""
+    day = day - timedelta(days=1)
+    while day.weekday() >= 5:
+        day = day - timedelta(days=1)
+    return day
+
+
+def _local_day_window_utc(day) -> dict:
+    """Mongo range filter covering one calendar day in REMINDER_TIMEZONE,
+    expressed against the UTC ISO timestamps PMT stores."""
+    start = datetime(day.year, day.month, day.day, tzinfo=REMINDER_TIMEZONE)
+    end = start + timedelta(days=1)
+    return {
+        "$gte": start.astimezone(timezone.utc).isoformat(),
+        "$lt": end.astimezone(timezone.utc).isoformat(),
+    }
+
+
+async def _worksheet_inactivity_notifications(local_now: datetime):
+    """Users who did nothing on the Work Sheet on the previous working day get
+    one reminder on the next working day.
+
+    Returns (notifications, day_iso); day_iso is None when the rule didn't run.
+
+    "Activity" means any of: a row created or edited (created_at/updated_at)
+    or dated (work_date) on that day, a row they review/manage that was
+    touched, or a status/stage change they logged. Admins are excluded (the
+    Work Sheet is view-only for them), as are users who have never been on a
+    work row.
+    """
+    if local_now.weekday() >= 5 or local_now.hour < INACTIVITY_REMINDER_HOUR:
+        return [], None
+
+    target_day = _previous_working_day(local_now.date())
+    day_iso = target_day.isoformat()
+    if day_iso == _inactivity_processed_day:
+        return [], day_iso
+
+    window = _local_day_window_utc(target_day)
+
+    users = await db.users.find(
+        {"active": {"$ne": False}, "role": {"$ne": "admin"}},
+        {"_id": 0, "id": 1},
+    ).to_list(5000)
+
+    involved: set = set()
+    for field in ("creator_id", "reviewer_id", "manager_id"):
+        involved.update(v for v in await db.work_items.distinct(field) if v)
+
+    active: set = set()
+    active.update(
+        v for v in await db.work_items.distinct(
+            "creator_id",
+            {"$or": [
+                {"work_date": day_iso},
+                {"created_at": window},
+                {"updated_at": window},
+            ]},
+        ) if v
+    )
+    for field in ("reviewer_id", "manager_id"):
+        active.update(
+            v for v in await db.work_items.distinct(field, {"updated_at": window}) if v
+        )
+    active.update(
+        v for v in await db.work_item_activity_log.distinct(
+            "changed_by", {"changed_at": window}
+        ) if v
+    )
+
+    notifications = []
+    for user in users:
+        user_id = user["id"]
+        if user_id not in involved or user_id in active:
+            continue
+        notifications.append({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "type": "worksheet_inactivity",
+            "title": "Update your work sheet",
+            "message": (
+                f"You had no work sheet activity on {target_day.strftime('%A, %d %b')}. "
+                "Please add or update your entries."
+            ),
+            "project_id": None,
+            "deliverable_id": None,
+            "client_id": None,
+            "stage": None,
+            "action_type": "open_worksheet",
+            "created_at": now_iso(),
+            "read_at": None,
+            "actioned_at": None,
+            "dedupe_key": f"worksheet-inactivity:{user_id}:{day_iso}",
+        })
+
+    return notifications, day_iso
+
+
+async def _stuck_approval_notifications(now: datetime) -> list[dict]:
+    """One reminder per pending approval that has waited APPROVAL_STUCK_DAYS+,
+    sent to whoever can actually act on it (mirrors _approval_item_can_act):
+    the assignee; else stage managers for MANAGER, the Administration
+    department for COMPLIANCE; admins when nobody else can act. The dedupe key
+    includes requested_at, so a resubmitted approval is reminded afresh."""
+    cutoff = now - timedelta(days=APPROVAL_STUCK_DAYS)
+
+    items = await db.approval_items.find(
+        {"status": "PENDING", "hidden": {"$ne": True}},
+        {"_id": 0},
+    ).to_list(5000)
+
+    stuck = []
+    for item in items:
+        requested_at = _parse_utc(
+            item.get("requested_at") or item.get("updated_at") or item.get("created_at")
+        )
+        if requested_at and requested_at <= cutoff:
+            stuck.append((item, requested_at))
+    if not stuck:
+        return []
+
+    deliverable_ids = list({i["deliverable_id"] for i, _ in stuck if i.get("deliverable_id")})
+    deliverables = {
+        d["id"]: d
+        for d in await db.deliverables.find(
+            {"id": {"$in": deliverable_ids}},
+            {"_id": 0, "id": 1, "name": 1, "project_id": 1, "current_stage": 1},
+        ).to_list(5000)
+    }
+    project_ids = list({d.get("project_id") for d in deliverables.values() if d.get("project_id")})
+    projects = {
+        p["id"]: p
+        for p in await db.projects.find(
+            {"id": {"$in": project_ids}},
+            {"_id": 0, "id": 1, "name": 1, "client_id": 1},
+        ).to_list(5000)
+    }
+    users = await db.users.find(
+        {"active": {"$ne": False}},
+        {"_id": 0, "id": 1, "role": 1, "department": 1},
+    ).to_list(5000)
+    active_ids = {u["id"] for u in users}
+    admin_ids = [u["id"] for u in users if u.get("role") == "admin"]
+
+    notifications = []
+    for item, requested_at in stuck:
+        deliverable = deliverables.get(item.get("deliverable_id"))
+        if not deliverable:
+            continue  # orphaned approval row
+
+        approval_type = item.get("approval_type")
+        if item.get("assigned_to"):
+            recipients = [item["assigned_to"]] if item["assigned_to"] in active_ids else []
+        elif approval_type == "MANAGER":
+            recipients = [
+                u["id"] for u in users
+                if u.get("role") == "manager"
+                and DEPARTMENT_TO_STAGE.get(u.get("department")) == deliverable.get("current_stage")
+            ]
+        elif approval_type == "COMPLIANCE":
+            recipients = [u["id"] for u in users if u.get("department") == "Administration"]
+        else:
+            recipients = []
+        if not recipients:
+            recipients = admin_ids
+
+        project = projects.get(deliverable.get("project_id")) or {}
+        days_waiting = max(APPROVAL_STUCK_DAYS, (now - requested_at).days)
+        label = APPROVAL_TYPE_LABELS.get(approval_type, "")
+        subject = deliverable.get("name", "Deliverable")
+        if project.get("name"):
+            subject = f"{subject} · {project['name']}"
+
+        for recipient_id in set(recipients):
+            notifications.append({
+                "id": str(uuid.uuid4()),
+                "user_id": recipient_id,
+                "type": "approval_stuck",
+                "title": "Approval waiting for action",
+                "message": (
+                    f"{subject} has been waiting for {label + ' ' if label else ''}"
+                    f"approval for {days_waiting} days."
+                ),
+                "project_id": deliverable.get("project_id"),
+                "deliverable_id": deliverable.get("id"),
+                "approval_item_id": item.get("id"),
+                "client_id": project.get("client_id"),
+                "stage": None,
+                "action_type": "open_approvals",
+                "created_at": now_iso(),
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f"approval-stuck:{item.get('id')}:{requested_at.isoformat()}:{recipient_id}",
+            })
+
+    return notifications
+
+
+async def _ensure_reminder_notifications():
+    """Run the reminder rules at most once per REMINDER_CHECK_INTERVAL. Never
+    raises: a reminder problem must not break the notifications endpoint."""
+    global _last_reminder_check, _inactivity_processed_day
+
+    now = datetime.now(timezone.utc)
+    if _last_reminder_check and now - _last_reminder_check < REMINDER_CHECK_INTERVAL:
+        return
+    _last_reminder_check = now
+
+    try:
+        pending = await _stuck_approval_notifications(now)
+
+        inactivity, inactivity_day = await _worksheet_inactivity_notifications(
+            now.astimezone(REMINDER_TIMEZONE)
+        )
+        pending.extend(inactivity)
+
+        await _upsert_notifications_batch(pending)
+
+        if inactivity_day:
+            _inactivity_processed_day = inactivity_day
+    except Exception:
+        logger.exception("Reminder notification check failed")
 
 
 # ---------------- Routes ----------------
@@ -2380,6 +2690,7 @@ async def delete_contact_person(
 async def list_notifications(request: Request, limit: int = 50):
     user = await get_acting_user(request)
     await _ensure_overdue_notifications()
+    await _ensure_reminder_notifications()
 
     limit = max(1, min(limit, 100))
     return await db.notifications.find(

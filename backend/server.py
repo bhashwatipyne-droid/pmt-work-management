@@ -715,6 +715,7 @@ async def _send_push_for_notifications(notifications: list[dict]):
             {"_id": 0, "token": 1, "user_id": 1},
         ).to_list(5000)
         if not token_docs:
+            logger.info("Push skipped: no browsers registered for %d user(s)", len(user_ids))
             return
 
         tokens_by_user: dict[str, list[str]] = {}
@@ -743,6 +744,7 @@ async def _send_push_for_notifications(notifications: list[dict]):
         for user_id, user_notifications in notifications_by_user.items():
             user_tokens = tokens_by_user.get(user_id)
             if not user_tokens:
+                logger.info("Push skipped: no browser registered for user %s", user_id)
                 continue
 
             if len(user_notifications) > MAX_PUSHES_PER_USER_BATCH:
@@ -780,17 +782,31 @@ async def _send_push_for_notifications(notifications: list[dict]):
                     )
 
         dead_tokens: list[str] = []
+        sent = failed = 0
         for start in range(0, len(messages), 500):  # FCM batch limit
             chunk = messages[start:start + 500]
             response = await asyncio.to_thread(
                 messaging.send_each, chunk, app=firebase_app
             )
             for message, result in zip(chunk, response.responses):
-                if not result.success and isinstance(
+                if result.success:
+                    sent += 1
+                    continue
+                failed += 1
+                logger.warning(
+                    "Push to browser %s... rejected by FCM: %s: %s",
+                    message.token[:10],
+                    type(result.exception).__name__,
+                    result.exception,
+                )
+                if isinstance(
                     result.exception,
                     (messaging.UnregisteredError, messaging.SenderIdMismatchError),
                 ):
                     dead_tokens.append(message.token)
+
+        if messages:
+            logger.info("Push notifications: %d accepted by FCM, %d failed", sent, failed)
 
         if dead_tokens:
             await db.push_tokens.delete_many({"token": {"$in": dead_tokens}})

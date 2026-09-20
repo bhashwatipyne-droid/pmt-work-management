@@ -5,6 +5,34 @@ export const API = BACKEND_URL + "/api";
 
 axios.defaults.withCredentials = true;
 
+// Fallback for browsers that refuse the API's cross-site session cookie
+// (Chrome Incognito, Safari, Brave, ...). The API sets the cookie from a
+// different site than this app, so those browsers drop it and every request
+// after login would be 401. In that case only, the login token is kept here
+// and sent as a Bearer header, which the backend also accepts.
+const TOKEN_KEY = "pmt_access_token";
+
+export const setAuthToken = (token) => {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch (_) {}
+  axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+};
+
+export const clearAuthToken = () => {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch (_) {}
+  delete axios.defaults.headers.common.Authorization;
+};
+
+try {
+  const storedToken = localStorage.getItem(TOKEN_KEY);
+  if (storedToken) {
+    axios.defaults.headers.common.Authorization = `Bearer ${storedToken}`;
+  }
+} catch (_) {}
+
 const authHeaders = () => ({});
 
 const serializeQueryParams = (params = {}) => {

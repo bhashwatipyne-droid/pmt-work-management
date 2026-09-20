@@ -1351,7 +1351,14 @@ class LoginPayload(BaseModel):
     password: str
 
 
-@api_router.post("/auth/login", response_model=User)
+class LoginResponse(User):
+    # Same token that is set in the cookie. The web app only keeps it when the
+    # browser refuses the cross-site cookie (Incognito, Safari, Brave...), and
+    # then sends it as "Authorization: Bearer" (see get_acting_user).
+    access_token: Optional[str] = None
+
+
+@api_router.post("/auth/login", response_model=LoginResponse)
 async def login(payload: LoginPayload, response: Response):
     login = payload.login.strip().lower()
     doc = await db.users.find_one(
@@ -1377,7 +1384,7 @@ async def login(payload: LoginPayload, response: Response):
         max_age=ACCESS_TOKEN_HOURS * 3600,
         path="/",
     )
-    return User(**doc)
+    return LoginResponse(**doc, access_token=token)
 
 
 @api_router.post("/auth/logout")

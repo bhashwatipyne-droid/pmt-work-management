@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
+  clearAuthToken,
   getUsers,
   getMe,
   loginUser,
   logoutUser,
+  setAuthToken,
   updateProfile,
 } from "@/services/api";
 
@@ -39,12 +41,29 @@ export const UserProvider = ({ children }) => {
           // non-fatal, dropdowns will just be empty
         }
       })
-      .catch(() => setAuthUser(null))
+      .catch((error) => {
+        // Drop a stored fallback token once the server says it's no longer valid.
+        if (error?.response?.status === 401) clearAuthToken();
+        setAuthUser(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (email, password) => {
-    const data = await loginUser(email, password);
+    const { access_token: accessToken, ...data } = await loginUser(
+      email,
+      password
+    );
+
+    // Cookie first. Only if this browser refused the cross-site cookie (the
+    // check below fails right after a successful login) fall back to sending
+    // the token as a Bearer header.
+    clearAuthToken();
+    try {
+      await getMe();
+    } catch (_) {
+      if (accessToken) setAuthToken(accessToken);
+    }
 
     setAuthUser(data);
 
@@ -83,6 +102,7 @@ export const UserProvider = ({ children }) => {
       });
     }
 
+    clearAuthToken();
     resetAnalytics();
 
     setAuthUser(null);

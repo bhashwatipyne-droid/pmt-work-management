@@ -628,9 +628,10 @@ def _fire_and_forget(coro):
 
 
 def _get_firebase_app():
-    """Lazily initialise firebase-admin from FIREBASE_SERVICE_ACCOUNT_JSON
-    (the full service-account key file contents as a single-line JSON string).
-    Returns None when it isn't configured, which simply disables push."""
+    """Lazily initialise firebase-admin from the service-account key, given
+    either as the FIREBASE_SERVICE_ACCOUNT_JSON env var (full JSON contents)
+    or as a secret file at /etc/secrets/firebase-service-account.json.
+    Returns None when neither is present, which simply disables push."""
     global _firebase_app, _firebase_init_attempted
     if _firebase_init_attempted:
         return _firebase_app
@@ -638,7 +639,18 @@ def _get_firebase_app():
 
     raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
     if not raw:
-        logger.info("FIREBASE_SERVICE_ACCOUNT_JSON not set; push notifications disabled")
+        # Alternative: a Render "Secret File" (mounted under /etc/secrets/).
+        key_path = os.environ.get(
+            "FIREBASE_SERVICE_ACCOUNT_FILE",
+            "/etc/secrets/firebase-service-account.json",
+        )
+        if os.path.isfile(key_path):
+            raw = Path(key_path).read_text(encoding="utf-8")
+    if not raw:
+        logger.info(
+            "No Firebase service account (FIREBASE_SERVICE_ACCOUNT_JSON or "
+            "/etc/secrets/firebase-service-account.json); push notifications disabled"
+        )
         return None
 
     try:

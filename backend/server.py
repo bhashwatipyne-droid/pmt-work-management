@@ -6,6 +6,7 @@ from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
 import json
+import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
 import certifi
@@ -617,6 +618,7 @@ async def get_user_department(user_id: Optional[str]) -> Optional[str]:
 # ---------------- Push (Firebase Cloud Messaging) ----------------
 _firebase_app = None
 _firebase_init_attempted = False
+_firebase_init_lock = threading.Lock()
 _background_tasks: set = set()
 
 
@@ -632,39 +634,44 @@ def _get_firebase_app():
     """Lazily initialise firebase-admin from the service-account key, given
     either as the FIREBASE_SERVICE_ACCOUNT_JSON env var (full JSON contents)
     or as a secret file at /etc/secrets/firebase-service-account.json.
-    Returns None when neither is present, which simply disables push."""
+    Returns None when neither is present, which simply disables push.
+
+    Importing firebase_admin costs ~2s of CPU, so callers must run this in a
+    worker thread (asyncio.to_thread) - never directly on the event loop."""
     global _firebase_app, _firebase_init_attempted
-    if _firebase_init_attempted:
+    with _firebase_init_lock:
+        if _firebase_init_attempted:
+            return _firebase_app
+        _firebase_init_attempted = True
+
+        raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if not raw:
+            # Alternative: a Render "Secret File" (mounted under /etc/secrets/).
+            key_path = os.environ.get(
+                "FIREBASE_SERVICE_ACCOUNT_FILE",
+                "/etc/secrets/firebase-service-account.json",
+            )
+            if os.path.isfile(key_path):
+                raw = Path(key_path).read_text(encoding="utf-8")
+        if not raw:
+            logger.info(
+                "No Firebase service account (FIREBASE_SERVICE_ACCOUNT_JSON or "
+                "/etc/secrets/firebase-service-account.json); push notifications disabled"
+            )
+            return None
+
+        try:
+            import firebase_admin
+            from firebase_admin import credentials
+            from firebase_admin import messaging  # noqa: F401  (warm the import)
+
+            _firebase_app = firebase_admin.initialize_app(
+                credentials.Certificate(json.loads(raw))
+            )
+        except Exception:
+            logger.exception("Could not initialise Firebase Admin; push notifications disabled")
+            _firebase_app = None
         return _firebase_app
-    _firebase_init_attempted = True
-
-    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-    if not raw:
-        # Alternative: a Render "Secret File" (mounted under /etc/secrets/).
-        key_path = os.environ.get(
-            "FIREBASE_SERVICE_ACCOUNT_FILE",
-            "/etc/secrets/firebase-service-account.json",
-        )
-        if os.path.isfile(key_path):
-            raw = Path(key_path).read_text(encoding="utf-8")
-    if not raw:
-        logger.info(
-            "No Firebase service account (FIREBASE_SERVICE_ACCOUNT_JSON or "
-            "/etc/secrets/firebase-service-account.json); push notifications disabled"
-        )
-        return None
-
-    try:
-        import firebase_admin
-        from firebase_admin import credentials
-
-        _firebase_app = firebase_admin.initialize_app(
-            credentials.Certificate(json.loads(raw))
-        )
-    except Exception:
-        logger.exception("Could not initialise Firebase Admin; push notifications disabled")
-        _firebase_app = None
-    return _firebase_app
 
 
 MAX_PUSHES_PER_USER_BATCH = 3
@@ -687,7 +694,7 @@ async def _send_push_for_notifications(notifications: list[dict]):
     raises: a push failure must not affect the request that created the
     in-app notification."""
     try:
-        firebase_app = _get_firebase_app()
+        firebase_app = await asyncio.to_thread(_get_firebase_app)
         if not firebase_app or not notifications:
             return
 
@@ -3646,8 +3653,16 @@ async def bulk_delete_projects(payload: BulkProjectIdsPayload, request: Request)
         },
     )
 
+    deliverable_ids = [
+        d["id"]
+        for d in await db.deliverables.find(
+            {"project_id": {"$in": project_ids}}, {"_id": 0, "id": 1}
+        ).to_list(20000)
+    ]
+
     await db.projects.delete_many({"id": {"$in": project_ids}})
     await db.deliverables.delete_many({"project_id": {"$in": project_ids}})
+    await _delete_approvals_for_deliverables(deliverable_ids)
 
     return {
         "success": True,
@@ -3683,8 +3698,16 @@ async def delete_project(project_id: str, request: Request):
         },
     )
 
+    deliverable_ids = [
+        d["id"]
+        for d in await db.deliverables.find(
+            {"project_id": project_id}, {"_id": 0, "id": 1}
+        ).to_list(5000)
+    ]
+
     await db.projects.delete_one({"id": project_id})
     await db.deliverables.delete_many({"project_id": project_id})
+    await _delete_approvals_for_deliverables(deliverable_ids)
 
     await log_activity(
         collection_name="project_activity_log",
@@ -3923,6 +3946,7 @@ async def delete_deliverable(
     await db.deliverables.delete_one(
         {"id": deliverable_id}
     )
+    await _delete_approvals_for_deliverables([deliverable_id])
 
     await log_activity(
         collection_name="deliverable_activity_log",
@@ -4154,6 +4178,18 @@ async def _set_approval_items_pending(deliverable_id: str):
     ts = now_iso()
     await db.approval_items.update_many({"approval_workflow_id": workflow["id"]}, {"$set": {"status": "PENDING", "requested_at": ts, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "updated_at": ts}})
     await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"status": "IN_PROGRESS", "updated_at": ts, "completed_at": None}})
+
+
+async def _delete_approvals_for_deliverables(deliverable_ids: list[str]):
+    """Deleting a deliverable must also remove its approval workflow/items
+    and the notifications that point at it; otherwise they linger on the
+    Approvals board (shown with no name) and inflate its badge count. The
+    approval_history audit trail is intentionally kept."""
+    if not deliverable_ids:
+        return
+    await db.approval_items.delete_many({"deliverable_id": {"$in": deliverable_ids}})
+    await db.approval_workflows.delete_many({"deliverable_id": {"$in": deliverable_ids}})
+    await db.notifications.delete_many({"deliverable_id": {"$in": deliverable_ids}})
 
 
 async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> bool:
@@ -5143,11 +5179,36 @@ async def migrate_admin_only_notifications():
     })
 
 
+async def migrate_orphan_approvals():
+    """Remove approval workflows/items (and their notifications) whose
+    deliverable no longer exists - left behind by deliverables deleted before
+    deletes cascaded. Idempotent. Skipped when there are no deliverables at
+    all, so a wrong/empty database can never trigger a mass delete."""
+    live_ids = set(await db.deliverables.distinct("id"))
+    if not live_ids:
+        return
+
+    referenced = set(await db.approval_items.distinct("deliverable_id"))
+    referenced.update(await db.approval_workflows.distinct("deliverable_id"))
+    orphan_ids = [d for d in referenced if d and d not in live_ids]
+    if not orphan_ids:
+        return
+
+    await _delete_approvals_for_deliverables(orphan_ids)
+    logger.info(
+        "Removed approvals/notifications for %d deleted deliverables", len(orphan_ids)
+    )
+
+
 @app.on_event("startup")
 async def run_startup_migrations():
     await migrate_client_contacts()
     await migrate_project_kanban_order()
     await migrate_admin_only_notifications()
+    await migrate_orphan_approvals()
+    # Load firebase-admin in a worker thread now, so the first push doesn't
+    # stall a request while the (slow) import runs.
+    _fire_and_forget(asyncio.to_thread(_get_firebase_app))
     await db.projects.create_index([("status", 1), ("kanban_order", 1)])
     # Speeds up the overdue-deadline scan in _ensure_overdue_notifications,
     # which range-queries on these date fields every ~60s.

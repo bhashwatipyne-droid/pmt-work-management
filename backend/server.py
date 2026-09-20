@@ -858,8 +858,16 @@ async def _upsert_notification(notification: dict):
     await _upsert_notifications_batch([notification])
 
 
-async def _notify_new_project(project: dict, deliverables: list[dict]):
-    """Create one notification per project/deliverable/stage/user."""
+async def _notify_new_project(
+    project: dict,
+    deliverables: list[dict],
+    title: str = "New project added",
+):
+    """Create one notification per project/deliverable/stage/user.
+
+    `title` is only used for the per-deliverable notices sent to production
+    staff; pass a different one when deliverables are added to an existing
+    project."""
     client_doc = await db.clients.find_one(
         {"id": project.get("client_id")},
         {"_id": 0, "name": 1},
@@ -907,7 +915,7 @@ async def _notify_new_project(project: dict, deliverables: list[dict]):
                 "id": str(uuid.uuid4()),
                 "user_id": recipient["id"],
                 "type": "new_project",
-                "title": "New project added",
+                "title": title,
                 "message": (
                     f'{project.get("name", "Project")} · '
                     f'{deliverable.get("name", "Deliverable")} '
@@ -3792,7 +3800,8 @@ async def list_deliverables(
 @api_router.post("/deliverables", response_model=Deliverable)
 async def create_deliverable(payload: DeliverableCreate, request: Request):
     user = await require_admin(request)
-    if not await db.projects.find_one({"id": payload.project_id}, {"_id": 0}):
+    project_doc = await db.projects.find_one({"id": payload.project_id}, {"_id": 0})
+    if not project_doc:
         raise HTTPException(status_code=400, detail="Project not found")
     ts = now_iso()
     stages = normalize_stages(payload.required_stages)
@@ -3831,6 +3840,15 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
             "stage_status": d.stage_status,
         },
     )
+
+    # Adding a deliverable to an existing project must alert the production
+    # staff for its stages, exactly like creating a project with deliverables.
+    # A notification problem must never fail the deliverable creation itself.
+    try:
+        await _notify_new_project(project_doc, [db_doc], title="New deliverable added")
+    except Exception:
+        logger.exception("Could not send new-deliverable notifications")
+
     return d
 
 

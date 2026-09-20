@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 import { trackEvent } from "@/analytics";
 import { useUser } from "@/context/UserContext";
-import { listenForPush } from "@/lib/firebase";
+import { listenForPush, showSystemNotification } from "@/lib/firebase";
 import {
   addWorkRowFromNotification,
   getNotifications,
@@ -165,9 +165,9 @@ export default function NotificationCenter() {
   useEffect(() => {
     if (!currentUserId) return undefined;
 
-    return listenForPush(({ notification_id: notificationId }) => {
-      if (notificationId) {
-        soundedIdsRef.current.add(notificationId);
+    return listenForPush((push) => {
+      if (push.notification_id) {
+        soundedIdsRef.current.add(push.notification_id);
       } else {
         // Summary push (no single id): hold the poll's chime for a few seconds.
         pushSoundUntilRef.current = Date.now() + 8000;
@@ -175,6 +175,13 @@ export default function NotificationCenter() {
 
       playNotificationSound();
       fetchNotifications({ silent: true });
+
+      // PMT is visible but another window has focus: Firebase gave the push
+      // to this page instead of the service worker, so show the system popup
+      // ourselves. (A hidden tab's popup is already shown by the worker.)
+      if (push.title && !document.hasFocus()) {
+        showSystemNotification(push).catch(() => {});
+      }
     });
   }, [currentUserId, fetchNotifications]);
 

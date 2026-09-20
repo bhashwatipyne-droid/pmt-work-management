@@ -69,6 +69,7 @@ messaging.onBackgroundMessage((payload) => {
     data.title || "TheFinpedia PMT",
     {
       body: data.body || "",
+      icon: "/pmt-notification-icon.png",
       tag: data.notification_id || undefined,
       data: { link: data.link || "/" },
     },

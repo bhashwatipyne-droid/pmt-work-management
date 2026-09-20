@@ -96,7 +96,8 @@ export const getPushToken = async () => {
   });
 };
 
-// Calls handler({ notification_id }) the moment a push reaches this browser,
+// Calls handler({ notification_id, title?, body?, link? }) the moment a push
+// reaches this browser,
 // so the page can react instantly instead of waiting for its next poll.
 // Covers both delivery paths: page visible (Firebase onMessage) and page
 // hidden (firebase-messaging-sw.js forwards it with postMessage).
@@ -125,6 +126,9 @@ export const listenForPush = (handler) => {
       const unsubscribe = onMessage(getMessaging(getFirebaseApp()), (payload) =>
         handler({
           notification_id: (payload.data && payload.data.notification_id) || "",
+          title: payload.data && payload.data.title,
+          body: payload.data && payload.data.body,
+          link: payload.data && payload.data.link,
         }),
       );
 
@@ -137,4 +141,36 @@ export const listenForPush = (handler) => {
     cancelled = true;
     cleanups.forEach((cleanup) => cleanup());
   };
+};
+
+export const NOTIFICATION_ICON = "/pmt-notification-icon.png";
+
+// Shows the operating-system popup (the Slack-style corner notification) from
+// the page itself. Used when PMT is visible but another window has focus,
+// because in that case Firebase hands the push to the page and the service
+// worker never gets to show one. Clicks are handled by the service worker.
+export const showSystemNotification = async ({
+  title,
+  body,
+  link,
+  notification_id: notificationId,
+}) => {
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    Notification.permission !== "granted" ||
+    !("serviceWorker" in navigator)
+  ) {
+    return;
+  }
+
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!registration) return;
+
+  await registration.showNotification(title || "TheFinpedia PMT", {
+    body: body || "",
+    icon: NOTIFICATION_ICON,
+    tag: notificationId || undefined,
+    data: { link: link || "/" },
+  });
 };

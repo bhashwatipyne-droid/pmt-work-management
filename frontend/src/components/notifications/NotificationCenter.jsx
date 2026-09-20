@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 import { trackEvent } from "@/analytics";
 import { useUser } from "@/context/UserContext";
+import { listenForPush } from "@/lib/firebase";
 import {
   addWorkRowFromNotification,
   getNotifications,
@@ -41,8 +42,13 @@ const relativeTime = (iso) => {
 // Custom chime (frontend/public/sounds/pmt-notification.mp3). Plays only
 // while PMT is open; background pushes use the operating system's sound.
 let notificationAudio = null;
+let lastPlayedAt = 0;
 
 const playNotificationSound = () => {
+  // A burst of pushes/polls arriving together should chime once, not stack.
+  if (Date.now() - lastPlayedAt < 1200) return;
+  lastPlayedAt = Date.now();
+
   try {
     if (!notificationAudio) {
       notificationAudio = new Audio(
@@ -96,6 +102,8 @@ export default function NotificationCenter() {
   const [actionId, setActionId] = useState(null);
   const previousIdsRef = useRef(new Set());
   const initializedRef = useRef(false);
+  const soundedIdsRef = useRef(new Set());
+  const pushSoundUntilRef = useRef(0);
   const panelRef = useRef(null);
 
   const fetchNotifications = useCallback(async ({ silent = false } = {}) => {
@@ -113,7 +121,14 @@ export default function NotificationCenter() {
         );
 
         if (newlyArrived.length > 0) {
-          playNotificationSound();
+          // A push already chimed for these the instant it arrived.
+          const alreadySounded =
+            Date.now() < pushSoundUntilRef.current ||
+            newlyArrived.every((item) => soundedIdsRef.current.has(item.id));
+
+          if (!alreadySounded) {
+            playNotificationSound();
+          }
 
           newlyArrived.forEach((item) => {
             trackEvent("notification_received", {
@@ -144,6 +159,24 @@ export default function NotificationCenter() {
 
     return () => window.clearInterval(timer);
   }, [fetchNotifications]);
+
+  // Push delivery is instant, the poll above is not (up to 10s). When a push
+  // reaches this browser: chime now and refresh the list right away.
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    return listenForPush(({ notification_id: notificationId }) => {
+      if (notificationId) {
+        soundedIdsRef.current.add(notificationId);
+      } else {
+        // Summary push (no single id): hold the poll's chime for a few seconds.
+        pushSoundUntilRef.current = Date.now() + 8000;
+      }
+
+      playNotificationSound();
+      fetchNotifications({ silent: true });
+    });
+  }, [currentUserId, fetchNotifications]);
 
   useEffect(() => {
     if (!open) return;

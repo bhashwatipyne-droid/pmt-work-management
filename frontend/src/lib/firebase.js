@@ -1,5 +1,10 @@
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { getMessaging, getToken, isSupported } from "firebase/messaging";
+import {
+  getMessaging,
+  getToken,
+  isSupported,
+  onMessage,
+} from "firebase/messaging";
 
 // Public web-app identifiers for the pmt-finace Firebase project (Firebase
 // console > Project settings > General > Your apps > Web app). They are not
@@ -89,4 +94,47 @@ export const getPushToken = async () => {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: registration,
   });
+};
+
+// Calls handler({ notification_id }) the moment a push reaches this browser,
+// so the page can react instantly instead of waiting for its next poll.
+// Covers both delivery paths: page visible (Firebase onMessage) and page
+// hidden (firebase-messaging-sw.js forwards it with postMessage).
+// Returns a cleanup function.
+export const listenForPush = (handler) => {
+  const cleanups = [];
+  let cancelled = false;
+
+  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+    const onWorkerMessage = (event) => {
+      if (event.data && event.data.type === "pmt-push") {
+        handler({ notification_id: event.data.notification_id || "" });
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", onWorkerMessage);
+    cleanups.push(() =>
+      navigator.serviceWorker.removeEventListener("message", onWorkerMessage),
+    );
+  }
+
+  isPushSupported()
+    .then((supported) => {
+      if (!supported || cancelled) return;
+
+      const unsubscribe = onMessage(getMessaging(getFirebaseApp()), (payload) =>
+        handler({
+          notification_id: (payload.data && payload.data.notification_id) || "",
+        }),
+      );
+
+      if (cancelled) unsubscribe();
+      else cleanups.push(unsubscribe);
+    })
+    .catch(() => {});
+
+  return () => {
+    cancelled = true;
+    cleanups.forEach((cleanup) => cleanup());
+  };
 };

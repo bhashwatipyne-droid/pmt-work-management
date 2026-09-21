@@ -196,6 +196,46 @@ def next_selected_stage(
         return None
 
     return stages[index + 1]
+def reconcile_stage_after_edit(
+    current_stage: Optional[str],
+    stage_status: Optional[str],
+    stages: List[str],
+) -> Optional[dict]:
+    """Decide where a deliverable should sit after its production stages
+    were edited. Returns the fields to change, or None if it is fine as is.
+
+    `stages` is the new, normalized pipeline. Editing the pipeline used to
+    only rewrite `required_stages`, leaving `current_stage` / `stage_status`
+    untouched, so a deliverable could end up pointing at a stage that is no
+    longer in its pipeline (e.g. pipeline changed to Design while the
+    deliverable still said "Content - Completed"). No team's board matched it
+    and nobody was ever asked to approve or work on it.
+
+    - Current stage still in the pipeline and not finished: leave it alone.
+    - Current stage finished and a later stage now exists (a stage was
+      added): hand it to that stage, with its approval open.
+    - Current stage removed and a later stage exists: hand it to the next
+      stage in the pipeline, with its approval open.
+    - Current stage removed and nothing later remains: every remaining stage
+      is already behind it, so the deliverable is complete.
+    """
+    order = {stage: index for index, stage in enumerate(STAGES)}
+    current_index = order.get(current_stage, -1)
+
+    if current_stage in stages:
+        if stage_status != "Completed":
+            return None
+        later = [stage for stage in stages if order[stage] > current_index]
+        if later:
+            return {"current_stage": later[0], "stage_status": "Ready for Review"}
+        return None
+
+    later = [stage for stage in stages if order[stage] > current_index]
+    if later:
+        return {"current_stage": later[0], "stage_status": "Ready for Review"}
+    return {"current_stage": stages[-1], "stage_status": "Completed"}
+
+
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
 CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Administration"]
@@ -4130,13 +4170,44 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
     old_stage = existing.get("current_stage")
     old_stage_status = existing.get("stage_status")
 
+    # Editing the production stages must also re-place the deliverable in its
+    # new pipeline (see reconcile_stage_after_edit). This runs on every save
+    # that includes the stage list - which is what the edit modal always
+    # sends - so a deliverable already left inconsistent by an earlier edit
+    # is repaired simply by opening it and pressing Save.
+    stage_move = None
+    if (
+        "required_stages" in update_fields
+        and "current_stage" not in update_fields
+        and "stage_status" not in update_fields
+    ):
+        stage_move = reconcile_stage_after_edit(
+            old_stage,
+            old_stage_status,
+            update_fields["required_stages"],
+        )
+        if stage_move:
+            update_fields.update(stage_move)
+
     update_fields["updated_at"] = now_iso()
     await db.deliverables.update_one({"id": deliverable_id}, {"$set": update_fields})
 
     updated_for_workflow = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if approval_types is not None:
         await _create_or_sync_approval_workflow(updated_for_workflow, approval_types, user.id)
-    if update_fields.get("stage_status") == "Ready for Review" and existing.get("stage_status") != "Ready for Review":
+    if stage_move and stage_move["stage_status"] == "Ready for Review":
+        # Moved to a (new) stage: open a fresh review round for it, even if
+        # the status text was already "Ready for Review" for the old stage.
+        await _set_approval_items_pending(deliverable_id)
+        try:
+            await _notify_stage_handoff(
+                updated_for_workflow, stage_move["current_stage"], update_fields["updated_at"]
+            )
+        except Exception:
+            logger.exception("Could not send stage hand-off notifications")
+    elif stage_move and stage_move["stage_status"] == "Completed":
+        await _complete_approval_workflow(deliverable_id)
+    elif update_fields.get("stage_status") == "Ready for Review" and existing.get("stage_status") != "Ready for Review":
         await _set_approval_items_pending(deliverable_id)
 
     await log_activity(
@@ -4466,6 +4537,34 @@ async def _set_approval_items_pending(deliverable_id: str):
     # for the next stage's reviewer, or it never shows on their board.
     await db.approval_items.update_many({"approval_workflow_id": workflow["id"]}, {"$set": {"status": "PENDING", "requested_at": ts, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "updated_at": ts}})
     await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"status": "IN_PROGRESS", "updated_at": ts, "completed_at": None}})
+
+
+async def _complete_approval_workflow(deliverable_id: str):
+    """The deliverable has no stage left to review: park every approval item
+    and mark the workflow COMPLETED."""
+    workflow = await _get_approval_workflow(deliverable_id)
+    if not workflow:
+        return
+    ts = now_iso()
+    await db.approval_items.update_many(
+        {"approval_workflow_id": workflow["id"]},
+        {
+            "$set": {
+                "status": "NOT_STARTED",
+                "requested_at": None,
+                "approved_at": None,
+                "sent_back_at": None,
+                "approved_by": None,
+                "sent_back_by": None,
+                "comments": "",
+                "updated_at": ts,
+            }
+        },
+    )
+    await db.approval_workflows.update_one(
+        {"id": workflow["id"]},
+        {"$set": {"status": "COMPLETED", "completed_at": ts, "updated_at": ts}},
+    )
 
 
 async def _delete_approvals_for_deliverables(deliverable_ids: list[str]):
@@ -5139,34 +5238,7 @@ async def advance_deliverable_stage(
             await _set_approval_items_pending(deliverable["id"])
         else:
             # Final stage approved: nothing is left to review.
-            await db.approval_items.update_many(
-                {
-                    "approval_workflow_id": workflow["id"],
-                },
-                {
-                    "$set": {
-                        "status": "NOT_STARTED",
-                        "requested_at": None,
-                        "approved_at": None,
-                        "sent_back_at": None,
-                        "approved_by": None,
-                        "sent_back_by": None,
-                        "comments": "",
-                        "updated_at": ts,
-                    }
-                },
-            )
-
-            await db.approval_workflows.update_one(
-                {"id": workflow["id"]},
-                {
-                    "$set": {
-                        "status": "COMPLETED",
-                        "completed_at": ts,
-                        "updated_at": ts,
-                    }
-                },
-            )
+            await _complete_approval_workflow(deliverable["id"])
 
     updated = await db.deliverables.find_one(
         {"id": deliverable["id"]},

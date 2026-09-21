@@ -903,7 +903,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
           onBlur={() => commit("remarks", local.remarks)}
-          className="min-h-[32px] h-8 w-[200px] resize-none py-1"
+          // A one-line cell, like a spreadsheet: long remarks are clipped
+          // instead of wrapping, so no scrollbar (on Windows, just two arrow
+          // buttons) ever appears inside the 32px cell. The full text is in
+          // the hover tooltip, and typing still scrolls the text along.
+          wrap="off"
+          title={local.remarks || undefined}
+          className="min-h-[32px] h-8 w-[200px] resize-none overflow-hidden py-[5px]"
           rows={1}
         />
         {renderFillHandle(13)}

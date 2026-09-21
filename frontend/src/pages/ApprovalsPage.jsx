@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import {
@@ -95,24 +95,40 @@ export default function ApprovalsPage() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  const fetchBoard = async () => {
-    setLoading(true);
+  // `silent` is used by the background refresh below: it must not flash the
+  // loading state, wipe the user's selection, or toast on a transient error.
+  const fetchBoard = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
 
     try {
       const data = await getApprovalBoard(currentUserId, { visibility });
       setBoard(data);
-      setSelectedIds(new Set());
+
+      if (silent) {
+        // Keep the selection, but drop cards that are no longer on the board.
+        const liveIds = new Set(
+          Object.values(data || {}).flatMap((items) =>
+            (items || []).map((item) => item.id)
+          )
+        );
+        setSelectedIds((prev) => new Set([...prev].filter((id) => liveIds.has(id))));
+      } else {
+        setSelectedIds(new Set());
+      }
+
       // Every mutating action on this page (approve, send back, reassign,
       // hide, drag-drop) already funnels through this one function, so
       // hooking the sidebar's instant-refresh here covers all of them
       // without needing a call at each individual action site.
       refreshCounts();
     } catch (err) {
-      toast.error(
-        err?.response?.data?.detail || "Failed to load approvals"
-      );
+      if (!silent) {
+        toast.error(
+          err?.response?.data?.detail || "Failed to load approvals"
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -131,6 +147,38 @@ export default function ApprovalsPage() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, visibility]);
+
+  // Keep the board in step with the rest of the app. Until now the board was
+  // fetched once on mount, so when another reviewer approved a stage (handing
+  // the deliverable to this team) the sidebar badge and notification bell
+  // updated on their own polls but this Kanban stayed stale until a manual
+  // reload - the "notification arrived but it isn't on my board" symptom.
+  // Refresh quietly every 30s and whenever the tab regains focus, but never
+  // while a drag, move or bulk action is in flight (it would clobber the
+  // optimistic update).
+  const busyRef = useRef(false);
+  busyRef.current = Boolean(dragging) || Boolean(movingId) || bulkLoading;
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role === "member") return undefined;
+
+    const refresh = () => {
+      if (document.hidden || busyRef.current) return;
+      fetchBoard({ silent: true });
+    };
+
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, currentUserId, visibility]);
 
   const total = useMemo(
     () =>

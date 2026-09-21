@@ -4461,7 +4461,10 @@ async def _set_approval_items_pending(deliverable_id: str):
     if not workflow:
         return
     ts = now_iso()
-    await db.approval_items.update_many({"approval_workflow_id": workflow["id"]}, {"$set": {"status": "PENDING", "requested_at": ts, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "updated_at": ts}})
+    # A new review round must always be visible. `hidden` is a per-round
+    # flag: a card the previous stage's reviewer hid must not stay hidden
+    # for the next stage's reviewer, or it never shows on their board.
+    await db.approval_items.update_many({"approval_workflow_id": workflow["id"]}, {"$set": {"status": "PENDING", "requested_at": ts, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "updated_at": ts}})
     await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"status": "IN_PROGRESS", "updated_at": ts, "completed_at": None}})
 
 
@@ -4831,53 +4834,14 @@ async def list_approvals(request: Request):
     return result
 
 
-@api_router.get("/approvals/pending-count")
-async def approval_pending_count(request: Request):
-    """Lightweight count for the sidebar's Approvals badge — same scoping
-    as GET /approvals/board's default (visible, pending) query, without
-    the join-heavy hydration since only a number is needed here."""
-    user = await get_acting_user(request)
-
-    query = {
-        "status": "PENDING",
-        "$and": [{"$or": [{"hidden": False}, {"hidden": {"$exists": False}}]}],
-    }
-
-    if user.role != "admin":
-        query["$and"].append({
-            "$or": [
-                {"assigned_to": user.id},
-                {"approval_type": "MANAGER", "assigned_to": None},
-                {
-                    "approval_type": "COMPLIANCE",
-                    "assigned_to": None,
-                    "department": "Administration",
-                },
-            ]
-        })
-
-    count = await db.approval_items.count_documents(query)
-    # Implicit manager approvals (ready deliverables with no workflow yet)
-    # aren't real documents, so they can't be counted with the query above —
-    # _build_implicit_manager_items already does this cheaply in batched
-    # queries, same as approval_board uses for the full board.
-    count += len(await _build_implicit_manager_items(user))
-
-    return {"count": count}
-
-
-@api_router.get("/approvals/board")
-async def approval_board(request: Request, visibility: Optional[str] = "visible"):
-    """Return pending approval cards grouped by approval authority."""
-
-    user = await get_acting_user(request)
-
+def _approval_visibility_query(user: User, visibility: str) -> dict:
+    """The Mongo filter behind what a user's Approvals board may contain.
+    Shared by the board and the sidebar badge so the two cannot drift."""
     query = {"status": "PENDING"}
+    clauses = []
 
     if visibility == "visible":
-        query["$and"] = [
-            {"$or": [{"hidden": False}, {"hidden": {"$exists": False}}]}
-        ]
+        clauses.append({"$or": [{"hidden": False}, {"hidden": {"$exists": False}}]})
     elif visibility == "hidden":
         query["hidden"] = True
     elif visibility == "all":
@@ -4886,7 +4850,7 @@ async def approval_board(request: Request, visibility: Optional[str] = "visible"
         raise HTTPException(status_code=400, detail="Invalid visibility")
 
     if user.role != "admin":
-        role_filter = {
+        clauses.append({
             "$or": [
                 {"assigned_to": user.id},
                 {
@@ -4899,12 +4863,71 @@ async def approval_board(request: Request, visibility: Optional[str] = "visible"
                     "department": "Administration",
                 },
             ]
+        })
+
+    if clauses:
+        query["$and"] = clauses
+
+    return query
+
+
+@api_router.get("/approvals/pending-count")
+async def approval_pending_count(request: Request):
+    """Count for the sidebar's Approvals badge.
+
+    This must equal the number of cards GET /approvals/board would show for
+    the same user. The Mongo query alone is only a coarse pre-filter: a
+    manager's MANAGER approvals are further restricted to deliverables that
+    are currently in their own department's stage (_approval_item_can_act).
+    Counting without that check made the badge show approvals the manager
+    could never see on their board - the "count says N, board shows fewer"
+    mismatch - so each candidate is now run through the same check, using
+    one batched deliverable lookup instead of full board hydration."""
+    user = await get_acting_user(request)
+
+    items = await db.approval_items.find(
+        _approval_visibility_query(user, "visible"),
+        {"_id": 0},
+    ).to_list(500)
+
+    if user.role == "admin":
+        count = len(items)
+    else:
+        deliverable_ids = list({
+            item.get("deliverable_id")
+            for item in items
+            if item.get("deliverable_id")
+        })
+        deliverables = {
+            d["id"]: d
+            for d in await db.deliverables.find(
+                {"id": {"$in": deliverable_ids}},
+                {"_id": 0, "id": 1, "current_stage": 1},
+            ).to_list(len(deliverable_ids) or 1)
         }
 
-        if "$and" in query:
-            query["$and"].append(role_filter)
-        else:
-            query["$and"] = [role_filter]
+        count = 0
+        for item in items:
+            deliverable = deliverables.get(item.get("deliverable_id"))
+            if deliverable and await _approval_item_can_act(user, item, deliverable):
+                count += 1
+
+    # Implicit manager approvals (ready deliverables with no workflow yet)
+    # aren't real documents, so they can't be counted with the query above -
+    # _build_implicit_manager_items already scopes them to the user (and to
+    # the manager's own stage) in batched queries, same as the board.
+    count += len(await _build_implicit_manager_items(user))
+
+    return {"count": count}
+
+
+@api_router.get("/approvals/board")
+async def approval_board(request: Request, visibility: Optional[str] = "visible"):
+    """Return pending approval cards grouped by approval authority."""
+
+    user = await get_acting_user(request)
+
+    query = _approval_visibility_query(user, visibility)
 
     items = await db.approval_items.find(
         query,
@@ -4988,6 +5011,68 @@ async def configure_approval_workflow(deliverable_id: str, payload: ApprovalWork
     return await get_deliverable_approvals(deliverable_id, request)
 
 
+async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
+    """Tell the next stage's team that a deliverable has just reached them.
+
+    Managers of that department get an "open Approvals" notice (the approval
+    card is already waiting on their board); the department's members get an
+    "open Work Sheet" notice. One notice per user per hand-off - the key
+    includes the hand-off timestamp so a deliverable that is sent back and
+    approved again notifies the team again.
+    """
+    departments = [
+        department
+        for department, dept_stage in DEPARTMENT_TO_STAGE.items()
+        if dept_stage == stage
+    ]
+    if not departments:
+        return
+
+    recipients = await db.users.find(
+        {
+            "active": {"$ne": False},
+            "role": {"$in": ["manager", "member"]},
+            "department": {"$in": departments},
+        },
+        {"_id": 0, "id": 1, "role": 1},
+    ).to_list(1000)
+    if not recipients:
+        return
+
+    project = await db.projects.find_one(
+        {"id": deliverable.get("project_id")},
+        {"_id": 0, "id": 1, "name": 1, "client_id": 1},
+    ) or {}
+
+    label = f'{project.get("name", "Project")} · {deliverable.get("name", "Deliverable")}'
+
+    notifications = []
+    for recipient in recipients:
+        is_manager = recipient.get("role") == "manager"
+        notifications.append({
+            "id": str(uuid.uuid4()),
+            "user_id": recipient["id"],
+            "type": "stage_handoff",
+            "title": f"{stage} approval ready" if is_manager else f"Ready for {stage}",
+            "message": (
+                f"{label} has moved to {stage} and is waiting in Approvals."
+                if is_manager
+                else f"{label} has moved to {stage}. You can start your work."
+            ),
+            "project_id": deliverable.get("project_id"),
+            "deliverable_id": deliverable.get("id"),
+            "client_id": project.get("client_id"),
+            "stage": stage,
+            "action_type": "open_approvals" if is_manager else "open_worksheet",
+            "created_at": ts,
+            "read_at": None,
+            "actioned_at": None,
+            "dedupe_key": f'stage-handoff:{deliverable.get("id")}:{stage}:{ts}:{recipient["id"]}',
+        })
+
+    await _upsert_notifications_batch(notifications)
+
+
 async def advance_deliverable_stage(
     deliverable: dict,
     reviewer_id: str,
@@ -5011,9 +5096,18 @@ async def advance_deliverable_stage(
     )
 
     if next_stage:
+        # The deliverable is handed to the next stage's team. A brand-new
+        # deliverable starts life as "Ready for Review" on its first stage
+        # (see create_project / create_deliverable), which is what puts its
+        # approval card on the reviewing manager's board. The hand-off must
+        # do the same for the next stage - previously it was set to
+        # "Not Started", and nothing in the app ever moves a deliverable back
+        # to "Ready for Review" (members cannot, and the admin edit modal
+        # shows stage status read-only), so the next stage's approval never
+        # appeared on that team's Kanban.
         update = {
             "current_stage": next_stage,
-            "stage_status": "Not Started",
+            "stage_status": "Ready for Review",
             "last_review_action": "approved",
             "last_reviewer_id": reviewer_id,
             "last_review_note": note,
@@ -5033,47 +5127,60 @@ async def advance_deliverable_stage(
         {"$set": update},
     )
 
-    # Approval belongs to the stage that was just reviewed.
-    # Reset approval items so the next stage does not inherit
-    # stale approvals.
     workflow = await _get_approval_workflow(
         deliverable["id"]
     )
 
     if workflow:
-        await db.approval_items.update_many(
-            {
-                "approval_workflow_id": workflow["id"],
-            },
-            {
-                "$set": {
-                    "status": "NOT_STARTED",
-                    "requested_at": None,
-                    "approved_at": None,
-                    "sent_back_at": None,
-                    "approved_by": None,
-                    "sent_back_by": None,
-                    "comments": "",
-                    "updated_at": ts,
-                }
-            },
-        )
+        if next_stage:
+            # Open a fresh review round for the next stage: every approval
+            # authority on this deliverable goes back to PENDING (and is
+            # un-hidden) so it shows on the next stage's board.
+            await _set_approval_items_pending(deliverable["id"])
+        else:
+            # Final stage approved: nothing is left to review.
+            await db.approval_items.update_many(
+                {
+                    "approval_workflow_id": workflow["id"],
+                },
+                {
+                    "$set": {
+                        "status": "NOT_STARTED",
+                        "requested_at": None,
+                        "approved_at": None,
+                        "sent_back_at": None,
+                        "approved_by": None,
+                        "sent_back_by": None,
+                        "comments": "",
+                        "updated_at": ts,
+                    }
+                },
+            )
 
-        await db.approval_workflows.update_one(
-            {"id": workflow["id"]},
-            {
-                "$set": {
-                    "status": "COMPLETED",
-                    "completed_at": ts,
-                    "updated_at": ts,
-                }
-            },
-        )
+            await db.approval_workflows.update_one(
+                {"id": workflow["id"]},
+                {
+                    "$set": {
+                        "status": "COMPLETED",
+                        "completed_at": ts,
+                        "updated_at": ts,
+                    }
+                },
+            )
 
-    return await db.deliverables.find_one(
+    updated = await db.deliverables.find_one(
         {"id": deliverable["id"]},
         {"_id": 0},
     )
+
+    if next_stage and updated:
+        # A notification problem must never fail the approval itself.
+        try:
+            await _notify_stage_handoff(updated, next_stage, ts)
+        except Exception:
+            logger.exception("Could not send stage hand-off notifications")
+
+    return updated
 
 
 @api_router.post("/approval-items/{approval_item_id}/approve")

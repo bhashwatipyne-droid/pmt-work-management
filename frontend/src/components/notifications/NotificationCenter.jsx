@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   CheckCheck,
+  CheckSquare,
   CircleAlert,
   ClipboardList,
   Clock,
@@ -77,6 +78,7 @@ const NOTIFICATION_STYLES = {
     tone: "bg-sky-50 text-sky-600",
   },
   approval_stuck: { icon: Clock, tone: "bg-rose-50 text-rose-600" },
+  stage_handoff: { icon: CheckSquare, tone: "bg-emerald-50 text-emerald-600" },
   deliverable_missing: { icon: CircleAlert, tone: "bg-amber-50 text-amber-600" },
 };
 

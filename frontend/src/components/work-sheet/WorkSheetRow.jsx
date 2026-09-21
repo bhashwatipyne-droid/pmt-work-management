@@ -15,6 +15,11 @@ import {
   NOT_AVAILABLE_VALUE,
   isDeliverableMissing,
 } from "@/lib/deliverableRules";
+import {
+  MAX_WORK_DATE,
+  MIN_WORK_DATE,
+  isValidWorkDate,
+} from "@/lib/worksheetDates";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
@@ -76,6 +81,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const [openSelect, setOpenSelect] = useState(null);
 
   const [local, setLocal] = useState({
+    work_date: item.work_date ?? "",
     deliverable_name: item.deliverable_name,
     deliverable_link: item.deliverable_link,
     version: item.version,
@@ -85,6 +91,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
   useEffect(() => {
     setLocal({
+      work_date: item.work_date ?? "",
       deliverable_name: item.deliverable_name ?? "",
       deliverable_link: item.deliverable_link ?? "",
       version: item.version ?? "",
@@ -92,6 +99,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       remarks: item.remarks ?? "",
     });
   }, [
+    item.work_date,
     item.deliverable_name,
     item.deliverable_link,
     item.version,
@@ -300,9 +308,15 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         const isTextEditable =
           target instanceof HTMLInputElement ||
           target instanceof HTMLTextAreaElement;
+        // In a date field Delete/Backspace clear the focused day/month/year
+        // segment (native behaviour). Treating Delete as "clear the whole
+        // cell" saved a blank date, which breaks sorting and month reports.
+        const isDateInput =
+          target instanceof HTMLInputElement && target.type === "date";
         const isClearKey =
-          event.key === "Delete" ||
-          (event.key === "Backspace" && !isTextEditable);
+          !isDateInput &&
+          (event.key === "Delete" ||
+            (event.key === "Backspace" && !isTextEditable));
 
         if (isClearKey && !event.defaultPrevented) {
           event.preventDefault();
@@ -325,6 +339,20 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const commit = (field, value) => {
     if (item[field] === value) return;
     onUpdate(item.id, { [field]: value });
+  };
+
+  // Save the date when the user leaves the field, like every other cell,
+  // and only if it is a complete, real date. While a native date input is
+  // being typed into it reports "" or a partial year such as 0006; saving
+  // those (as it used to on every keystroke) wrote bad dates and made the
+  // field reset itself under the user's fingers. Anything incomplete just
+  // snaps back to the last saved date.
+  const commitWorkDate = () => {
+    if (!isValidWorkDate(local.work_date)) {
+      setLocal((current) => ({ ...current, work_date: item.work_date ?? "" }));
+      return;
+    }
+    commit("work_date", local.work_date);
   };
 
   const isCellActive = (col) => {
@@ -397,9 +425,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           {...sheetCell(0)}
           data-testid={`${WORKSHEET.dateInput}-${item.id}`}
           type="date"
-          value={item.work_date}
+          value={local.work_date}
+          min={MIN_WORK_DATE}
+          max={MAX_WORK_DATE}
           disabled={!canEditRow}
-          onChange={(e) => onUpdate(item.id, { work_date: e.target.value })}
+          onChange={(e) => setLocal((l) => ({ ...l, work_date: e.target.value }))}
+          onBlur={commitWorkDate}
           className="h-8 w-[130px]"
         />
 
@@ -872,7 +903,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
           onBlur={() => commit("remarks", local.remarks)}
-          className="min-h-[32px] h-8 w-[200px] resize-none py-1.5"
+          className="min-h-[32px] h-8 w-[200px] resize-none py-1"
           rows={1}
         />
         {renderFillHandle(13)}

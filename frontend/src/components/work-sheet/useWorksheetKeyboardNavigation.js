@@ -104,6 +104,18 @@ export const createWorksheetKeyHandler = ({
   return async (event) => {
     const target = event.target;
 
+    // A date field has three editable segments (day / month / year) and Tab
+    // is how the browser moves between them, leaving the field only after
+    // the last one. Taking over Tab here jumped straight to the next cell
+    // after the day, so month and year could not be reached with Tab.
+    if (
+      event.key === "Tab" &&
+      target instanceof HTMLInputElement &&
+      target.type === "date"
+    ) {
+      return;
+    }
+
     // Keep normal cursor movement while editing text.
     if (
       target instanceof HTMLInputElement ||

@@ -526,6 +526,31 @@ def validate_work_category_rules(merged: dict):
             )
 
 
+MIN_WORK_DATE = "2000-01-01"
+MAX_WORK_DATE = "2100-12-31"
+
+
+def validate_work_date(value: str) -> None:
+    """A saved work_date must be a real YYYY-MM-DD date between 2000 and 2100.
+    A half-typed year in a date field (0002, 0006...) used to be saved as-is,
+    which sorted the row to the very bottom and put it in a nonsense month."""
+    parsed = None
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        pass
+
+    if (
+        parsed is None
+        or f"{parsed.year:04d}-{parsed.month:02d}-{parsed.day:02d}" != value
+        or not (MIN_WORK_DATE <= value <= MAX_WORK_DATE)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Work date must be a valid date between 2000 and 2100.",
+        )
+
+
 # Moving a row out of "Not Started" needs a deliverable (or "Not available").
 # Reviewer statuses (Changes Requested / Rework / Closed) are deliberately not
 # gated: a reviewer must not be blocked by a gap the creator left.
@@ -627,6 +652,7 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
         update_fields["client_id"] = project_client_id
 
     if "work_date" in update_fields and update_fields["work_date"]:
+        validate_work_date(update_fields["work_date"])
         update_fields["month"] = update_fields["work_date"][:7]
 
     if (
@@ -1802,6 +1828,7 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
 
     data = payload.model_dump()
     work_date = data.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    validate_work_date(work_date)
     month = work_date[:7]
     if user.role == "member":
         data["creator_id"] = user.id
@@ -2054,6 +2081,7 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
         tpl["client_id"] = project.get("client_id")
 
     work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    validate_work_date(work_date)
     month = work_date[:7]
     docs = []
     for _ in range(payload.count):

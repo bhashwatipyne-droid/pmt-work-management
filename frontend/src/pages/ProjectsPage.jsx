@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Search,
@@ -44,6 +51,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+
+// A function with a permanent identity that always calls the latest version
+// of `fn`. Lets the page hand the (memoized) project cards handlers that
+// never change, so a page re-render doesn't force every card to re-render,
+// while the handlers themselves keep reading the current state.
+function useStableCallback(fn) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args) => ref.current(...args), []);
+}
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
@@ -152,8 +169,11 @@ export default function ProjectsPage() {
     ].sort();
   }, [projects]);
 
+  // Typing stays instant; the (heavier) re-filtering of the board follows it.
+  const deferredSearch = useDeferredValue(search);
+
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
 
     return projects
       .filter((p) => {
@@ -185,7 +205,7 @@ export default function ProjectsPage() {
         const dateB = new Date(b.start_date || 0).getTime();
         return dateB - dateA;
       });
-  }, [projects, search, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
+  }, [projects, deferredSearch, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -600,6 +620,27 @@ export default function ProjectsPage() {
     await persistProjectDrop(status, targetIds.length);
   };
 
+  // Permanent-identity versions of the handlers given to the board, so
+  // re-rendering this page (modal open, search, selection, drag) doesn't
+  // re-render every project card.
+  const stableSelectProject = useStableCallback(toggleProjectSelection);
+  const stableSelectColumn = useStableCallback(toggleColumnSelection);
+  const stableToggleColumn = useStableCallback(toggleColumnVisibility);
+  const stableDragStart = useStableCallback(handleProjectDragStart);
+  const stableDragEnd = useStableCallback(handleProjectDragEnd);
+  const stableDragOver = useStableCallback(handleProjectDragOver);
+  const stableDrop = useStableCallback(handleProjectDrop);
+  const stableColumnDragOver = useStableCallback(handleColumnDragOver);
+  const stableColumnDrop = useStableCallback(handleColumnDrop);
+  const stableOpenProject = useStableCallback((project) => {
+    trackEvent("project_opened", {
+      project_id: project.id,
+      status: project.status,
+    });
+
+    navigate(`/projects/${project.id}`);
+  });
+
   if (userLoading || !currentUser) return null;
 
   if (currentUser.role !== "admin") {
@@ -939,24 +980,17 @@ export default function ProjectsPage() {
                   projects={columnProjects}
                   users={users}
                   selectedProjects={selectedProjects}
-                  onSelectProject={toggleProjectSelection}
-                  onSelectAll={() => toggleColumnSelection(columnProjects)}
+                  onSelectProject={stableSelectProject}
+                  onSelectAll={stableSelectColumn}
                   allSelected={allColumnProjectsSelected}
-                  onOpenProject={(project) => {
-                    trackEvent("project_opened", {
-                      project_id: project.id,
-                      status: project.status,
-                    });
-
-                    navigate(`/projects/${project.id}`);
-                  }}
-                  onToggleVisibility={toggleColumnVisibility}
-                  onDragStartProject={handleProjectDragStart}
-                  onDragEndProject={handleProjectDragEnd}
-                  onDragOverProject={handleProjectDragOver}
-                  onDropProject={handleProjectDrop}
-                  onDragOverColumn={handleColumnDragOver}
-                  onDropColumn={handleColumnDrop}
+                  onOpenProject={stableOpenProject}
+                  onToggleVisibility={stableToggleColumn}
+                  onDragStartProject={stableDragStart}
+                  onDragEndProject={stableDragEnd}
+                  onDragOverProject={stableDragOver}
+                  onDropProject={stableDrop}
+                  onDragOverColumn={stableColumnDragOver}
+                  onDropColumn={stableColumnDrop}
                   dragOverProjectId={dragOverProjectId}
                   isDropTarget={dragOverStatus === status}
                 />

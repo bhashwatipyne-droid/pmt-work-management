@@ -24,6 +24,13 @@ export const UserProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // /auth/me and /users don't depend on each other, so ask for both at the
+    // same time. They used to run one after the other, and every page waits
+    // for this whole step before it can render anything - so on a slow or
+    // sleeping backend the second round trip was added to every page load.
+    // A failure is non-fatal: dropdowns will just be empty.
+    const usersRequest = getUsers().catch(() => []);
+
     getMe()
       .then(async (data) => {
         setAuthUser(data);
@@ -35,11 +42,7 @@ export const UserProvider = ({ children }) => {
           role: data.role,
         });
 
-        try {
-          setUsers(await getUsers());
-        } catch (_) {
-          // non-fatal, dropdowns will just be empty
-        }
+        setUsers(await usersRequest);
       })
       .catch((error) => {
         // Drop a stored fallback token once the server says it's no longer valid.

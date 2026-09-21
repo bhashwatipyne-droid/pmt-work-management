@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import {
   STAGE_COLORS,
   STATUS_COLORS,
@@ -30,7 +32,14 @@ const fmtDate = (iso) => {
 const initial = (name) =>
   (name || "?").trim().charAt(0).toUpperCase();
 
-export const ProjectCard = ({
+// memo(): the board can hold hundreds of cards, and everything on the page
+// (opening a modal, typing in search, ticking a checkbox, dragging) re-renders
+// the page component. Without memo every one of those re-rendered and
+// re-diffed every card. With it a card only re-renders when its own props
+// change - which is why the handlers passed in must be stable (see
+// ProjectsPage) and `onOpen` receives the project instead of being a fresh
+// closure per card.
+const ProjectCardBase = ({
   project,
   users,
   onOpen,
@@ -47,6 +56,8 @@ export const ProjectCard = ({
 
   const poc = project.client_poc;
 
+  const handleOpen = () => onOpen?.(project);
+
   const collaborators = (project.collaborator_ids || [])
     .map((id) => users.find((u) => u.id === id))
     .filter(Boolean)
@@ -62,6 +73,9 @@ export const ProjectCard = ({
       onDrop={(event) => onDrop?.(event, project)}
       className={[
         "w-full rounded-xl border bg-white p-4 text-left transition-all",
+        // Off-screen cards skip layout and paint until scrolled near; the
+        // intrinsic size keeps the scrollbar stable in the meantime.
+        "[content-visibility:auto] [contain-intrinsic-size:auto_250px]",
         "cursor-grab active:cursor-grabbing",
         "hover:-translate-y-0.5 hover:border-[#c8c8ee] hover:shadow-md",
         selected
@@ -99,7 +113,7 @@ export const ProjectCard = ({
       <button
         type="button"
         draggable={false}
-        onClick={onOpen}
+        onClick={handleOpen}
         className="mt-3 block w-full text-left line-clamp-2 text-sm font-semibold leading-5 text-foreground hover:text-[#2b2bb5]"
       >
         {project.name}
@@ -177,7 +191,7 @@ export const ProjectCard = ({
         <button
           type="button"
           draggable={false}
-          onClick={onOpen}
+          onClick={handleOpen}
           className="inline-flex items-center gap-1 text-xs font-medium text-[#2b2bb5]"
         >
           Open
@@ -187,3 +201,5 @@ export const ProjectCard = ({
     </div>
   );
 };
+
+export const ProjectCard = memo(ProjectCardBase);

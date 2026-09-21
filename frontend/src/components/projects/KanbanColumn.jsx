@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Eye } from "lucide-react";
 
 import { STATUS_COLORS } from "@/constants/projectPalette";
@@ -13,6 +14,14 @@ const COLUMN_TESTIDS = {
   "On Hold": PROJECTS.columnOnHold,
   Scrapped: PROJECTS.columnScrapped,
 };
+
+// How many cards a column renders at first, and how many more each "Show
+// more" click adds. Rendering every project at once (800+ in total, roughly
+// 40,000 DOM elements) made every click and keystroke on this page take
+// hundreds of milliseconds. Counts, "select all", drag-and-drop targets and
+// filters still work on the full list - only the DOM is paged.
+const INITIAL_VISIBLE = 40;
+const VISIBLE_STEP = 40;
 
 export const KanbanColumn = ({
   status,
@@ -34,6 +43,11 @@ export const KanbanColumn = ({
   isDropTarget = false,
 }) => {
   const c = STATUS_COLORS[status];
+
+  const [limit, setLimit] = useState(INITIAL_VISIBLE);
+  const shownProjects =
+    projects.length > limit ? projects.slice(0, limit) : projects;
+  const hiddenCount = projects.length - shownProjects.length;
 
   return (
     <BaseKanbanColumn
@@ -57,7 +71,7 @@ export const KanbanColumn = ({
               type="checkbox"
               checked={allSelected}
               disabled={projects.length === 0}
-              onChange={onSelectAll}
+              onChange={() => onSelectAll?.(projects)}
               aria-label={
                 allSelected
                   ? `Deselect all ${status} projects`
@@ -88,14 +102,14 @@ export const KanbanColumn = ({
           data-testid={COLUMN_TESTIDS[status]}
           className="flex flex-col gap-3"
         >
-          {projects.map((project) => (
+          {shownProjects.map((project) => (
             <ProjectCard
               key={project.id}
               project={project}
               users={users}
               selected={selectedProjects?.has(project.id)}
               onSelect={onSelectProject}
-              onOpen={() => onOpenProject?.(project)}
+              onOpen={onOpenProject}
               onDragStart={onDragStartProject}
               onDragEnd={onDragEndProject}
               onDragOver={onDragOverProject}
@@ -103,6 +117,17 @@ export const KanbanColumn = ({
               isDragTarget={dragOverProjectId === project.id}
             />
           ))}
+
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setLimit((current) => current + VISIBLE_STEP)}
+              className="rounded-lg border border-dashed border-border bg-white/70 px-3 py-2 text-xs font-medium text-[#2b2bb5] transition-colors hover:bg-white"
+            >
+              Show {Math.min(VISIBLE_STEP, hiddenCount)} more ({hiddenCount} not
+              shown)
+            </button>
+          )}
         </div>
       )}
     </BaseKanbanColumn>

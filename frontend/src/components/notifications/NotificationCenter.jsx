@@ -176,10 +176,11 @@ export default function NotificationCenter() {
       playNotificationSound();
       fetchNotifications({ silent: true });
 
-      // PMT is visible but another window has focus: Firebase gave the push
-      // to this page instead of the service worker, so show the system popup
-      // ourselves. (A hidden tab's popup is already shown by the worker.)
-      if (push.title && !document.hasFocus()) {
+      // PMT is visible (focused or not): Firebase gave the push to this page
+      // instead of the service worker, so show the system popup ourselves,
+      // even when PMT has focus. (A hidden tab's popup is already shown by
+      // the worker, which sends no title to the page, so this never doubles up.)
+      if (push.title) {
         showSystemNotification(push).catch(() => {});
       }
     });

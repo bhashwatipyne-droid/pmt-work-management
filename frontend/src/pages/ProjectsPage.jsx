@@ -98,17 +98,28 @@ export default function ProjectsPage() {
     }
 
     try {
+      // The board and list only show per-project counts, never the nested
+      // deliverable documents, so ask the server for counts only
+      // (include_deliverables: false). The full payload was over a megabyte
+      // for a few hundred projects.
+      //
+      // Clients and dropdown options are not changed by anything on this
+      // page, so only the first full-page load fetches them; the quiet
+      // refreshes that follow every create/hide/move/drag skip them.
       const [p, m, c, opts] = await Promise.all([
-        getProjects(currentUserId, { visibility }),
+        getProjects(currentUserId, {
+          visibility,
+          include_deliverables: false,
+        }),
         getProjectMetrics(currentUserId),
-        getClients(),
-        getOptions(),
+        showLoading ? getClients() : Promise.resolve(null),
+        showLoading ? getOptions() : Promise.resolve(null),
       ]);
 
       setProjects(p);
       setMetrics(m);
-      setClients(c);
-      setDeliverableTypes(opts.deliverable_types || []);
+      if (c) setClients(c);
+      if (opts) setDeliverableTypes(opts.deliverable_types || []);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Failed to load projects"
@@ -979,7 +990,29 @@ export default function ProjectsPage() {
       <CreateProjectModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onCreated={() => fetchAll(false)}
+        onCreated={(created) => {
+          // Show the new project straight away from the response we already
+          // have (mirroring the server: it goes to the top of its column and
+          // pushes the others down one), then reconcile quietly in the
+          // background instead of waiting on a full reload first.
+          if (created?.id && visibility !== "hidden") {
+            setProjects((current) => [
+              created,
+              ...current
+                .filter((project) => project.id !== created.id)
+                .map((project) =>
+                  project.status === created.status
+                    ? {
+                        ...project,
+                        kanban_order: (Number(project.kanban_order) || 0) + 1,
+                      }
+                    : project
+                ),
+            ]);
+          }
+
+          fetchAll(false);
+        }}
         clients={clients}
         deliverableTypes={deliverableTypes}
       />

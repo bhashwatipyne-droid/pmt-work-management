@@ -516,6 +516,27 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _activity_doc(
+    entity_id: str,
+    action: str,
+    changed_by: str,
+    old_value=None,
+    new_value=None,
+    metadata=None,
+    entity_field: str = "entity_id",
+) -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        entity_field: entity_id,
+        "action": action,
+        "old_value": old_value,
+        "new_value": new_value,
+        "changed_by": changed_by,
+        "changed_at": now_iso(),
+        "metadata": metadata or {},
+    }
+
+
 async def log_activity(
     collection_name: str,
     entity_id: str,
@@ -526,16 +547,15 @@ async def log_activity(
     metadata=None,
     entity_field: str = "entity_id",
 ):
-    activity = {
-        "id": str(uuid.uuid4()),
-        entity_field: entity_id,
-        "action": action,
-        "old_value": old_value,
-        "new_value": new_value,
-        "changed_by": changed_by,
-        "changed_at": now_iso(),
-        "metadata": metadata or {},
-    }
+    activity = _activity_doc(
+        entity_id,
+        action,
+        changed_by,
+        old_value=old_value,
+        new_value=new_value,
+        metadata=metadata,
+        entity_field=entity_field,
+    )
 
     await db[collection_name].insert_one(activity)
 
@@ -1124,17 +1144,20 @@ async def _notify_new_project(
     project: dict,
     deliverables: list[dict],
     title: str = "New project added",
+    client_name: Optional[str] = None,
 ):
     """Create one notification per project/deliverable/stage/user.
 
     `title` is only used for the per-deliverable notices sent to production
     staff; pass a different one when deliverables are added to an existing
-    project."""
-    client_doc = await db.clients.find_one(
-        {"id": project.get("client_id")},
-        {"_id": 0, "name": 1},
-    )
-    client_name = client_doc.get("name", "") if client_doc else ""
+    project. Callers that already loaded the client can pass `client_name`
+    to skip the lookup."""
+    if client_name is None:
+        client_doc = await db.clients.find_one(
+            {"id": project.get("client_id")},
+            {"_id": 0, "name": 1},
+        )
+        client_name = client_doc.get("name", "") if client_doc else ""
 
     pending_notifications: list[dict] = []
 
@@ -1170,9 +1193,22 @@ async def _notify_new_project(
         await _upsert_notifications_batch(pending_notifications)
         return
 
+    # One users query for the whole batch (it used to be one per deliverable),
+    # then each deliverable's recipients are picked from it in memory.
+    all_stages = {
+        stage
+        for deliverable in deliverables
+        for stage in stored_stages(deliverable.get("required_stages"))
+    }
+    production_users = await _production_users_for_stages(list(all_stages))
+
     for deliverable in deliverables:
         stages = stored_stages(deliverable.get("required_stages"))
-        recipients = await _production_users_for_stages(stages)
+        recipients = [
+            user
+            for user in production_users
+            if DEPARTMENT_TO_STAGE.get(user.get("department")) in stages
+        ]
 
         for recipient in recipients:
             stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"), stages[0])
@@ -3205,6 +3241,27 @@ async def _reindex_project_status(status: str, ordered_ids: Optional[List[str]] 
     ])
 
 
+async def _place_new_project_at_top(project_id: str, status: str):
+    """Put a just-created project (already inserted with kanban_order 0) at the
+    top of its status column.
+
+    _move_project_to_status does this by reading the whole column and then
+    rewriting every project's kanban_order one update at a time - hundreds of
+    writes, each a collection scan, on every single create. Shifting the other
+    projects down by one gives the same order in one operation. Falls back to
+    the full re-index if the shift cannot be applied."""
+    try:
+        # A pipeline update, so a missing or null kanban_order counts as 0
+        # instead of making the whole shift fail part-way through.
+        await db.projects.update_many(
+            {"status": status, "id": {"$ne": project_id}},
+            [{"$set": {"kanban_order": {"$add": [{"$ifNull": ["$kanban_order", 0]}, 1]}}}],
+        )
+    except Exception:
+        logger.exception("Fast kanban shift failed; falling back to full re-index")
+        await _move_project_to_status(project_id, status, 0)
+
+
 async def _move_project_to_status(project_id: str, new_status: str, target_index: int = 0):
     project = await db.projects.find_one({"id": project_id}, {"_id": 0, "status": 1})
     if not project:
@@ -3266,10 +3323,11 @@ async def _hydrate_projects(
         return []
 
     project_ids = [p["id"] for p in projects if p.get("id")]
-    client_ids = [p["client_id"] for p in projects if p.get("client_id")]
+    client_ids = list({p["client_id"] for p in projects if p.get("client_id")})
 
     deliverables = []
     deliverable_counts = {}
+    stage_counts_by_project: dict = {}
 
     if include_deliverables:
         # Fetch all deliverables for all projects in ONE query
@@ -3278,16 +3336,29 @@ async def _hydrate_projects(
             {"_id": 0},
         ).to_list(5000)
     else:
-        # Dashboard only needs the count, not the full nested documents.
+        # List pages only need the counts (in total and per stage), not the
+        # full nested documents - which for a few hundred projects is
+        # thousands of deliverables and over a megabyte of JSON. The database
+        # does the counting and only the totals cross the wire.
         count_rows = await db.deliverables.aggregate([
             {"$match": {"project_id": {"$in": project_ids}}},
-            {"$group": {"_id": "$project_id", "count": {"$sum": 1}}},
+            {"$group": {
+                "_id": {
+                    "project_id": "$project_id",
+                    "stage": {"$ifNull": ["$current_stage", "Content"]},
+                },
+                "count": {"$sum": 1},
+            }},
         ]).to_list(None)
-        deliverable_counts = {
-            row.get("_id"): row.get("count", 0)
-            for row in count_rows
-            if row.get("_id")
-        }
+        for row in count_rows:
+            key = row.get("_id") or {}
+            pid = key.get("project_id")
+            if not pid:
+                continue
+            count = row.get("count", 0)
+            deliverable_counts[pid] = deliverable_counts.get(pid, 0) + count
+            per_stage = stage_counts_by_project.setdefault(pid, {})
+            per_stage[key.get("stage")] = per_stage.get(key.get("stage"), 0) + count
 
     # Fetch all clients in ONE query
     clients = await db.clients.find(
@@ -3341,10 +3412,14 @@ async def _hydrate_projects(
         stage_counts = {s: 0 for s in STAGES}
         collaborators = set()
 
-        for d in project_deliverables:
-            stage = d.get("current_stage", "Content")
+        if include_deliverables:
+            for d in project_deliverables:
+                stage = d.get("current_stage", "Content")
 
-            stage_counts[stage] = stage_counts.get(stage, 0) + 1
+                stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        else:
+            for stage, count in stage_counts_by_project.get(project_id, {}).items():
+                stage_counts[stage] = stage_counts.get(stage, 0) + count
 
         # Resolve client POC.
         # Keep the existing fallback behaviour:
@@ -3456,8 +3531,13 @@ async def list_projects(
 @api_router.get("/projects/metrics")
 async def project_metrics(request: Request):
     await get_acting_user(request)
-    projects = await db.projects.find({}, {"_id": 0}).to_list(1000)
-    deliverables = await db.deliverables.find({}, {"_id": 0}).to_list(5000)
+    # Only two fields per project are needed, and the deliverable total is
+    # just a count - this used to download every project and every
+    # deliverable document (capped at 5000) only to take len() of the list.
+    projects = await db.projects.find(
+        {}, {"_id": 0, "status": 1, "end_date": 1}
+    ).to_list(1000)
+    total_deliverables = await db.deliverables.count_documents({})
     today = datetime.now(timezone.utc).date()
     week_end = today + timedelta(days=7)
     active = sum(1 for p in projects if p.get("status") == "Active")
@@ -3474,7 +3554,7 @@ async def project_metrics(request: Request):
         "active_projects": active,
         "in_rework": in_rework,
         "due_this_week": due_this_week,
-        "total_deliverables": len(deliverables),
+        "total_deliverables": total_deliverables,
     }
 
 
@@ -3523,10 +3603,64 @@ async def create_project(payload: ProjectCreate, request: Request):
         created_at=ts,
         updated_at=ts,
     )
+
+    # Validate every deliverable and build every document up front, so a bad
+    # stage or approval type is rejected BEFORE anything has been written
+    # (previously the project row was already saved when a bad deliverable
+    # failed part-way through the loop).
+    deliverable_docs: list[dict] = []
+    workflow_docs: list[dict] = []
+    item_docs: list[dict] = []
+    activity_docs: list[dict] = []
+    for d in payload.deliverables or []:
+        stages = normalize_stages(d.required_stages)
+        approval_types = d.approval_types or []
+        normalized_types = _normalize_approval_types(approval_types)
+        deliv = Deliverable(
+            project_id=project.id,
+            name=d.name,
+            type=d.type or "",
+            start_dt=d.start_dt,
+            end_dt=d.end_dt,
+            required_stages=stages,
+            current_stage=stages[0],
+            stage_status="Ready for Review",
+            approval_types=approval_types,
+            created_at=ts,
+            updated_at=ts,
+        )
+        db_doc = deliv.model_dump()
+        db_doc.pop("approval_types", None)
+        deliverable_docs.append(db_doc)
+
+        # Manager approval always exists, even with no additional approval
+        # types selected. (Same documents _create_or_sync_approval_workflow
+        # would create one round trip at a time.)
+        workflow = _new_approval_workflow(db_doc, normalized_types, ts)
+        workflow_docs.append(workflow)
+        item_docs.extend(
+            _new_approval_item(workflow["id"], db_doc, approval_type, ts)
+            for approval_type in normalized_types
+        )
+        activity_docs.append(_activity_doc(
+            deliv.id,
+            "DELIVERABLE_CREATED",
+            user.id,
+            new_value={
+                "name": deliv.name,
+                "type": deliv.type,
+                "project_id": deliv.project_id,
+                "required_stages": deliv.required_stages,
+                "current_stage": deliv.current_stage,
+                "stage_status": deliv.stage_status,
+            },
+            entity_field="deliverable_id",
+        ))
+
     await db.projects.insert_one(project.model_dump())
 
     # New projects always enter the top of their status column.
-    await _move_project_to_status(project.id, project.status, 0)
+    await _place_new_project_at_top(project.id, project.status)
     await log_activity(
         collection_name="project_activity_log",
         entity_id=project.id,
@@ -3543,51 +3677,37 @@ async def create_project(payload: ProjectCreate, request: Request):
             "status": project.status,
         },
     )
-    for d in payload.deliverables or []:
-        stages = normalize_stages(d.required_stages)
-        approval_types = d.approval_types or []
-        deliv = Deliverable(
-            project_id=project.id,
-            name=d.name,
-            type=d.type or "",
-            start_dt=d.start_dt,
-            end_dt=d.end_dt,
-            required_stages=stages,
-            current_stage=stages[0],
-            stage_status="Ready for Review",
-            approval_types=approval_types,
-            created_at=ts,
-            updated_at=ts,
+
+    # One insert per collection, however many deliverables there are.
+    if deliverable_docs:
+        await db.deliverables.insert_many([dict(doc) for doc in deliverable_docs])
+        await db.approval_workflows.insert_many(workflow_docs)
+        await db.approval_items.insert_many(item_docs)
+        await db.deliverable_activity_log.insert_many(activity_docs)
+
+    # Notifying production staff needs one upsert per deliverable per person
+    # and nothing in the response depends on it, so it runs after the response
+    # is sent instead of making the admin wait for it.
+    _fire_and_forget(
+        _notify_new_project_safely(
+            project.model_dump(),
+            deliverable_docs,
+            client_name=client_doc.get("name", ""),
         )
-        db_doc = deliv.model_dump()
-        db_doc.pop("approval_types", None)
-        await db.deliverables.insert_one(db_doc)
-        # Manager approval always exists, even with no additional approval
-        # types selected, so this must run unconditionally.
-        await _create_or_sync_approval_workflow({**db_doc, "approval_types": approval_types}, approval_types, user.id)
-        await log_activity(
-            collection_name="deliverable_activity_log",
-            entity_id=deliv.id,
-            entity_field="deliverable_id",
-            action="DELIVERABLE_CREATED",
-            changed_by=user.id,
-            new_value={
-                "name": deliv.name,
-                "type": deliv.type,
-                "project_id": deliv.project_id,
-                "required_stages": deliv.required_stages,
-                "current_stage": deliv.current_stage,
-                "stage_status": deliv.stage_status,
-            },
-        )
-    created_deliverables = await db.deliverables.find(
-        {"project_id": project.id},
-        {"_id": 0},
-    ).to_list(5000)
-    await _notify_new_project(project.model_dump(), created_deliverables)
+    )
 
     p = await db.projects.find_one({"id": project.id}, {"_id": 0})
     return await _hydrate_project(p)
+
+
+async def _notify_new_project_safely(project: dict, deliverables: list[dict], **kwargs):
+    """Run _notify_new_project as a background task: it must never raise
+    into the event loop, and a notification problem must not be able to fail
+    a project that was already created."""
+    try:
+        await _notify_new_project(project, deliverables, **kwargs)
+    except Exception:
+        logger.exception("Could not send new-project notifications")
 
 
 @api_router.patch("/projects/{project_id}")
@@ -4495,9 +4615,9 @@ async def _get_approval_workflow(deliverable_id: str):
     return await db.approval_workflows.find_one({"deliverable_id": deliverable_id}, {"_id": 0})
 
 
-async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: List[str], changed_by: Optional[str] = None):
-    # Manager approval is mandatory; any additional selected types are
-    # optional and run independently, not sequentially.
+def _normalize_approval_types(approval_types: Optional[List[str]]) -> List[str]:
+    """Manager approval is mandatory; any additional selected types are
+    optional and run independently, not sequentially."""
     normalized = ["MANAGER"]
     for value in approval_types or []:
         value = str(value).upper().strip()
@@ -4505,6 +4625,20 @@ async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: L
             raise HTTPException(status_code=400, detail=f"Invalid approval type: {value}")
         if value not in normalized:
             normalized.append(value)
+    return normalized
+
+
+def _new_approval_item(workflow_id: str, deliverable: dict, approval_type: str, ts: str) -> dict:
+    ready = deliverable.get("stage_status") == "Ready for Review"
+    return {"id": str(uuid.uuid4()), "approval_workflow_id": workflow_id, "deliverable_id": deliverable["id"], "approval_type": approval_type, "status": "PENDING" if ready else "NOT_STARTED", "assigned_to": None, "department": "Administration" if approval_type == "COMPLIANCE" else None, "requested_at": ts if ready else None, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "created_at": ts, "updated_at": ts}
+
+
+def _new_approval_workflow(deliverable: dict, normalized: List[str], ts: str) -> dict:
+    return {"id": str(uuid.uuid4()), "deliverable_id": deliverable["id"], "status": "NOT_STARTED", "required_types": normalized, "created_at": ts, "updated_at": ts}
+
+
+async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: List[str], changed_by: Optional[str] = None):
+    normalized = _normalize_approval_types(approval_types)
     workflow = await _get_approval_workflow(deliverable["id"])
     ts = now_iso()
     if not normalized:
@@ -4513,7 +4647,7 @@ async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: L
             await db.approval_workflows.delete_one({"id": workflow["id"]})
         return None
     if not workflow:
-        workflow = {"id": str(uuid.uuid4()), "deliverable_id": deliverable["id"], "status": "NOT_STARTED", "required_types": normalized, "created_at": ts, "updated_at": ts}
+        workflow = _new_approval_workflow(deliverable, normalized, ts)
         await db.approval_workflows.insert_one(workflow)
     else:
         await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"required_types": normalized, "updated_at": ts}})
@@ -4521,8 +4655,7 @@ async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: L
     existing_types = {x.get("approval_type") for x in existing}
     for approval_type in normalized:
         if approval_type not in existing_types:
-            item = {"id": str(uuid.uuid4()), "approval_workflow_id": workflow["id"], "deliverable_id": deliverable["id"], "approval_type": approval_type, "status": "PENDING" if deliverable.get("stage_status") == "Ready for Review" else "NOT_STARTED", "assigned_to": None, "department": "Administration" if approval_type == "COMPLIANCE" else None, "requested_at": ts if deliverable.get("stage_status") == "Ready for Review" else None, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "created_at": ts, "updated_at": ts}
-            await db.approval_items.insert_one(item)
+            await db.approval_items.insert_one(_new_approval_item(workflow["id"], deliverable, approval_type, ts))
     await db.approval_items.delete_many({"approval_workflow_id": workflow["id"], "approval_type": {"$nin": normalized}})
     return await _get_approval_workflow(deliverable["id"])
 
@@ -5673,6 +5806,17 @@ async def run_startup_migrations():
     # Load firebase-admin in a worker thread now, so the first push doesn't
     # stall a request while the (slow) import runs.
     _fire_and_forget(asyncio.to_thread(_get_firebase_app))
+    # Almost every lookup in this app is by the string field `id` (not Mongo's
+    # own `_id`), and none of those fields were indexed - so each find_one /
+    # update_one by id scanned its whole collection. That includes the
+    # per-request user lookup in get_acting_user, and every project, client
+    # and deliverable lookup. Non-unique on purpose: this must never fail
+    # startup on a database that already holds an odd duplicate.
+    await db.users.create_index("id")
+    await db.clients.create_index("id")
+    await db.projects.create_index("id")
+    await db.projects.create_index("code")
+    await db.deliverables.create_index("id")
     await db.projects.create_index([("status", 1), ("kanban_order", 1)])
     # Speeds up the overdue-deadline scan in _ensure_overdue_notifications,
     # which range-queries on these date fields every ~60s.

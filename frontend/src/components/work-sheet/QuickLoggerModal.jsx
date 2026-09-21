@@ -1,6 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, Clock, Save, Check, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
+import {
+  NOT_AVAILABLE_LABEL,
+  NOT_AVAILABLE_VALUE,
+} from "@/lib/deliverableRules";
+
+// Shown as the last Deliverable suggestion. Shaped like a deliverable (id /
+// name) so the suggestion list, chips and keyboard handling treat it the same
+// way; `notAvailable` is what tells buildEntry to save the flag instead of an
+// id.
+const NOT_AVAILABLE_OPTION = {
+  id: NOT_AVAILABLE_VALUE,
+  name: NOT_AVAILABLE_LABEL,
+  notAvailable: true,
+};
 
 const STAGE_BY_DEPARTMENT = {
   Content: "Content",
@@ -121,12 +135,10 @@ export default function QuickLoggerModal({
   }, [deliverables]);
 
   // Client and Project always sit at fixed positions 0/1 in the typed
-  // text. Everything after that shifts depending on whether the
-  // resolved project actually has any deliverables to pick from —
-  // Atlas is missing deliverable data for a lot of projects right now,
-  // so when there's genuinely nothing to choose, that segment is
-  // skipped entirely rather than blocking the user on a field with no
-  // valid answer.
+  // text, followed by Deliverable, Type and Time. Deliverable is always
+  // asked for once a project is chosen: when the project has none (or
+  // the right one isn't there yet) the user picks "Not available", which
+  // tells the admins to add it, instead of skipping the field.
   const clientProjectParts = useMemo(() => {
     const values = draft.text.split("/");
     return {
@@ -166,10 +178,10 @@ export default function QuickLoggerModal({
     [deliverablesByProject, resolvedProject]
   );
 
-  // Only require a deliverable when the project actually has at least
-  // one to choose from — otherwise there's no valid answer to give, so
-  // don't make the user get stuck on it.
-  const deliverableRequired = projectDeliverables.length > 0;
+  // A deliverable (or "Not available") is required for every entry once a
+  // project is chosen. "Not available" is always offered, so a project with
+  // no deliverables never leaves the user stuck.
+  const deliverableRequired = Boolean(resolvedProject);
 
   const parts = useMemo(() => {
     const values = draft.text.split("/").map((v) => (v || "").trim());
@@ -195,15 +207,22 @@ export default function QuickLoggerModal({
 
   const resolvedDeliverable = useMemo(() => {
     if (!deliverableRequired) return null;
+    if (draft.deliverable_id === NOT_AVAILABLE_VALUE) {
+      return NOT_AVAILABLE_OPTION;
+    }
     if (draft.deliverable_id) {
       return deliverables.find((d) => d.id === draft.deliverable_id) || null;
     }
+    // Typed text: a real deliverable with that name wins, then "Not available".
     return (
       projectDeliverables.find(
         (d) =>
           normalise(d.name || d.deliverable_name) ===
           normalise(parts.deliverable)
-      ) || null
+      ) ||
+      (normalise(parts.deliverable) === normalise(NOT_AVAILABLE_LABEL)
+        ? NOT_AVAILABLE_OPTION
+        : null)
     );
   }, [
     deliverableRequired,
@@ -292,11 +311,15 @@ export default function QuickLoggerModal({
     } else if (step === "project") {
       next = fuzzyMatches(clientProjects, parts.project, (p) => p.name);
     } else if (step === "deliverable") {
-      next = fuzzyMatches(
-        projectDeliverables,
-        parts.deliverable,
-        (d) => d.name || d.deliverable_name || "Untitled deliverable"
-      );
+      next = [
+        ...fuzzyMatches(
+          projectDeliverables,
+          parts.deliverable,
+          (d) => d.name || d.deliverable_name || "Untitled deliverable"
+        ),
+        // Last on purpose: people should look for the real deliverable first.
+        ...fuzzyMatches([NOT_AVAILABLE_OPTION], parts.deliverable, (d) => d.name),
+      ];
     } else if (step === "type") {
       next = fuzzyMatches(deliverableTypes, parts.type, (t) => t);
     }
@@ -380,11 +403,16 @@ export default function QuickLoggerModal({
         text: `${parts.client} / ${parts.project} / ${name} / `,
       });
 
-      trackEvent("quick_logger_deliverable_selected", {
-        project_id: resolvedProject?.id || null,
-        deliverable_id: item.id,
-        stage: stage || null,
-      });
+      trackEvent(
+        item.notAvailable
+          ? "quick_logger_deliverable_not_available"
+          : "quick_logger_deliverable_selected",
+        {
+          project_id: resolvedProject?.id || null,
+          deliverable_id: item.notAvailable ? null : item.id,
+          stage: stage || null,
+        }
+      );
     } else if (currentStep === "type") {
       updateDraft({
         deliverable_type: item,
@@ -415,11 +443,17 @@ export default function QuickLoggerModal({
       text: draft.text.trim(),
       client_id: resolvedClient.id,
       project_id: resolvedProject.id,
-      deliverable_id: resolvedDeliverable?.id || null,
-      deliverable_name:
-        resolvedDeliverable?.name ||
-        resolvedDeliverable?.deliverable_name ||
-        "",
+      // "Not available" has no id: it is saved as a flag, and the backend
+      // notifies the admins to add the missing deliverable.
+      deliverable_id: resolvedDeliverable?.notAvailable
+        ? null
+        : resolvedDeliverable?.id || null,
+      deliverable_not_available: Boolean(resolvedDeliverable?.notAvailable),
+      deliverable_name: resolvedDeliverable?.notAvailable
+        ? ""
+        : resolvedDeliverable?.name ||
+          resolvedDeliverable?.deliverable_name ||
+          "",
       deliverable_type: resolvedType,
       work_category: deliverableTypeCategories[resolvedType] || "",
       stage: stage || null,
@@ -443,7 +477,7 @@ export default function QuickLoggerModal({
           : currentStep === "project"
           ? "Select a Project first."
           : currentStep === "deliverable"
-          ? "Select a Deliverable for this Project."
+          ? "Select a Deliverable (or Not available) for this Project."
           : currentStep === "type"
           ? "Select a Type."
           : "Enter a valid Duration, such as 45m or 1h."
@@ -503,6 +537,7 @@ export default function QuickLoggerModal({
         client_id: entry.client_id,
         project_id: entry.project_id,
         deliverable_id: entry.deliverable_id,
+        deliverable_not_available: Boolean(entry.deliverable_not_available),
         deliverable_name: entry.deliverable_name || "",
         deliverable_type: entry.deliverable_type,
         work_category:
@@ -611,7 +646,7 @@ export default function QuickLoggerModal({
           : currentStep === "project"
           ? "Select a Project first."
           : currentStep === "deliverable"
-          ? "Select a Deliverable for this Project."
+          ? "Select a Deliverable (or Not available) for this Project."
           : currentStep === "type"
           ? "Select a Type."
           : "Enter a valid Duration, such as 45m or 1h."
@@ -695,7 +730,9 @@ export default function QuickLoggerModal({
                         {[
                           clientMap.get(entry.client_id)?.name,
                           projectMap.get(entry.project_id)?.name,
-                          entry.deliverable_name,
+                          entry.deliverable_not_available
+                            ? NOT_AVAILABLE_LABEL
+                            : entry.deliverable_name,
                           entry.deliverable_type,
                         ]
                           .filter(Boolean)
@@ -720,9 +757,7 @@ export default function QuickLoggerModal({
                     New work entry
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    {deliverableRequired
-                      ? "Client / Project / Deliverable / Type / Time"
-                      : "Client / Project / Type / Time"}
+                    Client / Project / Deliverable / Type / Time
                   </div>
                 </div>
                 {draft.text && (
@@ -813,13 +848,11 @@ export default function QuickLoggerModal({
                 {[
                   ["Client", resolvedClient?.name],
                   ["Project", resolvedProject?.name],
-                  resolvedProject && !deliverableRequired
-                    ? ["Deliverable", "Not required"]
-                    : [
-                        "Deliverable",
-                        resolvedDeliverable?.name ||
-                          resolvedDeliverable?.deliverable_name,
-                      ],
+                  [
+                    "Deliverable",
+                    resolvedDeliverable?.name ||
+                      resolvedDeliverable?.deliverable_name,
+                  ],
                   ["Deliverable Type", resolvedType],
                   ["Time", parsedDuration ? formatDuration(parsedDuration) : ""],
                 ].map(([label, value]) => (

@@ -30,6 +30,11 @@ import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";
 import { WORKSHEET } from "@/constants/testIds";
 import { trackEvent } from "@/analytics";
+import {
+  DELIVERABLE_GATED_STATUSES,
+  DELIVERABLE_REQUIRED_MESSAGE,
+  isDeliverableMissing,
+} from "@/lib/deliverableRules";
 
 const emptyFilters = {
   search: "",
@@ -58,7 +63,12 @@ const DEPARTMENT_TO_STAGE = {
 };
 
 const trackWorksheetContext = (item, previousItem, patch) => {
-  const contextFields = ["client_id", "project_id", "deliverable_id"];
+  const contextFields = [
+    "client_id",
+    "project_id",
+    "deliverable_id",
+    "deliverable_not_available",
+  ];
 
   // Do not track unrelated edits such as remarks, status, date, etc.
   const changedContextField = contextFields.some(
@@ -69,11 +79,15 @@ const trackWorksheetContext = (item, previousItem, patch) => {
 
   const hasClient = Boolean(item.client_id);
   const hasProject = Boolean(item.project_id);
-  const hasDeliverable = Boolean(item.deliverable_id);
+  const hasDeliverable = Boolean(
+    item.deliverable_id || item.deliverable_not_available
+  );
 
   const previousHasClient = Boolean(previousItem?.client_id);
   const previousHasProject = Boolean(previousItem?.project_id);
-  const previousHasDeliverable = Boolean(previousItem?.deliverable_id);
+  const previousHasDeliverable = Boolean(
+    previousItem?.deliverable_id || previousItem?.deliverable_not_available
+  );
 
   const contextStatus =
     hasClient && hasProject && hasDeliverable
@@ -98,6 +112,7 @@ const trackWorksheetContext = (item, previousItem, patch) => {
     has_client: hasClient,
     has_project: hasProject,
     has_deliverable: hasDeliverable,
+    deliverable_not_available: Boolean(item.deliverable_not_available),
     missing_fields: [
       ...(!hasClient ? ["client"] : []),
       ...(!hasProject ? ["project"] : []),
@@ -529,6 +544,25 @@ export default function WorkSheetPage() {
       };
     }
 
+    // Mirrors the backend rule: a row with a project needs a deliverable (or
+    // "Not available") before it can leave Not Started.
+    if (
+      patch.status &&
+      DELIVERABLE_GATED_STATUSES.includes(patch.status) &&
+      patch.status !== currentItem?.status &&
+      isDeliverableMissing(
+        { ...currentItem, ...patch },
+        options.deliverable_type_categories
+      )
+    ) {
+      toast.error(DELIVERABLE_REQUIRED_MESSAGE);
+
+      return {
+        success: false,
+        validation: true,
+      };
+    }
+
     const previous = itemsRef.current.find((item) => item.id === id);
 
     // Optimistically update the UI immediately.
@@ -620,7 +654,7 @@ export default function WorkSheetPage() {
         error: e,
       };
     }
-  }, [currentUser]);
+  }, [currentUser, options]);
 
   const handleDelete = async (item) => {
     if (!item?.id) return;
@@ -822,6 +856,7 @@ export default function WorkSheetPage() {
         client_id: item.client_id || null,
         project_id: item.project_id || null,
         deliverable_id: item.deliverable_id || null,
+        deliverable_not_available: Boolean(item.deliverable_not_available),
         stage: item.stage || null,
         remarks: "",
         status: "Not Started",

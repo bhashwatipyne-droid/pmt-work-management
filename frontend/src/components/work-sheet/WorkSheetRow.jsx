@@ -10,6 +10,11 @@ import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
+import {
+  NOT_AVAILABLE_LABEL,
+  NOT_AVAILABLE_VALUE,
+  isDeliverableMissing,
+} from "@/lib/deliverableRules";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
@@ -116,6 +121,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     ? projects.filter((p) => p.client_id === effectiveClientId)
     : projects;
   const projectDeliverables = deliverablesByProject[item.project_id] || [];
+  // Client work needs a deliverable (or "Not available"); highlight the cell
+  // until one is chosen.
+  const deliverableMissing = isDeliverableMissing(
+    item,
+    options.deliverable_type_categories
+  );
   const clientName = effectiveClientId
     ? clients.find((c) => c.id === effectiveClientId)?.name
     : undefined;
@@ -218,6 +229,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         client_id: null,
         project_id: null,
         deliverable_id: null,
+        deliverable_not_available: false,
       });
       localStorage.removeItem("ws_last_client_id");
       localStorage.removeItem("ws_last_project_id");
@@ -226,9 +238,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     }
 
     if (field === "project_id") {
-      onUpdate(item.id, { project_id: null, deliverable_id: null });
+      onUpdate(item.id, {
+        project_id: null,
+        deliverable_id: null,
+        deliverable_not_available: false,
+      });
       localStorage.removeItem("ws_last_project_id");
       localStorage.removeItem("ws_last_deliverable_id");
+      return;
+    }
+
+    if (field === "deliverable_id") {
+      // Clearing the cell also clears a "Not available" choice.
+      onUpdate(item.id, { deliverable_id: null, deliverable_not_available: false });
       return;
     }
 
@@ -407,6 +429,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               client_id: nextClientId,
               project_id: null,
               deliverable_id: null,
+              deliverable_not_available: false,
             });
             if (nextClientId) localStorage.setItem("ws_last_client_id", nextClientId);
             else localStorage.removeItem("ws_last_client_id");
@@ -451,7 +474,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               project_id: nextId,
               client_id: selectedProject?.client_id || effectiveClientId || null,
             };
-            if (nextId !== item.project_id) patch.deliverable_id = null;
+            if (nextId !== item.project_id) {
+              patch.deliverable_id = null;
+              patch.deliverable_not_available = false;
+            }
             onUpdate(item.id, patch);
           }}
           options={[
@@ -478,18 +504,47 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           isCellActive(3) && "sheet-cell-active",
           isCellInFillRange(3) && "sheet-cell-fill-range",
           isCellInRangeSelection(3) && "sheet-cell-range-select",
+          deliverableMissing && "shadow-[inset_2px_0_0_#fb7185]",
         ]
           .filter(Boolean)
           .join(" ")}>
         <SearchableSelect
           open={openSelect === "deliverable"}
           onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
-          value={item.deliverable_id ? String(item.deliverable_id) : NONE_VALUE}
-          onValueChange={(v) => onUpdate(item.id, { deliverable_id: v === NONE_VALUE ? null : v })}
+          value={
+            item.deliverable_not_available
+              ? NOT_AVAILABLE_VALUE
+              : item.deliverable_id
+                ? String(item.deliverable_id)
+                : NONE_VALUE
+          }
+          onValueChange={(v) => {
+            if (v === NOT_AVAILABLE_VALUE) {
+              // No matching deliverable exists yet: saving this notifies the
+              // admins to check the project's deliverables and add it.
+              onUpdate(item.id, { deliverable_id: null, deliverable_not_available: true });
+              return;
+            }
+            onUpdate(item.id, {
+              deliverable_id: v === NONE_VALUE ? null : v,
+              deliverable_not_available: false,
+            });
+          }}
           options={[
             { value: NONE_VALUE, label: "—" },
             ...projectDeliverables.map((deliverable) => ({ value: String(deliverable.id), label: deliverable.name })),
+            // Last on purpose: people should look for the real deliverable first.
+            ...(item.project_id ? [{ value: NOT_AVAILABLE_VALUE, label: NOT_AVAILABLE_LABEL }] : []),
           ]}
+          renderValue={(option, value) => {
+            if (value === NOT_AVAILABLE_VALUE) {
+              return <span className="font-medium text-amber-700">{NOT_AVAILABLE_LABEL}</span>;
+            }
+            if (deliverableMissing) {
+              return <span className="text-rose-500">Required</span>;
+            }
+            return option?.label || (value ? String(value) : (item.project_id ? "Deliverable" : "Select project first"));
+          }}
           placeholder={item.project_id ? "Deliverable" : "Select project first"}
           searchPlaceholder="Type deliverable name..."
           emptyText="No deliverables found for this project"

@@ -14,6 +14,7 @@ import {
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
+import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -479,8 +480,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       }
 
       if (column === "Deliverable") {
-        value =
-          deliverables.find((d) => d.id === item.deliverable_id)?.name || "";
+        value = item.deliverable_not_available
+          ? NOT_AVAILABLE_LABEL
+          : deliverables.find((d) => d.id === item.deliverable_id)?.name || "";
       }
 
       if (column === "Creator") {
@@ -757,6 +759,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     if (!targetIds.length) return;
 
     try {
+      // A "Not available" source has no deliverable_id to copy, so copy the
+      // flag itself (the backend clears deliverable_id and skips rows that
+      // have no project).
+      if (field === "deliverable_id" && sourceItem.deliverable_not_available) {
+        await onFillRef.current(targetIds, "deliverable_not_available", true);
+        return;
+      }
+
       await onFillRef.current(targetIds, field, value);
     } catch {
       // onFill is responsible for displaying the persistence error.
@@ -878,7 +888,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         }
         case "Client": {
           if (clear) {
-            return { client_id: null, project_id: null, deliverable_id: null };
+            return {
+              client_id: null,
+              project_id: null,
+              deliverable_id: null,
+              deliverable_not_available: false,
+            };
           }
           const match = clients.find((c) => ciEquals(c.name, text));
           if (!match) return null;
@@ -886,10 +901,17 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             client_id: match.id,
             project_id: null,
             deliverable_id: null,
+            deliverable_not_available: false,
           };
         }
         case "Project": {
-          if (clear) return { project_id: null, deliverable_id: null };
+          if (clear) {
+            return {
+              project_id: null,
+              deliverable_id: null,
+              deliverable_not_available: false,
+            };
+          }
           const currentProject = projects.find(
             (p) => p.id === targetItem.project_id
           );
@@ -900,14 +922,25 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             : projects;
           const match = pool.find((p) => ciEquals(p.name, text));
           if (!match) return null;
-          return { project_id: match.id, deliverable_id: null };
+          return {
+            project_id: match.id,
+            deliverable_id: null,
+            deliverable_not_available: false,
+          };
         }
         case "Deliverable": {
-          if (clear) return { deliverable_id: null };
+          if (clear) {
+            return { deliverable_id: null, deliverable_not_available: false };
+          }
+          // "Not available" only makes sense on a row that has a project.
+          if (ciEquals(text, NOT_AVAILABLE_LABEL)) {
+            if (!targetItem.project_id) return null;
+            return { deliverable_id: null, deliverable_not_available: true };
+          }
           const pool = deliverablesByProject[targetItem.project_id] || [];
           const match = pool.find((d) => ciEquals(d.name, text));
           if (!match) return null;
-          return { deliverable_id: match.id };
+          return { deliverable_id: match.id, deliverable_not_available: false };
         }
         case "Stage": {
           if (clear) return { stage: null };

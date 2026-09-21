@@ -131,7 +131,7 @@ DELIVERABLE_TYPE_CATEGORIES = {
 
 STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Rework", "Closed"]
 MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
-MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
+MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
 PROJECT_STATUSES = [
     "Active",
@@ -253,6 +253,10 @@ class WorkItem(BaseModel):
     client_id: Optional[str] = None
     project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
+    # True when the user picked "Not available" in the Deliverable dropdown
+    # (the project has no matching deliverable yet). Kept separate from
+    # deliverable_id so every existing join on deliverable_id keeps working.
+    deliverable_not_available: bool = False
     stage: Optional[str] = None
     remarks: str = ""
     status: str = "Not Started"
@@ -275,6 +279,7 @@ class WorkItemCreate(BaseModel):
     client_id: Optional[str] = None
     project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
+    deliverable_not_available: Optional[bool] = False
     stage: Optional[str] = None
     remarks: Optional[str] = ""
     status: Optional[str] = "Not Started"
@@ -294,6 +299,7 @@ class WorkItemUpdate(BaseModel):
     client_id: Optional[str] = None
     project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
+    deliverable_not_available: Optional[bool] = None
     stage: Optional[str] = None
     remarks: Optional[str] = None
     status: Optional[str] = None
@@ -520,6 +526,69 @@ def validate_work_category_rules(merged: dict):
             )
 
 
+# Moving a row out of "Not Started" needs a deliverable (or "Not available").
+# Reviewer statuses (Changes Requested / Rework / Closed) are deliberately not
+# gated: a reviewer must not be blocked by a gap the creator left.
+DELIVERABLE_GATED_STATUSES = {"Ongoing", "Ready for Review"}
+
+
+def deliverable_required_for(merged: dict) -> bool:
+    """A deliverable is expected on client work: rows that have a project and
+    are not Non-Core (meetings, hiring, trainings...). Rows with no project
+    have no deliverable list to choose from, so they are exempt."""
+    if not merged.get("project_id"):
+        return False
+    category = merged.get("work_category")
+    if not category:
+        category = DELIVERABLE_TYPE_CATEGORIES.get(merged.get("deliverable_type") or "")
+    return category != "Non-Core"
+
+
+def apply_deliverable_rules(existing: dict, update_fields: dict) -> None:
+    """Keep deliverable_id / deliverable_not_available consistent and enforce
+    the compulsory-deliverable rule. Mutates update_fields; raises
+    HTTPException(400) on a violation. `existing` is {} when creating."""
+    if "deliverable_not_available" in update_fields:
+        update_fields["deliverable_not_available"] = bool(update_fields["deliverable_not_available"])
+
+    if update_fields.get("deliverable_id"):
+        # A real deliverable always wins over the "Not available" flag.
+        update_fields["deliverable_not_available"] = False
+    elif update_fields.get("deliverable_not_available"):
+        update_fields["deliverable_id"] = None
+    elif "deliverable_not_available" not in update_fields and (
+        "deliverable_id" in update_fields  # explicitly cleared
+        or update_fields.get("project_id", existing.get("project_id")) != existing.get("project_id")
+        or update_fields.get("client_id", existing.get("client_id")) != existing.get("client_id")
+    ):
+        # Clearing the deliverable, or moving the row to another project or
+        # client, invalidates a previous "Not available" choice.
+        update_fields["deliverable_not_available"] = False
+
+    merged = {**existing, **update_fields}
+
+    if merged.get("deliverable_not_available") and not merged.get("project_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="Select a project before marking the deliverable as Not available.",
+        )
+
+    new_status = update_fields.get("status")
+    if (
+        new_status in DELIVERABLE_GATED_STATUSES
+        and new_status != existing.get("status")
+        and deliverable_required_for(merged)
+        and not (merged.get("deliverable_id") or merged.get("deliverable_not_available"))
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Please select a deliverable (or choose 'Not available') "
+                "before moving this row forward."
+            ),
+        )
+
+
 async def scoped_update_fields(user: User, existing: dict, update_fields: dict, creator_department: Optional[str] = None) -> dict:
     """Apply role-based restrictions to a raw update payload. Raises HTTPException on violation."""
     if user.role == "admin":
@@ -580,6 +649,8 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
 
     if "stage" in update_fields and update_fields["stage"] and update_fields["stage"] not in STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
+
+    apply_deliverable_rules(existing, update_fields)
 
     validate_work_category_rules({**existing, **update_fields})
     return update_fields
@@ -695,6 +766,8 @@ def _push_link(notification: dict, is_admin: bool) -> str:
         return "/approvals"
     if action_type in ("open_worksheet", "add_work_row"):
         return "/"
+    if action_type == "add_deliverable" and notification.get("project_id"):
+        return f"/projects/{notification['project_id']}"
     if notification.get("project_id") and is_admin:
         return f"/projects/{notification['project_id']}"
     return "/"
@@ -885,6 +958,102 @@ async def _upsert_notification(notification: dict):
     await _upsert_notifications_batch([notification])
 
 
+async def _notify_admins_deliverable_missing(reporter: "User", item: dict):
+    """A user chose "Not available" in the worksheet's Deliverable dropdown:
+    tell every admin to check the deliverables under that client in that
+    project and add the missing one. Never raises - the worksheet save that
+    triggered it must not fail because a notification could not be written.
+
+    One notice per (project, admin): a second "Not available" on the same
+    project while the first is still pending would only be noise. Once the
+    admin has added deliverables the notice is marked actioned (see
+    _resolve_deliverable_missing_notifications), so the next "Not available"
+    on that project replaces it with a fresh, unread one."""
+    try:
+        project_id = item.get("project_id")
+        if not project_id:
+            return
+
+        project = await db.projects.find_one(
+            {"id": project_id}, {"_id": 0, "name": 1, "client_id": 1}
+        )
+        if not project:
+            return
+
+        client_id = project.get("client_id") or item.get("client_id")
+        client_doc = (
+            await db.clients.find_one({"id": client_id}, {"_id": 0, "name": 1})
+            if client_id
+            else None
+        )
+        client_name = (client_doc or {}).get("name", "")
+        project_name = project.get("name", "the project")
+
+        admins = await _admin_users()
+        if not admins:
+            return
+
+        dedupe_key = f"deliverable-missing:{project_id}"
+
+        # An earlier notice the admin already actioned must not block a new one.
+        await db.notifications.delete_many(
+            {"dedupe_key": dedupe_key, "actioned_at": {"$ne": None}}
+        )
+
+        reporter_name = getattr(reporter, "name", None) or "A team member"
+        where = f"{project_name} (Client: {client_name})" if client_name else project_name
+        message = (
+            f"{reporter_name} selected 'Not available' as the deliverable for {where}. "
+            + (
+                f"Please check all deliverables under {client_name} in this project and add the missing one."
+                if client_name
+                else "Please check all deliverables in this project and add the missing one."
+            )
+        )
+
+        ts = now_iso()
+        await _upsert_notifications_batch([
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": admin["id"],
+                "type": "deliverable_missing",
+                "title": "Deliverable not available",
+                "message": message,
+                "project_id": project_id,
+                "deliverable_id": None,
+                "client_id": client_id,
+                "stage": item.get("stage"),
+                "action_type": "add_deliverable",
+                "created_at": ts,
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": dedupe_key,
+            }
+            for admin in admins
+        ])
+    except Exception:
+        logger.exception("Could not create the deliverable-missing notification")
+
+
+async def _resolve_deliverable_missing_notifications(project_id: Optional[str]):
+    """Deliverables were just added to this project, so any pending
+    'Not available' notice for it has been dealt with: drop the Add
+    deliverable button and mark it read. Never raises."""
+    if not project_id:
+        return
+    try:
+        ts = now_iso()
+        pending = {
+            "type": "deliverable_missing",
+            "project_id": project_id,
+            "actioned_at": None,
+        }
+        await db.notifications.update_many({**pending, "read_at": None}, {"$set": {"read_at": ts}})
+        await db.notifications.update_many(pending, {"$set": {"actioned_at": ts}})
+    except Exception:
+        logger.exception("Could not resolve the deliverable-missing notifications")
+
+
 async def _notify_new_project(
     project: dict,
     deliverables: list[dict],
@@ -902,6 +1071,9 @@ async def _notify_new_project(
     client_name = client_doc.get("name", "") if client_doc else ""
 
     pending_notifications: list[dict] = []
+
+    if deliverables:
+        await _resolve_deliverable_missing_notifications(project.get("id"))
 
     if not deliverables:
         # No deliverables yet means there's nothing for production staff to
@@ -1654,11 +1826,18 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
             raise HTTPException(status_code=400, detail="Project does not belong to selected client")
         data["client_id"] = project.get("client_id")
 
+    data["deliverable_not_available"] = bool(data.get("deliverable_not_available"))
+    apply_deliverable_rules({}, data)
+
     validate_work_category_rules({**data, "work_date": work_date})
 
     ts = now_iso()
     item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
     await db.work_items.insert_one(item.model_dump())
+
+    if item.deliverable_not_available:
+        await _notify_admins_deliverable_missing(user, item.model_dump())
+
     return item
 
 
@@ -1776,6 +1955,7 @@ async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Reque
     # Keep the old values before updating MongoDB
     old_status = existing.get("status")
     old_stage = existing.get("stage")
+    was_not_available = bool(existing.get("deliverable_not_available"))
 
     update_fields["updated_at"] = now_iso()
 
@@ -1824,6 +2004,11 @@ async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Reque
         {"id": item_id},
         {"_id": 0},
     )
+
+    # Only the moment "Not available" is chosen notifies the admins, not every
+    # later edit of a row that already has it.
+    if updated and updated.get("deliverable_not_available") and not was_not_available:
+        await _notify_admins_deliverable_missing(user, updated)
 
     return updated
 
@@ -2014,6 +2199,21 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
 
     # Preserve the order requested by the frontend.
     updated_by_id = {item["id"]: item for item in updated_items}
+
+    # Rows that just became "Not available": one notice per project is enough
+    # (the notification itself is also de-duplicated per project).
+    newly_not_available: dict = {}
+    for item_id in payload.ids:
+        row = updated_by_id.get(item_id)
+        if (
+            row
+            and row.get("deliverable_not_available")
+            and not existing_by_id.get(item_id, {}).get("deliverable_not_available")
+        ):
+            newly_not_available.setdefault(row.get("project_id"), row)
+
+    for row in newly_not_available.values():
+        await _notify_admins_deliverable_missing(user, row)
 
     return [
         updated_by_id[item_id]

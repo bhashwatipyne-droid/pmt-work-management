@@ -77,6 +77,7 @@ const NOTIFICATION_STYLES = {
     tone: "bg-sky-50 text-sky-600",
   },
   approval_stuck: { icon: Clock, tone: "bg-rose-50 text-rose-600" },
+  deliverable_missing: { icon: CircleAlert, tone: "bg-amber-50 text-amber-600" },
 };
 
 const DEFAULT_NOTIFICATION_STYLE = {
@@ -249,6 +250,26 @@ export default function NotificationCenter() {
     }
   };
 
+  // "Add deliverable" on a Not-available notice: mark it read and go straight
+  // into that project, where the admin can review its deliverables and add
+  // the missing one. (The notice is resolved server-side once a deliverable
+  // is actually added to the project.)
+  const handleAddDeliverable = async (event, notification) => {
+    event.stopPropagation();
+    await handleRead(notification);
+
+    trackEvent("notification_action_clicked", {
+      notification_id: notification.id,
+      notification_type: notification.type,
+      action_type: notification.action_type,
+    });
+
+    if (notification.project_id) {
+      setOpen(false);
+      navigate(`/projects/${notification.project_id}`);
+    }
+  };
+
   const handleAddRow = async (event, notification) => {
     event.stopPropagation();
     setActionId(notification.id);
@@ -408,6 +429,21 @@ export default function NotificationCenter() {
                         <span className="text-[10px] text-slate-400">
                           {relativeTime(notification.created_at)}
                         </span>
+
+                        {notification.action_type === "add_deliverable" &&
+                          !notification.actioned_at &&
+                          notification.project_id &&
+                          currentUser?.role === "admin" && (
+                            <button
+                              type="button"
+                              onClick={(event) =>
+                                handleAddDeliverable(event, notification)
+                              }
+                              className="rounded-md bg-[#2b2bb5] px-2.5 py-1.5 text-[10px] font-semibold text-white transition-colors hover:bg-[#23239b]"
+                            >
+                              Add deliverable
+                            </button>
+                          )}
 
                         {notification.action_type === "add_work_row" &&
                           !notification.actioned_at && (

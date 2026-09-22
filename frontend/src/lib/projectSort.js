@@ -18,15 +18,15 @@ const time = (value) => {
   return Number.isFinite(ms) ? ms : null;
 };
 
-// Ascending date compare with missing dates always sorting last, regardless
-// of sort direction - a project with no due date isn't "the soonest".
-const compareDateAsc = (a, b) => {
+// Missing dates always sort last, whichever direction is requested - a
+// project with no due date is neither "the soonest" nor "the latest".
+const compareDate = (a, b, direction = 1) => {
   const ta = time(a);
   const tb = time(b);
   if (ta === null && tb === null) return 0;
   if (ta === null) return 1;
   if (tb === null) return -1;
-  return ta - tb;
+  return (ta - tb) * direction;
 };
 
 // `sortBy === ""` (or any value this doesn't recognize) leaves the list
@@ -38,8 +38,9 @@ export const sortProjects = (projects, sortBy) => {
   const list = [...projects];
 
   if (sortBy === "deadline") {
-    // Soonest due date first - the ones that need attention next.
-    list.sort((a, b) => compareDateAsc(a.end_date, b.end_date));
+    // Latest due date first (descending) - projects with no due date still
+    // sort to the end either way.
+    list.sort((a, b) => compareDate(a.end_date, b.end_date, -1));
   } else if (sortBy === "updated") {
     list.sort((a, b) => (time(b.updated_at) || 0) - (time(a.updated_at) || 0));
   }

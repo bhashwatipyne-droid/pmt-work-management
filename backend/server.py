@@ -939,7 +939,14 @@ async def scoped_update_fields(
         # department: those were never any one person's row to begin with,
         # and locking them would make that shared feature unusable.
         creator_id = existing.get("creator_id")
-        if creator_id and creator_id != user.id and creator_role == "member":
+        # Only an explicit manager/admin creator opens a row to the whole
+        # department. Anything else — including a member, or a creator
+        # whose role couldn't be determined (missing/blank role on their
+        # user record) — must default to LOCKED. Treating an unknown role
+        # as "not a member" was the bug: a user record with a blank role
+        # silently opened every one of that person's rows to their entire
+        # department.
+        if creator_id and creator_id != user.id and creator_role not in ("manager", "admin"):
             raise HTTPException(
                 status_code=403,
                 detail="This row was created by a teammate, so only they (or a manager) can edit it.",
@@ -4953,8 +4960,8 @@ async def create_user(payload: UserCreate, request: Request):
     await require_admin(request)
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
-    if payload.department and payload.department not in DEPARTMENTS:
-        raise HTTPException(status_code=400, detail="Invalid department")
+    if not payload.department or payload.department not in DEPARTMENTS:
+        raise HTTPException(status_code=400, detail="Department required")
 
     username = payload.username.strip().lower()
     email = payload.email.strip().lower()
@@ -5083,13 +5090,12 @@ async def update_user(
     # Department
     if "department" in update_fields:
         if (
-            update_fields["department"]
-            and update_fields["department"]
-            not in DEPARTMENTS
+            not update_fields["department"]
+            or update_fields["department"] not in DEPARTMENTS
         ):
             raise HTTPException(
                 status_code=400,
-                detail="Invalid department"
+                detail="Department required"
             )
 
     # Password

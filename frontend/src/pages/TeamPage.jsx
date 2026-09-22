@@ -36,6 +36,16 @@ const AddMemberModal = ({
   );
   const [submitting, setSubmitting] = useState(false);
 
+  // options (departments/roles) are fetched async and can still be empty
+  // when this modal first mounts (e.g. the backend is cold-starting). If
+  // department was initialized to "" because the list wasn't loaded yet,
+  // sync it once real options arrive instead of silently submitting "".
+  useEffect(() => {
+    if (!department && (options.departments || []).length > 0) {
+      setDepartment(options.departments[0]);
+    }
+  }, [options.departments]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!open) return null;
 
   const handleSubmit = async () => {
@@ -53,6 +63,16 @@ const AddMemberModal = ({
 
     if (!password) {
       return toast.error("Temporary password required");
+    }
+
+    if (!role) {
+      return toast.error("Role required");
+    }
+
+    if (!department) {
+      return toast.error(
+        "Department required — the department list may still be loading, please try again in a moment"
+      );
     }
 
     setSubmitting(true);
@@ -76,6 +96,7 @@ const AddMemberModal = ({
       setEmail("");
       setPassword("");
       setRole("member");
+      setDepartment((options.departments || [])[0] || "");
 
       onClose?.();
     } catch (err) {
@@ -297,6 +318,14 @@ const EditMemberModal = ({
       return toast.error(
         "Password must be at least 8 characters"
       );
+    }
+
+    if (!role) {
+      return toast.error("Role required");
+    }
+
+    if (!department) {
+      return toast.error("Department required");
     }
 
     setSubmitting(true);

@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
+import { SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 const DEFAULT_HOURS_PER_DAY = 8.5;
 
@@ -294,9 +295,7 @@ export default function EfficiencyMonthlyCapacityPage() {
       </div>
 
       {loading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
-        </div>
+        <SettingsTableSkeleton columns={6} rows={8} label="Loading monthly capacity" />
       ) : (
         <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
           {/* Employee list */}

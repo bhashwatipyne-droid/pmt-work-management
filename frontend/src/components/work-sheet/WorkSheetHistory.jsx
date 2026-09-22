@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, History, ArrowRight } from "lucide-react";
 import { getWorkItemHistory } from "@/services/api";
+import { DialogRowsSkeleton } from "@/components/skeletons/Skeletons";
 
 const formatDate = (value) => {
   if (!value) return "";
@@ -115,18 +116,8 @@ export const WorkSheetHistory = ({
         {/* Body */}
         <div className="flex-1 overflow-y-auto bg-[#f7f9fc]">
           {loading ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <div className="text-center">
-                <div className="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-2 border-[#dcdcf8] border-t-[#2b2bb5]" />
-
-                <p className="text-sm font-medium text-foreground">
-                  Loading history
-                </p>
-
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Fetching recent changes...
-                </p>
-              </div>
+            <div className="p-5">
+              <DialogRowsSkeleton rows={8} />
             </div>
           ) : logs.length === 0 ? (
             <div className="flex h-full items-center justify-center p-6 text-center">

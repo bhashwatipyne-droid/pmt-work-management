@@ -10,6 +10,7 @@ import {
   updateUser,
 } from "@/services/api";
 import { TEAM } from "@/constants/testIds";
+import { TeamListSkeleton } from "@/components/skeletons/Skeletons";
 
 const inputBase =
   "w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20";
@@ -531,14 +532,20 @@ export default function TeamPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
 
-  const fetchAll = async () => {
-    const [u, o] = await Promise.all([
-      getUsers(),
-      getOptions(),
-    ]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
 
-    setMembers(u);
-    setOptions(o);
+  const fetchAll = async () => {
+    try {
+      const [u, o] = await Promise.all([
+        getUsers(),
+        getOptions(),
+      ]);
+
+      setMembers(u);
+      setOptions(o);
+    } finally {
+      setLoadingMembers(false);
+    }
   };
 
   useEffect(() => {
@@ -642,6 +649,9 @@ export default function TeamPage() {
           </p>
         </div>
 
+        {loadingMembers ? (
+          <TeamListSkeleton />
+        ) : (
         <div className="overflow-x-auto">
           <table
             data-testid={TEAM.rosterTable}
@@ -717,6 +727,7 @@ export default function TeamPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       <AddMemberModal

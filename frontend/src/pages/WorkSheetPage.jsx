@@ -28,13 +28,19 @@ import { AlertCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
 import { toast } from "sonner";
-import { WORKSHEET } from "@/constants/testIds";
 import { trackEvent } from "@/analytics";
 import {
   DELIVERABLE_GATED_STATUSES,
   DELIVERABLE_REQUIRED_MESSAGE,
   isDeliverableMissing,
 } from "@/lib/deliverableRules";
+import {
+  TIME_GATED_STATUSES,
+  TIME_REQUIRED_MESSAGE,
+  hasTime,
+  parseTimeInput,
+} from "@/lib/timeRules";
+import { WorkSheetSkeleton, WorkSheetTableSkeleton } from "@/components/skeletons/Skeletons";
 
 const emptyFilters = {
   search: "",
@@ -563,6 +569,25 @@ export default function WorkSheetPage() {
       };
     }
 
+    // Mirrors the backend time rule: a row needs time before it moves forward.
+    // Only refused here when nothing could fill it - with a deliverable type the
+    // server pre-fills the person's benchmark, so that case is left to it.
+    if (
+      patch.status &&
+      TIME_GATED_STATUSES.includes(patch.status) &&
+      patch.status !== currentItem?.status
+    ) {
+      const merged = { ...currentItem, ...patch };
+      if (!hasTime(merged) && !merged.deliverable_type) {
+        toast.error(TIME_REQUIRED_MESSAGE);
+
+        return {
+          success: false,
+          validation: true,
+        };
+      }
+    }
+
     const previous = itemsRef.current.find((item) => item.id === id);
 
     // Optimistically update the UI immediately.
@@ -683,6 +708,16 @@ export default function WorkSheetPage() {
   // `items` state.
   const handleFill = useCallback(async (targetIds, field, value) => {
     if (!targetIds.length || !field) return;
+
+    // The server skips rows it refuses without saying so, so a time it would
+    // refuse is stopped here where the user can be told why.
+    if (field === "time_taken_minutes") {
+      const parsed = parseTimeInput(value);
+      if (!parsed.ok) {
+        toast.error(parsed.message);
+        return;
+      }
+    }
 
     const previous = itemsRef.current
       .filter((item) => targetIds.includes(item.id))
@@ -1024,7 +1059,7 @@ export default function WorkSheetPage() {
   ]);
 
   if (userLoading || !currentUser) {
-    return <div className="flex h-screen items-center justify-center text-slate-500">Loading work sheet...</div>;
+    return <WorkSheetSkeleton />;
   }
 
   return (
@@ -1111,9 +1146,7 @@ export default function WorkSheetPage() {
       )}
 
       {loading ? (
-        <div data-testid={WORKSHEET.loadingState} className="flex flex-1 items-center justify-center text-sm text-slate-500">
-          Loading rows...
-        </div>
+        <WorkSheetTableSkeleton />
       ) : (
         <WorkSheetTable
           ref={tableRef}

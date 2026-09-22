@@ -29,6 +29,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 const fieldClass =
   "h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 " +
@@ -239,9 +240,7 @@ export default function EfficiencyActivityTargetsPage() {
       </div>
 
       {loadingEmployees ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
-        </div>
+        <SettingsTableSkeleton columns={4} rows={8} label="Loading your team" />
       ) : (
         <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
           {/* Team list */}
@@ -364,9 +363,7 @@ export default function EfficiencyActivityTargetsPage() {
                 </div>
 
                 {loadingTargets ? (
-                  <div className="flex items-center justify-center py-10">
-                    <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
-                  </div>
+                  <SettingsTableSkeleton columns={3} rows={4} label="Loading targets" />
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {targets.map((t) => {

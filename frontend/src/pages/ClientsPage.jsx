@@ -23,6 +23,7 @@ import {
 } from "@/services/api";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { CLIENTS } from "@/constants/testIds";
+import { ClientsListSkeleton } from "@/components/skeletons/Skeletons";
 
 const inputBase =
   "w-full rounded-lg border border-input bg-white px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20 disabled:cursor-not-allowed disabled:opacity-60";
@@ -699,11 +700,16 @@ export default function ClientsPage() {
   const [deleteClientTarget, setDeleteClientTarget] = useState(null);
   const [deletingClient, setDeletingClient] = useState(false);
 
+  // Until the first response arrives the table shows a skeleton instead of
+  // "No clients yet". Refreshes after an edit keep the current rows.
+  const [loadingClients, setLoadingClients] = useState(true);
+
   const fetchAll = async () => {
     try {
       const [c, p] = await Promise.all([
         getClients(),
-        getProjects(currentUserId),
+        // Only client_id is used from projects here, so skip the nested deliverables.
+        getProjects(currentUserId, { include_deliverables: false }),
       ]);
 
       setClients(c);
@@ -711,6 +717,8 @@ export default function ClientsPage() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to load clients");
+    } finally {
+      setLoadingClients(false);
     }
   };
 
@@ -857,7 +865,13 @@ export default function ClientsPage() {
           </thead>
 
           <tbody>
-            {filtered.length === 0 ? (
+            {loadingClients ? (
+              <tr>
+                <td colSpan={5} className="p-0">
+                  <ClientsListSkeleton />
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
               <tr>
                 <td
                   colSpan={5}

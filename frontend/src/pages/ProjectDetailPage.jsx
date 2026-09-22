@@ -8,6 +8,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,9 +28,11 @@ import {
   STAGES,
 } from "@/constants/projectPalette";
 import { DeliverableModal } from "@/components/projects/DeliverableModal";
+import { ImportDeliverablesModal } from "@/components/projects/ImportDeliverablesModal";
 import ProjectEditModal from "@/components/projects/ProjectEditModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { trackEvent } from "../analytics";
+import { ProjectDetailSkeleton } from "@/components/skeletons/Skeletons";
 
 const fmtDate = (iso) => {
   if (!iso) return "—";
@@ -83,6 +86,7 @@ export default function ProjectDetailPage() {
     mode: "add",
     initial: null,
   });
+  const [importOpen, setImportOpen] = useState(false);
   const [deliverableTypes, setDeliverableTypes] = useState([]);
   const [clients, setClients] = useState([]);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
@@ -203,11 +207,7 @@ export default function ProjectDetailPage() {
   }
 
   if (loading || !project) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-[#f7f9fc] py-16 text-sm text-muted-foreground">
-        Loading project…
-      </div>
-    );
+    return <ProjectDetailSkeleton />;
   }
 
   const statusColor =
@@ -357,20 +357,32 @@ export default function ProjectDetailPage() {
             </h2>
 
             {currentUser.role === "admin" && (
-              <button
-                data-testid="project-detail-add-deliverable-btn"
-                onClick={() =>
-                  setDelivModal({
-                    open: true,
-                    mode: "add",
-                    initial: null,
-                  })
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#dcdcf8] bg-[#f0f0fd] px-3 py-2 text-xs font-semibold text-[#1a1a8a] transition-colors hover:bg-[#dcdcf8] focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Deliverable
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="project-detail-import-deliverables-btn"
+                  onClick={() => setImportOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  Import Deliverables
+                </button>
+
+                <button
+                  data-testid="project-detail-add-deliverable-btn"
+                  onClick={() =>
+                    setDelivModal({
+                      open: true,
+                      mode: "add",
+                      initial: null,
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#dcdcf8] bg-[#f0f0fd] px-3 py-2 text-xs font-semibold text-[#1a1a8a] transition-colors hover:bg-[#dcdcf8] focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Deliverable
+                </button>
+              </div>
             )}
           </div>
 
@@ -555,6 +567,14 @@ export default function ProjectDetailPage() {
           }))
         }
         onSaved={fetchAll}
+      />
+
+      <ImportDeliverablesModal
+        open={importOpen}
+        projectId={projectId}
+        deliverableTypes={deliverableTypes}
+        onClose={() => setImportOpen(false)}
+        onImported={fetchAll}
       />
 
       <ProjectEditModal

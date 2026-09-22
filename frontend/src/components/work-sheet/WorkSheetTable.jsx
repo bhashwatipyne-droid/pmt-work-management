@@ -16,6 +16,7 @@ import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
+import { parseTimeInput } from "@/lib/timeRules";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
 import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
@@ -972,7 +973,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         case "Time (min)": {
           if (clear) return { time_taken_minutes: 0 };
           const num = Number(text.replace(/[^\d.-]/g, ""));
-          if (Number.isNaN(num)) return null;
+          // Anything the server would refuse (not a number, negative, over 24 h)
+          // is ignored like an unmatched value, instead of failing silently later.
+          if (!parseTimeInput(String(num)).ok) return null;
           return { time_taken_minutes: num };
         }
         case "Creator": {
@@ -1497,10 +1500,20 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     <button
                       type="button"
                       onClick={(event) => event.stopPropagation()}
-                      className="max-w-full min-w-0 overflow-hidden rounded px-1 py-0.5 text-center hover:text-slate-900"
-                      title={column}
+                      className="flex max-w-full min-w-0 items-center overflow-hidden rounded px-1 py-0.5 text-center hover:text-slate-900"
+                      title={column === "Time (min)" ? `${column} - required` : column}
                     >
                       <span className="block truncate">{column}</span>
+                      {/* Outside the truncating label so the marker stays visible in a narrow column. */}
+                      {column === "Time (min)" && (
+                        <span
+                          className="ml-0.5 shrink-0 text-rose-500"
+                          title="Required"
+                          aria-label="required"
+                        >
+                          *
+                        </span>
+                      )}
                     </button>
 
                     <WorksheetColumnMenu

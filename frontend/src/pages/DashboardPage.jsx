@@ -11,6 +11,7 @@ import {
 
 import { ProjectMetricCard } from "@/components/projects/ProjectMetricCard";
 import { STAGE_COLORS, STATUS_COLORS } from "@/constants/projectPalette";
+import { DashboardSkeleton } from "@/components/skeletons/Skeletons";
 
 export default function DashboardPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
@@ -92,11 +93,7 @@ export default function DashboardPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center py-16 text-sm text-muted-foreground">
-        Loading dashboard...
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (error || !overview) {

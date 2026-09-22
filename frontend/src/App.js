@@ -23,7 +23,7 @@ import ProfilePage from "@/pages/ProfilePage";
 import EfficiencyPage from "@/pages/EfficiencyPage";
 import EfficiencyMonthlyCapacityPage from "@/pages/EfficiencyMonthlyCapacityPage";
 import EfficiencyActivityTargetsPage from "@/pages/EfficiencyActivityTargetsPage";
-import { Loader2 } from "lucide-react";
+import { AppShellSkeleton } from "@/components/skeletons/Skeletons";
 
 const PAGE_NAMES = {
   "/": "Work Sheet",
@@ -72,11 +72,7 @@ function AppShell() {
   ]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0b1e39]">
-        <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
-      </div>
-    );
+    return <AppShellSkeleton />;
   }
 
   if (!isAuthenticated) {

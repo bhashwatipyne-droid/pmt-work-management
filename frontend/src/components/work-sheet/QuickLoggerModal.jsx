@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, Clock, Save, Check, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
+import { getTimeDefaults } from "@/services/api";
 import {
   NOT_AVAILABLE_LABEL,
   NOT_AVAILABLE_VALUE,
@@ -97,6 +98,20 @@ export default function QuickLoggerModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showRemark, setShowRemark] = useState(false);
+  const [timeDefaults, setTimeDefaults] = useState({});
+
+  // The logged-in person's minutes-per-unit for each Core activity. A failure
+  // is harmless: durations just have to be typed, as before.
+  useEffect(() => {
+    if (!open || !currentUser?.id) return undefined;
+    let cancelled = false;
+    getTimeDefaults(currentUser.id)
+      .then((data) => !cancelled && setTimeDefaults(data?.defaults || {}))
+      .catch(() => !cancelled && setTimeDefaults({}));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, currentUser?.id]);
   const inputRef = useRef(null);
   const entryCardRef = useRef(null);
   const suggestionRefs = useRef([]);
@@ -240,9 +255,16 @@ export default function QuickLoggerModal({
     [deliverableTypes, draft.deliverable_type, parts.type]
   );
 
-  const parsedDuration = parseDuration(
-    draft.time_taken_minutes || parts.duration
-  );
+  // Time is required, but when nothing has been typed it is filled from this
+  // person's own benchmark for the chosen type (their efficiency target). A
+  // typed duration always wins, so edge cases stay editable.
+  const typedDurationText = draft.time_taken_minutes || parts.duration;
+  const typedDuration = parseDuration(typedDurationText);
+  const benchmarkMinutes = resolvedType
+    ? Number(timeDefaults[resolvedType]) || 0
+    : 0;
+  const durationIsAuto = !typedDurationText && benchmarkMinutes > 0;
+  const parsedDuration = typedDuration || (durationIsAuto ? benchmarkMinutes : null);
 
   const currentStep = useMemo(() => {
     if (!draft.text.trim()) return "client";
@@ -854,7 +876,12 @@ export default function QuickLoggerModal({
                       resolvedDeliverable?.deliverable_name,
                   ],
                   ["Deliverable Type", resolvedType],
-                  ["Time", parsedDuration ? formatDuration(parsedDuration) : ""],
+                  [
+                    "Time",
+                    parsedDuration
+                      ? `${formatDuration(parsedDuration)}${durationIsAuto ? " (auto)" : ""}`
+                      : "",
+                  ],
                 ].map(([label, value]) => (
                   <div
                     key={label}
@@ -898,6 +925,14 @@ export default function QuickLoggerModal({
                     className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
                   />
                 </div>
+              )}
+
+              {durationIsAuto && (
+                <p className="mt-3 text-xs text-indigo-600">
+                  Time filled automatically from your benchmark for {resolvedType} (
+                  {formatDuration(benchmarkMinutes)}). Type a duration, or pick one
+                  below, to change it.
+                </p>
               )}
 
               <div className="mt-4 flex flex-wrap items-center gap-2">

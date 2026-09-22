@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Loader2,
   Settings2,
   CalendarRange,
   Target,
@@ -29,6 +28,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { EfficiencyContentSkeleton } from "@/components/skeletons/Skeletons";
 
 const fieldClass =
   "h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 " +
@@ -186,11 +186,7 @@ export default function EfficiencyPage() {
         </div>
       </div>
 
-      {loading && (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
-        </div>
-      )}
+      {loading && <EfficiencyContentSkeleton />}
 
       {error && !loading && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">

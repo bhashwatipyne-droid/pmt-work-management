@@ -18,6 +18,7 @@ Permission model:
     whole org, manager sees their department, everyone else sees only themselves.
 """
 
+import math
 import uuid
 from typing import List, Optional, Dict, Any
 
@@ -104,6 +105,21 @@ class EmployeeActivityTargetUpdate(BaseModel):
 
 
 # ---------------- Pure calculation helpers ----------------
+
+def safe_minutes(value) -> float:
+    """A usable number of minutes from whatever is stored on a work row.
+
+    Old rows can hold None, "", text, a negative number or even NaN/Infinity. Any of
+    those in a sum would poison a whole month's Core hours (NaN spreads through every
+    later step and prints as 0% or NaN%), so they count as 0 here."""
+    try:
+        minutes = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(minutes) or minutes < 0:
+        return 0.0
+    return minutes
+
 
 def calculate_working_days_after_leave(working_days: float, leave_days: float) -> float:
     return max(0.0, round(float(working_days or 0) - float(leave_days or 0), 2))
@@ -340,7 +356,7 @@ def create_efficiency_router(
         capacity = (await _capacity_map(month, [user_id])).get(user_id)
         items = await _month_work_items(month, [user_id])
         non_core_minutes = sum(
-            float(it.get("time_taken_minutes") or 0)
+            safe_minutes(it.get("time_taken_minutes"))
             for it in items
             if _category_of(it) == "Non-Core"
         )
@@ -369,7 +385,7 @@ def create_efficiency_router(
         for it in items:
             category = _category_of(it)
             if category == "Non-Core":
-                mins = float(it.get("time_taken_minutes") or 0)
+                mins = safe_minutes(it.get("time_taken_minutes"))
                 non_core_minutes += mins
                 key = it.get("deliverable_type") or "Other"
                 non_core_by_type[key] = non_core_by_type.get(key, 0.0) + mins
@@ -574,6 +590,28 @@ def create_efficiency_router(
         """Core deliverable type names a manager can pick from when setting potential."""
         await get_acting_user(request)
         return core_activity_names
+
+    # ---------- Time defaults for the Work Sheet ----------
+
+    @router.get("/time-defaults")
+    async def time_defaults(request: Request, user_id: Optional[str] = Query(None)):
+        """Minutes-per-unit an employee has set for each Core activity - what the Work
+        Sheet pre-fills as "time taken" when that deliverable type is chosen. Defaults
+        to the caller; asking about someone else follows the same visibility rules as
+        the rest of the efficiency data."""
+        user = await get_acting_user(request)
+        target_id = user_id or user.id
+        await _assert_can_view(user, target_id)
+        docs = await db.efficiency_employee_targets.find(
+            {"user_id": target_id, "active": {"$ne": False}},
+            {"_id": 0, "activity_name": 1, "time_per_unit_minutes": 1},
+        ).to_list(500)
+        defaults = {}
+        for d in docs:
+            minutes = safe_minutes(d.get("time_per_unit_minutes"))
+            if minutes > 0 and d.get("activity_name"):
+                defaults[d["activity_name"]] = round(minutes, 2)
+        return {"user_id": target_id, "defaults": defaults}
 
     # ---------- Employee activity targets (potential) — MANAGER ONLY to write ----------
 

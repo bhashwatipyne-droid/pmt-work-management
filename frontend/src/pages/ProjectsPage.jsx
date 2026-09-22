@@ -51,6 +51,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ProjectsBoardSkeleton, SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 // A function with a permanent identity that always calls the latest version
 // of `fn`. Lets the page hand the (memoized) project cards handlers that
@@ -916,12 +917,11 @@ export default function ProjectsPage() {
 
       {/* Content */}
       {loading ? (
-        <div
-          data-testid={PROJECTS.loadingState}
-          className="rounded-xl border border-border bg-card py-16 text-center text-sm text-muted-foreground"
-        >
-          Loading projects...
-        </div>
+        view === "chart" ? (
+          <ProjectsBoardSkeleton />
+        ) : (
+          <SettingsTableSkeleton columns={7} rows={9} label="Loading projects" />
+        )
       ) : filtered.length === 0 ? (
         <div
           data-testid={PROJECTS.emptyState}

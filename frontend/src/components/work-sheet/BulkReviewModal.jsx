@@ -10,6 +10,7 @@ import { Textarea } from "../ui/textarea";
 import { getBulkReview, reviewWorkItem } from "@/services/api";
 import { toast } from "sonner";
 import { trackEvent } from "../../analytics";
+import { DialogRowsSkeleton } from "@/components/skeletons/Skeletons";
 
 export default function BulkReviewModal({
   open,
@@ -366,12 +367,7 @@ export default function BulkReviewModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-[#f7f9fc] p-5">
           {loading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <RefreshCw className="h-4 w-4 animate-spin text-[#2b2bb5]" />
-                Loading deliverables...
-              </div>
-            </div>
+            <DialogRowsSkeleton rows={6} />
           ) : items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#f0f0fd]">

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Query, UploadFile, File, Form
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,6 +6,7 @@ from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
 import json
+import math
 import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
@@ -24,10 +25,12 @@ from datetime import datetime, timezone, timedelta
 try:
     # Works when the working directory is backend/ (e.g. `uvicorn server:app`)
     from efficiency import create_efficiency_router  # noqa: F401
+    import deliverable_import  # noqa: F401
 except ImportError:
     # Works when uvicorn imports this as a package member from the repo root
     # (e.g. Render's `uvicorn backend.server:app`)
     from backend.efficiency import create_efficiency_router  # noqa: F401
+    from backend import deliverable_import  # noqa: F401
 
 
 ROOT_DIR = Path(__file__).parent
@@ -286,6 +289,14 @@ class WorkItem(BaseModel):
     work_category: str = "Core"
     version: str = ""
     time_taken_minutes: float = 0
+    # Where time_taken_minutes came from. "auto" = filled from the worker's
+    # own benchmark (efficiency_employee_targets.time_per_unit_minutes) for the
+    # chosen deliverable type; "manual" = typed by a person. Server-managed:
+    # clients cannot set it (it is not in WorkItemCreate/WorkItemUpdate).
+    time_source: str = "manual"
+    # The benchmark that applied when the type was chosen, kept so the UI can
+    # show how far an edited time is from it. None = no benchmark exists.
+    time_benchmark_minutes: Optional[float] = None
     quantity: float = 1.0
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
@@ -586,6 +597,135 @@ def validate_work_category_rules(merged: dict):
             )
 
 
+# ---------------- Time taken: mandatory, auto-filled, always safe ----------------
+#
+# Time (minutes) on a work row feeds the efficiency formula: Non-Core minutes are
+# subtracted from the month's working hours to get Core hours, and Core hours drive
+# every activity's potential. So the value has to be a sane number, always.
+#
+#   * Every row that leaves "Not Started" must carry time > 0.
+#   * When a deliverable type is chosen, time is filled from the worker's own
+#     benchmark for that activity (their efficiency target) - no typing needed.
+#   * It stays editable for edge cases. An edited value is remembered as "manual" so
+#     picking another type later does not silently overwrite it.
+#   * Whatever is typed must be a finite number, never negative, never more than 24 h
+#     for one row - so a typo (or NaN) can never poison a month's totals.
+MAX_WORK_ITEM_MINUTES = 1440.0
+TIME_GATED_STATUSES = {"Ongoing", "Ready for Review"}
+TIME_REQUIRED_MESSAGE = (
+    "Please enter the time taken (in minutes) before moving this row forward."
+)
+
+
+def _valid_minutes(value) -> Optional[float]:
+    """A finite float, or None for anything that is not a usable number."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        minutes = float(value)
+    except (TypeError, ValueError):
+        return None
+    return minutes if math.isfinite(minutes) else None
+
+
+async def get_time_benchmark(user_ids: list, deliverable_type: Optional[str]) -> Optional[float]:
+    """Minutes-per-unit the first of `user_ids` has set for this activity, or None.
+    Only Core activities have targets, so Non-Core types never have a benchmark."""
+    if not deliverable_type:
+        return None
+    seen = set()
+    for uid in user_ids:
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        doc = await db.efficiency_employee_targets.find_one(
+            {"user_id": uid, "activity_name": deliverable_type, "active": {"$ne": False}},
+            {"_id": 0, "time_per_unit_minutes": 1},
+        )
+        minutes = _valid_minutes((doc or {}).get("time_per_unit_minutes"))
+        if minutes and minutes > 0:
+            return round(minutes, 2)
+    return None
+
+
+def _time_worker_ids(user, existing: dict, creator_id: Optional[str]) -> list:
+    """Whose benchmark applies. Members log their own work (the acting user);
+    a manager editing a row is reviewing someone else's, so the row's creator
+    comes first."""
+    creator = creator_id or existing.get("creator_id")
+    return [user.id, creator] if user.role == "member" else [creator, user.id]
+
+
+async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id: Optional[str] = None) -> None:
+    """Validate `time_taken_minutes`, auto-fill it from the benchmark and enforce
+    "time is required before a row moves forward". Mutates update_fields; raises
+    HTTPException(400) on a violation. `existing` is {} when creating."""
+    time_in_patch = "time_taken_minutes" in update_fields
+
+    if time_in_patch:
+        raw = update_fields["time_taken_minutes"]
+        minutes = 0.0 if raw is None else _valid_minutes(raw)
+        if minutes is None or minutes < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Time taken must be a number of minutes (0 or more).",
+            )
+        if minutes > MAX_WORK_ITEM_MINUTES:
+            raise HTTPException(
+                status_code=400,
+                detail="Time for a single row cannot exceed 24 hours (1440 minutes). Split it across rows.",
+            )
+        update_fields["time_taken_minutes"] = round(minutes, 2)
+
+    new_type = update_fields.get("deliverable_type", existing.get("deliverable_type")) or ""
+    old_type = existing.get("deliverable_type") or ""
+    type_changed = "deliverable_type" in update_fields and new_type != old_type
+    new_status = update_fields.get("status")
+    moving_forward = new_status in TIME_GATED_STATUSES and new_status != existing.get("status")
+
+    if not (time_in_patch or type_changed or moving_forward):
+        return
+
+    current = (
+        update_fields["time_taken_minutes"]
+        if time_in_patch
+        else (_valid_minutes(existing.get("time_taken_minutes")) or 0.0)
+    )
+    source = existing.get("time_source") or "manual"
+
+    benchmark = None
+    if new_type:
+        benchmark = await get_time_benchmark(_time_worker_ids(user, existing, creator_id), new_type)
+
+    if time_in_patch:
+        if current <= 0 and benchmark:
+            # Clearing the box means "go back to my benchmark", never "leave it empty".
+            current, source = benchmark, "auto"
+        elif benchmark and abs(current - benchmark) < 0.01:
+            source = "auto"
+        else:
+            source = "manual"
+    elif type_changed:
+        if not new_type or not benchmark:
+            # An auto value belonged to the OLD type. Leaving it would count, say,
+            # 120 minutes of "Collateral" as time spent on a meeting - so reset it.
+            if source == "auto":
+                current, source = 0.0, "manual"
+        elif current <= 0 or source == "auto":
+            current, source = benchmark, "auto"
+        # else: a person typed this value; keep it (edge case), only the benchmark moves.
+
+    if moving_forward and current <= 0:
+        if benchmark:
+            current, source = benchmark, "auto"
+        else:
+            raise HTTPException(status_code=400, detail=TIME_REQUIRED_MESSAGE)
+
+    update_fields["time_taken_minutes"] = current
+    update_fields["time_source"] = source
+    update_fields["time_benchmark_minutes"] = benchmark
+
+
 MIN_WORK_DATE = "2000-01-01"
 MAX_WORK_DATE = "2100-12-31"
 
@@ -737,6 +877,7 @@ async def scoped_update_fields(user: User, existing: dict, update_fields: dict, 
         raise HTTPException(status_code=400, detail="Invalid stage")
 
     apply_deliverable_rules(existing, update_fields)
+    await apply_time_rules(user, existing, update_fields)
 
     validate_work_category_rules({**existing, **update_fields})
     return update_fields
@@ -1931,6 +2072,7 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
 
     data["deliverable_not_available"] = bool(data.get("deliverable_not_available"))
     apply_deliverable_rules({}, data)
+    await apply_time_rules(user, {}, data, creator_id=data.get("creator_id"))
 
     validate_work_category_rules({**data, "work_date": work_date})
 
@@ -2159,6 +2301,7 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
     work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     validate_work_date(work_date)
     month = work_date[:7]
+    await apply_time_rules(user, {}, tpl, creator_id=user.id)
     docs = []
     for _ in range(payload.count):
         data = dict(tpl)
@@ -2537,7 +2680,7 @@ async def dashboard_summary(request: Request):
     creators = set()
     for it in all_items:
         status_counts[it.get("status", "Not Started")] = status_counts.get(it.get("status", "Not Started"), 0) + 1
-        total_minutes += it.get("time_taken_minutes", 0) or 0
+        total_minutes += max(0.0, _valid_minutes(it.get("time_taken_minutes")) or 0.0)
         if it.get("creator_id"):
             creators.add(it["creator_id"])
         if it.get("month") == current_month:
@@ -2568,7 +2711,7 @@ async def dashboard_team_summary(request: Request):
         total_minutes = 0.0
         for it in user_items:
             status_counts[it.get("status", "Not Started")] = status_counts.get(it.get("status", "Not Started"), 0) + 1
-            total_minutes += it.get("time_taken_minutes", 0) or 0
+            total_minutes += max(0.0, _valid_minutes(it.get("time_taken_minutes")) or 0.0)
         result.append({
             "user_id": u["id"],
             "name": u["name"],
@@ -3179,6 +3322,14 @@ async def add_work_row_from_notification(notification_id: str, request: Request)
         updated_at=now_iso(),
     )
 
+    # The row already has its deliverable type, so fill the time from this
+    # person's own benchmark for it (Non-Core types simply have none).
+    benchmark = await get_time_benchmark([user.id], item.deliverable_type)
+    if benchmark:
+        item.time_taken_minutes = benchmark
+        item.time_source = "auto"
+        item.time_benchmark_minutes = benchmark
+
     validate_work_category_rules(item.model_dump())
 
     # Reserve the notification action atomically so two rapid clicks/tabs
@@ -3570,6 +3721,72 @@ async def get_project(project_id: str, request: Request):
     return await _hydrate_project(p)
 
 
+def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: str):
+    """Build every document needed to create a batch of deliverables, without
+    touching the database. `specs` items carry: name, type, start_dt, end_dt,
+    required_stages (already normalized) and approval_types. Raises HTTPException
+    on a bad approval type - before anything has been written."""
+    deliverable_docs: list = []
+    workflow_docs: list = []
+    item_docs: list = []
+    activity_docs: list = []
+    for spec in specs:
+        approval_types = spec.get("approval_types") or []
+        normalized_types = _normalize_approval_types(approval_types)
+        stages = spec["required_stages"]
+        deliv = Deliverable(
+            project_id=project_id,
+            name=spec["name"],
+            type=spec.get("type") or "",
+            start_dt=spec.get("start_dt"),
+            end_dt=spec.get("end_dt"),
+            required_stages=stages,
+            current_stage=stages[0],
+            stage_status="Ready for Review",
+            approval_types=approval_types,
+            created_at=ts,
+            updated_at=ts,
+        )
+        db_doc = deliv.model_dump()
+        db_doc.pop("approval_types", None)
+        deliverable_docs.append(db_doc)
+
+        # Manager approval always exists, even with no additional approval
+        # types selected. (Same documents _create_or_sync_approval_workflow
+        # would create one round trip at a time.)
+        workflow = _new_approval_workflow(db_doc, normalized_types, ts)
+        workflow_docs.append(workflow)
+        item_docs.extend(
+            _new_approval_item(workflow["id"], db_doc, approval_type, ts)
+            for approval_type in normalized_types
+        )
+        activity_docs.append(_activity_doc(
+            deliv.id,
+            "DELIVERABLE_CREATED",
+            changed_by,
+            new_value={
+                "name": deliv.name,
+                "type": deliv.type,
+                "project_id": deliv.project_id,
+                "required_stages": deliv.required_stages,
+                "current_stage": deliv.current_stage,
+                "stage_status": deliv.stage_status,
+            },
+            entity_field="deliverable_id",
+        ))
+    return deliverable_docs, workflow_docs, item_docs, activity_docs
+
+
+async def _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs):
+    """One insert per collection, however many deliverables there are."""
+    if not deliverable_docs:
+        return
+    await db.deliverables.insert_many([dict(doc) for doc in deliverable_docs])
+    await db.approval_workflows.insert_many(workflow_docs)
+    await db.approval_items.insert_many(item_docs)
+    await db.deliverable_activity_log.insert_many(activity_docs)
+
+
 @api_router.post("/projects")
 async def create_project(payload: ProjectCreate, request: Request):
     user = await require_admin(request)
@@ -3608,54 +3825,20 @@ async def create_project(payload: ProjectCreate, request: Request):
     # stage or approval type is rejected BEFORE anything has been written
     # (previously the project row was already saved when a bad deliverable
     # failed part-way through the loop).
-    deliverable_docs: list[dict] = []
-    workflow_docs: list[dict] = []
-    item_docs: list[dict] = []
-    activity_docs: list[dict] = []
-    for d in payload.deliverables or []:
-        stages = normalize_stages(d.required_stages)
-        approval_types = d.approval_types or []
-        normalized_types = _normalize_approval_types(approval_types)
-        deliv = Deliverable(
-            project_id=project.id,
-            name=d.name,
-            type=d.type or "",
-            start_dt=d.start_dt,
-            end_dt=d.end_dt,
-            required_stages=stages,
-            current_stage=stages[0],
-            stage_status="Ready for Review",
-            approval_types=approval_types,
-            created_at=ts,
-            updated_at=ts,
-        )
-        db_doc = deliv.model_dump()
-        db_doc.pop("approval_types", None)
-        deliverable_docs.append(db_doc)
-
-        # Manager approval always exists, even with no additional approval
-        # types selected. (Same documents _create_or_sync_approval_workflow
-        # would create one round trip at a time.)
-        workflow = _new_approval_workflow(db_doc, normalized_types, ts)
-        workflow_docs.append(workflow)
-        item_docs.extend(
-            _new_approval_item(workflow["id"], db_doc, approval_type, ts)
-            for approval_type in normalized_types
-        )
-        activity_docs.append(_activity_doc(
-            deliv.id,
-            "DELIVERABLE_CREATED",
-            user.id,
-            new_value={
-                "name": deliv.name,
-                "type": deliv.type,
-                "project_id": deliv.project_id,
-                "required_stages": deliv.required_stages,
-                "current_stage": deliv.current_stage,
-                "stage_status": deliv.stage_status,
-            },
-            entity_field="deliverable_id",
-        ))
+    specs = [
+        {
+            "name": d.name,
+            "type": d.type,
+            "start_dt": d.start_dt,
+            "end_dt": d.end_dt,
+            "required_stages": normalize_stages(d.required_stages),
+            "approval_types": d.approval_types or [],
+        }
+        for d in payload.deliverables or []
+    ]
+    deliverable_docs, workflow_docs, item_docs, activity_docs = _build_deliverable_batch(
+        project.id, specs, user.id, ts
+    )
 
     await db.projects.insert_one(project.model_dump())
 
@@ -3678,12 +3861,7 @@ async def create_project(payload: ProjectCreate, request: Request):
         },
     )
 
-    # One insert per collection, however many deliverables there are.
-    if deliverable_docs:
-        await db.deliverables.insert_many([dict(doc) for doc in deliverable_docs])
-        await db.approval_workflows.insert_many(workflow_docs)
-        await db.approval_items.insert_many(item_docs)
-        await db.deliverable_activity_log.insert_many(activity_docs)
+    await _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
 
     # Notifying production staff needs one upsert per deliverable per person
     # and nothing in the response depends on it, so it runs after the response
@@ -4270,6 +4448,71 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
         logger.exception("Could not send new-deliverable notifications")
 
     return d
+
+
+@api_router.post("/projects/{project_id}/deliverables/import")
+async def import_deliverables(
+    project_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+):
+    """Bulk-create deliverables in a project from a .csv / .xlsx sheet (admin only).
+
+    dry_run=true only reads and checks the file and returns a row-by-row report;
+    dry_run=false creates every row that checked out as "ok" and skips the rest."""
+    user = await require_admin(request)
+    project_doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project_doc:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    content = await file.read(deliverable_import.MAX_FILE_BYTES + 1)
+    try:
+        table = deliverable_import.read_table(file.filename or "", content)
+        existing_docs = await db.deliverables.find(
+            {"project_id": project_id}, {"_id": 0, "name": 1, "type": 1}
+        ).to_list(5000)
+        existing = {
+            ((d.get("name") or "").strip().lower(), (d.get("type") or "").strip().lower())
+            for d in existing_docs
+        }
+        report = deliverable_import.validate_table(
+            table, DELIVERABLE_TYPES, STAGES, APPROVAL_TYPES, existing
+        )
+    except deliverable_import.ImportFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if dry_run:
+        return {**report, "dry_run": True, "created": 0}
+
+    ready = [row for row in report["rows"] if row["status"] == "ok"]
+    if not ready:
+        raise HTTPException(status_code=400, detail="There are no valid rows to import.")
+
+    ts = now_iso()
+    specs = [
+        {
+            "name": row["name"],
+            "type": row["type"],
+            "start_dt": row["start_dt"],
+            "end_dt": row["end_dt"],
+            "required_stages": normalize_stages(row["required_stages"]),
+            "approval_types": row["approval_types"],
+        }
+        for row in ready
+    ]
+    deliverable_docs, workflow_docs, item_docs, activity_docs = _build_deliverable_batch(
+        project_id, specs, user.id, ts
+    )
+    await _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+
+    # Alerting production staff needs one upsert per deliverable per person and
+    # nothing in the response depends on it, so it runs after the response.
+    _fire_and_forget(
+        _notify_new_project_safely(project_doc, deliverable_docs, title="New deliverable added")
+    )
+
+    return {**report, "dry_run": False, "created": len(deliverable_docs)}
 
 
 @api_router.patch("/deliverables/{deliverable_id}", response_model=Deliverable)

@@ -643,3 +643,24 @@ export const updateEmployeeTarget = (id, payload) =>
 
 export const deleteEmployeeTarget = (id) =>
   axios.delete(`${API}/efficiency/employee-targets/${id}`).then((r) => r.data);
+
+// -------- Work Sheet time defaults --------
+// Minutes-per-unit the employee has set for each Core activity: what the
+// Work Sheet pre-fills as "time taken" when that deliverable type is chosen.
+export const getTimeDefaults = (userId) =>
+  axios
+    .get(`${API}/efficiency/time-defaults`, {
+      params: userId ? { user_id: userId } : undefined,
+    })
+    .then((r) => r.data);
+
+// -------- Bulk deliverable import (admin) --------
+// dryRun=true only checks the file and returns a row-by-row report.
+export const importDeliverables = (projectId, file, dryRun = true) => {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", dryRun ? "true" : "false");
+  return axios
+    .post(`${API}/projects/${projectId}/deliverables/import`, form)
+    .then((r) => r.data);
+};

@@ -41,6 +41,7 @@ import {
 import ApprovalsFilterModal from "@/components/approvals/ApprovalsFilterModal";
 import { STAGES } from "@/constants/projectPalette";
 import { trackEvent } from "../analytics";
+import { ApprovalsBoardSkeleton, SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 const COLUMNS = [
   {
@@ -884,11 +885,11 @@ export default function ApprovalsPage() {
       )}
 
       {loading ? (
-        <div className="mint-card flex min-h-[280px] items-center justify-center">
-          <div className="text-sm text-muted-foreground">
-            Loading approvals...
-          </div>
-        </div>
+        view === "grid" ? (
+          <ApprovalsBoardSkeleton />
+        ) : (
+          <SettingsTableSkeleton columns={6} rows={8} label="Loading approvals" />
+        )
       ) : view === "grid" ? (
         <KanbanBoard minWidth="1360px">
           {visibleColumns.map((column) => {

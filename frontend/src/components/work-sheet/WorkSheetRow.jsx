@@ -1,5 +1,6 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { ChevronsUpDown, Copy, EyeOff, Hand, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Copy, EyeOff, Hand, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -20,6 +21,7 @@ import {
   MIN_WORK_DATE,
   isValidWorkDate,
 } from "@/lib/worksheetDates";
+import { isTimeMissing, parseTimeInput, timeBadge } from "@/lib/timeRules";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
@@ -354,6 +356,29 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     }
     commit("work_date", local.work_date);
   };
+
+  // Same idea for time: check it when the user leaves the box. A bad value
+  // (negative, text, more than 24 h) snaps back to the last saved time with a
+  // reason; a blank box is sent as 0, which the server turns back into the
+  // person's benchmark for this deliverable type when there is one.
+  const commitTime = () => {
+    const parsed = parseTimeInput(local.time_taken_minutes);
+
+    if (!parsed.ok) {
+      toast.error(parsed.message);
+      setLocal((current) => ({
+        ...current,
+        time_taken_minutes: item.time_taken_minutes ?? 0,
+      }));
+      return;
+    }
+
+    setLocal((current) => ({ ...current, time_taken_minutes: parsed.minutes }));
+    commit("time_taken_minutes", parsed.minutes);
+  };
+
+  const timeMissing = isTimeMissing(item);
+  const timeHint = timeBadge(item);
 
   const isCellActive = (col) => {
     const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
@@ -779,18 +804,56 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <Input
-          {...sheetCell(10)}
-          data-testid={`${WORKSHEET.timeInput}-${item.id}`}
-          type="number"
-          min="0"
-          step="5"
-          value={local.time_taken_minutes}
-          disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
-          onBlur={() => commit("time_taken_minutes", Number(local.time_taken_minutes) || 0)}
-          className="h-7 w-[80px]"
-        />
+        <div className="flex items-center gap-1">
+          <Input
+            {...sheetCell(10)}
+            data-testid={`${WORKSHEET.timeInput}-${item.id}`}
+            type="number"
+            min="0"
+            max="1440"
+            step="5"
+            required
+            aria-required="true"
+            aria-invalid={timeMissing}
+            placeholder={timeHint?.benchmark ? String(timeHint.benchmark) : "min"}
+            title={
+              timeMissing
+                ? "Time is required. It is filled automatically when your benchmark exists for this deliverable type - otherwise enter the minutes."
+                : undefined
+            }
+            value={local.time_taken_minutes}
+            disabled={!canEditRow}
+            onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
+            onBlur={commitTime}
+            className={`h-7 w-[64px] px-2 ${
+              timeMissing
+                ? "border-rose-400 bg-rose-50/70 ring-1 ring-rose-200 focus-visible:ring-rose-300"
+                : ""
+            }`}
+          />
+
+          {timeHint?.kind === "auto" && (
+            <span
+              data-testid={`worksheet-time-auto-${item.id}`}
+              title={`Auto-filled from your benchmark for ${item.deliverable_type}: ${timeHint.benchmark} min. You can edit it if this one was different.`}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-indigo-500"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </span>
+          )}
+
+          {timeHint?.kind === "edited" && canEditRow && (
+            <button
+              type="button"
+              data-testid={`worksheet-time-reset-${item.id}`}
+              title={`Edited. Your benchmark for ${item.deliverable_type} is ${timeHint.benchmark} min - click to use it.`}
+              onClick={() => onUpdate(item.id, { time_taken_minutes: timeHint.benchmark })}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-amber-600 transition-colors hover:bg-amber-50"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
         {renderFillHandle(10)}
       </TableCell>
         );
@@ -903,13 +966,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
           onBlur={() => commit("remarks", local.remarks)}
-          // A one-line cell, like a spreadsheet: long remarks are clipped
-          // instead of wrapping, so no scrollbar (on Windows, just two arrow
-          // buttons) ever appears inside the 32px cell. The full text is in
-          // the hover tooltip, and typing still scrolls the text along.
-          wrap="off"
-          title={local.remarks || undefined}
-          className="min-h-[32px] h-8 w-[200px] resize-none overflow-hidden py-[5px]"
+          className="min-h-[32px] h-8 w-[200px] resize-none py-1"
           rows={1}
         />
         {renderFillHandle(13)}

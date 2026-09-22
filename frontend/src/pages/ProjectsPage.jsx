@@ -224,14 +224,34 @@ export default function ProjectsPage() {
       }
     });
 
-    // Same "Sort by" control and comparator as the list view (see
-    // sortedFiltered above). Dragging a card between columns still changes
-    // its status as before; dragging to reorder within a column no longer
-    // has a visible effect while a sort other than manual order is active,
-    // since every column re-sorts by the chosen criterion on every render.
-    Object.keys(map).forEach((status) => {
-      map[status] = sortProjects(map[status], sortBy);
-    });
+    if (sortBy) {
+      // A sort is explicitly chosen: same control and comparator as the
+      // list view (see sortedFiltered above), applied within each column.
+      // Dragging a card between columns still changes its status as
+      // before; dragging to reorder within a column no longer has a
+      // visible effect while a sort is active, since the column re-sorts
+      // by the chosen criterion on every render.
+      Object.keys(map).forEach((status) => {
+        map[status] = sortProjects(map[status], sortBy);
+      });
+    } else {
+      // "No sorting": the manual drag order (kanban_order) — restores
+      // ordinary drag-to-reorder within a column.
+      Object.values(map).forEach((items) => {
+        items.sort((a, b) => {
+          const orderA = Number.isFinite(Number(a.kanban_order))
+            ? Number(a.kanban_order)
+            : Number.MAX_SAFE_INTEGER;
+          const orderB = Number.isFinite(Number(b.kanban_order))
+            ? Number(b.kanban_order)
+            : Number.MAX_SAFE_INTEGER;
+
+          if (orderA !== orderB) return orderA - orderB;
+
+          return new Date(b.start_date || 0).getTime() - new Date(a.start_date || 0).getTime();
+        });
+      });
+    }
 
     return map;
   }, [filtered, sortBy]);
@@ -764,8 +784,10 @@ export default function ProjectsPage() {
 
           {/* Sort by — same control and comparator for both the card and
               list views (see lib/projectSort.js), so switching views never
-              changes what "sorted by deadline" means. */}
-          <div className="flex h-10 shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3 text-xs text-muted-foreground">
+              changes what "sorted by deadline" means. "No sorting" (the
+              default) is the empty state: card view keeps manual drag
+              order, list view keeps whatever order the API returned. */}
+          <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-input bg-white px-3 text-xs text-muted-foreground">
             <span className="hidden sm:inline">Sort by</span>
             <select
               data-testid={PROJECTS.sortSelect || "projects-sort-select"}
@@ -779,6 +801,19 @@ export default function ProjectsPage() {
                 </option>
               ))}
             </select>
+
+            {sortBy && (
+              <button
+                type="button"
+                data-testid="projects-sort-clear"
+                onClick={() => setSortBy("")}
+                aria-label="Clear sorting"
+                title="Clear sorting"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           {/* View switcher — icons only */}
@@ -979,7 +1014,7 @@ export default function ProjectsPage() {
             )}
           </div>
 
-          <KanbanBoard minWidth="1920px">
+          <KanbanBoard minWidth="1920px" maxHeight="calc(100vh - 340px)">
             {visibleStatuses.map((status) => {
               const columnProjects = byStatus[status] || [];
 

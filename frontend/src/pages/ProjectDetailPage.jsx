@@ -134,8 +134,32 @@ export default function ProjectDetailPage() {
         getClients(),
       ]);
 
+      // Belt-and-braces: also pull in any work item that references one of
+      // this project's deliverables directly. A work item's project_id is
+      // supposed to always match its deliverable's project, but a handful of
+      // older or imported rows can have it blank or pointing somewhere else -
+      // filtering by project_id alone would then silently drop them from the
+      // Work Log even though the deliverable they belong to is right here.
+      const deliverableIds = (p.deliverables || [])
+        .map((d) => d.id)
+        .filter(Boolean);
+      let mergedWorkItems = w;
+
+      if (deliverableIds.length) {
+        try {
+          const byDeliverable = await getWorkItems(currentUserId, {
+            deliverable_id: deliverableIds,
+          });
+          const byId = new Map(mergedWorkItems.map((item) => [item.id, item]));
+          byDeliverable.forEach((item) => byId.set(item.id, item));
+          mergedWorkItems = [...byId.values()];
+        } catch {
+          // Non-fatal — the project_id-based list above still shows.
+        }
+      }
+
       setProject(p);
-      setWorkItems(w);
+      setWorkItems(mergedWorkItems);
       setDeliverableTypes(
         options.deliverable_types || []
       );

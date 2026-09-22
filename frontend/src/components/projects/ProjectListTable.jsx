@@ -74,21 +74,11 @@ export const ProjectListTable = ({
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-white">
-      {/* Sort */}
-      <div className="flex items-center justify-end border-b border-border px-5 py-3">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Sort by</span>
-
-          <select className="h-9 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground">
-            <option>Last updated</option>
-            <option>Deadline</option>
-            <option>Project name</option>
-            <option>Status</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
+      {/* The "Sort by" control lives once in the page's toolbar (above both
+          this table and the Kanban board) rather than duplicated here, so
+          the two views can never show a different order for the same
+          criterion - see ProjectsPage.jsx and lib/projectSort.js. */}
+      <div className="pmt-hscroll overflow-x-auto">
         <table className="w-full min-w-[1180px] text-left">
           <thead>
             <tr className="border-b border-border bg-[#f7f9fc] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

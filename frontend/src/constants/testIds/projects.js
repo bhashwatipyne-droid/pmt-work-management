@@ -7,6 +7,7 @@ export const PROJECTS = {
   filtersButton: 'projects-filters-button',
   chartViewBtn: 'projects-chart-view-btn',
   listViewBtn: 'projects-list-view-btn',
+  sortSelect: 'projects-sort-select',
   newProjectBtn: 'projects-new-project-btn',
   metricActive: 'projects-metric-active',
   metricRework: 'projects-metric-rework',

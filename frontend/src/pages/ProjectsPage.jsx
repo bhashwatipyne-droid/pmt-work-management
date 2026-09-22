@@ -41,6 +41,7 @@ import { ProjectMetricCard } from "@/components/projects/ProjectMetricCard";
 import { KanbanColumn } from "@/components/projects/KanbanColumn";
 import { KanbanBoard } from "@/components/ui/KanbanBoard";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
+import { DEFAULT_SORT, SORT_OPTIONS, sortProjects } from "@/lib/projectSort";
 import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
@@ -86,6 +87,7 @@ export default function ProjectsPage() {
   const [visibility, setVisibility] = useState("visible");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState("chart");
+  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
   const [modalOpen, setModalOpen] = useState(false);
 
   const [selectedProjects, setSelectedProjects] = useState(new Set());
@@ -200,13 +202,16 @@ export default function ProjectsPage() {
           (p.code || "").toLowerCase().includes(q) ||
           (p.client_name || "").toLowerCase().includes(q)
         );
-      })
-      .sort((a, b) => {
-        const dateA = new Date(a.start_date || 0).getTime();
-        const dateB = new Date(b.start_date || 0).getTime();
-        return dateB - dateA;
       });
+    // Filtering only here — the active "Sort by" choice is applied once,
+    // below, and reused for both the list rows and the Kanban columns so
+    // the two views never disagree about the order.
   }, [projects, deferredSearch, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
+
+  const sortedFiltered = useMemo(
+    () => sortProjects(filtered, sortBy),
+    [filtered, sortBy]
+  );
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -219,23 +224,17 @@ export default function ProjectsPage() {
       }
     });
 
-    Object.values(map).forEach((items) => {
-      items.sort((a, b) => {
-        const orderA = Number.isFinite(Number(a.kanban_order))
-          ? Number(a.kanban_order)
-          : Number.MAX_SAFE_INTEGER;
-        const orderB = Number.isFinite(Number(b.kanban_order))
-          ? Number(b.kanban_order)
-          : Number.MAX_SAFE_INTEGER;
-
-        if (orderA !== orderB) return orderA - orderB;
-
-        return new Date(b.start_date || 0).getTime() - new Date(a.start_date || 0).getTime();
-      });
+    // Same "Sort by" control and comparator as the list view (see
+    // sortedFiltered above). Dragging a card between columns still changes
+    // its status as before; dragging to reorder within a column no longer
+    // has a visible effect while a sort other than manual order is active,
+    // since every column re-sorts by the chosen criterion on every render.
+    Object.keys(map).forEach((status) => {
+      map[status] = sortProjects(map[status], sortBy);
     });
 
     return map;
-  }, [filtered]);
+  }, [filtered, sortBy]);
 
   useEffect(() => {
     setListPage(1);
@@ -763,6 +762,25 @@ export default function ProjectsPage() {
             </PopoverContent>
           </Popover>
 
+          {/* Sort by — same control and comparator for both the card and
+              list views (see lib/projectSort.js), so switching views never
+              changes what "sorted by deadline" means. */}
+          <div className="flex h-10 shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3 text-xs text-muted-foreground">
+            <span className="hidden sm:inline">Sort by</span>
+            <select
+              data-testid={PROJECTS.sortSelect || "projects-sort-select"}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="h-full border-none bg-transparent text-sm font-medium text-foreground outline-none"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* View switcher — icons only */}
           <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
             <button
@@ -1000,7 +1018,7 @@ export default function ProjectsPage() {
         </>
       ) : (
         <ProjectListTable
-          projects={filtered}
+          projects={sortedFiltered}
           users={users}
           selectedProjects={selectedProjects}
           onSelectProject={toggleProjectSelection}

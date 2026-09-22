@@ -8,7 +8,7 @@ export const KanbanBoard = ({
   className = "",
 }) => {
   return (
-    <div className={`overflow-x-auto pb-4 ${className}`}>
+    <div className={`pmt-hscroll overflow-x-auto pb-4 ${className}`}>
       <div className="flex items-start gap-4" style={{ minWidth }}>
         {children}
       </div>

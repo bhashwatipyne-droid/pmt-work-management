@@ -305,3 +305,33 @@
     width: 100%;
   }
 }
+/* Always-visible horizontal scrollbar for wide, side-scrolling content (the
+   Projects/Approvals Kanban boards, wide tables). Without this, a container
+   that CAN scroll horizontally often shows no visible scrollbar at all until
+   the user hovers or scrolls (macOS's default "overlay" scrollbars, and
+   Chrome/Edge's default thin-but-easy-to-miss bar), so the fact that there
+   is more to see off-screen isn't obvious. */
+.pmt-hscroll {
+  overflow-x: scroll;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #c7c9d9 #f1f2f7; /* Firefox: thumb, track */
+}
+
+.pmt-hscroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.pmt-hscroll::-webkit-scrollbar-track {
+  background: #f1f2f7;
+  border-radius: 9999px;
+}
+
+.pmt-hscroll::-webkit-scrollbar-thumb {
+  background-color: #c7c9d9;
+  border-radius: 9999px;
+  border: 2px solid #f1f2f7;
+}
+
+.pmt-hscroll::-webkit-scrollbar-thumb:hover {
+  background-color: #a9acc4;
+}

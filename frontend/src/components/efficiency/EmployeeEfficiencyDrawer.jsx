@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { avatarColorClasses } from "@/lib/avatarColors";
 import { Loader2 } from "lucide-react";
 
 import {
@@ -63,7 +64,9 @@ export const EmployeeEfficiencyDrawer = ({ employeeId, month, open, onOpenChange
       >
         <SheetHeader className="text-left">
           <SheetTitle className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f0f0fd] text-sm font-semibold text-[#1a1a8a]">
+            <span
+              className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${avatarColorClasses(employeeId)}`}
+            >
               {(data?.name || "?").charAt(0).toUpperCase()}
             </span>
             <span>

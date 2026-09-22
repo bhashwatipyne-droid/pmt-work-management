@@ -11,10 +11,15 @@ ignored). Only Name is required.
     Design Start | Design End | Animate Start | Animate End | Approvals
 
 Status is the deliverable's CURRENT stage ("Content", "Design" or "Animate") -
-it must be one of the stages selected in Stages. Each stage's Start/End is its
-own deadline window, e.g. Content 22-24 Sep, Design 24-30 Sep - a stage need
-not have dates at all. The deliverable's overall start/end date is always
-derived from these per-stage windows and is never a column in the sheet.
+it must be one of the stages selected in Stages. Use "Finish" (or Finished /
+Complete / Completed / Done / Closed) instead for a deliverable that was
+already fully done before it was ever entered here - it is created already
+Completed, at the last of its own selected Stages, with nothing left pending.
+
+Each stage's Start/End is its own deadline window, e.g. Content 22-24 Sep,
+Design 24-30 Sep - a stage need not have dates at all. The deliverable's
+overall start/end date is always derived from these per-stage windows and is
+never a column in the sheet.
 """
 
 import csv
@@ -37,6 +42,23 @@ class ImportFileError(ValueError):
 # understands; the per-stage date columns are generated from it, so a new
 # stage automatically gets its own "<Stage> Start"/"<Stage> End" columns.
 STAGE_ALIASES = {"animation": "Animate", "animate": "Animate", "content": "Content", "design": "Design"}
+
+# A deliverable that already went all the way through its pipeline before it
+# was ever entered here (e.g. historical data, or a project brought over from
+# elsewhere). Any of these words in the Status column mean "skip straight to
+# done" - current_stage becomes the LAST of the row's own Stages and the
+# deliverable is created already Completed, with no pending approval and no
+# "ready for review" notification sent (there is nothing left for anyone to
+# do on it).
+FINISH_WORDS = {"finish", "finished", "complete", "completed", "done", "closed"}
+
+# Real-world spelling/naming variants seen in actual sheets, mapped straight
+# to the canonical type name - kept separate from the generic fuzzy-match
+# fallback (which only WARNS and asks for confirmation) because these are
+# common and unambiguous enough to just accept outright.
+TYPE_ALIASES = {
+    "reel": "Reel / Short Video",
+}
 _CANONICAL_STAGES = sorted(set(STAGE_ALIASES.values()))
 
 
@@ -253,6 +275,13 @@ def validate_table(
     type_by_loose = {}
     for t in type_by_key.values():
         type_by_loose.setdefault(_loose(t), t)
+    # A second fallback, tried after the plural-insensitive one: the same
+    # words with ALL spaces removed too, so "Onepager" matches "One Pager"
+    # and "Twopager" matches "Two Pager" without needing a hardcoded alias
+    # for every such concatenation.
+    type_by_squashed = {}
+    for t in type_by_key.values():
+        type_by_squashed.setdefault(_key(t).replace(" ", ""), t)
     valid_stages = list(stages)
     valid_approvals = set(approval_types)
 
@@ -277,12 +306,17 @@ def validate_table(
         type_raw = _text(cell(row, "type"))
         type_value = ""
         if type_raw:
-            match = type_by_key.get(_key(type_raw))
+            match = type_by_key.get(_key(type_raw)) or TYPE_ALIASES.get(_key(type_raw))
             if match is None:
                 loose = type_by_loose.get(_loose(type_raw))
                 if loose:
                     match = loose
                     warnings.append(f'"{type_raw}" matched to "{loose}"')
+            if match is None:
+                squashed = type_by_squashed.get(_key(type_raw).replace(" ", ""))
+                if squashed:
+                    match = squashed
+                    warnings.append(f'"{type_raw}" matched to "{squashed}"')
             if match is None:
                 hints = _suggest_types(type_raw, type_by_key.values())
                 errors.append(
@@ -317,19 +351,28 @@ def validate_table(
         if not stage_raw:
             warnings.append("No stages: defaulted to Content")
 
-        # ---- status -> current_stage
+        # ---- status -> current_stage (or "already finished")
         status_raw = _text(cell(row, "status"))
         current_stage = None
+        finished = False
         if status_raw:
-            mapped = STAGE_ALIASES.get(_key(status_raw))
-            if mapped is None or mapped not in valid_stages:
-                errors.append(f'Unknown status "{status_raw}" (use Content, Design or Animate)')
-            elif mapped not in chosen_stages:
-                errors.append(
-                    f'Status "{mapped}" must be one of this row\'s Stages ({", ".join(chosen_stages) or "none selected"})'
-                )
+            if _key(status_raw) in FINISH_WORDS:
+                finished = True
+                # The LAST of this row's own stages, in pipeline order - it
+                # went all the way through, whatever stages were selected.
+                current_stage = chosen_stages[-1] if chosen_stages else None
             else:
-                current_stage = mapped
+                mapped = STAGE_ALIASES.get(_key(status_raw))
+                if mapped is None or mapped not in valid_stages:
+                    errors.append(
+                        f'Unknown status "{status_raw}" (use Content, Design, Animate, or Finish for an already-completed deliverable)'
+                    )
+                elif mapped not in chosen_stages:
+                    errors.append(
+                        f'Status "{mapped}" must be one of this row\'s Stages ({", ".join(chosen_stages) or "none selected"})'
+                    )
+                else:
+                    current_stage = mapped
         if current_stage is None and chosen_stages:
             current_stage = chosen_stages[0]
 
@@ -353,20 +396,22 @@ def validate_table(
             if stage not in chosen_stages:
                 errors.append(f'{stage} has dates but is not one of this row\'s Stages - add it there or remove its dates')
                 continue
+            # An end date alone is a normal deadline with no fixed start
+            # (e.g. "starts whenever the previous stage finishes"). A start
+            # with no end isn't a useful deadline, so that's still an error.
             if _text(s_raw) and not _text(e_raw):
-                errors.append(f"{stage} has a start date but no end date")
-            elif _text(e_raw) and not _text(s_raw):
-                errors.append(f"{stage} has an end date but no start date")
-            if s_val and e_val:
-                if e_val < s_val:
-                    errors.append(f"{stage}'s end date is before its start date")
-                else:
-                    stage_schedule[stage] = {"start_dt": s_val, "end_dt": e_val}
+                errors.append(f"{stage} has a start date but no end date (deadline) - add one, or remove the start date")
+            elif e_val and s_val and e_val < s_val:
+                errors.append(f"{stage}'s end date is before its start date")
+            elif e_val:
+                stage_schedule[stage] = {"start_dt": s_val, "end_dt": e_val}
 
         # A later stage starting before an earlier one is very likely a typo,
         # e.g. the Design and Animate columns swapped - flag it without
         # blocking the import, since some workflows genuinely overlap.
-        ordered = [s for s in valid_stages if s in stage_schedule]
+        # Only compare stages that both have a start date - a deadline-only
+        # stage (no start) has nothing to compare here.
+        ordered = [s for s in valid_stages if stage_schedule.get(s, {}).get("start_dt")]
         for earlier, later in zip(ordered, ordered[1:]):
             if stage_schedule[later]["start_dt"] < stage_schedule[earlier]["start_dt"]:
                 warnings.append(f"{later} starts before {earlier} - check these dates are in the right columns")
@@ -395,8 +440,8 @@ def validate_table(
             else:
                 seen[dup_key] = sheet_row
 
-        start_dt = min((w["start_dt"] for w in stage_schedule.values()), default=None)
-        end_dt = max((w["end_dt"] for w in stage_schedule.values()), default=None)
+        start_dt = min((w["start_dt"] for w in stage_schedule.values() if w["start_dt"]), default=None)
+        end_dt = max((w["end_dt"] for w in stage_schedule.values() if w["end_dt"]), default=None)
 
         results.append({
             "row": sheet_row,
@@ -406,6 +451,7 @@ def validate_table(
             "end_dt": end_dt,
             "required_stages": chosen_stages,
             "current_stage": current_stage,
+            "finished": finished,
             "stage_schedule": stage_schedule,
             "approval_types": approvals,
             "status": status,

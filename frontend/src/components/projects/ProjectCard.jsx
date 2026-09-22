@@ -1,5 +1,7 @@
 import { memo } from "react";
 
+import { avatarColorClasses } from "@/lib/avatarColors";
+
 import {
   STAGE_COLORS,
   STATUS_COLORS,
@@ -165,7 +167,7 @@ const ProjectCardBase = ({
             collaborators.map((u) => (
               <div
                 key={u.id}
-                className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#f0f0fd] text-[10px] font-semibold text-[#1a1a8a]"
+                className={`flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[10px] font-semibold ${avatarColorClasses(u.id)}`}
               >
                 {initial(u.name)}
               </div>

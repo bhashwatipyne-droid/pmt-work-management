@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { ChevronsUpDown, Copy, EyeOff, Hand, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Copy, EyeOff, Hand, Lock, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -8,7 +8,7 @@ import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
 import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
-import { canEditWorkItem } from "@/lib/worksheetPermissions";
+import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import {
@@ -22,6 +22,7 @@ import {
   isValidWorkDate,
 } from "@/lib/worksheetDates";
 import { isTimeMissing, parseTimeInput, timeBadge } from "@/lib/timeRules";
+import { avatarColorClasses } from "@/lib/avatarColors";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
@@ -77,8 +78,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     Animation: "Animate",
   }[currentUser.department];
   const canEditRow = isMember
-    ? (!item.stage || item.stage === memberStage)
+    ? (!item.stage || item.stage === memberStage) &&
+      !isRowLockedForMember(currentUser, item, users)
     : canEditWorkItem(currentUser, item, users);
+  const lockedForMe = isMember && isRowLockedForMember(currentUser, item, users);
   const canEditExtra = isElevated && canEditRow;
   const [openSelect, setOpenSelect] = useState(null);
 
@@ -892,7 +895,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
                 return (
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-semibold text-indigo-700">
+                    <span
+                      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarColorClasses(option?.value)}`}
+                    >
                       {initials}
                     </span>
                     <span className="min-w-0 truncate text-[13px] text-slate-700">{name}</span>
@@ -902,10 +907,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             />
         ) : (
           <span className="flex min-w-0 items-center gap-2">
-            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-semibold text-indigo-700">
+            <span
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarColorClasses(item.creator_id)}`}
+            >
               {getInitials(nameOf(item.creator_id))}
             </span>
             <span className="cell-plain min-w-0 truncate">{nameOf(item.creator_id)}</span>
+            {lockedForMe && (
+              <Lock
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-label="Locked"
+                title={`This row was created by ${nameOf(item.creator_id)}. Only they (or a manager) can edit it.`}
+              />
+            )}
           </span>
         )}
         {renderFillHandle(11)}

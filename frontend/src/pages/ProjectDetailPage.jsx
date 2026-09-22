@@ -524,8 +524,10 @@ export default function ProjectDetailPage() {
                                         : undefined
                                   }
                                 >
-                                  {stage}: {fmtShort(window.start_dt)} –{" "}
-                                  {fmtShort(window.end_dt)}
+                                  {stage}:{" "}
+                                  {window.start_dt
+                                    ? `${fmtShort(window.start_dt)} – ${fmtShort(window.end_dt)}`
+                                    : `due ${fmtShort(window.end_dt)}`}
                                 </span>
                               );
                             })}

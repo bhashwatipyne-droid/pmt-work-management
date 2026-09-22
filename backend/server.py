@@ -77,6 +77,8 @@ DELIVERABLE_TYPES = [
     "Changes",
     "One Pager",
     "Two Pager",
+    "Key Visual",
+    "Teaser Short Video",
 
     # Non-Core
     "Project Briefing",
@@ -120,6 +122,8 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Changes": "Core",
     "One Pager": "Core",
     "Two Pager": "Core",
+    "Key Visual": "Core",
+    "Teaser Short Video": "Core",
 
     # Non-Core
     "Project Briefing": "Non-Core",
@@ -252,25 +256,31 @@ def _format_date_short(value: Optional[str]) -> str:
 
 def format_stage_window(window: Optional[dict]) -> str:
     """{"start_dt": "2026-09-22", "end_dt": "2026-09-24"} -> "22 Sep - 24 Sep".
-    Empty string when there is no window to show."""
-    if not window or not window.get("start_dt") or not window.get("end_dt"):
+    An end date with no start (a deadline only) -> "due 24 Sep". Empty string
+    when there is no window to show at all."""
+    if not window or not window.get("end_dt"):
         return ""
+    if not window.get("start_dt"):
+        return f'due {_format_date_short(window["end_dt"])}'
     return f'{_format_date_short(window["start_dt"])} - {_format_date_short(window["end_dt"])}'
 
 
 def normalize_stage_schedule(
     required_stages: List[str],
     stage_schedule: Optional[dict],
-) -> Dict[str, Dict[str, str]]:
-    """Clean a stage_schedule payload down to one validated {start_dt, end_dt}
-    entry per stage that actually has both dates. Raises HTTPException(400) on
-    a bad date, an inverted range, or one date given without the other.
+) -> Dict[str, Dict[str, Optional[str]]]:
+    """Clean a stage_schedule payload down to one validated entry per stage
+    that has at least an end date (a deadline). Raises HTTPException(400) on
+    a bad date, an inverted range, or a start with no end.
 
-    A stage not in `required_stages` is silently dropped (e.g. the stage was
-    deselected in the same edit - its leftover dates are no longer
-    meaningful). A stage with no dates at all simply has no entry: deadline
-    tracking is opt-in per stage, not mandatory."""
-    cleaned: Dict[str, Dict[str, str]] = {}
+    A stage's end date alone is a normal, common case - "due the 24th" with no
+    fixed start, e.g. because it starts whenever the previous stage finishes.
+    A start with no end isn't very useful for tracking a deadline, so that
+    combination is rejected rather than silently accepted. A stage not in
+    `required_stages` is silently dropped (e.g. the stage was deselected in
+    the same edit). A stage with no dates at all simply has no entry:
+    deadline tracking is opt-in per stage, not mandatory."""
+    cleaned: Dict[str, Dict[str, Optional[str]]] = {}
     for stage, window in (stage_schedule or {}).items():
         if stage not in required_stages:
             continue
@@ -278,12 +288,12 @@ def normalize_stage_schedule(
         end = (window or {}).get("end_dt") or None
         if not start and not end:
             continue
-        if not start or not end:
+        if start and not end:
             raise HTTPException(
                 status_code=400,
-                detail=f"Both a start and end date are needed for the {stage} stage.",
+                detail=f"The {stage} stage has a start date but no end date (deadline) - add one, or remove the start date.",
             )
-        for value in (start, end):
+        for value in (v for v in (start, end) if v):
             try:
                 validate_work_date(value)
             except HTTPException:
@@ -291,7 +301,7 @@ def normalize_stage_schedule(
                     status_code=400,
                     detail=f"The {stage} stage's dates must be valid (got \"{value}\").",
                 )
-        if end < start:
+        if start and end and end < start:
             raise HTTPException(
                 status_code=400,
                 detail=f"The {stage} stage's end date must be on or after its start date.",
@@ -305,10 +315,20 @@ def derive_deliverable_dates(
     stage_schedule: dict,
 ) -> tuple:
     """The deliverable's overall start/end, derived as the earliest stage
-    start and latest stage end among its own required_stages. (None, None)
-    when no stage has a tracked window."""
-    starts = [stage_schedule[s]["start_dt"] for s in required_stages if s in stage_schedule]
-    ends = [stage_schedule[s]["end_dt"] for s in required_stages if s in stage_schedule]
+    start and latest stage end among its own required_stages. A stage with
+    only an end date (a deadline, no fixed start) contributes to the overall
+    end but not the overall start. (None, None) when no stage has a tracked
+    window at all."""
+    starts = [
+        stage_schedule[s]["start_dt"]
+        for s in required_stages
+        if s in stage_schedule and stage_schedule[s].get("start_dt")
+    ]
+    ends = [
+        stage_schedule[s]["end_dt"]
+        for s in required_stages
+        if s in stage_schedule and stage_schedule[s].get("end_dt")
+    ]
     return (min(starts) if starts else None, max(ends) if ends else None)
 
 
@@ -901,13 +921,30 @@ def apply_deliverable_rules(existing: dict, update_fields: dict) -> None:
         )
 
 
-async def scoped_update_fields(user: User, existing: dict, update_fields: dict, creator_department: Optional[str] = None) -> dict:
+async def scoped_update_fields(
+    user: User,
+    existing: dict,
+    update_fields: dict,
+    creator_department: Optional[str] = None,
+    creator_role: Optional[str] = None,
+) -> dict:
     """Apply role-based restrictions to a raw update payload. Raises HTTPException on violation."""
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
     if user.role == "member":
-        # Members share rows within their department/stage. Creator ownership is
-        # not used as an edit lock; Add 5 Rows creates shared team rows.
+        # A row another MEMBER created for themselves is theirs alone - a
+        # teammate (same department, same stage) can no longer edit it. A row
+        # with no creator, or one created by a manager/admin (e.g. "Add N
+        # Rows" provisioning blank team rows), stays open to the whole
+        # department: those were never any one person's row to begin with,
+        # and locking them would make that shared feature unusable.
+        creator_id = existing.get("creator_id")
+        if creator_id and creator_id != user.id and creator_role == "member":
+            raise HTTPException(
+                status_code=403,
+                detail="This row was created by a teammate, so only they (or a manager) can edit it.",
+            )
+        # Members share rows within their department/stage otherwise.
         department_stage = {
             "Content": "Content",
             "Design": "Design",
@@ -1009,6 +1046,13 @@ async def get_user_department(user_id: Optional[str]) -> Optional[str]:
         return None
     doc = await db.users.find_one({"id": user_id}, {"_id": 0, "department": 1})
     return doc.get("department") if doc else None
+
+
+async def get_user_role(user_id: Optional[str]) -> Optional[str]:
+    if not user_id:
+        return None
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
+    return doc.get("role") if doc else None
 
 
 # ---------------- Push (Firebase Cloud Messaging) ----------------
@@ -1431,6 +1475,12 @@ async def _notify_new_project(
     production_users = await _production_users_for_stages(list(all_stages))
 
     for deliverable in deliverables:
+        if deliverable.get("stage_status") == "Completed":
+            # Already fully done when created (e.g. imported historical data
+            # via the "Finish" status) - there is nothing left for any team
+            # to do on it, so no "ready for X" notice goes out for it.
+            continue
+
         stages = stored_stages(deliverable.get("required_stages"))
         schedule = deliverable.get("stage_schedule") or {}
         recipients = [
@@ -2316,12 +2366,14 @@ async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Reque
         raise HTTPException(status_code=404, detail="Work item not found")
 
     creator_department = await get_user_department(existing.get("creator_id"))
+    creator_role = await get_user_role(existing.get("creator_id"))
 
     update_fields = await scoped_update_fields(
         user,
         existing,
         payload.model_dump(exclude_unset=True),
         creator_department,
+        creator_role,
     )
 
     # Keep the old values before updating MongoDB
@@ -2487,6 +2539,7 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
         creator_department = await get_user_department(
             existing.get("creator_id")
         )
+        creator_role = await get_user_role(existing.get("creator_id"))
 
         try:
             update_fields = await scoped_update_fields(
@@ -2494,6 +2547,7 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
                 existing,
                 dict(raw_fields),
                 creator_department,
+                creator_role,
             )
         except HTTPException:
             continue
@@ -3853,10 +3907,11 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
     touching the database. `specs` items carry: name, type, required_stages
     (already normalized), approval_types, and optionally stage_schedule
     (per-stage {start_dt, end_dt}), current_stage (defaults to the first
-    stage), and start_dt/end_dt (used only when stage_schedule is absent).
-    Raises HTTPException on a bad approval type, a bad stage schedule, or a
-    current_stage outside the deliverable's own stages - before anything has
-    been written."""
+    stage), start_dt/end_dt (used only when stage_schedule is absent), and
+    finished (skips straight to Completed with nothing pending - see the
+    "finished" branch below). Raises HTTPException on a bad approval type, a
+    bad stage schedule, or a current_stage outside the deliverable's own
+    stages - before anything has been written."""
     deliverable_docs: list = []
     workflow_docs: list = []
     item_docs: list = []
@@ -3875,12 +3930,21 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
             # no deadline tracking at all).
             start_dt, end_dt = spec.get("start_dt"), spec.get("end_dt")
 
-        current_stage = spec.get("current_stage") or stages[0]
+        # A deliverable can be created already fully done (e.g. historical
+        # data, or a project brought in from elsewhere) - it skips the normal
+        # "Ready for Review" approval entirely, same end state as one that
+        # was approved all the way through advance_deliverable_stage(). If no
+        # explicit current_stage was given for it, it belongs at the LAST of
+        # its own stages (it went all the way through), not the first.
+        finished = bool(spec.get("finished"))
+        current_stage = spec.get("current_stage") or (stages[-1] if finished else stages[0])
         if current_stage not in stages:
             raise HTTPException(
                 status_code=400,
                 detail=f'"{current_stage}" must be one of the deliverable\'s selected stages.',
             )
+
+        stage_status = "Completed" if finished else "Ready for Review"
 
         deliv = Deliverable(
             project_id=project_id,
@@ -3891,7 +3955,7 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
             stage_schedule=stage_schedule,
             required_stages=stages,
             current_stage=current_stage,
-            stage_status="Ready for Review",
+            stage_status=stage_status,
             approval_types=approval_types,
             created_at=ts,
             updated_at=ts,
@@ -3902,8 +3966,16 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
 
         # Manager approval always exists, even with no additional approval
         # types selected. (Same documents _create_or_sync_approval_workflow
-        # would create one round trip at a time.)
+        # would create one round trip at a time.) _new_approval_item already
+        # creates NOT_STARTED items rather than PENDING ones whenever
+        # stage_status isn't "Ready for Review", so a finished deliverable's
+        # items come out inert automatically; the workflow's own status is
+        # set to COMPLETED here to match what a naturally-finished deliverable
+        # looks like (see _complete_approval_workflow).
         workflow = _new_approval_workflow(db_doc, normalized_types, ts)
+        if finished:
+            workflow["status"] = "COMPLETED"
+            workflow["completed_at"] = ts
         workflow_docs.append(workflow)
         item_docs.extend(
             _new_approval_item(workflow["id"], db_doc, approval_type, ts)
@@ -4663,6 +4735,7 @@ async def import_deliverables(
             "type": row["type"],
             "stage_schedule": row["stage_schedule"],
             "current_stage": row["current_stage"],
+            "finished": row["finished"],
             "required_stages": normalize_stages(row["required_stages"]),
             "approval_types": row["approval_types"],
         }

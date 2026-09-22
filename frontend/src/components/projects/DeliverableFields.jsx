@@ -25,10 +25,13 @@ export const validateStageSchedule = (requiredStages, stageSchedule = {}) => {
     if (!window) continue;
     const { start_dt: start, end_dt: end } = window;
     if (!start && !end) continue;
-    if (!start || !end) {
-      return `Both a start and end date are needed for the ${stage} stage.`;
+    // An end date (deadline) with no fixed start is fine - e.g. "due the
+    // 24th, starts whenever the previous stage finishes". A start with no
+    // deadline isn't a useful window, so that's still not allowed.
+    if (start && !end) {
+      return `The ${stage} stage has a start date but no end date (deadline) — add one, or remove the start date.`;
     }
-    if (end < start) {
+    if (start && end && end < start) {
       return `The ${stage} stage's end date must be on or after its start date.`;
     }
   }

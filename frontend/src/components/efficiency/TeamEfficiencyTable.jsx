@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { avatarColorClasses } from "@/lib/avatarColors";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -319,7 +320,9 @@ export const TeamEfficiencyTable = ({
                 >
                   <TableCell className="px-3 py-3 font-medium text-slate-800">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd] text-[11px] font-semibold text-[#1a1a8a]">
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${avatarColorClasses(e.user_id)}`}
+                      >
                         {(e.name || "?").charAt(0).toUpperCase()}
                       </span>
                       <span className="truncate whitespace-nowrap">{e.name}</span>

@@ -320,15 +320,18 @@ export const ImportDeliverablesModal = ({
                   <li>
                     <span className="font-semibold text-foreground">Status</span> - which stage
                     it's currently in (must be one of that row's Stages). Blank means the first
-                    stage.
+                    stage. Use <span className="font-semibold text-foreground">Finish</span> (or
+                    Done/Complete/Closed) instead for something that was already fully finished
+                    before it was entered here.
                   </li>
                   <li>
                     <span className="font-semibold text-foreground">
                       Content/Design/Animate Start &amp; End
                     </span>{" "}
                     - each stage's own deadline window, e.g. 2026-09-22 to 2026-09-24 (or
-                    22/09/2026, day first). Optional per stage; the deliverable's overall dates
-                    are worked out from whichever of these are filled in.
+                    22/09/2026, day first). The End date alone is fine too — a deadline with no
+                    fixed start. Optional per stage; the deliverable's overall dates are worked
+                    out from whichever of these are filled in.
                   </li>
                   <li>
                     <span className="font-semibold text-foreground">Approvals</span> - extra
@@ -436,7 +439,13 @@ export const ImportDeliverablesModal = ({
                             {row.required_stages.join(", ") || "-"}
                           </td>
                           <td className="px-3 py-2 text-foreground">
-                            {row.current_stage || "-"}
+                            {row.finished ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                Finished
+                              </span>
+                            ) : (
+                              row.current_stage || "-"
+                            )}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {Object.keys(row.stage_schedule || {}).length === 0 ? (
@@ -445,12 +454,17 @@ export const ImportDeliverablesModal = ({
                               <div className="space-y-0.5">
                                 {row.required_stages
                                   .filter((stage) => row.stage_schedule[stage])
-                                  .map((stage) => (
-                                    <div key={stage}>
-                                      {stage}: {row.stage_schedule[stage].start_dt} →{" "}
-                                      {row.stage_schedule[stage].end_dt}
-                                    </div>
-                                  ))}
+                                  .map((stage) => {
+                                    const window = row.stage_schedule[stage];
+                                    return (
+                                      <div key={stage}>
+                                        {stage}:{" "}
+                                        {window.start_dt
+                                          ? `${window.start_dt} → ${window.end_dt}`
+                                          : `due ${window.end_dt}`}
+                                      </div>
+                                    );
+                                  })}
                               </div>
                             )}
                           </td>

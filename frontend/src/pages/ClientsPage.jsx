@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { avatarColorClasses } from "@/lib/avatarColors";
 import { toast } from "sonner";
 import {
   Plus,
@@ -65,7 +66,9 @@ const ContactCard = ({
       <div className="rounded-xl border border-[#dcdcf8] bg-[#f0f0fd]/50 p-4">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f0f0fd] text-xs font-semibold text-[#2b2bb5]">
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${avatarColorClasses(contact.id || contact.name)}`}
+            >
               {getInitials(contact.name)}
             </div>
             <div>
@@ -160,7 +163,9 @@ const ContactCard = ({
   return (
     <div className="group rounded-xl border border-border bg-white p-4 transition-shadow hover:border-slate-300 hover:shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd] text-sm font-semibold text-[#2b2bb5]">
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${avatarColorClasses(contact.id || contact.name)}`}
+        >
           {getInitials(contact.name)}
         </div>
 

@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { X, Trash2, ChevronRight, FileText } from "lucide-react";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
-import { DeliverableFields } from "@/components/projects/DeliverableFields";
+import {
+  DeliverableFields,
+  validateStageSchedule,
+} from "@/components/projects/DeliverableFields";
 
 import { createDeliverable, updateDeliverable, deleteDeliverable } from "@/services/api";
 import { trackEvent } from "../../analytics";
@@ -10,8 +13,7 @@ import { trackEvent } from "../../analytics";
 const emptyDeliverable = {
   name: "",
   type: "",
-  start_dt: "",
-  end_dt: "",
+  stage_schedule: {},
   required_stages: ["Content"],
 };
 
@@ -40,8 +42,7 @@ export const DeliverableModal = ({
       setDeliverable({
         name: initial.name || "",
         type: initial.type || "",
-        start_dt: initial.start_dt || "",
-        end_dt: initial.end_dt || "",
+        stage_schedule: initial.stage_schedule || {},
         required_stages:
           initial.required_stages?.length
             ? initial.required_stages
@@ -90,15 +91,12 @@ export const DeliverableModal = ({
       );
     }
 
-    if (
-      deliverable.start_dt &&
-      deliverable.end_dt &&
-      deliverable.end_dt <
-        deliverable.start_dt
-    ) {
-      return toast.error(
-        "End date-time must be after start date-time"
-      );
+    const scheduleError = validateStageSchedule(
+      deliverable.required_stages,
+      deliverable.stage_schedule
+    );
+    if (scheduleError) {
+      return toast.error(scheduleError);
     }
 
     setSaving(true);
@@ -107,8 +105,7 @@ export const DeliverableModal = ({
       const payload = {
         name: deliverable.name.trim(),
         type: deliverable.type || "",
-        start_dt: deliverable.start_dt || null,
-        end_dt: deliverable.end_dt || null,
+        stage_schedule: deliverable.stage_schedule || {},
         required_stages:
           deliverable.required_stages || [],
         approval_types: approvalTypes,

@@ -9,6 +9,7 @@ import {
   Pencil,
   Trash2,
   Upload,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +47,33 @@ const fmtDate = (iso) => {
   } catch {
     return iso;
   }
+};
+
+const fmtShort = (iso) => {
+  if (!iso) return "—";
+
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+    });
+  } catch {
+    return iso;
+  }
+};
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+// A stage's own window is overdue when its end date has passed and the
+// deliverable hasn't moved on from it yet - mirrors the backend's
+// per-stage overdue check (server.py's _ensure_overdue_notifications),
+// which is what actually drives the notification, so a viewer sees the
+// same "late" verdict here without waiting for that background job to run.
+const isStageOverdue = (deliverable, stage) => {
+  if (deliverable.current_stage !== stage) return false;
+  if (deliverable.stage_status === "Completed") return false;
+  const end = deliverable.stage_schedule?.[stage]?.end_dt;
+  return Boolean(end) && end < todayIso();
 };
 
 const stageStatusBadge = (s) => {
@@ -431,17 +459,59 @@ export default function ProjectDetailPage() {
                             {d.stage_status}
                           </span>
 
-                          <span className="text-muted-foreground">
-                            Workflow:{" "}
-                            {(d.required_stages || [d.current_stage]).join(
-                              " → "
-                            )}
-                          </span>
+                          {isStageOverdue(d, d.current_stage) && (
+                            <span
+                              data-testid={`project-detail-deliverable-overdue-${d.id}`}
+                              className="flex items-center gap-1 rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
+                              title={`${d.current_stage} was due ${fmtDate(
+                                d.stage_schedule?.[d.current_stage]?.end_dt
+                              )}`}
+                            >
+                              <AlertTriangle className="h-2.5 w-2.5" />
+                              Overdue
+                            </span>
+                          )}
 
                           {d.type && (
                             <span className="text-slate-400">
                               · {d.type}
                             </span>
+                          )}
+                        </div>
+
+                        {/* Per-stage deadline windows - the deliverable's own
+                            start_dt/end_dt (shown above the card list, if
+                            anywhere) are only the derived overall range;
+                            this is where each team's actual window lives. */}
+                        {Object.keys(d.stage_schedule || {}).length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                            {(d.required_stages || []).map((stage) => {
+                              const window = d.stage_schedule?.[stage];
+                              if (!window) return null;
+                              const overdue = isStageOverdue(d, stage);
+                              return (
+                                <span
+                                  key={stage}
+                                  className={
+                                    overdue
+                                      ? "font-medium text-rose-600"
+                                      : stage === d.current_stage
+                                        ? "font-medium text-foreground"
+                                        : undefined
+                                  }
+                                >
+                                  {stage}: {fmtShort(window.start_dt)} –{" "}
+                                  {fmtShort(window.end_dt)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          Workflow:{" "}
+                          {(d.required_stages || [d.current_stage]).join(
+                            " → "
                           )}
                         </div>
                       </div>

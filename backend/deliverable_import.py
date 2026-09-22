@@ -7,7 +7,14 @@ rows that came out as "ok".
 Columns (header names are matched loosely - case, spaces and common synonyms are
 ignored). Only Name is required.
 
-    Name | Type | Start date | End date | Stages | Approvals
+    Name | Type | Status | Stages | Content Start | Content End |
+    Design Start | Design End | Animate Start | Animate End | Approvals
+
+Status is the deliverable's CURRENT stage ("Content", "Design" or "Animate") -
+it must be one of the stages selected in Stages. Each stage's Start/End is its
+own deadline window, e.g. Content 22-24 Sep, Design 24-30 Sep - a stage need
+not have dates at all. The deliverable's overall start/end date is always
+derived from these per-stage windows and is never a column in the sheet.
 """
 
 import csv
@@ -26,16 +33,34 @@ class ImportFileError(ValueError):
     """The file as a whole cannot be used (wrong format, no header, too big...)."""
 
 
+# STAGE_ALIASES below is the source of truth for the stage names this app
+# understands; the per-stage date columns are generated from it, so a new
+# stage automatically gets its own "<Stage> Start"/"<Stage> End" columns.
+STAGE_ALIASES = {"animation": "Animate", "animate": "Animate", "content": "Content", "design": "Design"}
+_CANONICAL_STAGES = sorted(set(STAGE_ALIASES.values()))
+
+
+def _stage_date_aliases(stage: str, edge: str) -> set:
+    suffixes = {edge, f"{edge} date"}
+    suffixes |= {"from", "starts"} if edge == "start" else {"due", "due date", "deadline", "to", "ends"}
+    return {f"{stage.lower()} {suffix}" for suffix in suffixes}
+
+
 HEADER_ALIASES = {
     "name": {"name", "deliverable", "deliverable name", "deliverable title", "title"},
     "type": {"type", "deliverable type", "format", "activity", "activity type"},
-    "start": {"start", "start date", "start dt", "startdt", "from", "starts"},
-    "end": {"end", "end date", "end dt", "enddt", "due", "due date", "deadline", "to", "ends"},
+    "status": {"status", "current stage", "stage status", "production stage"},
+    # Legacy single overall Start/End columns - no longer part of the template
+    # (see the module docstring) but still recognized so an old sheet gives a
+    # clear "ignored" message instead of a confusing "unknown column".
+    "start": {"start", "start date", "start dt", "startdt", "overall start", "from", "starts"},
+    "end": {"end", "end date", "end dt", "enddt", "overall end", "overall due", "due", "due date", "deadline", "to", "ends"},
     "stages": {"stages", "stage", "required stages", "production stages", "teams", "team"},
     "approvals": {"approvals", "approval", "approval types", "approval type", "additional approvals", "approvers"},
 }
-
-STAGE_ALIASES = {"animation": "Animate", "animate": "Animate", "content": "Content", "design": "Design"}
+for _stage in _CANONICAL_STAGES:
+    HEADER_ALIASES[f"{_stage.lower()}_start"] = _stage_date_aliases(_stage, "start")
+    HEADER_ALIASES[f"{_stage.lower()}_end"] = _stage_date_aliases(_stage, "end")
 
 APPROVAL_ALIASES = {
     "manager": None,            # always present, never needs listing
@@ -269,18 +294,14 @@ def validate_table(
         else:
             warnings.append("No type: time cannot be auto-filled and the work category stays blank")
 
-        # ---- dates
-        start_dt = end_dt = None
-        try:
-            start_dt = parse_date(cell(row, "start"))
-        except ValueError:
-            errors.append(f'Start date "{_text(cell(row, "start"))}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY)')
-        try:
-            end_dt = parse_date(cell(row, "end"))
-        except ValueError:
-            errors.append(f'End date "{_text(cell(row, "end"))}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY)')
-        if start_dt and end_dt and end_dt < start_dt:
-            errors.append("End date is before the start date")
+        # ---- legacy overall Start/End columns: no longer used (see the module
+        # docstring) - a sheet still carrying them is told plainly why, rather
+        # than the dates being silently dropped or misapplied to a stage.
+        if _text(cell(row, "start")) or _text(cell(row, "end")):
+            warnings.append(
+                "Start date/End date are ignored - the deliverable's overall "
+                "dates are derived from its per-stage dates instead"
+            )
 
         # ---- stages
         stage_raw = _text(cell(row, "stages"))
@@ -295,6 +316,60 @@ def validate_table(
         chosen_stages = [s for s in valid_stages if s in chosen_stages] or (["Content"] if not stage_raw else [])
         if not stage_raw:
             warnings.append("No stages: defaulted to Content")
+
+        # ---- status -> current_stage
+        status_raw = _text(cell(row, "status"))
+        current_stage = None
+        if status_raw:
+            mapped = STAGE_ALIASES.get(_key(status_raw))
+            if mapped is None or mapped not in valid_stages:
+                errors.append(f'Unknown status "{status_raw}" (use Content, Design or Animate)')
+            elif mapped not in chosen_stages:
+                errors.append(
+                    f'Status "{mapped}" must be one of this row\'s Stages ({", ".join(chosen_stages) or "none selected"})'
+                )
+            else:
+                current_stage = mapped
+        if current_stage is None and chosen_stages:
+            current_stage = chosen_stages[0]
+
+        # ---- per-stage dates
+        stage_schedule: Dict[str, Dict[str, str]] = {}
+        for stage in valid_stages:
+            key = stage.lower()
+            s_raw, e_raw = cell(row, f"{key}_start"), cell(row, f"{key}_end")
+            if not _text(s_raw) and not _text(e_raw):
+                continue
+            try:
+                s_val = parse_date(s_raw)
+            except ValueError:
+                s_val = None
+                errors.append(f'{stage} start "{_text(s_raw)}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY)')
+            try:
+                e_val = parse_date(e_raw)
+            except ValueError:
+                e_val = None
+                errors.append(f'{stage} end "{_text(e_raw)}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY)')
+            if stage not in chosen_stages:
+                errors.append(f'{stage} has dates but is not one of this row\'s Stages - add it there or remove its dates')
+                continue
+            if _text(s_raw) and not _text(e_raw):
+                errors.append(f"{stage} has a start date but no end date")
+            elif _text(e_raw) and not _text(s_raw):
+                errors.append(f"{stage} has an end date but no start date")
+            if s_val and e_val:
+                if e_val < s_val:
+                    errors.append(f"{stage}'s end date is before its start date")
+                else:
+                    stage_schedule[stage] = {"start_dt": s_val, "end_dt": e_val}
+
+        # A later stage starting before an earlier one is very likely a typo,
+        # e.g. the Design and Animate columns swapped - flag it without
+        # blocking the import, since some workflows genuinely overlap.
+        ordered = [s for s in valid_stages if s in stage_schedule]
+        for earlier, later in zip(ordered, ordered[1:]):
+            if stage_schedule[later]["start_dt"] < stage_schedule[earlier]["start_dt"]:
+                warnings.append(f"{later} starts before {earlier} - check these dates are in the right columns")
 
         # ---- approvals
         approvals: List[str] = []
@@ -320,6 +395,9 @@ def validate_table(
             else:
                 seen[dup_key] = sheet_row
 
+        start_dt = min((w["start_dt"] for w in stage_schedule.values()), default=None)
+        end_dt = max((w["end_dt"] for w in stage_schedule.values()), default=None)
+
         results.append({
             "row": sheet_row,
             "name": name,
@@ -327,6 +405,8 @@ def validate_table(
             "start_dt": start_dt,
             "end_dt": end_dt,
             "required_stages": chosen_stages,
+            "current_stage": current_stage,
+            "stage_schedule": stage_schedule,
             "approval_types": approvals,
             "status": status,
             "errors": errors,

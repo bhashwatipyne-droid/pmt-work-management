@@ -18,7 +18,7 @@ import bcrypt
 import jwt
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import Dict, List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -239,6 +239,77 @@ def reconcile_stage_after_edit(
     return {"current_stage": stages[-1], "stage_status": "Completed"}
 
 
+def _format_date_short(value: Optional[str]) -> str:
+    """"2026-09-24" -> "24 Sep". Falls back to the raw value if it isn't a
+    plain YYYY-MM-DD date, so a bad stored value never breaks a message."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%d %b")
+    except (TypeError, ValueError):
+        return value or ""
+
+
+def format_stage_window(window: Optional[dict]) -> str:
+    """{"start_dt": "2026-09-22", "end_dt": "2026-09-24"} -> "22 Sep - 24 Sep".
+    Empty string when there is no window to show."""
+    if not window or not window.get("start_dt") or not window.get("end_dt"):
+        return ""
+    return f'{_format_date_short(window["start_dt"])} - {_format_date_short(window["end_dt"])}'
+
+
+def normalize_stage_schedule(
+    required_stages: List[str],
+    stage_schedule: Optional[dict],
+) -> Dict[str, Dict[str, str]]:
+    """Clean a stage_schedule payload down to one validated {start_dt, end_dt}
+    entry per stage that actually has both dates. Raises HTTPException(400) on
+    a bad date, an inverted range, or one date given without the other.
+
+    A stage not in `required_stages` is silently dropped (e.g. the stage was
+    deselected in the same edit - its leftover dates are no longer
+    meaningful). A stage with no dates at all simply has no entry: deadline
+    tracking is opt-in per stage, not mandatory."""
+    cleaned: Dict[str, Dict[str, str]] = {}
+    for stage, window in (stage_schedule or {}).items():
+        if stage not in required_stages:
+            continue
+        start = (window or {}).get("start_dt") or None
+        end = (window or {}).get("end_dt") or None
+        if not start and not end:
+            continue
+        if not start or not end:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Both a start and end date are needed for the {stage} stage.",
+            )
+        for value in (start, end):
+            try:
+                validate_work_date(value)
+            except HTTPException:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"The {stage} stage's dates must be valid (got \"{value}\").",
+                )
+        if end < start:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The {stage} stage's end date must be on or after its start date.",
+            )
+        cleaned[stage] = {"start_dt": start, "end_dt": end}
+    return cleaned
+
+
+def derive_deliverable_dates(
+    required_stages: List[str],
+    stage_schedule: dict,
+) -> tuple:
+    """The deliverable's overall start/end, derived as the earliest stage
+    start and latest stage end among its own required_stages. (None, None)
+    when no stage has a tracked window."""
+    starts = [stage_schedule[s]["start_dt"] for s in required_stages if s in stage_schedule]
+    ends = [stage_schedule[s]["end_dt"] for s in required_stages if s in stage_schedule]
+    return (min(starts) if starts else None, max(ends) if ends else None)
+
+
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
 CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Administration"]
@@ -410,10 +481,17 @@ class DeliverableInput(BaseModel):
     type: Optional[str] = ""
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    # Per-stage deadline windows, e.g. {"Content": {"start_dt": "2026-09-22",
+    # "end_dt": "2026-09-24"}, "Design": {...}}. When given, this is what the
+    # overall start_dt/end_dt above are derived from (see
+    # derive_deliverable_dates) - a stage need not have an entry, in which
+    # case that stage's deadline simply isn't tracked yet.
+    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
     required_stages: List[str] = Field(
         default_factory=lambda: ["Content"]
     )
     approval_types: Optional[List[str]] = None
+    current_stage: Optional[str] = None
 
 
 class ProjectCreate(BaseModel):
@@ -468,8 +546,15 @@ class Deliverable(BaseModel):
     project_id: str
     name: str
     type: str = ""
+    # Always derived from stage_schedule when it has any entries (see
+    # derive_deliverable_dates) - not directly editable once a per-stage
+    # window exists. Kept for sorting, the overdue-deadline job, and any
+    # deliverable that only has the old-style single overall range.
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    # Per-stage deadline window: {"Content": {"start_dt": ..., "end_dt": ...}}.
+    # A stage with no entry here has no tracked deadline.
+    stage_schedule: Dict[str, Dict[str, Optional[str]]] = Field(default_factory=dict)
     required_stages: List[str] = Field(
         default_factory=lambda: ["Content"]
     )
@@ -1345,6 +1430,7 @@ async def _notify_new_project(
 
     for deliverable in deliverables:
         stages = stored_stages(deliverable.get("required_stages"))
+        schedule = deliverable.get("stage_schedule") or {}
         recipients = [
             user
             for user in production_users
@@ -1353,6 +1439,7 @@ async def _notify_new_project(
 
         for recipient in recipients:
             stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"), stages[0])
+            window_text = format_stage_window(schedule.get(stage))
             pending_notifications.append({
                 "id": str(uuid.uuid4()),
                 "user_id": recipient["id"],
@@ -1361,7 +1448,9 @@ async def _notify_new_project(
                 "message": (
                     f'{project.get("name", "Project")} · '
                     f'{deliverable.get("name", "Deliverable")} '
-                    f'is ready for {stage}.'
+                    f'is ready for {stage}'
+                    + (f' ({window_text})' if window_text else "")
+                    + "."
                     + (f' Client: {client_name}.' if client_name else "")
                 ),
                 "project_id": project.get("id"),
@@ -1471,13 +1560,36 @@ async def _ensure_overdue_notifications():
                 "dedupe_key": f'project-overdue:{project.get("id")}:{project.get("end_date")}:{recipient["id"]}',
             })
 
-    overdue_deliverables = await db.deliverables.find(
+    # Deliverables with a per-stage schedule (stage_schedule) are checked
+    # against the CURRENT stage's own end date, not the deliverable's overall
+    # end_dt - the overall end_dt is the LATEST of every stage's end, so a
+    # deliverable whose Content window already closed can still have a
+    # future overall end_dt (Design/Animate finish later) and would never
+    # show up if only the overall date were checked here.
+    legacy_overdue = await db.deliverables.find(
         {
             "end_dt": {"$lt": today},
             "stage_status": {"$ne": "Completed"},
+            "$or": [{"stage_schedule": {"$exists": False}}, {"stage_schedule": {}}],
         },
         {"_id": 0},
     ).to_list(5000)
+
+    scheduled_candidates = await db.deliverables.find(
+        {
+            "stage_status": {"$ne": "Completed"},
+            "stage_schedule": {"$nin": [None, {}]},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+
+    stage_overdue = [
+        d
+        for d in scheduled_candidates
+        if (d.get("stage_schedule") or {}).get(d.get("current_stage"), {}).get("end_dt", today) < today
+    ]
+
+    overdue_deliverables = legacy_overdue + stage_overdue
 
     if overdue_deliverables:
         parent_ids = list({
@@ -1497,12 +1609,24 @@ async def _ensure_overdue_notifications():
             if not project:
                 continue
 
-            stages = stored_stages(deliverable.get("required_stages"))
-            recipients = recipients_for_stages(stages)
+            schedule = deliverable.get("stage_schedule") or {}
+            required = stored_stages(deliverable.get("required_stages"))
+            if schedule:
+                # Only the team currently holding the deliverable is late -
+                # a downstream team's window hasn't opened yet, so they
+                # aren't the ones missing a deadline.
+                current_stage = deliverable.get("current_stage")
+                target_stages = [current_stage] if current_stage in required else []
+                due_date = (schedule.get(current_stage) or {}).get("end_dt", "")
+            else:
+                target_stages = required
+                due_date = deliverable.get("end_dt", "")
+
+            recipients = recipients_for_stages(target_stages)
 
             for recipient in recipients:
                 stage = DEPARTMENT_TO_STAGE.get(recipient.get("department"))
-                if stage not in stages:
+                if stage not in target_stages:
                     continue
 
                 pending_notifications.append({
@@ -1512,8 +1636,9 @@ async def _ensure_overdue_notifications():
                     "title": "Deliverable deadline delayed",
                     "message": (
                         f'{deliverable.get("name", "Deliverable")} in '
-                        f'{project.get("name", "Project")} was due on '
-                        f'{deliverable.get("end_dt", "")} and is not completed.'
+                        f'{project.get("name", "Project")} '
+                        + (f'({stage} stage) ' if schedule else "")
+                        + f'was due on {due_date} and is not completed.'
                     ),
                     "project_id": deliverable.get("project_id"),
                     "deliverable_id": deliverable.get("id"),
@@ -1523,7 +1648,7 @@ async def _ensure_overdue_notifications():
                     "created_at": now_iso(),
                     "read_at": None,
                     "actioned_at": None,
-                    "dedupe_key": f'deliverable-overdue:{deliverable.get("id")}:{deliverable.get("end_dt")}:{recipient["id"]}',
+                    "dedupe_key": f'deliverable-overdue:{deliverable.get("id")}:{stage}:{due_date}:{recipient["id"]}',
                 })
 
     await _upsert_notifications_batch(pending_notifications)
@@ -3723,9 +3848,13 @@ async def get_project(project_id: str, request: Request):
 
 def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: str):
     """Build every document needed to create a batch of deliverables, without
-    touching the database. `specs` items carry: name, type, start_dt, end_dt,
-    required_stages (already normalized) and approval_types. Raises HTTPException
-    on a bad approval type - before anything has been written."""
+    touching the database. `specs` items carry: name, type, required_stages
+    (already normalized), approval_types, and optionally stage_schedule
+    (per-stage {start_dt, end_dt}), current_stage (defaults to the first
+    stage), and start_dt/end_dt (used only when stage_schedule is absent).
+    Raises HTTPException on a bad approval type, a bad stage schedule, or a
+    current_stage outside the deliverable's own stages - before anything has
+    been written."""
     deliverable_docs: list = []
     workflow_docs: list = []
     item_docs: list = []
@@ -3734,14 +3863,32 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
         approval_types = spec.get("approval_types") or []
         normalized_types = _normalize_approval_types(approval_types)
         stages = spec["required_stages"]
+
+        stage_schedule = normalize_stage_schedule(stages, spec.get("stage_schedule"))
+        if stage_schedule:
+            start_dt, end_dt = derive_deliverable_dates(stages, stage_schedule)
+        else:
+            # No per-stage windows: keep whatever plain overall dates the
+            # caller supplied, unchanged (a deliverable can still exist with
+            # no deadline tracking at all).
+            start_dt, end_dt = spec.get("start_dt"), spec.get("end_dt")
+
+        current_stage = spec.get("current_stage") or stages[0]
+        if current_stage not in stages:
+            raise HTTPException(
+                status_code=400,
+                detail=f'"{current_stage}" must be one of the deliverable\'s selected stages.',
+            )
+
         deliv = Deliverable(
             project_id=project_id,
             name=spec["name"],
             type=spec.get("type") or "",
-            start_dt=spec.get("start_dt"),
-            end_dt=spec.get("end_dt"),
+            start_dt=start_dt,
+            end_dt=end_dt,
+            stage_schedule=stage_schedule,
             required_stages=stages,
-            current_stage=stages[0],
+            current_stage=current_stage,
             stage_status="Ready for Review",
             approval_types=approval_types,
             created_at=ts,
@@ -3771,6 +3918,7 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
                 "required_stages": deliv.required_stages,
                 "current_stage": deliv.current_stage,
                 "stage_status": deliv.stage_status,
+                "stage_schedule": deliv.stage_schedule,
             },
             entity_field="deliverable_id",
         ))
@@ -3831,6 +3979,8 @@ async def create_project(payload: ProjectCreate, request: Request):
             "type": d.type,
             "start_dt": d.start_dt,
             "end_dt": d.end_dt,
+            "stage_schedule": d.stage_schedule,
+            "current_stage": d.current_stage,
             "required_stages": normalize_stages(d.required_stages),
             "approval_types": d.approval_types or [],
         }
@@ -4348,10 +4498,12 @@ class DeliverableCreate(BaseModel):
     type: Optional[str] = ""
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
     required_stages: List[str] = Field(
         default_factory=lambda: ["Content"]
     )
     approval_types: Optional[List[str]] = None
+    current_stage: Optional[str] = None
 
 
 class DeliverableUpdate(BaseModel):
@@ -4359,6 +4511,7 @@ class DeliverableUpdate(BaseModel):
     type: Optional[str] = None
     start_dt: Optional[str] = None
     end_dt: Optional[str] = None
+    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
     required_stages: Optional[List[str]] = None
     approval_types: Optional[List[str]] = None
 
@@ -4404,16 +4557,28 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
     ts = now_iso()
     stages = normalize_stages(payload.required_stages)
     approval_types = payload.approval_types or []
+    stage_schedule = normalize_stage_schedule(stages, payload.stage_schedule)
+    if stage_schedule:
+        start_dt, end_dt = derive_deliverable_dates(stages, stage_schedule)
+    else:
+        start_dt, end_dt = payload.start_dt, payload.end_dt
+    current_stage = payload.current_stage or stages[0]
+    if current_stage not in stages:
+        raise HTTPException(
+            status_code=400,
+            detail=f'"{current_stage}" must be one of the deliverable\'s selected stages.',
+        )
     d = Deliverable(
         created_at=ts,
         updated_at=ts,
         project_id=payload.project_id,
         name=payload.name,
         type=payload.type or "",
-        start_dt=payload.start_dt,
-        end_dt=payload.end_dt,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        stage_schedule=stage_schedule,
         required_stages=stages,
-        current_stage=stages[0],
+        current_stage=current_stage,
         stage_status="Ready for Review",
         approval_types=approval_types,
     )
@@ -4494,8 +4659,8 @@ async def import_deliverables(
         {
             "name": row["name"],
             "type": row["type"],
-            "start_dt": row["start_dt"],
-            "end_dt": row["end_dt"],
+            "stage_schedule": row["stage_schedule"],
+            "current_stage": row["current_stage"],
             "required_stages": normalize_stages(row["required_stages"]),
             "approval_types": row["approval_types"],
         }
@@ -4532,6 +4697,34 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
 
     old_stage = existing.get("current_stage")
     old_stage_status = existing.get("stage_status")
+    old_schedule = existing.get("stage_schedule") or {}
+
+    # The stages a schedule/derived-dates recompute should use: the new list
+    # if one was sent, otherwise the deliverable's current one.
+    effective_stages = update_fields.get(
+        "required_stages", existing.get("required_stages") or [old_stage]
+    )
+
+    if "stage_schedule" in update_fields:
+        # A schedule was explicitly sent: validate it and re-derive the
+        # overall dates from it (start_dt/end_dt are never accepted directly
+        # once a schedule exists - see the Deliverable model).
+        update_fields["stage_schedule"] = normalize_stage_schedule(
+            effective_stages, update_fields["stage_schedule"]
+        )
+        update_fields["start_dt"], update_fields["end_dt"] = derive_deliverable_dates(
+            effective_stages, update_fields["stage_schedule"]
+        )
+    elif "required_stages" in update_fields and old_schedule:
+        # Stages changed but no explicit schedule was sent: drop any window
+        # for a stage that is no longer selected (its dates are no longer
+        # meaningful) and re-derive the overall dates from what's left.
+        cleaned = normalize_stage_schedule(effective_stages, old_schedule)
+        if cleaned != old_schedule:
+            update_fields["stage_schedule"] = cleaned
+        update_fields["start_dt"], update_fields["end_dt"] = derive_deliverable_dates(
+            effective_stages, cleaned
+        )
 
     # Editing the production stages must also re-place the deliverable in its
     # new pipeline (see reconcile_stage_after_edit). This runs on every save
@@ -5520,6 +5713,8 @@ async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
     ) or {}
 
     label = f'{project.get("name", "Project")} · {deliverable.get("name", "Deliverable")}'
+    window_text = format_stage_window((deliverable.get("stage_schedule") or {}).get(stage))
+    due_note = f" Due {window_text}." if window_text else ""
 
     notifications = []
     for recipient in recipients:
@@ -5530,9 +5725,9 @@ async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
             "type": "stage_handoff",
             "title": f"{stage} approval ready" if is_manager else f"Ready for {stage}",
             "message": (
-                f"{label} has moved to {stage} and is waiting in Approvals."
+                f"{label} has moved to {stage} and is waiting in Approvals.{due_note}"
                 if is_manager
-                else f"{label} has moved to {stage}. You can start your work."
+                else f"{label} has moved to {stage}. You can start your work.{due_note}"
             ),
             "project_id": deliverable.get("project_id"),
             "deliverable_id": deliverable.get("id"),

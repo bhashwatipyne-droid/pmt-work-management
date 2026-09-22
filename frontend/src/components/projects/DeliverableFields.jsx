@@ -10,9 +10,77 @@ const STAGE_ICONS = {
   Animate: Play,
 };
 
-// Just the form fields for a deliverable — name, type, dates, and
-// production stages. No modal chrome, no save/cancel buttons, no API
-// calls. Used both inside the standalone DeliverableModal and inline
+// A deliverable's overall start/end date is always DERIVED from these
+// per-stage windows (earliest stage start, latest stage end) - it is never
+// entered directly, here or anywhere else. A stage with no window simply
+// isn't tracked for deadlines yet; that's fine, dates are optional per stage.
+//
+// Validates a stage_schedule object the same way the backend does
+// (normalize_stage_schedule in backend/server.py), so a bad range is caught
+// before the request round-trip. Returns an error message, or null when
+// everything is fine.
+export const validateStageSchedule = (requiredStages, stageSchedule = {}) => {
+  for (const stage of requiredStages || []) {
+    const window = stageSchedule[stage];
+    if (!window) continue;
+    const { start_dt: start, end_dt: end } = window;
+    if (!start && !end) continue;
+    if (!start || !end) {
+      return `Both a start and end date are needed for the ${stage} stage.`;
+    }
+    if (end < start) {
+      return `The ${stage} stage's end date must be on or after its start date.`;
+    }
+  }
+  return null;
+};
+
+const setStageDate = (stageSchedule, stage, edge, value) => {
+  const next = { ...(stageSchedule || {}) };
+  const window = { ...(next[stage] || {}) };
+  window[edge] = value || "";
+  next[stage] = window;
+  return next;
+};
+
+// One stage's start/end pair. `size` swaps between the compact inline layout
+// (CreateProjectModal's small card) and the larger standalone layout.
+const StageDateRow = ({ stage, window, onChange, disabled, size }) => {
+  const small = size === "sm";
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-2 ${small ? "" : "rounded-lg bg-slate-50 px-3 py-2"}`}
+    >
+      {!small && (
+        <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">
+          {stage}
+        </span>
+      )}
+
+      <DatePill
+        icon={CalendarDays}
+        value={window?.start_dt || ""}
+        onChange={(next) => onChange(stage, "start_dt", next)}
+        placeholder={small ? `${stage} start` : "Start"}
+        triggerTestId={`deliverable-stage-start-${stage}`}
+      />
+
+      <span className="text-xs text-muted-foreground">→</span>
+
+      <DatePill
+        icon={CalendarDays}
+        value={window?.end_dt || ""}
+        onChange={(next) => onChange(stage, "end_dt", next)}
+        placeholder={small ? `${stage} end` : "End"}
+        triggerTestId={`deliverable-stage-end-${stage}`}
+      />
+    </div>
+  );
+};
+
+// Just the form fields for a deliverable — name, type, per-stage deadline
+// windows, and production stages. No modal chrome, no save/cancel buttons,
+// no API calls. Used both inside the standalone DeliverableModal and inline
 // in CreateProjectModal's "Create deliverable" card, so the two never
 // drift apart visually.
 //
@@ -31,6 +99,16 @@ export const DeliverableFields = ({
   autoFocusName = true,
   compact = false,
 }) => {
+  const selectedStages = STAGES.filter((stage) =>
+    (deliverable.required_stages || []).includes(stage)
+  );
+
+  const stageSchedule = deliverable.stage_schedule || {};
+
+  const changeStageDate = (stage, edge, value) => {
+    onChange("stage_schedule", setStageDate(stageSchedule, stage, edge, value));
+  };
+
   if (compact) {
     return (
       <>
@@ -56,20 +134,6 @@ export const DeliverableFields = ({
             }))}
           />
 
-          <DatePill
-            icon={CalendarDays}
-            value={deliverable.start_dt}
-            onChange={(next) => onChange("start_dt", next)}
-            placeholder="Start date"
-          />
-
-          <DatePill
-            icon={CalendarDays}
-            value={deliverable.end_dt}
-            onChange={(next) => onChange("end_dt", next)}
-            placeholder="Target date"
-          />
-
           <MultiSelectPill
             icon={Users}
             values={deliverable.required_stages || []}
@@ -82,6 +146,24 @@ export const DeliverableFields = ({
             }))}
           />
         </div>
+
+        {selectedStages.length > 0 && (
+          <div className="mt-3 space-y-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Deadline per stage (optional)
+            </p>
+            {selectedStages.map((stage) => (
+              <StageDateRow
+                key={stage}
+                stage={stage}
+                window={stageSchedule[stage]}
+                onChange={changeStageDate}
+                disabled={disabled}
+                size="sm"
+              />
+            ))}
+          </div>
+        )}
       </>
     );
   }
@@ -99,7 +181,7 @@ export const DeliverableFields = ({
         className="w-full border-none bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
       />
 
-      {/* Meta row: Type / Start date / Target date */}
+      {/* Type */}
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <SelectPill
           icon={FileText}
@@ -111,25 +193,11 @@ export const DeliverableFields = ({
             label: type,
           }))}
         />
-
-        <DatePill
-          icon={CalendarDays}
-          value={deliverable.start_dt}
-          onChange={(next) => onChange("start_dt", next)}
-          placeholder="Start date"
-        />
-
-        <DatePill
-          icon={CalendarDays}
-          value={deliverable.end_dt}
-          onChange={(next) => onChange("end_dt", next)}
-          placeholder="Target date"
-        />
       </div>
 
       <div className="my-6 border-t border-border" />
 
-      {/* Production stages */}
+      {/* Production stages, each with its own optional deadline window */}
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-muted-foreground">
           <Users className="h-4 w-4" />
@@ -141,7 +209,10 @@ export const DeliverableFields = ({
           </h3>
 
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Select the teams that need to work on this deliverable.
+            Select the teams that need to work on this deliverable, and
+            optionally set each stage's own deadline window. The
+            deliverable's overall dates are worked out automatically from
+            these.
           </p>
 
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -193,6 +264,20 @@ export const DeliverableFields = ({
               );
             })}
           </div>
+
+          {selectedStages.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {selectedStages.map((stage) => (
+                <StageDateRow
+                  key={stage}
+                  stage={stage}
+                  window={stageSchedule[stage]}
+                  onChange={changeStageDate}
+                  disabled={disabled}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>

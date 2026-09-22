@@ -31,8 +31,25 @@ const csvCell = (value) => {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
+const TEMPLATE_COLUMNS = [
+  "Name",
+  "Type",
+  "Status",
+  "Stages",
+  "Content Start",
+  "Content End",
+  "Design Start",
+  "Design End",
+  "Animate Start",
+  "Animate End",
+  "Approvals",
+];
+
 // The sheet the admin is asked to fill in. Example rows use real type names from
-// this app so a copy-paste of the example already imports.
+// this app so a copy-paste of the example already imports. Each stage has its
+// own optional deadline window - the deliverable's overall dates are worked
+// out automatically from whichever of these are filled in, so there is no
+// separate overall Start/End column to fill in.
 const buildTemplate = (deliverableTypes) => {
   // Prefer two everyday deliverables as the examples; fall back to whatever the
   // list starts with if this workspace has renamed them.
@@ -43,9 +60,13 @@ const buildTemplate = (deliverableTypes) => {
     ? "Reel / Short Video"
     : deliverableTypes[1] || first;
   const rows = [
-    ["Name", "Type", "Start date", "End date", "Stages", "Approvals"],
-    ["Diwali carousel", first, "2026-10-20", "2026-10-25", "Content, Design", ""],
-    ["Festive reel", second, "2026-10-22", "2026-10-30", "Content, Design, Animate", "Leadership"],
+    TEMPLATE_COLUMNS,
+    // Ready for Design already - Content's window is in the past on purpose,
+    // to show what a completed earlier stage looks like.
+    ["Diwali carousel", first, "Design", "Content, Design", "2026-09-20", "2026-09-22", "2026-09-22", "2026-09-28", "", ""],
+    // Still at Content, with Design's window filled in ahead of time so that
+    // team already knows when they're needed.
+    ["Festive reel", second, "Content", "Content, Design, Animate", "2026-09-22", "2026-09-24", "2026-09-24", "2026-09-30", "2026-09-30", "2026-10-03"],
   ];
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 };
@@ -293,12 +314,21 @@ export const ImportDeliverablesModal = ({
                     fills time on the Work Sheet.
                   </li>
                   <li>
-                    <span className="font-semibold text-foreground">Start date / End date</span>{" "}
-                    - 2026-10-25 or 25/10/2026 (day first).
-                  </li>
-                  <li>
                     <span className="font-semibold text-foreground">Stages</span> - Content,
                     Design, Animate, separated by commas. Blank means Content.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-foreground">Status</span> - which stage
+                    it's currently in (must be one of that row's Stages). Blank means the first
+                    stage.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-foreground">
+                      Content/Design/Animate Start &amp; End
+                    </span>{" "}
+                    - each stage's own deadline window, e.g. 2026-09-22 to 2026-09-24 (or
+                    22/09/2026, day first). Optional per stage; the deliverable's overall dates
+                    are worked out from whichever of these are filled in.
                   </li>
                   <li>
                     <span className="font-semibold text-foreground">Approvals</span> - extra
@@ -374,8 +404,9 @@ export const ImportDeliverablesModal = ({
                         <th className="px-3 py-2 font-semibold">Row</th>
                         <th className="px-3 py-2 font-semibold">Name</th>
                         <th className="px-3 py-2 font-semibold">Type</th>
-                        <th className="px-3 py-2 font-semibold">Dates</th>
                         <th className="px-3 py-2 font-semibold">Stages</th>
+                        <th className="px-3 py-2 font-semibold">Currently in</th>
+                        <th className="px-3 py-2 font-semibold">Deadlines</th>
                         <th className="px-3 py-2 font-semibold">Status</th>
                       </tr>
                     </thead>
@@ -402,12 +433,26 @@ export const ImportDeliverablesModal = ({
                           </td>
                           <td className="px-3 py-2 text-foreground">{row.type || "-"}</td>
                           <td className="px-3 py-2 text-muted-foreground">
-                            {row.start_dt || row.end_dt
-                              ? `${row.start_dt || "?"} → ${row.end_dt || "?"}`
-                              : "-"}
+                            {row.required_stages.join(", ") || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-foreground">
+                            {row.current_stage || "-"}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
-                            {row.required_stages.join(", ") || "-"}
+                            {Object.keys(row.stage_schedule || {}).length === 0 ? (
+                              "-"
+                            ) : (
+                              <div className="space-y-0.5">
+                                {row.required_stages
+                                  .filter((stage) => row.stage_schedule[stage])
+                                  .map((stage) => (
+                                    <div key={stage}>
+                                      {stage}: {row.stage_schedule[stage].start_dt} →{" "}
+                                      {row.stage_schedule[stage].end_dt}
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <span
@@ -420,7 +465,7 @@ export const ImportDeliverablesModal = ({
                       ))}
                       {visibleRows.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                          <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
                             <CheckCircle2 className="mx-auto mb-2 h-5 w-5 text-emerald-600" />
                             Every row is ready with no notes.
                           </td>

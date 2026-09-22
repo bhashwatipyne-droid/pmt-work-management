@@ -26,14 +26,16 @@ import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
 import { SelectPill } from "@/components/ui/SelectPill";
 import { DatePill } from "@/components/ui/DatePill";
-import { DeliverableFields } from "@/components/projects/DeliverableFields";
+import {
+  DeliverableFields,
+  validateStageSchedule,
+} from "@/components/projects/DeliverableFields";
 
 const emptyDraftDeliverable = () => ({
   id: null,
   name: "",
   type: "",
-  start_dt: "",
-  end_dt: "",
+  stage_schedule: {},
   required_stages: ["Content"],
   approval_types: [],
 });
@@ -111,12 +113,12 @@ export const CreateProjectModal = ({
       return toast.error("Select at least one production stage");
     }
 
-    if (
-      draftDeliverable.start_dt &&
-      draftDeliverable.end_dt &&
-      draftDeliverable.end_dt < draftDeliverable.start_dt
-    ) {
-      return toast.error("End date must be after start date");
+    const scheduleError = validateStageSchedule(
+      draftDeliverable.required_stages,
+      draftDeliverable.stage_schedule
+    );
+    if (scheduleError) {
+      return toast.error(scheduleError);
     }
 
     const saved = {
@@ -176,8 +178,7 @@ export const CreateProjectModal = ({
         .map(({ id, ...d }) => ({
           name: d.name.trim(),
           type: d.type || "",
-          start_dt: d.start_dt || null,
-          end_dt: d.end_dt || null,
+          stage_schedule: d.stage_schedule || {},
           required_stages:
             d.required_stages?.length
               ? d.required_stages
@@ -442,17 +443,27 @@ export const CreateProjectModal = ({
                             ))}
                           </div>
 
-                          {(d.start_dt || d.end_dt) && (
-                            <span className="text-[11px] text-muted-foreground">
-                              {d.start_dt
-                                ? format(parseISO(d.start_dt), "dd MMM yyyy")
-                                : "—"}
-                              {" – "}
-                              {d.end_dt
-                                ? format(parseISO(d.end_dt), "dd MMM yyyy")
-                                : "—"}
-                            </span>
-                          )}
+                          {(() => {
+                            const dates = Object.values(d.stage_schedule || {});
+                            if (!dates.length) return null;
+                            const start = dates
+                              .map((w) => w.start_dt)
+                              .filter(Boolean)
+                              .sort()[0];
+                            const end = dates
+                              .map((w) => w.end_dt)
+                              .filter(Boolean)
+                              .sort()
+                              .slice(-1)[0];
+                            if (!start && !end) return null;
+                            return (
+                              <span className="text-[11px] text-muted-foreground">
+                                {start ? format(parseISO(start), "dd MMM yyyy") : "—"}
+                                {" – "}
+                                {end ? format(parseISO(end), "dd MMM yyyy") : "—"}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
 

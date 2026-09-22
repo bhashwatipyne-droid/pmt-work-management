@@ -13,6 +13,13 @@ export const STAGE_COLORS = {
     dot: "bg-amber-500",
     text: "text-amber-600",
   },
+  // Not a production stage a deliverable can be assigned to - a display
+  // bucket for deliverables whose stage_status is "Completed" (see the
+  // Finish column in ProjectListTable and the CSV import's Finish status).
+  Finish: {
+    dot: "bg-emerald-500",
+    text: "text-emerald-600",
+  },
 };
 
 export const STATUS_COLORS = {

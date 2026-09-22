@@ -11,7 +11,10 @@ ignored). Only Name is required.
     Design Start | Design End | Animate Start | Animate End | Approvals
 
 Status is the deliverable's CURRENT stage ("Content", "Design" or "Animate") -
-it must be one of the stages selected in Stages. Each stage's Start/End is its
+it must be one of the stages selected in Stages. "Finish" (also "Finished",
+"Complete", "Completed", "Done") is accepted too, for a deliverable that is
+already done - it's created as Completed on its last selected stage rather
+than sitting in one of the production stages. Each stage's Start/End is its
 own deadline window, e.g. Content 22-24 Sep, Design 24-30 Sep - a stage need
 not have dates at all. The deliverable's overall start/end date is always
 derived from these per-stage windows and is never a column in the sheet.
@@ -38,6 +41,11 @@ class ImportFileError(ValueError):
 # stage automatically gets its own "<Stage> Start"/"<Stage> End" columns.
 STAGE_ALIASES = {"animation": "Animate", "animate": "Animate", "content": "Content", "design": "Design"}
 _CANONICAL_STAGES = sorted(set(STAGE_ALIASES.values()))
+
+# A deliverable that is already done, as opposed to sitting in one of the
+# production stages above. Recognized in the Status column alongside
+# Content/Design/Animate.
+FINISH_ALIASES = {"finish", "finished", "complete", "completed", "done"}
 
 
 def _stage_date_aliases(stage: str, edge: str) -> set:
@@ -317,20 +325,27 @@ def validate_table(
         if not stage_raw:
             warnings.append("No stages: defaulted to Content")
 
-        # ---- status -> current_stage
+        # ---- status -> current_stage (or "Finish" -> already Completed)
         status_raw = _text(cell(row, "status"))
         current_stage = None
+        finished = False
         if status_raw:
-            mapped = STAGE_ALIASES.get(_key(status_raw))
-            if mapped is None or mapped not in valid_stages:
-                errors.append(f'Unknown status "{status_raw}" (use Content, Design or Animate)')
-            elif mapped not in chosen_stages:
-                errors.append(
-                    f'Status "{mapped}" must be one of this row\'s Stages ({", ".join(chosen_stages) or "none selected"})'
-                )
+            status_key = _key(status_raw)
+            if status_key in FINISH_ALIASES:
+                finished = True
             else:
-                current_stage = mapped
-        if current_stage is None and chosen_stages:
+                mapped = STAGE_ALIASES.get(status_key)
+                if mapped is None or mapped not in valid_stages:
+                    errors.append(f'Unknown status "{status_raw}" (use Content, Design, Animate or Finish)')
+                elif mapped not in chosen_stages:
+                    errors.append(
+                        f'Status "{mapped}" must be one of this row\'s Stages ({", ".join(chosen_stages) or "none selected"})'
+                    )
+                else:
+                    current_stage = mapped
+        if finished:
+            current_stage = chosen_stages[-1] if chosen_stages else None
+        elif current_stage is None and chosen_stages:
             current_stage = chosen_stages[0]
 
         # ---- per-stage dates
@@ -406,6 +421,8 @@ def validate_table(
             "end_dt": end_dt,
             "required_stages": chosen_stages,
             "current_stage": current_stage,
+            "finished": finished,
+            "stage_status": "Completed" if finished else "Ready for Review",
             "stage_schedule": stage_schedule,
             "approval_types": approvals,
             "status": status,

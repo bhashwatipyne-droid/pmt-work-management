@@ -98,7 +98,7 @@ export const ProjectListTable = ({
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Due Date</th>
 
-              {["Content", "Design", "Animate"].map(
+              {["Content", "Design", "Animate", "Finish"].map(
                 (stage) => (
                   <th key={stage} className="px-3 py-3">
                     <span className="flex items-center gap-1.5">
@@ -203,7 +203,7 @@ export const ProjectListTable = ({
                   </td>
 
                   {/* Stage counts */}
-                  {["Content", "Design", "Animate"].map(
+                  {["Content", "Design", "Animate", "Finish"].map(
                     (stage) => (
                       <td key={stage} className="px-3 py-4">
                         <span

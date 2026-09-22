@@ -932,21 +932,14 @@ async def scoped_update_fields(
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
     if user.role == "member":
-        # A row another MEMBER created for themselves is theirs alone - a
-        # teammate (same department, same stage) can no longer edit it. A row
-        # with no creator, or one created by a manager/admin (e.g. "Add N
-        # Rows" provisioning blank team rows), stays open to the whole
-        # department: those were never any one person's row to begin with,
-        # and locking them would make that shared feature unusable.
+        # A row with a named creator is theirs alone - a teammate (same
+        # department, same stage) can no longer edit it, regardless of
+        # whether that creator is a member, manager, or admin. Only a row
+        # with NO creator at all (e.g. "Add N Rows" provisioning blank team
+        # rows, which now leaves creator_id empty for that reason - see
+        # bulk_create_work_items) stays open to the whole department.
         creator_id = existing.get("creator_id")
-        # Only an explicit manager/admin creator opens a row to the whole
-        # department. Anything else — including a member, or a creator
-        # whose role couldn't be determined (missing/blank role on their
-        # user record) — must default to LOCKED. Treating an unknown role
-        # as "not a member" was the bug: a user record with a blank role
-        # silently opened every one of that person's rows to their entire
-        # department.
-        if creator_id and creator_id != user.id and creator_role not in ("manager", "admin"):
+        if creator_id and creator_id != user.id:
             raise HTTPException(
                 status_code=403,
                 detail="This row was created by a teammate, so only they (or a manager) can edit it.",
@@ -2496,7 +2489,14 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
             data["reviewer_id"] = None
             data["manager_id"] = None
         else:
-            data["creator_id"] = data.get("creator_id") or user.id
+            # A manager's "Add N Rows" provisions blank rows FOR the team,
+            # not for the manager personally - leaving creator_id empty
+            # (rather than defaulting to the manager's own id) is what keeps
+            # these rows open to the whole department under the
+            # any-named-creator-locks-the-row rule in scoped_update_fields.
+            # An explicitly supplied creator_id (assigning the batch to a
+            # specific person) is still honored.
+            data["creator_id"] = data.get("creator_id") or None
         ts = now_iso()
         item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
         docs.append(item.model_dump())

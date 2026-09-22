@@ -58,7 +58,6 @@ DELIVERABLE_TYPES = [
     "Campaign Ideation Plan (Content Peer Analysis)",
     "Campaign Ideation Plan (Key Visuals / Taglines)",
     "Teaser",
-    "Teaser Short Video",
     "Minimalist",
     "Emailers",
     "Newsletters",
@@ -70,8 +69,6 @@ DELIVERABLE_TYPES = [
     "Typeform / Polls / Quiz",
     "Collateral",
     "GIF",
-    "Key Visual",
-    "Reel",
     "Reel / Short Video",
     "Long Video",
     "Data Research and Analysis (SMI)",
@@ -79,7 +76,6 @@ DELIVERABLE_TYPES = [
     "Data Updation",
     "Changes",
     "One Pager",
-    "Onepager",
     "Two Pager",
 
     # Non-Core
@@ -105,7 +101,6 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Campaign Ideation Plan (Content Peer Analysis)": "Core",
     "Campaign Ideation Plan (Key Visuals / Taglines)": "Core",
     "Teaser": "Core",
-    "Teaser Short Video": "Core",
     "Minimalist": "Core",
     "Emailers": "Core",
     "Newsletters": "Core",
@@ -117,8 +112,6 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Typeform / Polls / Quiz": "Core",
     "Collateral": "Core",
     "GIF": "Core",
-    "Key Visual": "Core",
-    "Reel": "Core",
     "Reel / Short Video": "Core",
     "Long Video": "Core",
     "Data Research and Analysis (SMI)": "Core",
@@ -126,7 +119,6 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Data Updation": "Core",
     "Changes": "Core",
     "One Pager": "Core",
-    "Onepager": "Core",
     "Two Pager": "Core",
 
     # Non-Core
@@ -3631,17 +3623,7 @@ async def _hydrate_projects(
             {"$group": {
                 "_id": {
                     "project_id": "$project_id",
-                    # A deliverable that has reached "Completed" is bucketed
-                    # under "Finish" instead of whichever stage it finished
-                    # on - the list view's Finish column is what shows it's
-                    # done, not a fourth "still in Animate" count.
-                    "stage": {
-                        "$cond": [
-                            {"$eq": ["$stage_status", "Completed"]},
-                            "Finish",
-                            {"$ifNull": ["$current_stage", "Content"]},
-                        ]
-                    },
+                    "stage": {"$ifNull": ["$current_stage", "Content"]},
                 },
                 "count": {"$sum": 1},
             }},
@@ -3705,17 +3687,12 @@ async def _hydrate_projects(
             else []
         )
 
-        stage_counts = {s: 0 for s in STAGES + ["Finish"]}
+        stage_counts = {s: 0 for s in STAGES}
         collaborators = set()
 
         if include_deliverables:
             for d in project_deliverables:
-                # Same Finish bucketing as the count-only aggregation above.
-                stage = (
-                    "Finish"
-                    if d.get("stage_status") == "Completed"
-                    else d.get("current_stage", "Content")
-                )
+                stage = d.get("current_stage", "Content")
 
                 stage_counts[stage] = stage_counts.get(stage, 0) + 1
         else:
@@ -3914,10 +3891,7 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
             stage_schedule=stage_schedule,
             required_stages=stages,
             current_stage=current_stage,
-            # A spec can mark itself already finished (e.g. a CSV row whose
-            # Status was "Finish") - everything else still starts life
-            # waiting on its manager's approval, as before.
-            stage_status=spec.get("stage_status") or "Ready for Review",
+            stage_status="Ready for Review",
             approval_types=approval_types,
             created_at=ts,
             updated_at=ts,
@@ -4691,7 +4665,6 @@ async def import_deliverables(
             "current_stage": row["current_stage"],
             "required_stages": normalize_stages(row["required_stages"]),
             "approval_types": row["approval_types"],
-            "stage_status": row.get("stage_status"),
         }
         for row in ready
     ]

@@ -319,9 +319,8 @@ export const ImportDeliverablesModal = ({
                   </li>
                   <li>
                     <span className="font-semibold text-foreground">Status</span> - which stage
-                    it's currently in (must be one of that row's Stages). Use{" "}
-                    <span className="font-semibold text-foreground">Finish</span> for a
-                    deliverable that's already done. Blank means the first stage.
+                    it's currently in (must be one of that row's Stages). Blank means the first
+                    stage.
                   </li>
                   <li>
                     <span className="font-semibold text-foreground">
@@ -437,7 +436,7 @@ export const ImportDeliverablesModal = ({
                             {row.required_stages.join(", ") || "-"}
                           </td>
                           <td className="px-3 py-2 text-foreground">
-                            {row.finished ? "Finish" : row.current_stage || "-"}
+                            {row.current_stage || "-"}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {Object.keys(row.stage_schedule || {}).length === 0 ? (

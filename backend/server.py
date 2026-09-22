@@ -132,8 +132,10 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Follow Up (Over 10-15 mins)": "Non-Core",
 }
 
-STATUSES = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Rework", "Closed"]
-MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "Ready for Review"]
+STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review", "Changes Requested", "Rework", "Closed"]
+# "On Hold" is a pause a member can set on their own row (e.g. waiting on a
+# client), same as Ongoing/Ready for Review - it does not need a reviewer.
+MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review"]
 MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
 PROJECT_STATUSES = [

@@ -23,6 +23,7 @@ import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPan
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
+import { QuickLogTrigger } from "../components/work-sheet/QuickLogTrigger";
 import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
 import { AlertCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1200,6 +1201,55 @@ export default function WorkSheetPage() {
     bulkDeleteConfirmOpen,
   ]);
 
+  // Global "L" shortcut — opens the Quick Logger from anywhere on the
+  // page, matching the floating trigger button's own hint. Same
+  // editable-field guard as the Delete/Backspace shortcut above (typing
+  // the letter L into a cell or input must never trigger this), plus a
+  // check that no other overlay is already open.
+  useEffect(() => {
+    if (!(isManager || isMember)) return undefined;
+
+    const isEditableTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (el.isContentEditable) return true;
+      const role = el.getAttribute?.("role");
+      if (role === "combobox" || role === "textbox") return true;
+      return false;
+    };
+
+    const handleQuickLoggerShortcut = (event) => {
+      if (event.key !== "l" && event.key !== "L") return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isEditableTarget(event.target)) return;
+      if (
+        quickLoggerOpen ||
+        bulkReviewOpen ||
+        historyOpen ||
+        deleteTarget ||
+        bulkDeleteConfirmOpen
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setQuickLoggerOpen(true);
+    };
+
+    document.addEventListener("keydown", handleQuickLoggerShortcut);
+    return () =>
+      document.removeEventListener("keydown", handleQuickLoggerShortcut);
+  }, [
+    isManager,
+    isMember,
+    quickLoggerOpen,
+    bulkReviewOpen,
+    historyOpen,
+    deleteTarget,
+    bulkDeleteConfirmOpen,
+  ]);
+
   if (userLoading || !currentUser) {
     return <WorkSheetSkeleton />;
   }
@@ -1223,9 +1273,6 @@ export default function WorkSheetPage() {
         onToggleCollapseAll={handleToggleCollapseAll}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
-        onOpenQuickLogger={
-          isManager || isMember ? () => setQuickLoggerOpen(true) : undefined
-        }
         onOpenBulkReview={
           isManager ? () => setBulkReviewOpen(true) : undefined
         }
@@ -1249,6 +1296,10 @@ export default function WorkSheetPage() {
         onChange={setActiveSheet}
         counts={tabCounts}
       />
+
+      {(isManager || isMember) && (
+        <QuickLogTrigger onOpen={() => setQuickLoggerOpen(true)} />
+      )}
 
       <QuickLoggerModal
         open={quickLoggerOpen}

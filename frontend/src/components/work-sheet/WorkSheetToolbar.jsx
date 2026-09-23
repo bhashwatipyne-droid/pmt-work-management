@@ -9,7 +9,6 @@ import {
 import {
   Plus,
   ChevronDown,
-  Clock3,
   ClipboardCheck,
   History,
   SlidersHorizontal,
@@ -42,7 +41,6 @@ export const WorkSheetToolbar = ({
   totalCount,
   onBulkAdd,
   bulkAdding,
-  onOpenQuickLogger,
   onOpenBulkReview,
   bulkReviewCount = 0,
   onOpenHistory,
@@ -78,16 +76,6 @@ export const WorkSheetToolbar = ({
               <ClipboardCheck className="h-4 w-4" />
               Bulk Review
               <CountBadge count={bulkReviewCount} />
-            </Button>
-          )}
-
-          {/* Temporary placement — this becomes the floating, draggable
-              trigger button once the Quick Logger revamp lands. Kept
-              here in the meantime so the feature stays reachable. */}
-          {onOpenQuickLogger && (
-            <Button onClick={onOpenQuickLogger} size="sm" variant="outline">
-              <Clock3 className="h-4 w-4" />
-              Quick log
             </Button>
           )}
 

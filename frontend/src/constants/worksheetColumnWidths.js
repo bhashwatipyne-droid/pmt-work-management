@@ -22,13 +22,12 @@ export const COLUMN_WIDTHS = {
 
 export const ROW_NUM_WIDTH = "44px";
 export const CHECKBOX_WIDTH = "44px";
-export const ROW_ACTIONS_WIDTH = "104px";
 
 export const buildGridTemplateColumns = (
   visibleColumns,
   columnWidths = {}
 ) =>
-  `${ROW_NUM_WIDTH} ${CHECKBOX_WIDTH} ${ROW_ACTIONS_WIDTH} ${visibleColumns
+  `${ROW_NUM_WIDTH} ${CHECKBOX_WIDTH} ${visibleColumns
     .map(
       (column) =>
         columnWidths[column] ||

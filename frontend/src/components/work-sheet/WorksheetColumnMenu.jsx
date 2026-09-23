@@ -235,7 +235,7 @@ export const WorksheetColumnMenu = ({
               ? "bg-indigo-600 text-white opacity-100 hover:bg-indigo-700"
               : isActive
               ? "text-indigo-600 opacity-100 hover:bg-indigo-50"
-              : "text-slate-400 opacity-0 group-hover/header:opacity-100 hover:bg-slate-100 hover:text-slate-700"
+              : "text-slate-400 opacity-100 hover:bg-slate-100 hover:text-slate-700"
           }
         `}
         title={`Column options for ${column}`}

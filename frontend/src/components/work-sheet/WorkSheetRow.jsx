@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { ChevronsUpDown, Copy, EyeOff, Hand, Lock, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Hand, Lock, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -41,9 +41,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     projects = [],
     deliverablesByProject = {},
     onUpdate,
-    onDelete,
-    onDuplicate,
-    onHideRow,
     selected,
     onToggleSelect,
     activeCell,
@@ -1146,51 +1143,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             );
           }}
         />
-      </TableCell>
-
-      <TableCell className="flex h-full items-center justify-center border-r border-slate-200 px-1 py-0">
-        {canEditRow && (
-          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onHideRow?.(item.id);
-              }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              title="Hide row"
-              aria-label="Hide row"
-            >
-              <EyeOff className="h-4 w-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDuplicate?.(item);
-              }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              title="Duplicate row"
-              aria-label="Duplicate row"
-            >
-              <Copy className="h-4 w-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete?.(item);
-              }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-              title="Delete entry"
-              aria-label="Delete entry"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-        )}
       </TableCell>
 
       {visibleColumns.map((column) => (

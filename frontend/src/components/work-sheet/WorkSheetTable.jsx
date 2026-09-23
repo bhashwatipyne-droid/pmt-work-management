@@ -25,6 +25,7 @@ import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
+import { avatarColorClasses } from "@/lib/avatarColors";
 import { trackEvent } from "@/analytics";
 
 const COLUMNS = [
@@ -111,6 +112,16 @@ const formatGroupMinutes = (totalMinutes) => {
   if (hours && minutes) return `${hours}h ${minutes}m`;
   if (hours) return `${hours}h`;
   return `${minutes}m`;
+};
+
+// Same "two-letter initials from a name" rule already used for the
+// Creator/Reviewer avatar chips elsewhere in the sheet — kept local here
+// rather than imported since WorkSheetRow's version isn't exported.
+const getGroupInitials = (name) => {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
 };
 
 // The worksheet is intentionally virtualized without adding a new dependency.
@@ -623,16 +634,33 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   // Clusters visibleTableItems into groups, in first-seen order, without
   // disturbing each group's own internal (drag/sort) order. `summaries`
   // carries the per-group row/done/time rollups the header row displays.
+  //
+  // The Member resolver needs `usersById` (component data), so it's built
+  // here rather than read off the static GROUP_KEY_RESOLVERS map — a
+  // creator_id that no longer resolves to a real user (a deactivated or
+  // deleted account) is folded into the same "__unassigned__" bucket as
+  // rows with no creator at all, rather than becoming its own
+  // one-off "Unassigned" group per orphaned id.
+  const resolveGroupKey = useCallback(
+    (item) => {
+      if (groupBySafe === "Member") {
+        const id = item.creator_id;
+        return id && usersById[id] ? id : "__unassigned__";
+      }
+      return GROUP_KEY_RESOLVERS[groupBySafe]?.(item);
+    },
+    [groupBySafe, usersById]
+  );
+
   const groupInfo = useMemo(() => {
     if (!groupBySafe) return null;
 
-    const resolver = GROUP_KEY_RESOLVERS[groupBySafe];
     const order = [];
     const buckets = new Map();
     const summaries = new Map();
 
     for (const item of visibleTableItems) {
-      const key = resolver(item);
+      const key = resolveGroupKey(item);
 
       if (!buckets.has(key)) {
         buckets.set(key, []);
@@ -649,7 +677,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     }
 
     return { order, buckets, summaries };
-  }, [visibleTableItems, groupBySafe]);
+  }, [visibleTableItems, groupBySafe, resolveGroupKey]);
 
   useEffect(() => {
     groupInfoRef.current = groupInfo;
@@ -1414,7 +1442,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     columnWidths
   );
 
-  const totalCols = COLUMNS.length + 3; // #, checkbox, row actions
+  const totalCols = COLUMNS.length + 2; // #, checkbox
 
   const handleColumnResizeStart = useCallback(
     (event, column) => {
@@ -1630,11 +1658,6 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               )}
             </TableHead>
 
-            <TableHead
-              className="h-10 border-r border-slate-200 bg-[#f7f9fc]"
-              style={{ gridColumn: 3 }}
-            />
-
             {columnOrder.map((column, columnIndex) => {
               const isHidden = hiddenColumns.includes(column);
 
@@ -1650,7 +1673,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   className={`group relative flex h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 text-[12px] font-semibold text-slate-600 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
-                  style={{ gridColumn: visibleColumns.indexOf(column) + 4 }}
+                  style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={() => handleColumnDrop(column)}
                 >
@@ -1815,6 +1838,16 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                               STAGE_DOT_COLORS[key] || "bg-slate-400"
                             }`}
                           />
+                        )}
+
+                        {groupBySafe === "Member" && (
+                          <span
+                            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarColorClasses(
+                              key === "__unassigned__" ? null : key
+                            )}`}
+                          >
+                            {getGroupInitials(label)}
+                          </span>
                         )}
 
                         <span className="truncate font-semibold text-slate-800">

@@ -22,7 +22,7 @@ import { WorkSheetRow } from "./WorkSheetRow";
 import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
-import { canEditWorkItem } from "@/lib/worksheetPermissions";
+import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { trackEvent } from "@/analytics";
 
 const COLUMNS = [
@@ -863,7 +863,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const canEditItem = useCallback(
     (item) =>
       isMember
-        ? !item.stage || item.stage === memberStage
+        ? (!item.stage || item.stage === memberStage) &&
+          !isRowLockedForMember(currentUser, item, users)
         : canEditWorkItem(currentUser, item, users),
     [isMember, memberStage, currentUser, users]
   );

@@ -2,15 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
-  CheckCircle2,
-  XCircle,
+  Check,
+  Undo2,
   ChevronRight,
   ShieldCheck,
   Users,
   UserCheck,
   Search,
   X,
-  ImageIcon,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { refreshCounts } from "@/lib/countsBus";
@@ -433,7 +432,7 @@ export default function ApprovalsPage() {
     <div data-testid={APPROVALS.page} className="flex h-full flex-col bg-background">
       {/* HEADER */}
       <div className="flex items-center gap-3 px-5 pt-5">
-        <h1 className="flex-1 text-xl font-semibold tracking-tight text-foreground">Approvals</h1>
+        <h1 className="flex-1 text-2xl font-semibold tracking-tight text-foreground">Approvals</h1>
 
         {selectedIds.size > 0 ? (
           // Gmail-style contextual bar — replaces the hint row the moment
@@ -449,7 +448,7 @@ export default function ApprovalsPage() {
               disabled={bulkLoading}
               className="inline-flex h-7 items-center gap-1 rounded-md bg-[#2b2bb5] px-2.5 text-xs font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
             >
-              <CheckCircle2 className="h-3.5 w-3.5" />
+              <Check className="h-3.5 w-3.5" />
               Approve
             </button>
             <button
@@ -459,7 +458,7 @@ export default function ApprovalsPage() {
               disabled={bulkLoading}
               className="inline-flex h-7 items-center gap-1 rounded-md bg-white px-2.5 text-xs font-semibold text-foreground shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50 disabled:opacity-50"
             >
-              <XCircle className="h-3.5 w-3.5" />
+              <Undo2 className="h-3.5 w-3.5" />
               Reject
             </button>
             <button
@@ -472,18 +471,18 @@ export default function ApprovalsPage() {
             </button>
           </div>
         ) : (
-          <div className="hidden items-center gap-3 text-xs text-muted-foreground md:flex">
+          <div className="hidden items-center gap-2.5 text-xs text-muted-foreground md:flex">
             <span className="flex items-center gap-1">
-              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">J</kbd>
-              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">K</kbd>
+              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">J</kbd>
+              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">K</kbd>
               move
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">A</kbd>
+              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">A</kbd>
               approve
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">S</kbd>
+              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">S</kbd>
               send back
             </span>
           </div>
@@ -552,7 +551,7 @@ export default function ApprovalsPage() {
             placeholder="Search deliverable, project, client..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-64 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-800 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            className="h-10 w-64 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-800 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
           />
         </div>
 
@@ -650,16 +649,17 @@ export default function ApprovalsPage() {
         {/* DETAIL */}
         <div className="flex-1 overflow-y-auto">
           {aSel ? (
-            <div className="max-w-[720px] px-7 py-6">
+            <div className="max-w-[720px] px-7 pb-10 pt-6">
               <div className="flex flex-wrap items-start gap-4">
-                <div className="min-w-[240px] flex-1">
+                <div className="flex min-w-[240px] flex-1 flex-col gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                       Pending
                     </span>
                     <span className="text-xs font-medium text-slate-500">{aSel.project_code}</span>
                   </div>
-                  <h2 className="mt-1.5 text-lg font-semibold text-foreground">
+                  <h2 className="text-lg font-semibold text-foreground">
                     {aSel.deliverable_name}
                   </h2>
                 </div>
@@ -685,10 +685,6 @@ export default function ApprovalsPage() {
                 <span className="text-foreground">{aSel.project_name}</span>
                 <span className="text-slate-500">Client</span>
                 <span className="text-foreground">{aSel.client_name || "—"}</span>
-                <span className="text-slate-500">Assigned to</span>
-                <span className="text-foreground">
-                  {aSel.assigned_to_name || "Unassigned"} · {ageLabel(aSel.requested_at)}
-                </span>
                 <span className="text-slate-500">Workflow</span>
                 <span className="flex flex-wrap items-center gap-1.5">
                   {(aSel.required_stages || [aSel.current_stage]).map((stage, i, arr) => (
@@ -715,11 +711,6 @@ export default function ApprovalsPage() {
                 </div>
               )}
 
-              <div className="mt-5 flex h-[200px] flex-col items-center justify-center gap-2 rounded-xl bg-slate-50 text-[#a5a8f0]">
-                <ImageIcon className="h-6 w-6" />
-                <span className="text-xs text-slate-500">Deliverable preview</span>
-              </div>
-
               <label className="mt-5 flex flex-col gap-1.5">
                 <span className="text-sm font-medium text-foreground">Review note</span>
                 <textarea
@@ -742,7 +733,7 @@ export default function ApprovalsPage() {
                   disabled={movingId === aSel.id}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-3.5 text-sm font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
                 >
-                  <CheckCircle2 className="h-4 w-4" />
+                  <Check className="h-4 w-4" />
                   Approve
                 </button>
                 <button
@@ -752,7 +743,7 @@ export default function ApprovalsPage() {
                   disabled={movingId === aSel.id}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-white px-3.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50"
                 >
-                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                  <Undo2 className="h-4 w-4 text-muted-foreground" />
                   Send back
                 </button>
               </div>

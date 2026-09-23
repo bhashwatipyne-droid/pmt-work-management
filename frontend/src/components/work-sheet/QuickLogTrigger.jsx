@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Clock3 } from "lucide-react";
+import { Plus } from "lucide-react";
 
 // Default resting spot — bottom-right, with a little breathing room from
 // the edge. Position is session-only: every fresh page load starts back
 // here, exactly as specified (no localStorage), even though the button
 // is freely draggable anywhere on screen while the page is open.
 const EDGE_MARGIN = 24;
-const BUTTON_SIZE = 56;
 
 // A press that moves less than this many pixels still counts as a click
 // (opens the logger) rather than a drag — otherwise every click would
@@ -20,9 +19,14 @@ export const QuickLogTrigger = ({ onOpen }) => {
   const dragStartRef = useRef({ x: 0, y: 0, left: 0, top: 0 });
   const buttonRef = useRef(null);
 
+  // Clamps against the button's own current size (it's a pill that sizes
+  // to its label, not a fixed square) rather than a hardcoded constant.
   const clampToViewport = useCallback((left, top) => {
-    const maxLeft = window.innerWidth - BUTTON_SIZE - 8;
-    const maxTop = window.innerHeight - BUTTON_SIZE - 8;
+    const rect = buttonRef.current?.getBoundingClientRect();
+    const width = rect?.width || 140;
+    const height = rect?.height || 56;
+    const maxLeft = window.innerWidth - width - 8;
+    const maxTop = window.innerHeight - height - 8;
     return {
       left: Math.min(Math.max(8, left), Math.max(8, maxLeft)),
       top: Math.min(Math.max(8, top), Math.max(8, maxTop)),
@@ -115,14 +119,12 @@ export const QuickLogTrigger = ({ onOpen }) => {
       onPointerDown={handlePointerDown}
       onClick={handleClick}
       style={{ position: "fixed", zIndex: 40, touchAction: "none", ...style }}
-      className="flex h-14 w-14 cursor-grab items-center justify-center rounded-full bg-[#2b2bb5] text-white shadow-xl transition-colors hover:bg-[#1a1a8a] active:cursor-grabbing"
+      className="flex h-14 cursor-grab items-center gap-2 rounded-full bg-[#2b2bb5] pl-4 pr-5 text-white shadow-xl transition-colors hover:bg-[#1a1a8a] active:cursor-grabbing"
       title="Quick log (press L)"
       aria-label="Open quick logger"
     >
-      <span className="relative flex items-center justify-center">
-        <Clock3 className="h-5 w-5" />
-        <Plus className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-[#2b2bb5]" />
-      </span>
+      <Plus className="h-5 w-5" />
+      <span className="text-sm font-semibold">Quick log</span>
     </button>
   );
 };

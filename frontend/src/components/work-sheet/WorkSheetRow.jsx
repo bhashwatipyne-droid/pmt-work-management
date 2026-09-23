@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState } from "react";
-import { CalendarDays, ChevronsUpDown, Copy, EyeOff, Hand, Lock, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Copy, EyeOff, Hand, Lock, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -449,22 +449,18 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         ]
           .filter(Boolean)
           .join(" ")}>
-        <div className="relative">
-          <Input
-            {...sheetCell(0)}
-            data-testid={`${WORKSHEET.dateInput}-${item.id}`}
-            type="date"
-            value={local.work_date}
-            min={MIN_WORK_DATE}
-            max={MAX_WORK_DATE}
-            disabled={!canEditRow}
-            onChange={(e) => setLocal((l) => ({ ...l, work_date: e.target.value }))}
-            onBlur={commitWorkDate}
-            className="h-8 w-[130px] pr-7"
-          />
-
-          <CalendarDays className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
+        <Input
+          {...sheetCell(0)}
+          data-testid={`${WORKSHEET.dateInput}-${item.id}`}
+          type="date"
+          value={local.work_date}
+          min={MIN_WORK_DATE}
+          max={MAX_WORK_DATE}
+          disabled={!canEditRow}
+          onChange={(e) => setLocal((l) => ({ ...l, work_date: e.target.value }))}
+          onBlur={commitWorkDate}
+          className="h-8 w-[130px]"
+        />
 
         {renderFillHandle(0)}
       </TableCell>

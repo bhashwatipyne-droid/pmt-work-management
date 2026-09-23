@@ -299,6 +299,23 @@ const EditMemberModal = ({
   );
   const [submitting, setSubmitting] = useState(false);
 
+  // EditMemberModal stays mounted in the tree at all times (the parent
+  // always renders it, just with member=null when no one is being
+  // edited), so the useState initializers above only run once, on that
+  // very first mount. Without this, selecting a different member never
+  // repopulates the fields - they'd stay blank. Re-sync every time the
+  // member being edited changes.
+  useEffect(() => {
+    if (!member) return;
+    setName(member.name || "");
+    setUsername(member.username || "");
+    setEmail(member.email || "");
+    setPassword("");
+    setRole(member.role || "member");
+    setDepartment(member.department || "");
+    setActive(member.active !== false);
+  }, [member]);
+
   if (!member) return null;
 
   const handleSubmit = async () => {
@@ -393,7 +410,7 @@ const EditMemberModal = ({
         <div className="space-y-3">
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Name
+              Name *
             </label>
 
             <input
@@ -405,7 +422,7 @@ const EditMemberModal = ({
 
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Username
+              Username *
             </label>
 
             <input
@@ -420,7 +437,7 @@ const EditMemberModal = ({
 
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Email
+              Email *
             </label>
 
             <input
@@ -643,27 +660,6 @@ export default function TeamPage() {
           <Plus className="h-4 w-4" />
           Add Team Member
         </button>
-      </div>
-
-      {/* New Approvals */}
-      <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50/50 p-5">
-        <div className="mb-4">
-          <h2 className="text-sm font-semibold text-foreground">
-            New Approvals
-          </h2>
-
-          <p className="mt-1 text-xs text-muted-foreground">
-            Registration requests waiting for admin approval.
-          </p>
-        </div>
-
-        <div
-          data-testid={TEAM.newApprovalsEmpty}
-          className="rounded-lg border border-border bg-white px-4 py-8 text-center text-sm text-muted-foreground"
-        >
-          No new approval requests. (Sign-up flow arrives
-          with authentication.)
-        </div>
       </div>
 
       {/* Previous Approvals */}

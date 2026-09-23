@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
+import { formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
   CheckCircle2,
   XCircle,
-  GripVertical,
-  Clock3,
+  ChevronRight,
   ShieldCheck,
   Users,
   UserCheck,
   Search,
-  Eye,
-  EyeOff,
-  MoreVertical,
-  LayoutGrid,
-  List,
   X,
+  ImageIcon,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { refreshCounts } from "@/lib/countsBus";
@@ -24,24 +19,10 @@ import {
   approveApprovalItem,
   sendBackApprovalItem,
   moveApprovalItem,
-  hideApprovalItem,
-  unhideApprovalItem,
-  bulkHideApprovalItems,
-  bulkUnhideApprovalItems,
 } from "@/services/api";
 import { APPROVALS } from "@/constants/testIds";
-import { KanbanBoard } from "@/components/ui/KanbanBoard";
-import { KanbanColumn } from "@/components/ui/KanbanColumn";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import ApprovalsFilterModal from "@/components/approvals/ApprovalsFilterModal";
-import { STAGES } from "@/constants/projectPalette";
 import { trackEvent } from "../analytics";
-import { ApprovalsBoardSkeleton, SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 const COLUMNS = [
   {
@@ -73,6 +54,23 @@ const COLUMNS = [
 const initialBoard = () =>
   Object.fromEntries(COLUMNS.map((column) => [column.key, []]));
 
+const ageLabel = (isoDate) => {
+  if (!isoDate) return "—";
+  try {
+    return `${formatDistanceToNowStrict(parseISO(isoDate))} ago`;
+  } catch {
+    return "—";
+  }
+};
+
+const isEditableTarget = (el) => {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  return false;
+};
+
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
 
@@ -81,52 +79,54 @@ export default function ApprovalsPage() {
   const [notes, setNotes] = useState({});
   const [dragging, setDragging] = useState(null);
   const [movingId, setMovingId] = useState(null);
+  const [dragOverQueue, setDragOverQueue] = useState(null);
 
-  // Filters
+  // Which queue (authority column) is active — the redesign replaces the
+  // old Kanban board (all four columns visible at once) with one queue at
+  // a time, navigated via tabs.
+  const [activeQueue, setActiveQueue] = useState(COLUMNS[0].key);
+  const [selectedId, setSelectedId] = useState(null);
+
+  // Filters. Visibility/hidden toggle and the old per-column "authority"
+  // filter are both gone — authority is now the queue tab itself, and
+  // hide/unhide isn't part of this redesign, so there's no separate
+  // "hidden" set to filter in or out of.
   const [search, setSearch] = useState("");
-  const [authorityFilter, setAuthorityFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
-  const [visibility, setVisibility] = useState("visible");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [view, setView] = useState("grid");
 
-  // Selection + bulk actions
+  // Gmail-style bulk selection, scoped to whatever's currently visible in
+  // the active queue (selecting in one queue and switching tabs clears it
+  // — same as Gmail resetting its selection when you change labels).
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  // `silent` is used by the background refresh below: it must not flash the
-  // loading state, wipe the user's selection, or toast on a transient error.
   const fetchBoard = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
 
     try {
-      const data = await getApprovalBoard(currentUserId, { visibility });
+      const data = await getApprovalBoard(currentUserId, {
+        visibility: "visible",
+      });
       setBoard(data);
 
-      if (silent) {
-        // Keep the selection, but drop cards that are no longer on the board.
+      if (!silent) {
+        setSelectedIds(new Set());
+      } else {
         const liveIds = new Set(
           Object.values(data || {}).flatMap((items) =>
             (items || []).map((item) => item.id)
           )
         );
         setSelectedIds((prev) => new Set([...prev].filter((id) => liveIds.has(id))));
-      } else {
-        setSelectedIds(new Set());
       }
 
-      // Every mutating action on this page (approve, send back, reassign,
-      // hide, drag-drop) already funnels through this one function, so
-      // hooking the sidebar's instant-refresh here covers all of them
-      // without needing a call at each individual action site.
       refreshCounts();
     } catch (err) {
       if (!silent) {
-        toast.error(
-          err?.response?.data?.detail || "Failed to load approvals"
-        );
+        toast.error(err?.response?.data?.detail || "Failed to load approvals");
       }
     } finally {
       if (!silent) setLoading(false);
@@ -135,9 +135,7 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     if (currentUser && currentUser.role !== "member") {
-      trackEvent("approvals_opened", {
-        role: currentUser.role,
-      });
+      trackEvent("approvals_opened", { role: currentUser.role });
     }
   }, [currentUser?.id]);
 
@@ -145,18 +143,9 @@ export default function ApprovalsPage() {
     if (currentUser && currentUser.role !== "member") {
       fetchBoard();
     }
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id, visibility]);
+  }, [currentUser?.id]);
 
-  // Keep the board in step with the rest of the app. Until now the board was
-  // fetched once on mount, so when another reviewer approved a stage (handing
-  // the deliverable to this team) the sidebar badge and notification bell
-  // updated on their own polls but this Kanban stayed stale until a manual
-  // reload - the "notification arrived but it isn't on my board" symptom.
-  // Refresh quietly every 30s and whenever the tab regains focus, but never
-  // while a drag, move or bulk action is in flight (it would clobber the
-  // optimistic update).
   const busyRef = useRef(false);
   busyRef.current = Boolean(dragging) || Boolean(movingId) || bulkLoading;
 
@@ -177,56 +166,47 @@ export default function ApprovalsPage() {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id, currentUserId, visibility]);
+  }, [currentUser?.id, currentUserId]);
 
-  const total = useMemo(
-    () =>
-      COLUMNS.reduce(
-        (sum, column) => sum + (board[column.key]?.length || 0),
-        0
-      ),
-    [board]
-  );
+  // Switching queues clears the bulk selection (Gmail does the same when
+  // you switch labels).
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [activeQueue]);
+
+  const stageOptions = useMemo(() => {
+    const stages = new Set();
+    COLUMNS.forEach((column) => {
+      (board[column.key] || []).forEach((item) => {
+        if (item.current_stage) stages.add(item.current_stage);
+      });
+    });
+    return [...stages].sort();
+  }, [board]);
 
   const projectOptions = useMemo(() => {
     const names = new Set();
-
     COLUMNS.forEach((column) => {
       (board[column.key] || []).forEach((item) => {
         if (item.project_name) names.add(item.project_name);
       });
     });
-
     return [...names].sort();
   }, [board]);
 
   const matchesFilters = (item) => {
-    if (authorityFilter && item.approval_type !== authorityFilter) {
-      return false;
-    }
-
-    if (stageFilter && item.current_stage !== stageFilter) {
-      return false;
-    }
-
-    if (projectFilter && item.project_name !== projectFilter) {
-      return false;
-    }
+    if (stageFilter && item.current_stage !== stageFilter) return false;
+    if (projectFilter && item.project_name !== projectFilter) return false;
 
     if (dateFrom || dateTo) {
-      const requested = item.requested_at
-        ? item.requested_at.slice(0, 10)
-        : null;
-
+      const requested = item.requested_at ? item.requested_at.slice(0, 10) : null;
       if (!requested) return false;
       if (dateFrom && requested < dateFrom) return false;
       if (dateTo && requested > dateTo) return false;
     }
 
     const q = search.trim().toLowerCase();
-
     if (!q) return true;
 
     return (
@@ -239,105 +219,67 @@ export default function ApprovalsPage() {
 
   const filteredBoard = useMemo(() => {
     const next = {};
-
     for (const column of COLUMNS) {
       next[column.key] = (board[column.key] || []).filter(matchesFilters);
     }
-
     return next;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board, search, authorityFilter, stageFilter, projectFilter, dateFrom, dateTo]);
+  }, [board, search, stageFilter, projectFilter, dateFrom, dateTo]);
 
-  const visibleColumns = authorityFilter
-    ? COLUMNS.filter((c) => c.key === authorityFilter)
-    : COLUMNS;
-
-  const filteredTotal = visibleColumns.reduce(
-    (sum, column) => sum + (filteredBoard[column.key]?.length || 0),
-    0
-  );
-
-  const hasActiveFilters =
-    Boolean(search) ||
-    Boolean(authorityFilter) ||
-    Boolean(stageFilter) ||
-    Boolean(projectFilter) ||
-    Boolean(dateFrom) ||
-    Boolean(dateTo);
-
-  const activeFilterCount = [
-    authorityFilter,
-    stageFilter,
-    projectFilter,
-    dateFrom || dateTo ? "date" : "",
-  ].filter(Boolean).length;
-
-  const clearAllFilters = () => {
-    setSearch("");
-    setAuthorityFilter("");
-    setStageFilter("");
-    setProjectFilter("");
-    setDateFrom("");
-    setDateTo("");
-    clearSelection();
-  };
+  const activeFilterCount = [stageFilter, projectFilter, dateFrom || dateTo ? "date" : ""].filter(
+    Boolean
+  ).length;
 
   const handleApplyFilters = (values) => {
-    setAuthorityFilter(values.authorityFilter);
     setStageFilter(values.stageFilter);
     setProjectFilter(values.projectFilter);
     setDateFrom(values.dateFrom);
     setDateTo(values.dateTo);
   };
 
-  // ---------- Selection ----------
+  const aList = filteredBoard[activeQueue] || [];
+  const aSel = aList.find((item) => item.id === selectedId) || null;
+
+  // If the selected item falls out of the active queue's filtered list
+  // (filters changed, the item moved, or it was just approved/sent back),
+  // fall back to the first row rather than showing a stale/empty detail
+  // pane.
+  useEffect(() => {
+    if (!aList.some((item) => item.id === selectedId)) {
+      setSelectedId(aList[0]?.id ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeQueue, aList.map((i) => i.id).join(",")]);
+
+  // ---------- Selection (bulk) ----------
   const toggleSelect = (id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  const toggleSelectColumn = (columnKey) => {
-    const ids = (filteredBoard[columnKey] || []).map((item) => item.id);
+  const allInQueueSelected = aList.length > 0 && aList.every((item) => selectedIds.has(item.id));
 
-    if (!ids.length) return;
-
+  const toggleSelectAllInQueue = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      const allSelected = ids.every((id) => next.has(id));
-
-      ids.forEach((id) => {
-        if (allSelected) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
-      });
-
+      if (allInQueueSelected) {
+        aList.forEach((item) => next.delete(item.id));
+      } else {
+        aList.forEach((item) => next.add(item.id));
+      }
       return next;
     });
-  };
-
-  const selectAllFiltered = () => {
-    const ids = visibleColumns.flatMap((column) =>
-      (filteredBoard[column.key] || []).map((item) => item.id)
-    );
-
-    setSelectedIds(new Set(ids));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
 
-  // ---------- Single-card actions ----------
+  // ---------- Single-item actions ----------
   const decide = async (item, action) => {
+    if (!item) return;
     const note = notes[item.id] || "";
 
     try {
@@ -347,17 +289,12 @@ export default function ApprovalsPage() {
         await sendBackApprovalItem(currentUserId, item.id, note);
       }
 
-      trackEvent(
-        action === "approve" ? "approval_approved" : "approval_sent_back",
-        {
-          approval_item_id: item.id,
-          approval_type: item.approval_type,
-        }
-      );
+      trackEvent(action === "approve" ? "approval_approved" : "approval_sent_back", {
+        approval_item_id: item.id,
+        approval_type: item.approval_type,
+      });
 
-      toast.success(
-        action === "approve" ? "Approval recorded" : "Sent back for changes"
-      );
+      toast.success(action === "approve" ? "Approval recorded" : "Sent back for changes");
 
       setNotes((prev) => {
         const next = { ...prev };
@@ -371,21 +308,42 @@ export default function ApprovalsPage() {
     }
   };
 
-  const toggleHide = async (item) => {
-    try {
-      if (item.hidden) {
-        await unhideApprovalItem(currentUserId, item.id);
-        toast.success("Approval restored");
-      } else {
-        await hideApprovalItem(currentUserId, item.id);
-        toast.success("Approval hidden");
-      }
+  const handleMove = async (item, targetType) => {
+    if (!item || item.approval_type === targetType) return;
 
-      await fetchBoard();
+    const sourceType = item.approval_type;
+    const previousBoard = board;
+
+    setBoard((currentBoard) => {
+      const nextBoard = { ...currentBoard };
+      const sourceItems = [...(nextBoard[sourceType] || [])];
+      const targetItems = [...(nextBoard[targetType] || [])];
+      const index = sourceItems.findIndex((i) => i.id === item.id);
+      if (index === -1) return currentBoard;
+
+      const [movedItem] = sourceItems.splice(index, 1);
+      nextBoard[sourceType] = sourceItems;
+      nextBoard[targetType] = [{ ...movedItem, approval_type: targetType }, ...targetItems];
+      return nextBoard;
+    });
+
+    setMovingId(item.id);
+
+    try {
+      await moveApprovalItem(currentUserId, item.id, targetType);
+      trackEvent("approval_assignee_changed", {
+        approval_item_id: item.id,
+        from_approval_type: sourceType,
+        to_approval_type: targetType,
+      });
+      toast.success(`Moved to ${COLUMNS.find((c) => c.key === targetType)?.label}`);
     } catch (err) {
+      setBoard(previousBoard);
       toast.error(
-        err?.response?.data?.detail || "Could not update visibility"
+        err?.response?.data?.detail || err?.message || "Could not move approval"
       );
+    } finally {
+      setMovingId(null);
     }
   };
 
@@ -393,20 +351,14 @@ export default function ApprovalsPage() {
   const handleBulkApprove = async () => {
     const ids = [...selectedIds];
     if (!ids.length) return;
-
     setBulkLoading(true);
 
     try {
       const results = await Promise.allSettled(
         ids.map((id) => approveApprovalItem(currentUserId, id, ""))
       );
-
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
-
-      toast.success(
-        `${succeeded} of ${ids.length} approval${ids.length === 1 ? "" : "s"} approved`
-      );
-
+      toast.success(`${succeeded} of ${ids.length} approval${ids.length === 1 ? "" : "s"} approved`);
       await fetchBoard();
     } finally {
       setBulkLoading(false);
@@ -416,144 +368,49 @@ export default function ApprovalsPage() {
   const handleBulkSendBack = async () => {
     const ids = [...selectedIds];
     if (!ids.length) return;
-
     setBulkLoading(true);
 
     try {
       const results = await Promise.allSettled(
         ids.map((id) => sendBackApprovalItem(currentUserId, id, ""))
       );
-
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
-
-      toast.success(
-        `${succeeded} of ${ids.length} sent back`
-      );
-
+      toast.success(`${succeeded} of ${ids.length} sent back`);
       await fetchBoard();
     } finally {
       setBulkLoading(false);
     }
   };
 
-  const handleBulkReassign = async (targetType) => {
-    const ids = [...selectedIds];
-    if (!ids.length || !targetType) return;
+  // ---------- Keyboard shortcuts: J/K move selection, A approve, S send back ----------
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (isEditableTarget(event.target)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-    setBulkLoading(true);
+      const key = event.key.toLowerCase();
 
-    try {
-      const results = await Promise.allSettled(
-        ids.map((id) => moveApprovalItem(currentUserId, id, targetType))
-      );
-
-      const succeeded = results.filter((r) => r.status === "fulfilled").length;
-
-      toast.success(
-        `${succeeded} of ${ids.length} moved to ${
-          COLUMNS.find((c) => c.key === targetType)?.label
-        }`
-      );
-
-      await fetchBoard();
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  const handleBulkHide = async () => {
-    const ids = [...selectedIds];
-    if (!ids.length) return;
-
-    setBulkLoading(true);
-
-    try {
-      if (visibility === "hidden") {
-        await bulkUnhideApprovalItems(currentUserId, ids);
-        toast.success(`${ids.length} approval${ids.length === 1 ? "" : "s"} restored`);
-      } else {
-        await bulkHideApprovalItems(currentUserId, ids);
-        toast.success(`${ids.length} approval${ids.length === 1 ? "" : "s"} hidden`);
+      if (key === "j" || key === "arrowdown") {
+        event.preventDefault();
+        const idx = aList.findIndex((item) => item.id === selectedId);
+        const next = aList[Math.min(aList.length - 1, idx + 1)];
+        if (next) setSelectedId(next.id);
+      } else if (key === "k" || key === "arrowup") {
+        event.preventDefault();
+        const idx = aList.findIndex((item) => item.id === selectedId);
+        const next = aList[Math.max(0, idx - 1)];
+        if (next) setSelectedId(next.id);
+      } else if (key === "a" && aSel) {
+        decide(aSel, "approve");
+      } else if (key === "s" && aSel) {
+        decide(aSel, "reject");
       }
+    };
 
-      await fetchBoard();
-    } catch (err) {
-      toast.error(
-        err?.response?.data?.detail || "Could not update visibility"
-      );
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  /**
-   * Optimistically move the card immediately.
-   *
-   * We do NOT reload the entire board after the API call.
-   * If the API fails, the original board is restored.
-   */
-  const handleDrop = async (targetType) => {
-    if (!dragging) return;
-
-    const sourceType = dragging.approval_type;
-    const approvalItemId = dragging.id;
-
-    if (sourceType === targetType) {
-      setDragging(null);
-      return;
-    }
-
-    const previousBoard = board;
-
-    setBoard((currentBoard) => {
-      const nextBoard = { ...currentBoard };
-      const sourceItems = [...(nextBoard[sourceType] || [])];
-      const targetItems = [...(nextBoard[targetType] || [])];
-
-      const index = sourceItems.findIndex(
-        (item) => item.id === approvalItemId
-      );
-
-      if (index === -1) return currentBoard;
-
-      const [movedItem] = sourceItems.splice(index, 1);
-      const updatedItem = { ...movedItem, approval_type: targetType };
-
-      nextBoard[sourceType] = sourceItems;
-      nextBoard[targetType] = [updatedItem, ...targetItems];
-
-      return nextBoard;
-    });
-
-    setDragging(null);
-    setMovingId(approvalItemId);
-
-    try {
-      await moveApprovalItem(currentUserId, approvalItemId, targetType);
-
-      trackEvent("approval_assignee_changed", {
-        approval_item_id: approvalItemId,
-        from_approval_type: sourceType,
-        to_approval_type: targetType,
-      });
-
-      toast.success(
-        `Moved to ${COLUMNS.find((c) => c.key === targetType)?.label}`
-      );
-    } catch (err) {
-      setBoard(previousBoard);
-      console.error("Approval move failed:", err);
-
-      toast.error(
-        err?.response?.data?.detail ||
-          err?.response?.data?.message ||
-          err?.message ||
-          "Could not move approval"
-      );
-    } finally {
-      setMovingId(null);
-    }
-  };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aList, selectedId, aSel, notes]);
 
   if (userLoading || !currentUser) return null;
 
@@ -564,7 +421,6 @@ export default function ApprovalsPage() {
           <div className="text-sm font-medium text-foreground">
             Approvals is available to managers and admins only
           </div>
-
           <div className="mt-1 text-xs text-muted-foreground">
             Ask a manager or admin to review deliverables.
           </div>
@@ -573,594 +429,343 @@ export default function ApprovalsPage() {
     );
   }
 
-  const renderCardMenu = (item) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.stopPropagation()}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-slate-100 hover:text-foreground"
-        >
-          <MoreVertical className="h-3.5 w-3.5" />
-        </button>
-      </DropdownMenuTrigger>
-
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => decide(item, "approve")}>
-          <CheckCircle2 className="h-4 w-4" />
-          Approve
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => decide(item, "reject")}>
-          <XCircle className="h-4 w-4" />
-          Send back
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => toggleHide(item)}>
-          {item.hidden ? (
-            <>
-              <Eye className="h-4 w-4" />
-              Unhide
-            </>
-          ) : (
-            <>
-              <EyeOff className="h-4 w-4" />
-              Hide
-            </>
-          )}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
   return (
-    <div
-      data-testid={APPROVALS.page}
-      className="flex-1 overflow-auto bg-background px-6 py-6 lg:px-8"
-    >
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Approvals
-            </h1>
+    <div data-testid={APPROVALS.page} className="flex h-full flex-col bg-background">
+      {/* HEADER */}
+      <div className="flex items-center gap-3 px-5 pt-5">
+        <h1 className="flex-1 text-xl font-semibold tracking-tight text-foreground">Approvals</h1>
 
-            <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground">
-              {total}
-            </span>
-          </div>
-
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            Independent approval queues. Drag a card to reassign its
-            approval authority, or approve/send it back.
-          </p>
-        </div>
-      </div>
-
-      {/* Filters row */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-          <input
-            data-testid={APPROVALS.searchInput}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search project, deliverable, client, or code..."
-            className="h-10 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-          />
-        </div>
-
-        <ApprovalsFilterModal
-          columns={COLUMNS}
-          stages={STAGES}
-          projectOptions={projectOptions}
-          initialValues={{
-            authorityFilter,
-            stageFilter,
-            projectFilter,
-            dateFrom,
-            dateTo,
-          }}
-          onApply={handleApplyFilters}
-          activeFilterCount={activeFilterCount}
-        />
-
-        {/* Visibility — a view mode, not a filter, so it lives on its own
-            (same pattern as the Projects page's Visible/Hidden/All select). */}
-        <select
-          data-testid={APPROVALS.filterStatus}
-          value={visibility}
-          onChange={(e) => {
-            setVisibility(e.target.value);
-            clearSelection();
-          }}
-          className="h-10 w-[170px] shrink-0 rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-        >
-          <option value="visible">Visible approvals</option>
-          <option value="hidden">Hidden approvals</option>
-          <option value="all">All approvals</option>
-        </select>
-
-        {/* View toggle */}
-        <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
-          <button
-            type="button"
-            data-testid={APPROVALS.gridViewBtn}
-            onClick={() => setView("grid")}
-            title="Grid view"
-            aria-label="Grid view"
-            className={[
-              "flex h-8 w-9 items-center justify-center rounded-md transition-colors",
-              view === "grid"
-                ? "bg-[#f0f0ff] text-[#2b2bb5]"
-                : "text-muted-foreground hover:bg-muted",
-            ].join(" ")}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </button>
-
-          <button
-            type="button"
-            data-testid={APPROVALS.listViewBtn}
-            onClick={() => setView("list")}
-            title="List view"
-            aria-label="List view"
-            className={[
-              "flex h-8 w-9 items-center justify-center rounded-md transition-colors",
-              view === "list"
-                ? "bg-[#f0f0ff] text-[#2b2bb5]"
-                : "text-muted-foreground hover:bg-muted",
-            ].join(" ")}
-          >
-            <List className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Active filter chips */}
-      {hasActiveFilters && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Search: {search}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {authorityFilter && (
-            <button
-              type="button"
-              onClick={() => setAuthorityFilter("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Authority: {COLUMNS.find((c) => c.key === authorityFilter)?.label}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {stageFilter && (
-            <button
-              type="button"
-              onClick={() => setStageFilter("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Stage: {stageFilter}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {projectFilter && (
-            <button
-              type="button"
-              onClick={() => setProjectFilter("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Project: {projectFilter}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {(dateFrom || dateTo) && (
-            <button
-              type="button"
-              onClick={() => {
-                setDateFrom("");
-                setDateTo("");
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Due: {dateFrom || "Any"} – {dateTo || "Any"}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={clearAllFilters}
-            className="text-xs font-medium text-[#2b2bb5] hover:underline"
-          >
-            Clear all
-          </button>
-        </div>
-      )}
-
-      {/* Bulk action bar */}
-      {selectedIds.size > 0 && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d9d9f5] bg-[#f5f5ff] px-4 py-2.5">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-[#1a1a8a]">
+        {selectedIds.size > 0 ? (
+          // Gmail-style contextual bar — replaces the hint row the moment
+          // anything is checked.
+          <div className="flex items-center gap-2 rounded-lg bg-[#f0f0fd] px-3 py-1.5">
+            <span className="text-xs font-semibold text-[#2b2bb5]">
               {selectedIds.size} selected
             </span>
-
-            {selectedIds.size < filteredTotal && (
-              <button
-                type="button"
-                onClick={selectAllFiltered}
-                className="text-xs font-semibold text-[#2b2bb5] hover:underline"
-              >
-                Select all {filteredTotal}
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               data-testid={APPROVALS.bulkApproveBtn}
               onClick={handleBulkApprove}
               disabled={bulkLoading}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-3 text-sm font-medium text-white hover:bg-[#1a1a8a] disabled:opacity-50"
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-[#2b2bb5] px-2.5 text-xs font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
             >
-              <CheckCircle2 className="h-4 w-4" />
-              Approve ({selectedIds.size})
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Approve
             </button>
-
             <button
               type="button"
               data-testid={APPROVALS.bulkSendBackBtn}
               onClick={handleBulkSendBack}
               disabled={bulkLoading}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-white px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-white px-2.5 text-xs font-semibold text-foreground shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50 disabled:opacity-50"
             >
-              <XCircle className="h-4 w-4" />
-              Send Back ({selectedIds.size})
+              <XCircle className="h-3.5 w-3.5" />
+              Reject
             </button>
-
-            <select
-              data-testid={APPROVALS.bulkReassignSelect}
-              defaultValue=""
-              disabled={bulkLoading}
-              onChange={(e) => {
-                const target = e.target.value;
-                if (!target) return;
-                handleBulkReassign(target);
-                e.target.value = "";
-              }}
-              className="h-9 rounded-lg border border-border bg-white px-3 text-sm font-medium text-foreground outline-none disabled:opacity-50"
-            >
-              <option value="" disabled>
-                Reassign ({selectedIds.size})
-              </option>
-              {COLUMNS.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-
             <button
               type="button"
-              data-testid={APPROVALS.bulkHideBtn}
-              onClick={handleBulkHide}
-              disabled={bulkLoading}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-white px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50"
-            >
-              {visibility === "hidden" ? (
-                <>
-                  <Eye className="h-4 w-4" />
-                  Unhide ({selectedIds.size})
-                </>
-              ) : (
-                <>
-                  <EyeOff className="h-4 w-4" />
-                  Hide ({selectedIds.size})
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
+              aria-label="Clear selection"
               onClick={clearSelection}
-              className="ml-1 text-sm text-muted-foreground hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-[#2b2bb5] hover:bg-[#e4e4fb]"
             >
-              Clear
+              <X className="h-4 w-4" />
             </button>
           </div>
-        </div>
-      )}
-
-      {loading ? (
-        view === "grid" ? (
-          <ApprovalsBoardSkeleton />
         ) : (
-          <SettingsTableSkeleton columns={6} rows={8} label="Loading approvals" />
-        )
-      ) : view === "grid" ? (
-        <KanbanBoard minWidth="1360px">
-          {visibleColumns.map((column) => {
-            const Icon = column.icon;
-            const items = filteredBoard[column.key] || [];
+          <div className="hidden items-center gap-3 text-xs text-muted-foreground md:flex">
+            <span className="flex items-center gap-1">
+              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">J</kbd>
+              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">K</kbd>
+              move
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">A</kbd>
+              approve
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="inline-flex h-[18px] items-center rounded border border-slate-200 px-1 font-mono text-[10px] font-semibold text-slate-600">S</kbd>
+              send back
+            </span>
+          </div>
+        )}
+      </div>
 
-            const isDropTarget =
-              dragging && dragging.approval_type !== column.key;
+      {/* QUEUE TABS — also drop targets for drag-to-reassign */}
+      <div
+        role="tablist"
+        aria-label="Approval queues"
+        className="mt-3 flex gap-1 overflow-x-auto px-5 shadow-[inset_0_-1px_0_rgba(234,238,244,1)]"
+      >
+        {COLUMNS.map((column) => {
+          const Icon = column.icon;
+          const isActive = activeQueue === column.key;
+          const isDropTarget = dragOverQueue === column.key && dragging?.approval_type !== column.key;
 
-            const allSelected =
-              items.length > 0 &&
-              items.every((item) => selectedIds.has(item.id));
-
-            return (
-              <KanbanColumn
-                key={column.key}
-                title={column.label}
-                count={items.length}
-                icon={Icon}
-                description={column.description}
-                empty={items.length === 0 ? "No pending approvals" : null}
-                isDropTarget={isDropTarget}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  handleDrop(column.key);
-                }}
-                headerAction={
-                  <input
-                    type="checkbox"
-                    data-testid={`${APPROVALS.columnSelectAllPrefix}-${column.key}`}
-                    checked={allSelected}
-                    disabled={items.length === 0}
-                    onChange={() => toggleSelectColumn(column.key)}
-                    aria-label={`Select all ${column.label} approvals`}
-                    className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5] disabled:cursor-not-allowed disabled:opacity-40"
-                  />
-                }
+          return (
+            <button
+              key={column.key}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveQueue(column.key)}
+              onDragOver={(e) => {
+                if (!dragging || dragging.approval_type === column.key) return;
+                e.preventDefault();
+                setDragOverQueue(column.key);
+              }}
+              onDragLeave={() => setDragOverQueue((cur) => (cur === column.key ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverQueue(null);
+                if (dragging) handleMove(dragging, column.key);
+                setDragging(null);
+              }}
+              className={[
+                "flex h-10 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-2.5 text-sm font-medium transition-colors",
+                isActive
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+                isDropTarget ? "bg-[#f0f0fd]" : "",
+              ].join(" ")}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {column.label}
+              <span
+                className={[
+                  "inline-flex h-[18px] min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold",
+                  isActive ? "bg-[#2b2bb5] text-white" : "bg-slate-100 text-slate-600",
+                ].join(" ")}
               >
-                {items.map((item) => {
-                  const isMoving = movingId === item.id;
-                  const selected = selectedIds.has(item.id);
+                {filteredBoard[column.key]?.length ?? 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-                  return (
-                    <div
-                      key={item.id}
-                      draggable={!isMoving}
-                      onDragStart={(e) => {
-                        setDragging(item);
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", String(item.id));
-                      }}
-                      onDragEnd={() => setDragging(null)}
-                      data-testid={`${APPROVALS.cardPrefix}-${item.id}`}
-                      className={[
-                        "rounded-xl border bg-white p-4 shadow-sm transition-all",
-                        selected
-                          ? "border-[#2b2bb5] bg-[#fafaff] ring-1 ring-[#d8d8ff]"
-                          : "border-border",
-                        isMoving ? "opacity-50" : "hover:shadow-md",
-                      ].join(" ")}
-                    >
-                      <div className="flex items-start gap-2">
-                        <input
-                          type="checkbox"
-                          data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
-                          checked={selected}
-                          onChange={() => toggleSelect(item.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-                          aria-label={`Select ${item.deliverable_name}`}
-                        />
+      {/* SEARCH + FILTER ROW */}
+      <div className="flex items-center gap-2 px-5 py-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            data-testid={APPROVALS.searchInput}
+            placeholder="Search deliverable, project, client..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 w-64 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-800 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+          />
+        </div>
 
-                        <GripVertical
-                          className={`mt-0.5 h-4 w-4 shrink-0 text-slate-300 ${
-                            isMoving ? "cursor-not-allowed" : "cursor-grab"
-                          }`}
-                        />
+        <ApprovalsFilterModal
+          stages={stageOptions}
+          projectOptions={projectOptions}
+          initialValues={{ stageFilter, projectFilter, dateFrom, dateTo }}
+          onApply={handleApplyFilters}
+          activeFilterCount={activeFilterCount}
+        />
+      </div>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="font-mono text-[10px] text-muted-foreground">
-                            {item.project_code}
-                          </div>
+      {/* BODY: master list + detail */}
+      <div className="flex min-h-0 flex-1">
+        {/* LIST */}
+        <div className="flex w-[360px] shrink-0 flex-col border-r border-slate-200">
+          <div className="flex h-10 shrink-0 items-center gap-3 border-b border-slate-200 px-4">
+            <input
+              type="checkbox"
+              aria-label="Select all in this queue"
+              checked={allInQueueSelected}
+              onChange={toggleSelectAllInQueue}
+              disabled={aList.length === 0}
+              className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
+            />
+            <span className="text-xs text-slate-500">
+              {aList.length} pending
+            </span>
+          </div>
 
-                          <div className="mt-1 text-sm font-semibold leading-5 text-foreground">
-                            {item.deliverable_name}
-                          </div>
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading…</div>
+            ) : aList.length === 0 ? (
+              <div
+                data-testid={APPROVALS.emptyState}
+                className="flex flex-col items-center gap-1.5 px-5 py-10 text-center"
+              >
+                <span className="text-sm font-semibold text-foreground">No pending approvals</span>
+                <span className="text-xs text-muted-foreground">This queue is clear.</span>
+              </div>
+            ) : (
+              aList.map((item) => {
+                const isSelected = item.id === selectedId;
+                const checked = selectedIds.has(item.id);
 
-                          <div className="mt-1 text-[11px] text-muted-foreground">
-                            {item.project_name} · {item.client_name || "—"}
-                          </div>
-                        </div>
+                return (
+                  <div
+                    key={item.id}
+                    data-testid={`${APPROVALS.listRowPrefix}-${item.id}`}
+                    draggable={!movingId}
+                    onDragStart={() => setDragging(item)}
+                    onDragEnd={() => {
+                      setDragging(null);
+                      setDragOverQueue(null);
+                    }}
+                    onClick={() => setSelectedId(item.id)}
+                    className={[
+                      "flex w-full cursor-pointer items-start gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition-colors",
+                      isSelected ? "bg-[#f0f0fd]" : "hover:bg-slate-50",
+                    ].join(" ")}
+                  >
+                    <input
+                      type="checkbox"
+                      data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
+                      checked={checked}
+                      onChange={() => toggleSelect(item.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
+                      aria-label={`Select ${item.deliverable_name}`}
+                    />
 
-                        {item.hidden ? (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">
-                            <EyeOff className="h-3 w-3" />
-                            Hidden
-                          </span>
-                        ) : (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                            <Clock3 className="h-3 w-3" />
-                            Pending
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleHide(item);
-                          }}
-                          aria-label={item.hidden ? "Unhide" : "Hide"}
-                          title={item.hidden ? "Unhide" : "Hide"}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
-                        >
-                          {item.hidden ? (
-                            <Eye className="h-3.5 w-3.5" />
-                          ) : (
-                            <EyeOff className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                        <span>{item.current_stage}</span>
-                        <span>·</span>
-                        <span>
-                          {(item.required_stages || [item.current_stage]).join(
-                            " → "
-                          )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] font-medium text-slate-500">
+                          {item.project_code}
                         </span>
+                        <span className="flex-1" />
+                        <span className="text-xs text-slate-500">{ageLabel(item.requested_at)}</span>
                       </div>
-
-                      {item.comments && (
-                        <div className="mt-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
-                          {item.comments}
-                        </div>
-                      )}
-
-                      <textarea
-                        data-testid={`${APPROVALS.notePrefix}-${item.id}`}
-                        placeholder="Add a review note..."
-                        value={notes[item.id] || ""}
-                        onChange={(e) =>
-                          setNotes((prev) => ({
-                            ...prev,
-                            [item.id]: e.target.value,
-                          }))
-                        }
-                        className="mt-3 min-h-[58px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[11px] leading-4 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                        rows={2}
-                      />
-
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          data-testid={`${APPROVALS.approvePrefix}-${item.id}`}
-                          onClick={() => decide(item, "approve")}
-                          disabled={isMoving}
-                          className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-[hsl(240_61%_36%)] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Approve
-                        </button>
-
-                        <button
-                          data-testid={`${APPROVALS.rejectPrefix}-${item.id}`}
-                          onClick={() => decide(item, "reject")}
-                          disabled={isMoving}
-                          className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                          Send Back
-                        </button>
+                      <div className="mt-1 truncate text-sm font-semibold leading-5 text-slate-900">
+                        {item.deliverable_name}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-slate-500">
+                        {item.project_name} · {item.client_name || "—"}
                       </div>
                     </div>
-                  );
-                })}
-              </KanbanColumn>
-            );
-          })}
-        </KanbanBoard>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
-              <thead className="bg-[#f7f9fc] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="w-10 px-4 py-3" />
-                  <th className="px-3 py-3">Authority</th>
-                  <th className="px-3 py-3">Deliverable</th>
-                  <th className="px-3 py-3">Project / Client</th>
-                  <th className="px-3 py-3">Stage</th>
-                  <th className="px-3 py-3">Requested</th>
-                  <th className="w-10 px-3 py-3" />
-                </tr>
-              </thead>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
 
-              <tbody>
-                {visibleColumns.flatMap((column) =>
-                  (filteredBoard[column.key] || []).map((item) => {
-                    const selected = selectedIds.has(item.id);
+        {/* DETAIL */}
+        <div className="flex-1 overflow-y-auto">
+          {aSel ? (
+            <div className="max-w-[720px] px-7 py-6">
+              <div className="flex flex-wrap items-start gap-4">
+                <div className="min-w-[240px] flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                      Pending
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">{aSel.project_code}</span>
+                  </div>
+                  <h2 className="mt-1.5 text-lg font-semibold text-foreground">
+                    {aSel.deliverable_name}
+                  </h2>
+                </div>
 
-                    return (
-                      <tr
-                        key={item.id}
-                        data-testid={`${APPROVALS.listRowPrefix}-${item.id}`}
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  <span className="text-xs text-slate-500">Move to</span>
+                  {COLUMNS.filter((c) => c.key !== aSel.approval_type).map((c) => (
+                    <button
+                      key={c.key}
+                      type="button"
+                      onClick={() => handleMove(aSel, c.key)}
+                      disabled={movingId === aSel.id}
+                      className="h-7 rounded-lg bg-white px-2.5 text-xs text-slate-700 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-[130px_1fr] gap-y-2.5 text-sm">
+                <span className="text-slate-500">Project</span>
+                <span className="text-foreground">{aSel.project_name}</span>
+                <span className="text-slate-500">Client</span>
+                <span className="text-foreground">{aSel.client_name || "—"}</span>
+                <span className="text-slate-500">Assigned to</span>
+                <span className="text-foreground">
+                  {aSel.assigned_to_name || "Unassigned"} · {ageLabel(aSel.requested_at)}
+                </span>
+                <span className="text-slate-500">Workflow</span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {(aSel.required_stages || [aSel.current_stage]).map((stage, i, arr) => (
+                    <span key={stage} className="flex items-center gap-1.5">
+                      <span
                         className={[
-                          "border-b border-border last:border-0 transition-colors",
-                          selected ? "bg-[#fafaff]" : "hover:bg-[#fafbff]",
+                          "inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium",
+                          stage === aSel.current_stage
+                            ? "bg-[#2b2bb5] text-white"
+                            : "bg-slate-100 text-slate-500",
                         ].join(" ")}
                       >
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={() => toggleSelect(item.id)}
-                            className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-                          />
-                        </td>
+                        {stage}
+                      </span>
+                      {i < arr.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-slate-300" />}
+                    </span>
+                  ))}
+                </span>
+              </div>
 
-                        <td className="px-3 py-3 text-xs font-medium text-foreground">
-                          {column.label}
-                        </td>
+              {aSel.comments && (
+                <div className="mt-5 rounded-lg border border-border bg-muted/50 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground">
+                  {aSel.comments}
+                </div>
+              )}
 
-                        <td className="px-3 py-3">
-                          <div className="font-medium text-foreground">
-                            {item.deliverable_name}
-                          </div>
-                          <div className="font-mono text-[11px] text-muted-foreground">
-                            {item.project_code}
-                          </div>
-                        </td>
+              <div className="mt-5 flex h-[200px] flex-col items-center justify-center gap-2 rounded-xl bg-slate-50 text-[#a5a8f0]">
+                <ImageIcon className="h-6 w-6" />
+                <span className="text-xs text-slate-500">Deliverable preview</span>
+              </div>
 
-                        <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {item.project_name} · {item.client_name || "—"}
-                        </td>
+              <label className="mt-5 flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-foreground">Review note</span>
+                <textarea
+                  data-testid={`${APPROVALS.notePrefix}-${aSel.id}`}
+                  placeholder="Optional for approval, required when sending back"
+                  value={notes[aSel.id] || ""}
+                  onChange={(e) =>
+                    setNotes((prev) => ({ ...prev, [aSel.id]: e.target.value }))
+                  }
+                  rows={3}
+                  className="resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm leading-5 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+                />
+              </label>
 
-                        <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {item.current_stage}
-                        </td>
-
-                        <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {item.requested_at
-                            ? format(parseISO(item.requested_at), "dd MMM yyyy")
-                            : "—"}
-                        </td>
-
-                        <td className="px-3 py-3">{renderCardMenu(item)}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredTotal === 0 && (
-            <div
-              data-testid={APPROVALS.emptyState}
-              className="flex flex-col items-center justify-center px-5 py-16 text-center"
-            >
-              <p className="text-sm font-semibold text-foreground">
-                No approvals match these filters
-              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid={`${APPROVALS.approvePrefix}-${aSel.id}`}
+                  onClick={() => decide(aSel, "approve")}
+                  disabled={movingId === aSel.id}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-3.5 text-sm font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  data-testid={`${APPROVALS.rejectPrefix}-${aSel.id}`}
+                  onClick={() => decide(aSel, "reject")}
+                  disabled={movingId === aSel.id}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-white px-3.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+                >
+                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                  Send back
+                </button>
+              </div>
             </div>
+          ) : (
+            !loading && (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Select an approval to review it
+              </div>
+            )
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

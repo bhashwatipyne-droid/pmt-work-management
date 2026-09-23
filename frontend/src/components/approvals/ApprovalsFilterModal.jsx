@@ -10,7 +10,6 @@ import { Calendar } from "@/components/ui/calendar";
 import { APPROVALS } from "@/constants/testIds";
 
 const EMPTY_VALUES = {
-  authorityFilter: "",
   stageFilter: "",
   projectFilter: "",
   dateFrom: "",
@@ -18,16 +17,20 @@ const EMPTY_VALUES = {
 };
 
 /**
- * Filters control for the Approvals board.
+ * Filters control for the Approvals page.
  *
  * Self-contained: renders its own trigger button (with the active-filter
  * count badge) and its own Popover, so the panel anchors to the button
  * instead of opening as a centered page-level dialog. Owns its own draft
  * state so opening/closing without hitting "Apply filters" never mutates
  * the parent's committed filters.
+ *
+ * Authority is no longer a filter field here — the redesign's queue tabs
+ * (Manager/Leadership/Client SPOC/Compliance) own that dimension now, so
+ * this only covers stage/project/date, which apply within whichever
+ * queue tab is active.
  */
 export default function ApprovalsFilterModal({
-  columns,
   stages,
   projectOptions,
   initialValues,
@@ -109,26 +112,6 @@ export default function ApprovalsFilterModal({
         </div>
 
         <div className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Approval authority
-            </label>
-
-            <select
-              data-testid={APPROVALS.filterAuthority}
-              value={draft.authorityFilter}
-              onChange={(e) => setField("authorityFilter")(e.target.value)}
-              className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-            >
-              <option value="">All</option>
-              {columns.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               Production stage

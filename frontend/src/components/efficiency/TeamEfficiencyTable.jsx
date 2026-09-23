@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Download,
   HelpCircle,
   MoreVertical,
   Search,
@@ -68,7 +67,7 @@ const toCsv = (rows) => {
   return [header.join(","), ...lines].join("\n");
 };
 
-const downloadCsv = (rows, month) => {
+export const downloadCsv = (rows, month) => {
   const csv = toCsv(rows);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -88,6 +87,12 @@ export const TeamEfficiencyTable = ({
   canManageCapacity = false,
   canSetPotential = false,
   onSelect,
+  // New: lets the page host the Export button in its header (matching
+  // the redesign) while this component still owns the actual filtered/
+  // sorted row list that gets exported — so "Export" always exports
+  // whatever you're currently looking at, exactly as it did before when
+  // the button lived down here.
+  onFilteredRowsChange,
 }) => {
   const navigate = useNavigate();
 
@@ -133,6 +138,10 @@ export const TeamEfficiencyTable = ({
     return sorted;
   }, [employees, search, department, capacityStatus, sortBy]);
 
+  useEffect(() => {
+    onFilteredRowsChange?.(filtered);
+  }, [filtered, onFilteredRowsChange]);
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -151,15 +160,43 @@ export const TeamEfficiencyTable = ({
           <p className="text-xs text-slate-500">Compare employee productivity and capacity</p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowHelp((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-[#2b2bb5] hover:underline"
-        >
-          <HelpCircle className="h-3.5 w-3.5" />
-          How is productivity calculated?
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => resetToFirstPage(setDepartment)("")}
+            className={`h-7 rounded-full px-2.5 text-xs font-medium ${
+              department === ""
+                ? "bg-[#2b2bb5] text-white"
+                : "bg-white text-slate-600 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50"
+            }`}
+          >
+            All
+          </button>
+          {departments.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => resetToFirstPage(setDepartment)(d)}
+              className={`h-7 rounded-full px-2.5 text-xs font-medium ${
+                department === d
+                  ? "bg-[#2b2bb5] text-white"
+                  : "bg-white text-slate-600 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50"
+              }`}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setShowHelp((v) => !v)}
+        className="flex w-full items-center gap-1.5 border-b border-slate-200 px-4 py-2 text-xs font-medium text-[#2b2bb5] hover:underline"
+      >
+        <HelpCircle className="h-3.5 w-3.5" />
+        How is productivity calculated?
+      </button>
 
       {showHelp && (
         <div className="border-b border-slate-200 bg-[#f7f7fd] px-4 py-3 text-xs text-slate-600">
@@ -178,25 +215,6 @@ export const TeamEfficiencyTable = ({
             value={search}
             onChange={(e) => resetToFirstPage(setSearch)(e.target.value)}
             className={`${fieldClass} w-48 pl-8`}
-          />
-        </div>
-
-        <div className="relative w-[155px]">
-          <select
-            value={department}
-            onChange={(e) => resetToFirstPage(setDepartment)(e.target.value)}
-            className={`${selectClass} w-full`}
-          >
-            <option value="">All departments</option>
-            {departments.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-            strokeWidth={2}
           />
         </div>
 
@@ -234,15 +252,6 @@ export const TeamEfficiencyTable = ({
               strokeWidth={2}
             />
           </div>
-
-          <button
-            type="button"
-            onClick={() => downloadCsv(filtered, month)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export
-          </button>
         </div>
       </div>
 

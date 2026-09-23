@@ -7,26 +7,19 @@
 // Migrated work items may contain the creator's name instead of their
 // current user ID, so we resolve the creator by ID first and then by name.
 
-// A row another MEMBER created for themselves - not the acting member, and
-// not a manager/admin-provisioned shared row (see "Add N Rows") - is locked
-// for everyone but that person (or a manager, via canEditWorkItem below).
-// Mirrors the backend's scoped_update_fields peer-lock exactly, so the UI
-// never lets someone start an edit the server would then reject.
+// A row with a named creator - not the acting member, and not a
+// manager/admin-provisioned shared row (see "Add N Rows", which leaves
+// creator_id empty) - is locked for everyone but that person, regardless of
+// whether the creator is a member, manager, or admin. Mirrors the backend's
+// scoped_update_fields peer-lock exactly, so the UI never lets someone start
+// an edit the server would then reject.
 export const isRowLockedForMember = (currentUser, item, users = []) => {
   if (!currentUser || currentUser.role !== "member") return false;
 
   const creatorId = item?.creator_id;
   if (!creatorId || creatorId === currentUser.id) return false;
 
-  const creator =
-    users.find((user) => user.id === creatorId) ||
-    users.find(
-      (user) =>
-        user.name &&
-        String(creatorId).trim().toLowerCase() === user.name.trim().toLowerCase()
-    );
-
-  return creator?.role === "member";
+  return true;
 };
 
 export const canEditWorkItem = (currentUser, item, users = []) => {

@@ -9,13 +9,15 @@ import {
 } from "react";
 import {
   ChevronsLeftRight,
+  ChevronDown,
+  ChevronRight,
   Hand,
 } from "lucide-react";
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "../ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { parseTimeInput } from "@/lib/timeRules";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
@@ -86,6 +88,31 @@ const MEMBER_STAGE_BY_DEPARTMENT = {
   Animation: "Animate",
 };
 
+// New: worksheet grouping. "Stage" and "Member" are the only two grouped
+// views (plus "None", the existing flat list) — each resolves an item to
+// the key its group header row represents.
+const GROUP_KEY_RESOLVERS = {
+  Stage: (item) => item.stage || "No stage",
+  Member: (item) => item.creator_id || "__unassigned__",
+};
+
+// Decorative only — same dots already used elsewhere for Stage, repeated
+// here so a grouped-by-Stage header row can carry the same color cue.
+const STAGE_DOT_COLORS = {
+  Content: "bg-violet-600",
+  Design: "bg-sky-500",
+  Animate: "bg-amber-500",
+};
+
+const formatGroupMinutes = (totalMinutes) => {
+  if (!totalMinutes) return "0m";
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours && minutes) return `${hours}h ${minutes}m`;
+  if (hours) return `${hours}h`;
+  return `${minutes}m`;
+};
+
 // The worksheet is intentionally virtualized without adding a new dependency.
 // Only the visible rows + a small overscan buffer are mounted in the DOM.
 const ROW_HEIGHT = 40;
@@ -116,6 +143,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   onSelectRange,
   sheetKey = "Master",
   onRequestHideRow,
+  // New: "Stage" | "Member" | "None" (default). Owned by the page (same
+  // way `filters` is), scoped per-tab. Everything below degrades to the
+  // existing flat list when this is "None"/omitted.
+  groupBy = "None",
+  // Fires whenever "are all current groups collapsed" changes, so the
+  // toolbar's Collapse all/Expand all button can show the right label
+  // without this table having to lift its whole collapsed-set upward.
+  onGroupCollapseStateChange,
 }, ref) {
   const [activeCell, setActiveCell] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -183,6 +218,21 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const [fillState, setFillState] = useState(null);
   const [isFilling, setIsFilling] = useState(false);
 
+  const groupBySafe = groupBy && groupBy !== "None" ? groupBy : null;
+
+  // Which group keys are currently collapsed. Not persisted — grouping is
+  // brand new, so there's no prior expectation to preserve across
+  // reloads; starting expanded every time is the safer default.
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => new Set());
+  const groupInfoRef = useRef(null);
+
+  // Switching grouping mode (or tabs) invalidates whatever keys were
+  // collapsed — "Content"/"Design" collapsed-by-Stage has no meaning
+  // once you're grouped by Member.
+  useEffect(() => {
+    setCollapsedGroupKeys(new Set());
+  }, [groupBySafe, sheetKey]);
+
   const scrollRef = useRef(null);
   const fillStateRef = useRef(null);
   const itemsRef = useRef(items);
@@ -233,6 +283,16 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         return next;
       });
     },
+    // Backs the toolbar's "Collapse all"/"Expand all" control. Reads the
+    // live group list off a ref (see the sync effect below) rather than
+    // closing over `groupInfo` directly, since this handle object is
+    // built once — same pattern already used above for sortedItemsRef.
+    collapseAllGroups: () => {
+      const info = groupInfoRef.current;
+      if (!info) return;
+      setCollapsedGroupKeys(new Set(info.order));
+    },
+    expandAllGroups: () => setCollapsedGroupKeys(new Set()),
   }), []);
 
   useEffect(() => {
@@ -560,7 +620,120 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     [personallyOrderedItems, hiddenRowSet]
   );
 
-  const sortedTableItems = visibleTableItems;
+  // Clusters visibleTableItems into groups, in first-seen order, without
+  // disturbing each group's own internal (drag/sort) order. `summaries`
+  // carries the per-group row/done/time rollups the header row displays.
+  const groupInfo = useMemo(() => {
+    if (!groupBySafe) return null;
+
+    const resolver = GROUP_KEY_RESOLVERS[groupBySafe];
+    const order = [];
+    const buckets = new Map();
+    const summaries = new Map();
+
+    for (const item of visibleTableItems) {
+      const key = resolver(item);
+
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
+        summaries.set(key, { count: 0, done: 0, minutes: 0 });
+        order.push(key);
+      }
+
+      buckets.get(key).push(item);
+
+      const summary = summaries.get(key);
+      summary.count += 1;
+      if (String(item.status || "").toLowerCase() === "done") summary.done += 1;
+      summary.minutes += Number(item.time_taken_minutes) || 0;
+    }
+
+    return { order, buckets, summaries };
+  }, [visibleTableItems, groupBySafe]);
+
+  useEffect(() => {
+    groupInfoRef.current = groupInfo;
+  }, [groupInfo]);
+
+  useEffect(() => {
+    if (!onGroupCollapseStateChange) return;
+
+    const allCollapsed = Boolean(
+      groupInfo?.order.length && groupInfo.order.every((key) => collapsedGroupKeys.has(key))
+    );
+
+    onGroupCollapseStateChange(allCollapsed);
+  }, [groupInfo, collapsedGroupKeys, onGroupCollapseStateChange]);
+
+  const toggleGroupCollapse = useCallback((key) => {
+    setCollapsedGroupKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const getGroupLabel = useCallback(
+    (key) => {
+      if (groupBySafe === "Member") {
+        return usersById[key]?.name || "Unassigned";
+      }
+      return key;
+    },
+    [groupBySafe, usersById]
+  );
+
+  // sortedTableItems stays the single source of truth for row numbering,
+  // fill, selection, and keyboard nav — exactly as before grouping
+  // existed — it's just now, when grouped, clustered by group and with
+  // collapsed groups' rows excluded entirely (the same way hidden rows
+  // already are). displayEntries is the parallel list actually rendered
+  // (it additionally carries the header rows), built in the same pass so
+  // the two can never drift apart: every "row" entry in displayEntries
+  // gets a rowIndex equal to its position in sortedTableItems.
+  const { sortedTableItems, displayEntries } = useMemo(() => {
+    if (!groupInfo) {
+      return {
+        sortedTableItems: visibleTableItems,
+        displayEntries: visibleTableItems.map((item, i) => ({
+          type: "row",
+          item,
+          rowIndex: i + 1,
+        })),
+      };
+    }
+
+    const rows = [];
+    const entries = [];
+    let rowIndex = 0;
+
+    for (const key of groupInfo.order) {
+      const isCollapsed = collapsedGroupKeys.has(key);
+
+      entries.push({
+        type: "header",
+        key,
+        isCollapsed,
+        label: getGroupLabel(key),
+        summary: groupInfo.summaries.get(key),
+      });
+
+      if (isCollapsed) continue;
+
+      for (const item of groupInfo.buckets.get(key)) {
+        rowIndex += 1;
+        rows.push(item);
+        entries.push({ type: "row", item, rowIndex });
+      }
+    }
+
+    return { sortedTableItems: rows, displayEntries: entries };
+  }, [groupInfo, visibleTableItems, collapsedGroupKeys, getGroupLabel]);
+
 
   // Tracks which hidden rows sit immediately before each visible row.
   const hiddenRowsBeforeById = useMemo(() => {
@@ -835,15 +1008,15 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   );
 
   const visibleEnd = Math.min(
-    sortedTableItems.length,
+    displayEntries.length,
     Math.ceil((bodyScrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
   );
 
-  const visibleItems = sortedTableItems.slice(visibleStart, visibleEnd);
+  const visibleItems = displayEntries.slice(visibleStart, visibleEnd);
   const topSpacerHeight = visibleStart * ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(
     0,
-    (sortedTableItems.length - visibleEnd) * ROW_HEIGHT
+    (displayEntries.length - visibleEnd) * ROW_HEIGHT
   );
 
   const allVisibleIds = useMemo(
@@ -1579,7 +1752,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         </TableHeader>
 
         <TableBody>
-          {sortedTableItems.length === 0 ? (
+          {displayEntries.length === 0 ? (
             <TableRow>
               <td
                 colSpan={totalCols}
@@ -1605,8 +1778,63 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                 </TableRow>
               )}
 
-              {visibleItems.map((item, localIndex) => {
-                const index = visibleStart + localIndex + 1;
+              {visibleItems.map((entry) => {
+                if (entry.type === "header") {
+                  const { key, isCollapsed, label, summary } = entry;
+
+                  return (
+                    <TableRow
+                      key={`group-${key}`}
+                      className="h-10 border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns,
+                        minWidth: "max-content",
+                      }}
+                    >
+                      <TableCell
+                        className="flex h-10 items-center gap-2 px-3 text-[13px]"
+                        style={{ gridColumn: "1 / -1" }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleGroupCollapse(key)}
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-200"
+                          aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`}
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </button>
+
+                        {groupBySafe === "Stage" && (
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              STAGE_DOT_COLORS[key] || "bg-slate-400"
+                            }`}
+                          />
+                        )}
+
+                        <span className="truncate font-semibold text-slate-800">
+                          {label}
+                        </span>
+
+                        <span className="shrink-0 text-slate-500">
+                          {groupBySafe === "Stage"
+                            ? `${summary.count}`
+                            : `${summary.count} row${summary.count === 1 ? "" : "s"} · ${
+                                summary.done
+                              } done · ${formatGroupMinutes(summary.minutes)}`}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
+
+                const { item, rowIndex } = entry;
+                const index = rowIndex;
 
                 return (
                   <WorkSheetRow
@@ -1653,7 +1881,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     }}
                     onRowDragEnd={() => setDraggedRow(null)}
                     isRowDragging={draggedRow === item.id}
-                    canDragRow={!columnSort.key}
+                    canDragRow={!columnSort.key && !groupBySafe}
                     selected={selectedSet.has(item.id)}
                     onToggleSelect={(id) => handleCheckboxToggle(id, index)}
                     displayRowNumber={displayRowNumberById[item.id]}

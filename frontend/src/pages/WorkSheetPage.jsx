@@ -163,6 +163,36 @@ export default function WorkSheetPage() {
 
   const filters = filtersBySheet[activeSheet] || emptyFilters;
 
+  // Grouping is scoped per-tab the same way filters are — switching from
+  // Content to Design doesn't carry one tab's "Group: Member" choice
+  // into the other. Session-only (not persisted), since this is a brand
+  // new control with no prior behavior to preserve across reloads.
+  const [groupByBySheet, setGroupByBySheet] = useState({
+    Master: "Stage",
+    Content: "Stage",
+    Design: "Stage",
+    Animation: "Stage",
+  });
+  const groupBy = groupByBySheet[activeSheet] || "Stage";
+  const handleGroupByChange = useCallback(
+    (value) => {
+      setGroupByBySheet((current) => ({ ...current, [activeSheet]: value }));
+    },
+    [activeSheet]
+  );
+
+  // Mirrors whatever WorkSheetTable reports via onGroupCollapseStateChange
+  // — only used to pick the toolbar button's label ("Collapse all" vs
+  // "Expand all"); the collapsed set itself lives in the table.
+  const [allGroupsCollapsed, setAllGroupsCollapsed] = useState(false);
+  const handleToggleCollapseAll = useCallback(() => {
+    if (allGroupsCollapsed) {
+      tableRef.current?.expandAllGroups();
+    } else {
+      tableRef.current?.collapseAllGroups();
+    }
+  }, [allGroupsCollapsed]);
+
   const setFilters = useCallback(
     (nextFilters) => {
       setFiltersBySheet((current) => {
@@ -333,6 +363,22 @@ export default function WorkSheetPage() {
   // client-side, against the single fetched copy of `items` — this is what
   // makes applying a filter instant rather than waiting on a server round
   // trip.
+  // Lookup maps for the search box, which now also matches on client and
+  // project name (not just deliverable name / remarks). Kept as maps
+  // rather than clients.find()/projects.find() per item so filtering
+  // thousands of rows on every keystroke stays O(n) instead of O(n*m).
+  const clientNameById = useMemo(() => {
+    const map = new Map();
+    clients.forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [clients]);
+
+  const projectById = useMemo(() => {
+    const map = new Map();
+    projects.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [projects]);
+
   const filteredItems = useMemo(() => {
     const sheetStage =
       activeSheet === "Master"
@@ -365,7 +411,16 @@ export default function WorkSheetPage() {
       }
 
       if (search) {
-        const haystack = `${item.deliverable_name || ""} ${item.remarks || ""}`.toLowerCase();
+        // Same fallback WorkSheetRow uses to resolve a row's client: the
+        // row's own client_id, or failing that, its project's client_id.
+        const project = projectById.get(item.project_id);
+        const effectiveClientId = item.client_id || project?.client_id;
+        const clientName = effectiveClientId
+          ? clientNameById.get(effectiveClientId) || ""
+          : "";
+        const projectName = project?.name || "";
+
+        const haystack = `${item.deliverable_name || ""} ${item.remarks || ""} ${clientName} ${projectName}`.toLowerCase();
         if (!haystack.includes(search)) return false;
       }
 
@@ -383,7 +438,35 @@ export default function WorkSheetPage() {
 
       return true;
     });
-  }, [items, filters, activeSheet]);
+  }, [items, filters, activeSheet, clientNameById, projectById]);
+
+  // Toolbar's "N missing a deliverable" badge — purely informational, so
+  // scoped the same as the visible row count (post search/filter) rather
+  // than some separate, harder-to-explain total.
+  const missingDeliverableCount = useMemo(
+    () =>
+      filteredItems.filter((item) =>
+        isDeliverableMissing(item, options.deliverable_type_categories)
+      ).length,
+    [filteredItems, options.deliverable_type_categories]
+  );
+
+  // Per-tab counts shown next to each tab label (e.g. "Content 7") —
+  // scoped to the tab's own stage only, independent of any active
+  // search/filter, so switching filters doesn't make the tabs themselves
+  // jump around.
+  const tabCounts = useMemo(() => {
+    const counts = { Master: items.length, Content: 0, Design: 0, Animate: 0 };
+
+    items.forEach((item) => {
+      const stage = String(item.stage || "").trim();
+      if (stage === "Content") counts.Content += 1;
+      else if (stage === "Design") counts.Design += 1;
+      else if (stage === "Animate") counts.Animate += 1;
+    });
+
+    return counts;
+  }, [items]);
 
   const sortedItems = useMemo(() => {
     return [...filteredItems].sort((a, b) => {
@@ -914,6 +997,65 @@ export default function WorkSheetPage() {
     }
   };
 
+  // New — the redesigned bulk action bar adds a "Duplicate" action for
+  // the current selection. There was no bulk-duplicate endpoint before,
+  // so this fires the same per-item creation handleDuplicateRow uses,
+  // once per selected row, then does a single combined toast/refresh
+  // instead of one per row.
+  const handleBulkDuplicate = async () => {
+    const targets = itemsRef.current.filter((item) =>
+      selectedIds.includes(item.id)
+    );
+
+    if (!targets.length) return;
+
+    try {
+      const created = await Promise.all(
+        targets.map((item) =>
+          createWorkItem(currentUser.id, {
+            work_date: new Date().toISOString().slice(0, 10),
+            deliverable_name: item.deliverable_name || "",
+            deliverable_type: item.deliverable_type || "",
+            deliverable_link: item.deliverable_link || "",
+            work_category: item.work_category || "",
+            version: item.version || "",
+            quantity: 1.0,
+            time_taken_minutes: 0,
+            creator_id: currentUser.id,
+            reviewer_id: item.reviewer_id || null,
+            manager_id: item.manager_id || null,
+            client_id: item.client_id || null,
+            project_id: item.project_id || null,
+            deliverable_id: item.deliverable_id || null,
+            deliverable_not_available: Boolean(item.deliverable_not_available),
+            stage: item.stage || null,
+            remarks: "",
+            status: "Not Started",
+          })
+        )
+      );
+
+      setItems((prev) => [...created, ...prev]);
+      tableRef.current?.resetColumnSort();
+      tableRef.current?.scrollToTop();
+      setSelectedIds([]);
+
+      trackEvent("row_added", {
+        worksheet: activeSheet,
+        count: created.length,
+        bulk: true,
+        duplicated: true,
+      });
+
+      toast.success(
+        `${created.length} row${created.length === 1 ? "" : "s"} duplicated`
+      );
+      refreshCounts();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Could not duplicate rows");
+    }
+  };
+
 
   const toggleSelectAll = () => {
     const visibleIds = filteredItems.map((item) => item.id);
@@ -1073,6 +1215,12 @@ export default function WorkSheetPage() {
         onAddRow={handleAddRow}
         canAdd={canAddToActiveSheet}
         resultCount={filteredItems.length}
+        totalCount={items.length}
+        missingDeliverableCount={missingDeliverableCount}
+        groupBy={groupBy}
+        onGroupByChange={handleGroupByChange}
+        allCollapsed={allGroupsCollapsed}
+        onToggleCollapseAll={handleToggleCollapseAll}
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
         onOpenQuickLogger={
@@ -1099,6 +1247,7 @@ export default function WorkSheetPage() {
       <WorkSheetTabs
         activeSheet={activeSheet}
         onChange={setActiveSheet}
+        counts={tabCounts}
       />
 
       <QuickLoggerModal
@@ -1140,6 +1289,7 @@ export default function WorkSheetPage() {
           onHideRows={handleHideRows}
           onInsertAbove={() => handleInsertRow("above")}
           onInsertBelow={() => handleInsertRow("below")}
+          onDuplicate={handleBulkDuplicate}
           onDelete={handleBulkDelete}
           onClear={() => setSelectedIds([])}
         />
@@ -1174,6 +1324,8 @@ export default function WorkSheetPage() {
           addingRow={addingRow}
           onSelectRange={handleSelectRange}
           sheetKey={activeSheet}
+          groupBy={groupBy}
+          onGroupCollapseStateChange={setAllGroupsCollapsed}
           onRequestHideRow={(rowId) => {
             const visibleIds = filteredItems.map((item) => item.id);
 

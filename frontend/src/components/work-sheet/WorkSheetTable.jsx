@@ -231,18 +231,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   const groupBySafe = groupBy && groupBy !== "None" ? groupBy : null;
 
-  // Which group keys are currently collapsed. Not persisted — grouping is
-  // brand new, so there's no prior expectation to preserve across
-  // reloads; starting expanded every time is the safer default.
+  // Which group keys are currently collapsed. Not persisted to
+  // localStorage — but every group starts collapsed on a fresh mount
+  // (a new session, or the first load of the day), which amounts to the
+  // same thing: nothing is ever remembered across a reload, it's just
+  // collapsed instead of expanded by default. See the effect below,
+  // once visibleTableItems/resolveGroupKey exist, for what populates it.
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => new Set());
   const groupInfoRef = useRef(null);
-
-  // Switching grouping mode (or tabs) invalidates whatever keys were
-  // collapsed — "Content"/"Design" collapsed-by-Stage has no meaning
-  // once you're grouped by Member.
-  useEffect(() => {
-    setCollapsedGroupKeys(new Set());
-  }, [groupBySafe, sheetKey]);
 
   const scrollRef = useRef(null);
   const fillStateRef = useRef(null);
@@ -633,7 +629,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   // Clusters visibleTableItems into groups, in first-seen order, without
   // disturbing each group's own internal (drag/sort) order. `summaries`
-  // carries the per-group row/done/time rollups the header row displays.
+  // carries the per-group row-count/time rollup the header row displays.
   //
   // The Member resolver needs `usersById` (component data), so it's built
   // here rather than read off the static GROUP_KEY_RESOLVERS map — a
@@ -664,7 +660,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
       if (!buckets.has(key)) {
         buckets.set(key, []);
-        summaries.set(key, { count: 0, done: 0, minutes: 0 });
+        summaries.set(key, { count: 0, minutes: 0 });
         order.push(key);
       }
 
@@ -672,12 +668,22 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
       const summary = summaries.get(key);
       summary.count += 1;
-      if (String(item.status || "").toLowerCase() === "done") summary.done += 1;
       summary.minutes += Number(item.time_taken_minutes) || 0;
     }
 
     return { order, buckets, summaries };
   }, [visibleTableItems, groupBySafe, resolveGroupKey]);
+
+  // Groups start collapsed — on first mount (a fresh session/page load)
+  // and whenever the grouping mode or active tab changes, since keys
+  // collapsed under a different mode/tab wouldn't mean anything here.
+  // This also matters for performance: with thousands of rows, starting
+  // expanded meant the very first render had to build render entries for
+  // every row instead of just the handful of group headers.
+  useEffect(() => {
+    setCollapsedGroupKeys(groupInfo ? new Set(groupInfo.order) : new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupBySafe, sheetKey]);
 
   useEffect(() => {
     groupInfoRef.current = groupInfo;
@@ -1857,9 +1863,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                         <span className="shrink-0 text-slate-500">
                           {groupBySafe === "Stage"
                             ? `${summary.count}`
-                            : `${summary.count} row${summary.count === 1 ? "" : "s"} · ${
-                                summary.done
-                              } done · ${formatGroupMinutes(summary.minutes)}`}
+                            : `${summary.count} row${summary.count === 1 ? "" : "s"} · ${formatGroupMinutes(
+                                summary.minutes
+                              )}`}
                         </span>
                       </TableCell>
                     </TableRow>

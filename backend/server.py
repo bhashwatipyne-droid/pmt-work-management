@@ -6365,6 +6365,29 @@ async def run_startup_migrations():
     await db.approval_items.create_index([("deliverable_id", 1)])
     await db.approval_history.create_index([("deliverable_id", 1), ("created_at", -1)])
 
+    # work_items never got the same id-index treatment as every collection
+    # above, despite being the largest and most frequently queried one in
+    # the app — every get/update/delete-by-id call here was a full
+    # collection scan, and it only gets more expensive as rows accumulate.
+    await db.work_items.create_index("id")
+    # Matches list_work_items' default sort exactly, so the worksheet's
+    # main fetch (and its limit= fast-slice) can use the index to satisfy
+    # the sort instead of loading everything into memory to sort it.
+    await db.work_items.create_index([("work_date", -1), ("created_at", -1)])
+    # Matches the sidebar's pending-count badge, polled every 5s from
+    # every open session regardless of which page is active.
+    await db.work_items.create_index([("status", 1), ("stage", 1)])
+    # Matches the Bulk Review badge/list (status="Ready for Review",
+    # optionally scoped to a specific reviewer_id).
+    await db.work_items.create_index([("status", 1), ("reviewer_id", 1)])
+    # Optional filters on the main list endpoint and various stats/lookup
+    # queries elsewhere.
+    await db.work_items.create_index([("creator_id", 1)])
+    await db.work_items.create_index([("reviewer_id", 1)])
+    await db.work_items.create_index([("project_id", 1)])
+    await db.work_items.create_index([("deliverable_id", 1)])
+    await db.work_items.create_index([("month", 1)])
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

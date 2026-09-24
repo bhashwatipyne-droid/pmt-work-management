@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import "@/App.css";
 import {
   BrowserRouter,
@@ -11,19 +11,31 @@ import { trackEvent } from "@/analytics";
 import { Toaster } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import PushNotifications from "@/components/notifications/PushNotifications";
-import LoginPage from "@/pages/LoginPage";
-import WorkSheetPage from "@/pages/WorkSheetPage";
-import DashboardPage from "@/pages/DashboardPage";
-import ProjectsPage from "@/pages/ProjectsPage";
-import ProjectDetailPage from "@/pages/ProjectDetailPage";
-import TeamPage from "@/pages/TeamPage";
-import ApprovalsPage from "@/pages/ApprovalsPage";
-import ClientsPage from "@/pages/ClientsPage";
-import ProfilePage from "@/pages/ProfilePage";
-import EfficiencyPage from "@/pages/EfficiencyPage";
-import EfficiencyMonthlyCapacityPage from "@/pages/EfficiencyMonthlyCapacityPage";
-import EfficiencyActivityTargetsPage from "@/pages/EfficiencyActivityTargetsPage";
 import { AppShellSkeleton } from "@/components/skeletons/Skeletons";
+
+// Every page used to be imported eagerly here, which meant visiting any
+// one route (even the Work Sheet) pulled the JS for every other page —
+// Dashboard, Projects, Approvals, Team, Clients, Profile, all three
+// Efficiency pages — into the same bundle before the browser could paint
+// anything. Lazy-loading means only the matched route's own code (plus
+// shared vendor code) has to download and parse before first paint;
+// everything else loads on demand when actually navigated to.
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
+const WorkSheetPage = lazy(() => import("@/pages/WorkSheetPage"));
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
+const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage"));
+const TeamPage = lazy(() => import("@/pages/TeamPage"));
+const ApprovalsPage = lazy(() => import("@/pages/ApprovalsPage"));
+const ClientsPage = lazy(() => import("@/pages/ClientsPage"));
+const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
+const EfficiencyPage = lazy(() => import("@/pages/EfficiencyPage"));
+const EfficiencyMonthlyCapacityPage = lazy(() =>
+  import("@/pages/EfficiencyMonthlyCapacityPage")
+);
+const EfficiencyActivityTargetsPage = lazy(() =>
+  import("@/pages/EfficiencyActivityTargetsPage")
+);
 
 const PAGE_NAMES = {
   "/": "Work Sheet",
@@ -75,35 +87,37 @@ function AppShell() {
     return <AppShellSkeleton />;
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage />;
-  }
-
   return (
-    <AppLayout>
-      <Routes>
-        <Route path="/" element={<WorkSheetPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/efficiency" element={<EfficiencyPage />} />
-        <Route
-          path="/efficiency/settings/monthly-capacity"
-          element={<EfficiencyMonthlyCapacityPage />}
-        />
-        <Route
-          path="/efficiency/settings/activity-targets"
-          element={<EfficiencyActivityTargetsPage />}
-        />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route
-          path="/projects/:projectId"
-          element={<ProjectDetailPage />}
-        />
-        <Route path="/team" element={<TeamPage />} />
-        <Route path="/approvals" element={<ApprovalsPage />} />
-        <Route path="/clients" element={<ClientsPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-      </Routes>
-    </AppLayout>
+    <Suspense fallback={<AppShellSkeleton />}>
+      {!isAuthenticated ? (
+        <LoginPage />
+      ) : (
+        <AppLayout>
+          <Routes>
+            <Route path="/" element={<WorkSheetPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/efficiency" element={<EfficiencyPage />} />
+            <Route
+              path="/efficiency/settings/monthly-capacity"
+              element={<EfficiencyMonthlyCapacityPage />}
+            />
+            <Route
+              path="/efficiency/settings/activity-targets"
+              element={<EfficiencyActivityTargetsPage />}
+            />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route
+              path="/projects/:projectId"
+              element={<ProjectDetailPage />}
+            />
+            <Route path="/team" element={<TeamPage />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
+            <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+          </Routes>
+        </AppLayout>
+      )}
+    </Suspense>
   );
 }
 

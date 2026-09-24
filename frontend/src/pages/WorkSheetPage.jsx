@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import { refreshCounts, onCountsRefresh } from "@/lib/countsBus";
@@ -22,9 +22,12 @@ import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
 import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
-import QuickLoggerModal from "../components/work-sheet/QuickLoggerModal";
+// Lazy — both are closed by default (~1,500 lines combined), so their
+// code only needs to download once someone actually opens one, instead
+// of padding out the Work Sheet page's own initial chunk.
+const QuickLoggerModal = lazy(() => import("../components/work-sheet/QuickLoggerModal"));
+const BulkReviewModal = lazy(() => import("../components/work-sheet/BulkReviewModal"));
 import { QuickLogTrigger } from "../components/work-sheet/QuickLogTrigger";
-import BulkReviewModal from "../components/work-sheet/BulkReviewModal";
 import { AlertCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
@@ -1345,26 +1348,30 @@ export default function WorkSheetPage() {
         <QuickLogTrigger onOpen={() => setQuickLoggerOpen(true)} />
       )}
 
-      <QuickLoggerModal
-        open={quickLoggerOpen}
-        onClose={() => setQuickLoggerOpen(false)}
-        currentUser={currentUser}
-        projects={projects}
-        deliverables={deliverables}
-        clients={clients}
-        options={options}
-        onSave={handleQuickLoggerSave}
-      />
+      <Suspense fallback={null}>
+        <QuickLoggerModal
+          open={quickLoggerOpen}
+          onClose={() => setQuickLoggerOpen(false)}
+          currentUser={currentUser}
+          projects={projects}
+          deliverables={deliverables}
+          clients={clients}
+          options={options}
+          onSave={handleQuickLoggerSave}
+        />
+      </Suspense>
 
-      <BulkReviewModal
-        open={bulkReviewOpen}
-        onClose={() => {
-          setBulkReviewOpen(false);
-          fetchBulkReviewCount();
-          refreshCounts();
-        }}
-        currentUser={currentUser}
-      />
+      <Suspense fallback={null}>
+        <BulkReviewModal
+          open={bulkReviewOpen}
+          onClose={() => {
+            setBulkReviewOpen(false);
+            fetchBulkReviewCount();
+            refreshCounts();
+          }}
+          currentUser={currentUser}
+        />
+      </Suspense>
 
       <WorkSheetHistory
         open={historyOpen}

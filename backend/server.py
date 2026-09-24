@@ -12,6 +12,7 @@ import math
 import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
+import re
 import certifi
 import logging
 import string
@@ -154,6 +155,7 @@ PROJECT_STATUSES = [
     "Active",
     "Approval Pending",
     "Completed",
+    "Ready for Invoice",
     "Raised Invoice",
     "On Hold",
     "Scrapped",
@@ -1612,7 +1614,7 @@ async def _ensure_overdue_notifications():
     projects = await db.projects.find(
         {
             "end_date": {"$lt": today},
-            "status": {"$nin": ["Completed", "Raised Invoice", "Scrapped"]},
+            "status": {"$nin": ["Completed", "Ready for Invoice", "Raised Invoice", "Scrapped"]},
         },
         {"_id": 0},
     ).to_list(5000)
@@ -3283,6 +3285,25 @@ async def delete_client(
     return {"success": True}
 
 
+_PHONE_ALLOWED_RE = re.compile(r"^\+?[0-9\s\-()]+$")
+
+
+def validate_contact_phone(phone: Optional[str]) -> str:
+    """Return the trimmed phone number, or raise 400 if it is not a plausible
+    one: digits with an optional leading +, spaces/dashes/brackets allowed,
+    7-15 digits in all. Empty is fine - phone is optional."""
+    text = (phone or "").strip()
+    if not text:
+        return ""
+    digits = re.sub(r"\D", "", text)
+    if not _PHONE_ALLOWED_RE.match(text) or not 7 <= len(digits) <= 15:
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a valid phone number (7-15 digits; only numbers, +, spaces, - and brackets)",
+        )
+    return text
+
+
 class ContactPersonCreate(BaseModel):
     name: str
     email: Optional[str] = ""
@@ -3326,7 +3347,7 @@ async def create_contact_person(
         "id": f"contact-{uuid.uuid4().hex[:8]}",
         "name": payload.name.strip(),
         "email": (payload.email or "").strip(),
-        "phone": (payload.phone or "").strip(),
+        "phone": validate_contact_phone(payload.phone),
         "designation": (payload.designation or "").strip(),
     }
 
@@ -3390,6 +3411,9 @@ async def update_contact_person(
     for field in ["email", "phone", "designation"]:
         if field in update_fields and update_fields[field] is not None:
             update_fields[field] = update_fields[field].strip()
+
+    if update_fields.get("phone"):
+        update_fields["phone"] = validate_contact_phone(update_fields["phone"])
 
     for field, value in update_fields.items():
         await db.clients.update_one(

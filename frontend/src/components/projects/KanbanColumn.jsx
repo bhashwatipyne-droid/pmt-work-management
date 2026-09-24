@@ -10,6 +10,7 @@ const COLUMN_TESTIDS = {
   Active: PROJECTS.columnActive,
   "Approval Pending": PROJECTS.columnApprovalPending,
   Completed: PROJECTS.columnCompleted,
+  "Ready for Invoice": PROJECTS.columnReadyForInvoice,
   "Raised Invoice": PROJECTS.columnRaisedInvoice,
   "On Hold": PROJECTS.columnOnHold,
   Scrapped: PROJECTS.columnScrapped,

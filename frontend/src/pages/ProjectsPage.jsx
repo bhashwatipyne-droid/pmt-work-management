@@ -1014,7 +1014,7 @@ export default function ProjectsPage() {
             )}
           </div>
 
-          <KanbanBoard minWidth="1920px" maxHeight="calc(100vh - 340px)">
+          <KanbanBoard minWidth="2340px" maxHeight="calc(100vh - 340px)">
             {visibleStatuses.map((status) => {
               const columnProjects = byStatus[status] || [];
 

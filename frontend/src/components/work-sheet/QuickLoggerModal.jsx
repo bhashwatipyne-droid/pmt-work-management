@@ -61,7 +61,9 @@ const parseDuration = (value) => {
 const normalise = (value) =>
   String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 
-const fuzzyMatches = (items, query, getLabel, limit = 8) => {
+// No cap by default: the suggestion list scrolls (max-h-64), and cutting it to
+// the first 8 hid most deliverables and types unless they were typed exactly.
+const fuzzyMatches = (items, query, getLabel, limit = Infinity) => {
   const q = normalise(query);
   if (!q) return items.slice(0, limit);
 

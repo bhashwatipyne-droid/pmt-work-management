@@ -21,13 +21,29 @@ const ProjectEditModal = ({
   useEffect(() => {
     if (!project || !open) return;
 
+    // The project page shows `client_poc`, which falls back to the client's
+    // default contact when no POC has been picked explicitly. Mirror that
+    // here, otherwise the page says "POC: Priya" while this form says "No POC".
+    let initialPocId = project.poc_id || "";
+
+    if (!initialPocId && project.client_poc) {
+      const client = clients.find((c) => c.id === project.client_id);
+      const match = (client?.contact_persons || []).find(
+        (contact) =>
+          (contact.name || "").trim().toLowerCase() ===
+          project.client_poc.trim().toLowerCase()
+      );
+      if (match) initialPocId = match.id;
+    }
+
     setName(project.name || "");
     setClientId(project.client_id || "");
-    setPocId(project.poc_id || "");
+    setPocId(initialPocId);
     setStartDate(project.start_date || "");
     setEndDate(project.end_date || "");
     setError("");
-  }, [project, open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, open, clients]);
 
   if (!open || !project) return null;
 
@@ -145,7 +161,17 @@ const ProjectEditModal = ({
               onChange={setPocId}
               placeholder="No POC"
               options={[
-                { value: "", label: "No POC" },
+                {
+                  value: "",
+                  // The client's default contact exists only as a name (no
+                  // contact record to pick), so show it rather than "No POC".
+                  label:
+                    !pocId &&
+                    clientId === project.client_id &&
+                    project.client_poc
+                      ? `${project.client_poc} (client default)`
+                      : "No POC",
+                },
                 ...availablePocs.map((contact) => ({
                   value: contact.id,
                   label: contact.name,

@@ -1,7 +1,5 @@
 import { memo } from "react";
 
-import { avatarColorClasses } from "@/lib/avatarColors";
-
 import {
   STAGE_COLORS,
   STATUS_COLORS,
@@ -31,9 +29,6 @@ const fmtDate = (iso) => {
   }
 };
 
-const initial = (name) =>
-  (name || "?").trim().charAt(0).toUpperCase();
-
 // memo(): the board can hold hundreds of cards, and everything on the page
 // (opening a modal, typing in search, ticking a checkbox, dragging) re-renders
 // the page component. Without memo every one of those re-rendered and
@@ -43,7 +38,6 @@ const initial = (name) =>
 // closure per card.
 const ProjectCardBase = ({
   project,
-  users,
   onOpen,
   selected = false,
   onSelect,
@@ -59,11 +53,6 @@ const ProjectCardBase = ({
   const poc = project.client_poc;
 
   const handleOpen = () => onOpen?.(project);
-
-  const collaborators = (project.collaborator_ids || [])
-    .map((id) => users.find((u) => u.id === id))
-    .filter(Boolean)
-    .slice(0, 3);
 
   return (
     <div
@@ -161,24 +150,7 @@ const ProjectCardBase = ({
       </div>
 
       {/* Footer */}
-      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-        <div className="flex -space-x-2">
-          {collaborators.length > 0 ? (
-            collaborators.map((u) => (
-              <div
-                key={u.id}
-                className={`flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[10px] font-semibold ${avatarColorClasses(u.id)}`}
-              >
-                {initial(u.name)}
-              </div>
-            ))
-          ) : (
-            <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-[10px] font-semibold text-slate-400">
-              U
-            </div>
-          )}
-        </div>
-
+      <div className="mt-3 flex items-center justify-end border-t border-border pt-3">
         <span className="text-[11px] text-muted-foreground">
           {fmtDate(project.end_date)}
         </span>
@@ -186,8 +158,8 @@ const ProjectCardBase = ({
 
       <div className="mt-2 flex items-center justify-between">
         <span className="text-[11px] text-muted-foreground">
-          {project.deliverables_count} deliverable
-          {project.deliverables_count === 1 ? "" : "s"}
+          {project.deliverables_count ?? 0} deliverable
+          {(project.deliverables_count ?? 0) === 1 ? "" : "s"}
         </span>
 
         <button

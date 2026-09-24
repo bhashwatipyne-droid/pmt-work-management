@@ -66,7 +66,8 @@ export const EfficiencyFilters = ({
         type="button"
         aria-label="Next month"
         onClick={() => onMonthChange(shiftMonth(month, 1))}
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+        disabled={month >= currentMonth()}
+        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
       >
         <ChevronRight className="h-4 w-4" />
       </button>

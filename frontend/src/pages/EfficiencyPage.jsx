@@ -120,11 +120,13 @@ export default function EfficiencyPage() {
             ))}
           </select>
 
+          {/* There is no data for a month that has not happened yet. */}
           <button
             type="button"
             aria-label="Next month"
             onClick={() => setMonth(shiftMonth(month, 1))}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-50"
+            disabled={month >= currentMonth()}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           >
             <ChevronRight className="h-4 w-4" />
           </button>

@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import { format, parseISO } from "date-fns";
-import { CalendarDays, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { APPROVALS } from "@/constants/testIds";
 
 const EMPTY_VALUES = {
@@ -55,21 +53,14 @@ export default function ApprovalsFilterModal({
   const clearDraft = () => setDraft({ ...EMPTY_VALUES });
 
   const handleApply = () => {
-    onApply(draft);
+    // Someone can type the dates in either order — treat an inverted range
+    // as the range they meant rather than silently matching nothing.
+    if (draft.dateFrom && draft.dateTo && draft.dateFrom > draft.dateTo) {
+      onApply({ ...draft, dateFrom: draft.dateTo, dateTo: draft.dateFrom });
+    } else {
+      onApply(draft);
+    }
     setOpen(false);
-  };
-
-  const dateRangeValue = {
-    from: draft.dateFrom ? parseISO(draft.dateFrom) : undefined,
-    to: draft.dateTo ? parseISO(draft.dateTo) : undefined,
-  };
-
-  const handleDateRangeChange = (range) => {
-    setDraft((prev) => ({
-      ...prev,
-      dateFrom: range?.from ? format(range.from, "yyyy-MM-dd") : "",
-      dateTo: range?.to ? format(range.to, "yyyy-MM-dd") : "",
-    }));
   };
 
   return (
@@ -134,61 +125,51 @@ export default function ApprovalsFilterModal({
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Date range
+              Requested between
             </label>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className={[
-                    "flex h-10 w-full items-center gap-2 rounded-lg border bg-white px-3 text-sm outline-none transition-colors",
-                    "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
-                    draft.dateFrom || draft.dateTo
-                      ? "border-[#2b2bb5] text-foreground"
-                      : "border-input text-muted-foreground",
-                  ].join(" ")}
-                >
-                  <CalendarDays className="h-4 w-4 shrink-0" />
-                  {draft.dateFrom && draft.dateTo ? (
-                    <span>
-                      {format(parseISO(draft.dateFrom), "dd MMM")} –{" "}
-                      {format(parseISO(draft.dateTo), "dd MMM")}
-                    </span>
-                  ) : (
-                    <span>Select date range</span>
-                  )}
-                </button>
-              </PopoverTrigger>
-
-              <PopoverContent align="start" className="w-auto rounded-xl p-0">
-                <Calendar
-                  mode="range"
-                  selected={dateRangeValue}
-                  onSelect={handleDateRangeChange}
-                  numberOfMonths={1}
-                  initialFocus
+            {/* Two plain date fields. This used to be a calendar popover
+                nested inside this popover, which is what made the range
+                unreliable to pick. */}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-muted-foreground">
+                  From
+                </span>
+                <input
+                  type="date"
+                  value={draft.dateFrom}
+                  max={draft.dateTo || undefined}
+                  onChange={(e) => setField("dateFrom")(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-input bg-white px-2 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
                 />
+              </label>
 
-                {(draft.dateFrom || draft.dateTo) && (
-                  <div className="border-t border-border px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          dateFrom: "",
-                          dateTo: "",
-                        }))
-                      }
-                      className="text-xs font-medium text-[#2b2bb5] hover:underline"
-                    >
-                      Clear date range
-                    </button>
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-muted-foreground">
+                  To
+                </span>
+                <input
+                  type="date"
+                  value={draft.dateTo}
+                  min={draft.dateFrom || undefined}
+                  onChange={(e) => setField("dateTo")(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-input bg-white px-2 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+                />
+              </label>
+            </div>
+
+            {(draft.dateFrom || draft.dateTo) && (
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft((prev) => ({ ...prev, dateFrom: "", dateTo: "" }))
+                }
+                className="mt-2 text-xs font-medium text-[#2b2bb5] hover:underline"
+              >
+                Clear dates
+              </button>
+            )}
           </div>
 
           <div>

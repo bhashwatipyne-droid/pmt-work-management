@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { formatDistanceToNowStrict, parseISO } from "date-fns";
+import { format, formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
   Check,
   Undo2,
@@ -69,6 +69,17 @@ const isEditableTarget = (el) => {
   if (el.isContentEditable) return true;
   return false;
 };
+
+// Shortcuts need Ctrl (Windows/Linux) or Cmd (Mac) held down. Plain letters
+// used to trigger them, and people typing or just resting on the keyboard
+// approved or sent back items by accident.
+const IS_MAC =
+  typeof navigator !== "undefined" &&
+  /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || "");
+const MOD_LABEL = IS_MAC ? "⌘" : "Ctrl";
+
+const KBD_CLASS =
+  "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
@@ -199,7 +210,16 @@ export default function ApprovalsPage() {
     if (projectFilter && item.project_name !== projectFilter) return false;
 
     if (dateFrom || dateTo) {
-      const requested = item.requested_at ? item.requested_at.slice(0, 10) : null;
+      // Compare on the viewer's calendar day. Slicing the UTC timestamp put
+      // anything requested in the early hours (IST) on the previous day.
+      let requested = null;
+      try {
+        requested = item.requested_at
+          ? format(parseISO(item.requested_at), "yyyy-MM-dd")
+          : null;
+      } catch {
+        requested = null;
+      }
       if (!requested) return false;
       if (dateFrom && requested < dateFrom) return false;
       if (dateTo && requested > dateTo) return false;
@@ -381,28 +401,50 @@ export default function ApprovalsPage() {
     }
   };
 
-  // ---------- Keyboard shortcuts: J/K move selection, A approve, S send back ----------
+  // ---------- Keyboard shortcuts ----------
+  // Ctrl/Cmd + J / K  move down / up the list (the arrow keys work too)
+  // Ctrl/Cmd + A      approve the selected item
+  // Ctrl/Cmd + S      send the selected item back
+  // Inside a text field nothing here fires, so Select All / typing behave
+  // normally there.
   useEffect(() => {
+    const moveSelection = (delta) => {
+      const idx = aList.findIndex((item) => item.id === selectedId);
+      const nextIndex = Math.min(aList.length - 1, Math.max(0, idx + delta));
+      const next = aList[nextIndex];
+      if (next) setSelectedId(next.id);
+    };
+
     const handleKeyDown = (event) => {
       if (isEditableTarget(event.target)) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.altKey || event.shiftKey) return;
 
       const key = event.key.toLowerCase();
+      const hasModifier = event.metaKey || event.ctrlKey;
 
-      if (key === "j" || key === "arrowdown") {
+      if (!hasModifier) {
+        if (key === "arrowdown") {
+          event.preventDefault();
+          moveSelection(1);
+        } else if (key === "arrowup") {
+          event.preventDefault();
+          moveSelection(-1);
+        }
+        return;
+      }
+
+      if (key === "j") {
         event.preventDefault();
-        const idx = aList.findIndex((item) => item.id === selectedId);
-        const next = aList[Math.min(aList.length - 1, idx + 1)];
-        if (next) setSelectedId(next.id);
-      } else if (key === "k" || key === "arrowup") {
+        moveSelection(1);
+      } else if (key === "k") {
         event.preventDefault();
-        const idx = aList.findIndex((item) => item.id === selectedId);
-        const next = aList[Math.max(0, idx - 1)];
-        if (next) setSelectedId(next.id);
+        moveSelection(-1);
       } else if (key === "a" && aSel) {
+        event.preventDefault(); // otherwise the browser selects the whole page
         decide(aSel, "approve");
       } else if (key === "s" && aSel) {
-        decide(aSel, "reject");
+        event.preventDefault(); // otherwise the browser offers to save the page
+        decide(aSel, "send_back");
       }
     };
 
@@ -459,7 +501,7 @@ export default function ApprovalsPage() {
               className="inline-flex h-7 items-center gap-1 rounded-md bg-white px-2.5 text-xs font-semibold text-foreground shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50 disabled:opacity-50"
             >
               <Undo2 className="h-3.5 w-3.5" />
-              Reject
+              Send back
             </button>
             <button
               type="button"
@@ -473,16 +515,16 @@ export default function ApprovalsPage() {
         ) : (
           <div className="hidden items-center gap-2.5 text-xs text-muted-foreground md:flex">
             <span className="flex items-center gap-1">
-              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">J</kbd>
-              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">K</kbd>
+              <kbd className={KBD_CLASS}>{MOD_LABEL}+J</kbd>
+              <kbd className={KBD_CLASS}>{MOD_LABEL}+K</kbd>
               move
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">A</kbd>
+              <kbd className={KBD_CLASS}>{MOD_LABEL}+A</kbd>
               approve
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]">S</kbd>
+              <kbd className={KBD_CLASS}>{MOD_LABEL}+S</kbd>
               send back
             </span>
           </div>
@@ -739,7 +781,7 @@ export default function ApprovalsPage() {
                 <button
                   type="button"
                   data-testid={`${APPROVALS.rejectPrefix}-${aSel.id}`}
-                  onClick={() => decide(aSel, "reject")}
+                  onClick={() => decide(aSel, "send_back")}
                   disabled={movingId === aSel.id}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-white px-3.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50"
                 >

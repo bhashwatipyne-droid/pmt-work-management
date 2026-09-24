@@ -16,6 +16,7 @@ export const PROJECTS = {
   columnActive: 'projects-column-active',
   columnApprovalPending: 'projects-column-approval-pending',
   columnCompleted: 'projects-column-completed',
+  columnReadyForInvoice: 'projects-column-ready-for-invoice',
   columnRaisedInvoice: 'projects-column-raised-invoice',
   columnOnHold: 'projects-column-on-hold',
   columnScrapped: 'projects-column-scrapped',

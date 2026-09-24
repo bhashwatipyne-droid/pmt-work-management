@@ -40,6 +40,14 @@ export const STATUS_COLORS = {
     ring: "ring-emerald-300",
   },
 
+  "Ready for Invoice": {
+    dot: "bg-teal-500",
+    header: "bg-teal-50 border-teal-200",
+    text: "text-teal-700",
+    badge: "bg-teal-100 text-teal-700",
+    ring: "ring-teal-300",
+  },
+
   "Raised Invoice": {
     dot: "bg-violet-500",
     header: "bg-violet-50 border-violet-200",
@@ -69,6 +77,7 @@ export const PROJECT_STATUSES = [
   "Active",
   "Approval Pending",
   "Completed",
+  "Ready for Invoice",
   "Raised Invoice",
   "On Hold",
   "Scrapped",

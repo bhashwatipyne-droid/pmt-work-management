@@ -44,6 +44,21 @@ const getInitials = (name = "") => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+// Phone numbers: digits with an optional leading +, and spaces, dashes or
+// brackets for readability. Letters used to be accepted.
+const cleanPhoneInput = (value) =>
+  String(value || "")
+    .replace(/[^0-9+\s\-()]/g, "")
+    .replace(/(?!^)\+/g, "");
+
+const isValidPhone = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return true; // phone is optional
+  if (!/^\+?[0-9\s\-()]+$/.test(text)) return false;
+  const digits = text.replace(/\D/g, "").length;
+  return digits >= 7 && digits <= 15;
+};
+
 const emptyContact = () => ({
   id: `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   name: "",
@@ -137,11 +152,21 @@ const ContactCard = ({
               Phone
             </label>
             <input
+              type="tel"
+              inputMode="tel"
+              maxLength={20}
               value={contact.phone || ""}
-              onChange={(e) => onChange("phone", e.target.value)}
-              className={inputBase}
+              onChange={(e) => onChange("phone", cleanPhoneInput(e.target.value))}
+              className={`${inputBase} ${
+                isValidPhone(contact.phone) ? "" : "border-red-400"
+              }`}
               placeholder="e.g. +91 98765 43210"
             />
+            {!isValidPhone(contact.phone) && (
+              <p className="mt-1 text-[11px] text-red-600">
+                Enter a valid phone number (7–15 digits).
+              </p>
+            )}
           </div>
         </div>
 
@@ -336,6 +361,14 @@ const ClientModal = ({
     for (const contact of contacts) {
       if (!contact.name?.trim()) {
         toast.error("Every contact needs a name");
+        setEditingContactId(contact.id);
+        return false;
+      }
+
+      if (!isValidPhone(contact.phone)) {
+        toast.error(
+          `Enter a valid phone number for ${contact.name.trim()} (7–15 digits, numbers only)`
+        );
         setEditingContactId(contact.id);
         return false;
       }
@@ -562,24 +595,21 @@ const ClientModal = ({
 
             <div className="space-y-3">
               {contacts.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={addContact}
-                  disabled={submitting}
-                  className="flex min-h-[220px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 text-center hover:border-slate-400 hover:bg-slate-50"
-                >
+                // Just a hint - the one "Add Contact" button is in the header
+                // above. This used to be a second, identical button.
+                <div className="flex min-h-[220px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 text-center">
                   <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200">
                     <UserRound className="h-5 w-5 text-slate-400" />
                   </div>
 
                   <div className="text-sm font-semibold text-slate-700">
-                    + Add a Contact
+                    No contacts yet
                   </div>
 
                   <div className="mt-1 text-xs text-slate-400">
-                    Add people from this client's team.
+                    Use “Add Contact” to add people from this client's team.
                   </div>
-                </button>
+                </div>
               ) : (
                 <>
                   {contacts.map((contact) => (
@@ -607,24 +637,6 @@ const ClientModal = ({
                       }
                     />
                   ))}
-
-                  <button
-                    type="button"
-                    onClick={addContact}
-                    disabled={submitting}
-                    className="flex min-h-[82px] w-full items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/30 px-5 hover:border-slate-400 hover:bg-slate-50"
-                  >
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-slate-700">
-                        <Plus className="h-4 w-4" />
-                        Add Another Contact
-                      </div>
-
-                      <div className="mt-1 text-xs text-slate-400">
-                        You can add multiple contacts for this client.
-                      </div>
-                    </div>
-                  </button>
                 </>
               )}
             </div>

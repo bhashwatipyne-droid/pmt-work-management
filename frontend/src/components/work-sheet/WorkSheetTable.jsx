@@ -1676,7 +1676,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               return (
                 <TableHead
                   key={column}
-                  className={`group relative flex h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 text-[12px] font-semibold text-slate-600 ${
+                  className={`group relative flex h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 text-[12px] font-bold text-slate-900 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}

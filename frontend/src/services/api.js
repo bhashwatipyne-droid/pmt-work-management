@@ -170,6 +170,12 @@ export const getDashboardAttentionItems = (userId) =>
 export const getClients = () =>
   axios.get(`${API}/clients`).then((r) => r.data);
 
+// One call for the Work Sheet's Client / Project / Deliverable dropdowns:
+// { clients: [{id, name}], projects: [{id, name, client_id}],
+//   deliverables: [{id, name, project_id}] }
+export const getWorksheetLookups = () =>
+  axios.get(`${API}/worksheet/lookups`).then((r) => r.data);
+
 export const createClient = (userId, payload) =>
   axios
     .post(`${API}/clients`, payload, {

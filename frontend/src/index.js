@@ -4,6 +4,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import posthog from "posthog-js";
 import "@/index.css";
 import App from "@/App";
+import { prefetchWorksheet } from "@/services/prefetch";
+
+// The Work Sheet is the landing page. Start its data requests and download its
+// code right now, in parallel with the "who am I" check, instead of waiting
+// for that check to finish and the page to render first.
+if (window.location.pathname === "/") {
+  prefetchWorksheet();
+  import("@/pages/WorkSheetPage").catch(() => {});
+}
 
 // Initialize PostHog once when the application starts
 if (

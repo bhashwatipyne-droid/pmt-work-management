@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { trackEvent } from "@/analytics";
 import { useUser } from "@/context/UserContext";
 import { listenForPush, showSystemNotification } from "@/lib/firebase";
+import { startPolling } from "@/lib/polling";
 import {
   addWorkRowFromNotification,
   getNotifications,
@@ -156,11 +157,7 @@ export default function NotificationCenter() {
   useEffect(() => {
     fetchNotifications();
 
-    const timer = window.setInterval(() => {
-      fetchNotifications({ silent: true });
-    }, POLL_MS);
-
-    return () => window.clearInterval(timer);
+    return startPolling(() => fetchNotifications({ silent: true }), POLL_MS);
   }, [fetchNotifications]);
 
   // Push delivery is instant, the poll above is not (up to 10s). When a push

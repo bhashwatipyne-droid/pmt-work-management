@@ -1,11 +1,13 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Query, UploadFile, File, Form
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
 import json
+import time
 import math
 import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -38,9 +40,15 @@ load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
+# Keep a few connections open and warm. With the default minPoolSize=0 a burst
+# of requests (the page-load burst, or after an idle period) has to open brand
+# new TLS + auth connections to Atlas, and each of those costs several network
+# round trips on top of the query itself.
 client = AsyncIOMotorClient(
     mongo_url,
-    tlsCAFile=certifi.where()
+    tlsCAFile=certifi.where(),
+    minPoolSize=int(os.environ.get("MONGO_MIN_POOL_SIZE", "5")),
+    maxPoolSize=int(os.environ.get("MONGO_MAX_POOL_SIZE", "50")),
 )
 db = client[os.environ['DB_NAME']]
 
@@ -608,6 +616,22 @@ def create_access_token(user_id: str) -> str:
 
 
 # ---------------- Helpers ----------------
+# Every authenticated request used to start with a users.find_one round trip to
+# the database. Repeated polls and page loads from the same person now reuse the
+# document for a short time. Any write to the users collection below drops the
+# entry, so the only lag is for changes made by another server instance
+# (bounded by the TTL).
+_USER_CACHE_TTL_SECONDS = 30
+_user_cache: dict = {}
+
+
+def _invalidate_cached_user(user_id: Optional[str] = None) -> None:
+    if user_id is None:
+        _user_cache.clear()
+    else:
+        _user_cache.pop(user_id, None)
+
+
 async def get_acting_user(request: Request) -> User:
     token = request.cookies.get("access_token")
     if not token:
@@ -622,7 +646,14 @@ async def get_acting_user(request: Request) -> User:
         raise HTTPException(status_code=401, detail="Session expired, please log in again")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid session")
-    doc = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    user_id = payload["sub"]
+    cached = _user_cache.get(user_id)
+    if cached and cached[0] > time.monotonic():
+        doc = cached[1]
+    else:
+        doc = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if doc:
+            _user_cache[user_id] = (time.monotonic() + _USER_CACHE_TTL_SECONDS, doc)
     if not doc:
         raise HTTPException(status_code=401, detail="User not found")
     if not doc.get("active", True):
@@ -2069,6 +2100,7 @@ async def update_own_profile(payload: ProfileUpdatePayload, request: Request):
         raise HTTPException(status_code=400, detail="Nothing to update")
 
     await db.users.update_one({"id": user.id}, {"$set": update_fields})
+    _invalidate_cached_user(user.id)
 
     updated = await db.users.find_one({"id": user.id}, {"_id": 0})
     return User(**updated)
@@ -3085,6 +3117,47 @@ async def migrate_client_contacts():
 async def list_clients(request: Request):
     await get_acting_user(request)
     return await db.clients.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+
+
+@api_router.get("/worksheet/lookups")
+async def worksheet_lookups(request: Request):
+    """Everything the Work Sheet needs to fill its Client / Project /
+    Deliverable dropdowns, in one request.
+
+    The sheet used to call /clients, /projects and /deliverables separately.
+    /projects returned every project with all of its deliverables nested
+    inside, and /deliverables then returned the same deliverables again (each
+    with an approval-workflow lookup) - thousands of full documents to build
+    three dropdowns that only show a name. Here the database projects just
+    the few fields the sheet reads, the three queries run at the same time,
+    and there is a single round trip instead of three.
+
+    Same scoping as the endpoints it replaces: visible (non-hidden) projects
+    only, every deliverable.
+    """
+    await get_acting_user(request)
+
+    visible_projects = {
+        "$or": [{"hidden": False}, {"hidden": {"$exists": False}}]
+    }
+
+    clients, projects, deliverables = await asyncio.gather(
+        db.clients.find({}, {"_id": 0, "id": 1, "name": 1})
+        .sort("name", 1)
+        .to_list(1000),
+        db.projects.find(visible_projects, {"_id": 0, "id": 1, "name": 1, "client_id": 1})
+        .sort("created_at", -1)
+        .to_list(1000),
+        db.deliverables.find({}, {"_id": 0, "id": 1, "name": 1, "project_id": 1})
+        .sort("created_at", 1)
+        .to_list(5000),
+    )
+
+    return {
+        "clients": clients,
+        "projects": projects,
+        "deliverables": deliverables,
+    }
 
 
 @api_router.post("/clients", response_model=Client)
@@ -5124,6 +5197,7 @@ async def update_user(
         {"id": user_id},
         {"$set": update_fields}
     )
+    _invalidate_cached_user(user_id)
 
     updated = await db.users.find_one(
         {"id": user_id},
@@ -6234,6 +6308,11 @@ api_router.include_router(
 )
 
 app.include_router(api_router)
+
+# JSON compresses roughly 5-10x. On a long-latency link (India -> the API host)
+# the download time of the bigger responses (work items, projects) is a real
+# part of the page-load time.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,

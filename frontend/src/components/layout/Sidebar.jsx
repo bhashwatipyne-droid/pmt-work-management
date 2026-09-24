@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { startPolling } from "@/lib/polling";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import {
@@ -36,10 +37,11 @@ const navItemClass = ({ isActive }) =>
 // user does themselves (approve, close a row, finish a bulk review)
 // refreshes instantly instead via the countsBus event — see the actions
 // on ApprovalsPage/WorkSheetPage that call refreshCounts(). Polling this
-// often is still cheap (a couple of indexed count_documents() calls), and
-// it has the side benefit of keeping the Render free-tier backend from
-// spinning down between visits.
-const COUNT_POLL_MS = 5000;
+// often is still cheap (a couple of indexed count_documents() calls). It
+// pauses while the tab is hidden and refreshes the moment it is visible again
+// (see startPolling), so the cadence can be relaxed without the badges ever
+// looking stale to someone who is actually looking at them.
+const COUNT_POLL_MS = 15000;
 
 export const Sidebar = () => {
   const { currentUser, logout } = useUser();
@@ -78,12 +80,12 @@ export const Sidebar = () => {
     };
 
     fetchCounts();
-    const timer = window.setInterval(fetchCounts, COUNT_POLL_MS);
+    const stopPolling = startPolling(fetchCounts, COUNT_POLL_MS);
     const unsubscribe = onCountsRefresh(fetchCounts);
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stopPolling();
       unsubscribe();
     };
   }, [currentUser?.id, canSeeApprovals]);

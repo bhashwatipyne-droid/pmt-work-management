@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } fro
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import { refreshCounts, onCountsRefresh } from "@/lib/countsBus";
+import { startPolling } from "@/lib/polling";
+import { consumePrefetch, WORKSHEET_INITIAL_ROW_LIMIT } from "@/services/prefetch";
 import {
   bulkDeleteWorkItems,
   bulkUpdateWorkItems,
@@ -12,6 +14,7 @@ import {
   getWorkItems,
   getBulkReviewCount,
   updateWorkItem,
+  getWorksheetLookups,
   getClients,
   getProjects,
   getDeliverables,
@@ -274,18 +277,19 @@ export default function WorkSheetPage() {
   // Same audience as the Bulk Review button itself (isManager ? ... :
   // undefined, below) — admins can technically call the endpoint too, but
   // the button is manager-only, so there's no point polling for a count
-  // admins would never see a badge for. The 5s interval is a safety net
-  // for changes made elsewhere (another manager, another tab); this
-  // user's own actions refresh it instantly via the countsBus event.
+  // admins would never see a badge for. The 15s interval (paused while the
+  // tab is hidden) is a safety net for changes made elsewhere (another
+  // manager, another tab); this user's own actions refresh it instantly via
+  // the countsBus event.
   useEffect(() => {
     if (!currentUser?.id || !isManager) return undefined;
 
     fetchBulkReviewCount();
-    const timer = window.setInterval(fetchBulkReviewCount, 5000);
+    const stopPolling = startPolling(fetchBulkReviewCount, 15000);
     const unsubscribe = onCountsRefresh(fetchBulkReviewCount);
 
     return () => {
-      window.clearInterval(timer);
+      stopPolling();
       unsubscribe();
     };
   }, [currentUser?.id, isManager, fetchBulkReviewCount]);
@@ -305,8 +309,25 @@ export default function WorkSheetPage() {
 
   useEffect(() => {
     if (!currentUserId) return;
-    Promise.all([getClients(), getProjects(currentUserId), getDeliverables(currentUserId)])
-      .then(([c, p, d]) => { setClients(c); setProjects(p); setDeliverables(d); })
+    // One slim request (id/name/client only) instead of three full ones -
+    // /projects used to bring every deliverable nested inside every project
+    // and /deliverables then sent the same deliverables again. Already
+    // started at boot when this is the landing page (see services/prefetch).
+    // The fallback keeps the sheet working if the frontend is deployed before
+    // the backend that has /worksheet/lookups.
+    consumePrefetch("worksheet-lookups", getWorksheetLookups)
+      .catch(() =>
+        Promise.all([
+          getClients(),
+          getProjects(currentUserId, { include_deliverables: false }),
+          getDeliverables(currentUserId),
+        ]).then(([clients, projects, deliverables]) => ({ clients, projects, deliverables }))
+      )
+      .then(({ clients: c, projects: p, deliverables: d }) => {
+        setClients(c || []);
+        setProjects(p || []);
+        setDeliverables(d || []);
+      })
       .catch(() => {});
   }, [currentUserId]);
 
@@ -314,7 +335,7 @@ export default function WorkSheetPage() {
   // paint quickly even with thousands of total rows, large enough that
   // most people won't notice the list is still partial for the second
   // or so before the full set lands.
-  const INITIAL_ROW_LIMIT = 300;
+  const INITIAL_ROW_LIMIT = WORKSHEET_INITIAL_ROW_LIMIT;
   const hasLoadedFullListRef = useRef(false);
 
   const fetchItems = (showLoading = true) => {
@@ -330,9 +351,19 @@ export default function WorkSheetPage() {
     if (showLoading && !hasLoadedFullListRef.current) {
       setLoadingFullList(true);
 
-      getWorkItems(currentUser.id, { limit: INITIAL_ROW_LIMIT })
+      // Already in flight from boot when this is the landing page.
+      let gotEverything = false;
+
+      consumePrefetch("worksheet-items-initial", () =>
+        getWorkItems(currentUser.id, { limit: INITIAL_ROW_LIMIT })
+      )
         .then((data) => {
-          setItems(Array.isArray(data) ? data : []);
+          const rows = Array.isArray(data) ? data : [];
+          setItems(rows);
+          // Fewer rows than we asked for means that WAS the whole list, so
+          // the second, unbounded request below would only re-download and
+          // re-validate the same rows.
+          gotEverything = rows.length < INITIAL_ROW_LIMIT;
         })
         .catch(() => {
           // Swallowed — the full fetch below still runs and its own
@@ -340,6 +371,12 @@ export default function WorkSheetPage() {
         })
         .finally(() => {
           setLoading(false);
+
+          if (gotEverything) {
+            hasLoadedFullListRef.current = true;
+            setLoadingFullList(false);
+            return;
+          }
 
           getWorkItems(currentUser.id, {})
             .then((data) => {

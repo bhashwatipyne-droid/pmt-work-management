@@ -2236,12 +2236,28 @@ async def list_work_items(
             },
         ]
 
+    # Ask the database for exactly `limit` rows (or the 5000 cap) in ONE batch.
+    # to_list(n) alone does not do that: it does not send a limit to the server,
+    # and MongoDB's first batch is only 101 documents, so the rest arrives via
+    # follow-up getMore calls - each another round trip to the database - and
+    # the last one hands over everything that is left (thousands of rows), which
+    # is then thrown away when only the first 300 were wanted.
+    row_cap = limit or 5000
+    started = time.perf_counter()
     items = (
         await db.work_items
         .find(query, {"_id": 0})
         .sort([("work_date", -1), ("created_at", -1)])
-        .to_list(limit or 5000)
+        .limit(row_cap)
+        .batch_size(row_cap)
+        .to_list(row_cap)
     )
+    query_ms = (time.perf_counter() - started) * 1000
+    if query_ms > 500:
+        logger.warning(
+            "SLOW work-items query: %.0fms for %d rows (limit=%s)",
+            query_ms, len(items), limit,
+        )
 
     return items
 
@@ -3144,12 +3160,18 @@ async def worksheet_lookups(request: Request):
     clients, projects, deliverables = await asyncio.gather(
         db.clients.find({}, {"_id": 0, "id": 1, "name": 1})
         .sort("name", 1)
+        .limit(1000)
+        .batch_size(1000)
         .to_list(1000),
         db.projects.find(visible_projects, {"_id": 0, "id": 1, "name": 1, "client_id": 1})
         .sort("created_at", -1)
+        .limit(1000)
+        .batch_size(1000)
         .to_list(1000),
         db.deliverables.find({}, {"_id": 0, "id": 1, "name": 1, "project_id": 1})
         .sort("created_at", 1)
+        .limit(5000)
+        .batch_size(5000)
         .to_list(5000),
     )
 
@@ -6308,6 +6330,24 @@ api_router.include_router(
 )
 
 app.include_router(api_router)
+
+@app.middleware("http")
+async def server_timing_middleware(request: Request, call_next):
+    """Time every request inside the app (handler + response validation, not
+    network). Shown in Chrome DevTools > Network > Timing > "Server Timing", and
+    anything slower than 800ms is written to the server log, so slow endpoints
+    can be told apart from a slow network."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.0f}"
+    if elapsed_ms > 800 and request.method != "OPTIONS":
+        logger.warning(
+            "SLOW REQUEST %s %s %.0fms status=%s",
+            request.method, request.url.path, elapsed_ms, response.status_code,
+        )
+    return response
+
 
 # JSON compresses roughly 5-10x. On a long-latency link (India -> the API host)
 # the download time of the bigger responses (work items, projects) is a real

@@ -48,6 +48,10 @@ export const WorkSheetToolbar = ({
   // flags individual rows, just surfaced as a toolbar-level count. Not
   // clickable/filterable by design.
   missingDeliverableCount = 0,
+  // True while the full dataset is still loading in behind a fast
+  // initial slice — shown next to the row count so it's clear why
+  // counts might tick up shortly after the page first paints.
+  loadingFullList = false,
   // Grouping is new: only rendered once the page wires up a value +
   // handler. Omit both props and this control disappears entirely, so
   // dropping this file in does not require the grouping work to land
@@ -205,7 +209,13 @@ export const WorkSheetToolbar = ({
           </Button>
         )}
 
-        <span className="ml-auto text-xs text-muted-foreground">
+        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+          {loadingFullList && (
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#2b2bb5]" />
+              Loading full list…
+            </span>
+          )}
           {totalCount != null
             ? `${resultCount} of ${totalCount} rows`
             : `${resultCount} row${resultCount === 1 ? "" : "s"}`}

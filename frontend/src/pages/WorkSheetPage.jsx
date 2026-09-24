@@ -215,6 +215,10 @@ export default function WorkSheetPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);
+  // True while the full dataset is still loading in behind the fast
+  // initial slice — lets the toolbar show a small "loading full list"
+  // hint instead of silently having row counts change underneath you.
+  const [loadingFullList, setLoadingFullList] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [hiddenRows, setHiddenRows] = useState(() => {
     try {
@@ -303,20 +307,58 @@ export default function WorkSheetPage() {
       .catch(() => {});
   }, [currentUserId]);
 
+  // How many rows to ask for in the fast initial slice — small enough to
+  // paint quickly even with thousands of total rows, large enough that
+  // most people won't notice the list is still partial for the second
+  // or so before the full set lands.
+  const INITIAL_ROW_LIMIT = 300;
+  const hasLoadedFullListRef = useRef(false);
+
   const fetchItems = (showLoading = true) => {
     if (!currentUser) return;
     if (showLoading) {
       setLoading(true);
     }
 
-    // Fetches the whole dataset once, unfiltered. Every filter and tab
-    // switch below is applied client-side against this single copy —
-    // no network round-trip per filter change, so it's instant instead
-    // of waiting on a request each time (and immune to a slow/sleeping
-    // backend instance).
+    // Only the very first load (not a refresh after an edit, not the
+    // periodic background sync) gets the two-phase treatment — those
+    // other callers want the accurate full set directly, not a partial
+    // slice.
+    if (showLoading && !hasLoadedFullListRef.current) {
+      setLoadingFullList(true);
+
+      getWorkItems(currentUser.id, { limit: INITIAL_ROW_LIMIT })
+        .then((data) => {
+          setItems(Array.isArray(data) ? data : []);
+        })
+        .catch(() => {
+          // Swallowed — the full fetch below still runs and its own
+          // catch surfaces a toast if that fails too.
+        })
+        .finally(() => {
+          setLoading(false);
+
+          getWorkItems(currentUser.id, {})
+            .then((data) => {
+              setItems(Array.isArray(data) ? data : []);
+              hasLoadedFullListRef.current = true;
+            })
+            .catch(() => toast.error("Could not load work items"))
+            .finally(() => setLoadingFullList(false));
+        });
+
+      return;
+    }
+
+    // Fetches the whole dataset, unfiltered. Every filter and tab switch
+    // below is applied client-side against this single copy — no network
+    // round-trip per filter change, so it's instant instead of waiting
+    // on a request each time (and immune to a slow/sleeping backend
+    // instance).
     getWorkItems(currentUser.id, {})
       .then((data) => {
         setItems(Array.isArray(data) ? data : []);
+        hasLoadedFullListRef.current = true;
       })
       .catch(() => toast.error("Could not load work items"))
       .finally(() => {
@@ -327,6 +369,7 @@ export default function WorkSheetPage() {
   };
 
   useEffect(() => {
+    hasLoadedFullListRef.current = false;
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
@@ -1267,6 +1310,7 @@ export default function WorkSheetPage() {
         resultCount={filteredItems.length}
         totalCount={items.length}
         missingDeliverableCount={missingDeliverableCount}
+        loadingFullList={loadingFullList}
         groupBy={groupBy}
         onGroupByChange={handleGroupByChange}
         allCollapsed={allGroupsCollapsed}

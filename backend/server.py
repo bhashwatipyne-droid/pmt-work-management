@@ -2135,6 +2135,12 @@ async def list_work_items(
 
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+
+    # Optional — lets a caller ask for just the first N (newest-first,
+    # matching the existing sort) instead of the full set. Every existing
+    # caller that doesn't pass this keeps getting everything (up to 5000,
+    # same as before), so this is purely additive.
+    limit: Optional[int] = Query(default=None, ge=1, le=5000),
 ):
     await get_acting_user(request)
 
@@ -2202,7 +2208,7 @@ async def list_work_items(
         await db.work_items
         .find(query, {"_id": 0})
         .sort([("work_date", -1), ("created_at", -1)])
-        .to_list(5000)
+        .to_list(limit or 5000)
     )
 
     return items

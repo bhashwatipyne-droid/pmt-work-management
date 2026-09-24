@@ -86,6 +86,9 @@ export const TeamEfficiencyTable = ({
   month,
   canManageCapacity = false,
   canSetPotential = false,
+  // Set for managers: they can change capacity / potential only for their own
+  // department, even though every department is listed.
+  editableDepartment = null,
   onSelect,
   // New: lets the page host the Export button in its header (matching
   // the redesign) while this component still owns the actual filtered/
@@ -396,7 +399,8 @@ export const TeamEfficiencyTable = ({
                         <DropdownMenuItem onClick={() => onSelect?.(e)}>
                           View details
                         </DropdownMenuItem>
-                        {canManageCapacity && (
+                        {canManageCapacity &&
+                          (!editableDepartment || e.department === editableDepartment) && (
                           <DropdownMenuItem
                             onClick={() => navigate("/efficiency/settings/monthly-capacity")}
                           >
@@ -404,7 +408,8 @@ export const TeamEfficiencyTable = ({
                             Set capacity
                           </DropdownMenuItem>
                         )}
-                        {canSetPotential && (
+                        {canSetPotential &&
+                          (!editableDepartment || e.department === editableDepartment) && (
                           <DropdownMenuItem
                             onClick={() => navigate("/efficiency/settings/activity-targets")}
                           >

@@ -18,7 +18,9 @@ Permission model:
     whole org, manager sees their department, everyone else sees only themselves.
 """
 
+import asyncio
 import math
+import time
 import uuid
 from typing import List, Optional, Dict, Any
 
@@ -282,31 +284,24 @@ def create_efficiency_router(
         return user
 
     async def _visible_users(user) -> List[dict]:
-        """Employees this user is allowed to see efficiency data for.
+        """Employees efficiency data is shown for.
 
-        Members are read-only viewers of their own department's efficiency data
-        (same breadth as a manager) — they just can't hit any of the write
-        endpoints below, which are gated separately via
-        require_manager_or_admin / require_manager.
+        Every signed-in role can see every (active, non-admin) employee's
+        efficiency, across all departments. What differs by role is who can
+        *change* things: capacity and potential are manager-only writes, and a
+        manager can only write for their own department (_assert_manages).
         """
-        query: Dict[str, Any] = {"role": {"$ne": "admin"}, "active": {"$ne": False}}
-        if user.role in {"manager", "member"}:
-            query["department"] = user.department
-        return await db.users.find(query, {"_id": 0}).to_list(1000)
+        return await db.users.find(
+            {"role": {"$ne": "admin"}, "active": {"$ne": False}}, {"_id": 0}
+        ).to_list(1000)
 
     async def _assert_can_view(user, target_user_id: str):
-        if user.role == "admin":
-            return
-        if user.id == target_user_id:
-            return
-        if user.role in {"manager", "member"}:
-            target = await db.users.find_one({"id": target_user_id}, {"_id": 0, "department": 1})
-            if target and target.get("department") == user.department:
-                return
-        raise HTTPException(status_code=403, detail="You cannot view this employee's efficiency")
+        # Reading any employee's efficiency is open to every signed-in role.
+        return
 
-    async def _assert_manages(manager, target_user_id: str):
-        """A manager may only set potential for members of their own department."""
+    async def _assert_manages(manager, target_user_id: str, what: str = "potential"):
+        """A manager may only change capacity / potential for members of their
+        own department (or themselves)."""
         if manager.id == target_user_id:
             return
         target = await db.users.find_one(
@@ -315,7 +310,7 @@ def create_efficiency_router(
         if not target or target.get("department") != manager.department:
             raise HTTPException(
                 status_code=403,
-                detail="You can only set potential for employees in your own department",
+                detail=f"You can only set {what} for employees in your own department",
             )
 
     async def _capacity_map(month: str, user_ids: List[str]) -> Dict[str, dict]:
@@ -448,27 +443,92 @@ def create_efficiency_router(
             **breakdown,
         }
 
-    async def _build_month(month: str, user, employee_id: Optional[str] = None) -> List[dict]:
-        users = await _visible_users(user)
-        if employee_id:
-            users = [u for u in users if u["id"] == employee_id]
+    # Computed months are kept for a short while. Everyone now sees the same
+    # employees, so a month's rows are identical for every viewer and can be
+    # shared between requests (the overview, the trend and the drawer all ask
+    # for the same months). Anything that changes capacity or potential clears
+    # it straight away; logged work shows up within CACHE_TTL_SECONDS.
+    CACHE_TTL_SECONDS = 30.0
+    month_cache: Dict[str, Any] = {}
+
+    def _invalidate_month_cache() -> None:
+        month_cache.clear()
+
+    async def _build_months(months: List[str]) -> Dict[str, List[dict]]:
+        """Rows for several months using ONE query each for employees,
+        capacity, potential and work items (instead of four per month, run one
+        month after another)."""
+        now = time.monotonic()
+        result: Dict[str, List[dict]] = {}
+        missing: List[str] = []
+        for m in dict.fromkeys(months):
+            hit = month_cache.get(m)
+            if hit and now - hit[0] < CACHE_TTL_SECONDS:
+                result[m] = hit[1]
+            else:
+                missing.append(m)
+
+        if not missing:
+            return result
+
+        users = await db.users.find(
+            {"role": {"$ne": "admin"}, "active": {"$ne": False}}, {"_id": 0}
+        ).to_list(1000)
         if not users:
-            return []
+            for m in missing:
+                result[m] = []
+            return result
+
         user_ids = [u["id"] for u in users]
-        capacities = await _capacity_map(month, user_ids)
-        targets_map = await _employee_targets_map(user_ids)
-        items = await _month_work_items(month, user_ids)
 
-        by_user: Dict[str, List[dict]] = {uid: [] for uid in user_ids}
+        async def load_capacities():
+            docs = await db.efficiency_capacity.find(
+                {"month": {"$in": missing}, "user_id": {"$in": user_ids}}, {"_id": 0}
+            ).to_list(None)
+            return {(d["month"], d["user_id"]): d for d in docs}
+
+        async def load_items():
+            # batch_size: without it the driver fetches 101 rows first and then
+            # makes a separate round trip to the database for every following
+            # batch.
+            return await db.work_items.find(
+                {"month": {"$in": missing}, "creator_id": {"$in": user_ids}},
+                {
+                    "_id": 0, "id": 1, "creator_id": 1, "month": 1, "work_category": 1,
+                    "deliverable_type": 1, "deliverable_name": 1, "status": 1,
+                    "time_taken_minutes": 1, "work_date": 1, "project_id": 1,
+                    "client_id": 1,
+                },
+            ).batch_size(5000).to_list(None)
+
+        capacities, targets_map, items = await asyncio.gather(
+            load_capacities(), _employee_targets_map(user_ids), load_items()
+        )
+
+        by_month_user: Dict[Any, List[dict]] = {}
         for it in items:
-            by_user.setdefault(it.get("creator_id"), []).append(it)
+            by_month_user.setdefault((it.get("month"), it.get("creator_id")), []).append(it)
 
-        return [
-            _compute_employee(
-                u, capacities.get(u["id"]), by_user.get(u["id"], []), targets_map.get(u["id"], [])
-            )
-            for u in users
-        ]
+        for m in missing:
+            rows = [
+                _compute_employee(
+                    u,
+                    capacities.get((m, u["id"])),
+                    by_month_user.get((m, u["id"]), []),
+                    targets_map.get(u["id"], []),
+                )
+                for u in users
+            ]
+            month_cache[m] = (now, rows)
+            result[m] = rows
+
+        return result
+
+    async def _build_month(month: str, user, employee_id: Optional[str] = None) -> List[dict]:
+        rows = (await _build_months([month]))[month]
+        if employee_id:
+            rows = [r for r in rows if r["user_id"] == employee_id]
+        return rows
 
     # ---------- Monthly capacity ----------
     # Reading is open to every role (scoped by _visible_users); writing is
@@ -507,7 +567,7 @@ def create_efficiency_router(
     @router.post("/monthly-capacity", response_model=EmployeeWorkingCalendar)
     async def upsert_monthly_capacity(payload: EmployeeWorkingCalendarCreate, request: Request):
         user = await require_manager(request)
-        await _assert_can_view(user, payload.user_id)
+        await _assert_manages(user, payload.user_id, "capacity")
 
         target = await db.users.find_one({"id": payload.user_id}, {"_id": 0, "id": 1})
         if not target:
@@ -538,6 +598,7 @@ def create_efficiency_router(
             {"$set": doc.model_dump()},
             upsert=True,
         )
+        _invalidate_month_cache()
         await log_activity(
             "efficiency_activity_log",
             doc.id,
@@ -556,7 +617,7 @@ def create_efficiency_router(
         existing = await db.efficiency_capacity.find_one({"id": capacity_id}, {"_id": 0})
         if not existing:
             raise HTTPException(status_code=404, detail="Capacity not found")
-        await _assert_can_view(user, existing["user_id"])
+        await _assert_manages(user, existing["user_id"], "capacity")
 
         merged = {**existing, **{k: v for k, v in payload.model_dump().items() if v is not None}}
         validate_capacity_payload(
@@ -565,6 +626,7 @@ def create_efficiency_router(
         merged["updated_at"] = now_iso()
         merged["updated_by"] = user.id
         await db.efficiency_capacity.update_one({"id": capacity_id}, {"$set": merged})
+        _invalidate_month_cache()
         await log_activity(
             "efficiency_activity_log", capacity_id, "capacity_updated", user.id,
             old_value=existing, new_value=merged,
@@ -577,8 +639,9 @@ def create_efficiency_router(
         existing = await db.efficiency_capacity.find_one({"id": capacity_id}, {"_id": 0})
         if not existing:
             raise HTTPException(status_code=404, detail="Capacity not found")
-        await _assert_can_view(user, existing["user_id"])
+        await _assert_manages(user, existing["user_id"], "capacity")
         await db.efficiency_capacity.delete_one({"id": capacity_id})
+        _invalidate_month_cache()
         await log_activity(
             "efficiency_activity_log", capacity_id, "capacity_deleted", user.id, old_value=existing
         )
@@ -681,6 +744,7 @@ def create_efficiency_router(
             {"$set": doc.model_dump()},
             upsert=True,
         )
+        _invalidate_month_cache()
         await log_activity(
             "efficiency_activity_log", doc.id,
             "employee_target_updated" if existing else "employee_target_created",
@@ -708,6 +772,7 @@ def create_efficiency_router(
         old_time_per_unit = existing.get("time_per_unit_minutes")
         merged = {**existing, **patch, "updated_at": now_iso(), "updated_by": manager.id}
         await db.efficiency_employee_targets.update_one({"id": target_id}, {"$set": merged})
+        _invalidate_month_cache()
         await log_activity(
             "efficiency_activity_log", target_id, "employee_target_updated", manager.id,
             old_value=existing, new_value=merged,
@@ -723,6 +788,7 @@ def create_efficiency_router(
             raise HTTPException(status_code=404, detail="Target not found")
         await _assert_manages(manager, existing["user_id"])
         await db.efficiency_employee_targets.delete_one({"id": target_id})
+        _invalidate_month_cache()
         await log_activity(
             "efficiency_activity_log", target_id, "employee_target_deleted", manager.id,
             old_value=existing,
@@ -734,7 +800,9 @@ def create_efficiency_router(
     @router.get("/overview")
     async def efficiency_overview(request: Request, month: str = Query(...)):
         user = await get_acting_user(request)
-        rows = await _build_month(month, user)
+        prev = _prev_months(month, 2)[0]
+        by_month = await _build_months([prev, month])
+        rows = by_month[month]
 
         configured = [r for r in rows if r["has_capacity"]]
         total_core_hours = round(sum(r["core_hours"] for r in configured), 2)
@@ -764,8 +832,7 @@ def create_efficiency_router(
             ],
         }
 
-        prev = _prev_months(month, 2)[0]
-        prev_rows = await _build_month(prev, user)
+        prev_rows = by_month[prev]
         prev_productivity = calculate_team_productivity(prev_rows)
         team_productivity = calculate_team_productivity(rows)
 
@@ -887,8 +954,10 @@ def create_efficiency_router(
         months = max(1, min(int(months or 6), 12))
 
         out = []
-        for m in _prev_months(month, months):
-            rows = await _build_month(m, user)
+        month_list = _prev_months(month, months)
+        by_month = await _build_months(month_list)
+        for m in month_list:
+            rows = by_month[m]
             out.append({
                 "month": m,
                 "team_productivity": calculate_team_productivity(rows),

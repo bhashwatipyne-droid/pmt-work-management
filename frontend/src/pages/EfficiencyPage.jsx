@@ -57,15 +57,20 @@ export default function EfficiencyPage() {
     setLoading(true);
     setError(null);
 
+    // The trend (sparkline data) is fetched after the overview rather than
+    // alongside it: the overview is what the page is waiting on, and the
+    // server reuses the two months it just computed for the trend.
     getEfficiencyOverview(month)
       .then((d) => !cancelled && setOverview(d))
       .catch(() => !cancelled && setError("Could not load efficiency data. Please refresh."))
-      .finally(() => !cancelled && setLoading(false));
-
-    getEfficiencyTrend(month, 6)
-      .then((d) => !cancelled && setTrend(d))
-      .catch(() => {
-        // Non-critical.
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        getEfficiencyTrend(month, 6)
+          .then((d) => !cancelled && setTrend(d))
+          .catch(() => {
+            // Non-critical.
+          });
       });
 
     return () => {
@@ -228,6 +233,7 @@ export default function EfficiencyPage() {
             month={month}
             canManageCapacity={canConfigure}
             canSetPotential={isManager}
+            editableDepartment={isManager ? currentUser?.department : null}
             onSelect={(e) => setDrawerUserId(e.user_id)}
             onFilteredRowsChange={setVisibleRows}
           />

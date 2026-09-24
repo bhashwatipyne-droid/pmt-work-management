@@ -4009,10 +4009,12 @@ async def list_projects(
 
     limit = max(1, min(limit, 1000))
 
+    # batch_size: otherwise the driver returns 101 projects and then makes one
+    # more round trip to the database per following batch.
     projects = await db.projects.find(
         query,
         {"_id": 0},
-    ).sort("created_at", -1).to_list(limit)
+    ).sort("created_at", -1).batch_size(limit).to_list(limit)
 
     return await _hydrate_projects(
         projects,
@@ -4026,10 +4028,11 @@ async def project_metrics(request: Request):
     # Only two fields per project are needed, and the deliverable total is
     # just a count - this used to download every project and every
     # deliverable document (capped at 5000) only to take len() of the list.
-    projects = await db.projects.find(
-        {}, {"_id": 0, "status": 1, "end_date": 1}
-    ).to_list(1000)
-    total_deliverables = await db.deliverables.count_documents({})
+    # The two reads don't depend on each other, so run them together.
+    projects, total_deliverables = await asyncio.gather(
+        db.projects.find({}, {"_id": 0, "status": 1, "end_date": 1}).to_list(1000),
+        db.deliverables.count_documents({}),
+    )
     today = datetime.now(timezone.utc).date()
     week_end = today + timedelta(days=7)
     active = sum(1 for p in projects if p.get("status") == "Active")

@@ -37,6 +37,7 @@ import {
 // pauses while the tab is hidden and refreshes when visible again
 // (see startPolling).
 const COUNT_POLL_MS = 15000;
+const FIRST_COUNT_DELAY_MS = 1200;
 
 const SECTION_TITLE =
   "px-2 pb-1.5 text-[11px] font-bold uppercase leading-[14px] tracking-[0.05em] text-[#546490]";
@@ -97,12 +98,17 @@ export const Sidebar = () => {
       }
     };
 
-    fetchCounts();
+    // The badges are not what the person opened the page for, so the first
+    // fetch waits a moment and lets the page's own data requests go first
+    // (on a busy or waking backend those two extra queries otherwise queue in
+    // front of the page).
+    const firstFetch = window.setTimeout(fetchCounts, FIRST_COUNT_DELAY_MS);
     const stopPolling = startPolling(fetchCounts, COUNT_POLL_MS);
     const unsubscribe = onCountsRefresh(fetchCounts);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(firstFetch);
       stopPolling();
       unsubscribe();
     };

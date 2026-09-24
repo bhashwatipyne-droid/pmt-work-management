@@ -60,8 +60,9 @@ export default function EfficiencyActivityTargetsPage() {
   const [draft, setDraft] = useState(emptyDraft);
   const [adding, setAdding] = useState(false);
 
-  // Employees this manager can set potential for — the overview endpoint is already
-  // department-scoped for managers, so it doubles as "my team" here.
+  // Employees this manager can set potential for: their own department. The
+  // overview now lists everyone, so it is narrowed to "my team" here (the API
+  // enforces the same rule on save).
   useEffect(() => {
     if (!isManager) {
       setLoadingEmployees(false);
@@ -72,9 +73,12 @@ export default function EfficiencyActivityTargetsPage() {
     Promise.all([getEfficiencyOverview(month), getActivityCatalog()])
       .then(([overview, activityCatalog]) => {
         if (cancelled) return;
-        setEmployees(overview.employees || []);
+        const mine = (overview.employees || []).filter(
+          (e) => e.department === currentUser?.department
+        );
+        setEmployees(mine);
         setCatalog(activityCatalog || []);
-        setEmployeeId((prev) => prev || overview.employees?.[0]?.user_id || "");
+        setEmployeeId((prev) => prev || mine[0]?.user_id || "");
       })
       .catch(() => !cancelled && toast.error("Could not load your team"))
       .finally(() => !cancelled && setLoadingEmployees(false));

@@ -96,9 +96,14 @@ export default function EfficiencyMonthlyCapacityPage() {
     Promise.all([getEfficiencyOverview(month), getMonthlyCapacityList({ month })])
       .then(([overview, caps]) => {
         if (cancelled) return;
-        setEmployees(overview.employees || []);
+        // Everyone can see everyone's efficiency, but a manager can only set
+        // capacity for their own department (the API enforces it too).
+        const mine = (overview.employees || []).filter(
+          (e) => e.department === currentUser?.department
+        );
+        setEmployees(mine);
         setCapacities(caps || []);
-        setEmployeeId((prev) => prev || overview.employees?.[0]?.user_id || "");
+        setEmployeeId((prev) => prev || mine[0]?.user_id || "");
       })
       .catch(() => !cancelled && toast.error("Could not load employees for this month"))
       .finally(() => !cancelled && setLoading(false));
@@ -106,7 +111,7 @@ export default function EfficiencyMonthlyCapacityPage() {
     return () => {
       cancelled = true;
     };
-  }, [month]);
+  }, [month, currentUser?.department]);
 
   useEffect(() => load(), [load]);
 

@@ -131,14 +131,19 @@ export default function ProjectsPage() {
       // Clients and dropdown options are not changed by anything on this
       // page, so only the first full-page load fetches them; the quiet
       // refreshes that follow every create/hide/move/drag skip them.
+      //
+      // The full client list and the deliverable types only feed the "New
+      // project" form, which only admins have. Everyone else gets their
+      // client filter from the projects themselves (see clientOptions), so
+      // two requests fewer on every open of this page.
       const [p, m, c, opts] = await Promise.all([
         getProjects(currentUserId, {
           visibility,
           include_deliverables: false,
         }),
         getProjectMetrics(currentUserId),
-        showLoading ? getClients() : Promise.resolve(null),
-        showLoading ? getOptions() : Promise.resolve(null),
+        showLoading && canManage ? getClients() : Promise.resolve(null),
+        showLoading && canManage ? getOptions() : Promise.resolve(null),
       ]);
 
       setProjects(p);
@@ -177,6 +182,20 @@ export default function ProjectsPage() {
       });
     }
   }, [currentUser?.id]);
+
+  // Client filter choices: admins use the full client list; everyone else
+  // gets the clients that actually appear on the projects they can see.
+  const clientOptions = useMemo(() => {
+    if (canManage) return clients;
+
+    const byId = new Map();
+    projects.forEach((p) => {
+      if (p.client_id && !byId.has(p.client_id)) {
+        byId.set(p.client_id, { id: p.client_id, name: p.client_name || p.client_id });
+      }
+    });
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [canManage, clients, projects]);
 
   const pocOptions = useMemo(() => {
     return [
@@ -781,7 +800,7 @@ export default function ProjectsPage() {
                 setDateTo={setDateTo}
                 visibility={visibility}
                 setVisibility={handleVisibilityChange}
-                clients={clients}
+                clients={clientOptions}
                 pocOptions={pocOptions}
                 activeFilterCount={activeFilterCount}
                 canFilterVisibility={canManage}
@@ -882,7 +901,7 @@ export default function ProjectsPage() {
               onClick={() => setClientFilter("")}
               className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
             >
-              Client: {clients.find((client) => client.id === clientFilter)?.name || clientFilter}
+              Client: {clientOptions.find((client) => client.id === clientFilter)?.name || clientFilter}
               <X className="h-3 w-3" />
             </button>
           )}

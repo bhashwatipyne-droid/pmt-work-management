@@ -113,3 +113,26 @@ class TestEfficiencyViewEveryoneEditManager:
         assert requests.post(f"{API}/efficiency/monthly-capacity", json=body, headers=H(uid)).status_code == 403
         assert requests.put(f"{API}/efficiency/monthly-capacity/nope", json=body, headers=H(uid)).status_code == 403
         assert requests.delete(f"{API}/efficiency/monthly-capacity/nope", headers=H(uid)).status_code == 403
+
+
+class TestEfficiencyEveryoneSeesEveryone:
+    def test_all_roles_see_the_same_employees(self):
+        def names(uid):
+            r = requests.get(f"{API}/efficiency/overview", params={"month": "2026-09"}, headers=H(uid))
+            assert r.status_code == 200
+            return sorted(e["user_id"] for e in r.json()["employees"])
+
+        assert names(ADMIN) == names(MGR) == names(MEMBER)
+
+    def test_manager_cannot_set_capacity_outside_own_department(self):
+        overview = requests.get(
+            f"{API}/efficiency/overview", params={"month": "2026-09"}, headers=H(MGR)
+        ).json()
+        me = requests.get(f"{API}/users", headers=H(MGR)).json()
+        my_dept = next(u["department"] for u in me if u["id"] == MGR)
+        other = next((e for e in overview["employees"] if e["department"] != my_dept), None)
+        if not other:
+            pytest.skip("no employee outside the manager's department")
+        body = {"user_id": other["user_id"], "month": "2026-09", "working_days": 22, "leave_days": 0}
+        r = requests.post(f"{API}/efficiency/monthly-capacity", json=body, headers=H(MGR))
+        assert r.status_code == 403

@@ -6,11 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
-  ArrowRight,
   Eye,
   LayoutGrid,
   List,
@@ -20,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
+import { useAccess } from "@/hooks/useAccess";
 import {
   getProjects,
   getProjectMetrics,
@@ -66,6 +66,11 @@ function useStableCallback(fn) {
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const access = useAccess();
+  // Everyone can browse projects; only admins can create, edit, hide,
+  // delete, reorder or bulk-change them (lib/permissions.js).
+  const canManage = access.canManageProjects;
   const {
     currentUser,
     currentUserId,
@@ -152,9 +157,18 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
-    if (currentUser?.role === "admin") fetchAll();
+    if (currentUser) fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, currentUser?.role, visibility]);
+
+  // "New project" from the ⌘K palette lands here with this flag set.
+  useEffect(() => {
+    if (location.state?.openCreate) {
+      if (canManage) setModalOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.key]);
 
   useEffect(() => {
     if (currentUser) {
@@ -537,7 +551,7 @@ export default function ProjectsPage() {
   };
 
   const persistProjectDrop = async (status, targetIndex) => {
-    if (!draggedProjectId) return;
+    if (!canManage || !draggedProjectId) return;
 
     const draggedProject = projects.find((project) => project.id === draggedProjectId);
     if (!draggedProject) return;
@@ -663,24 +677,6 @@ export default function ProjectsPage() {
 
   if (userLoading || !currentUser) return null;
 
-  if (currentUser.role !== "admin") {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm font-medium text-foreground">
-          Projects is available to Admins only
-        </p>
-
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-[#2b2bb5] transition-colors hover:bg-[#f0f0fd] hover:text-[#1a1a8a]"
-        >
-          Go to Work Sheet
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div
       data-testid={PROJECTS.page}
@@ -699,19 +695,31 @@ export default function ProjectsPage() {
             </h1>
 
             <p className="mt-1 text-base text-muted-foreground">
-              Manage projects, deliverables and production timelines.
+              {canManage
+                ? "Manage projects, deliverables and production timelines."
+                : "Browse projects, deliverables and production timelines."}
+              {!canManage && (
+                <span
+                  data-testid="projects-view-only"
+                  className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 align-middle text-xs font-medium text-slate-600"
+                >
+                  View only
+                </span>
+              )}
             </p>
           </div>
 
-          <button
-            type="button"
-            data-testid={PROJECTS.newProjectBtn}
-            onClick={() => setModalOpen(true)}
-            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#23239b]"
-          >
-            <Plus className="h-4 w-4" />
-            New Project
-          </button>
+          {canManage && (
+            <button
+              type="button"
+              data-testid={PROJECTS.newProjectBtn}
+              onClick={() => setModalOpen(true)}
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#23239b]"
+            >
+              <Plus className="h-4 w-4" />
+              New Project
+            </button>
+          )}
         </div>
 
         {/* Filters + view switcher */}
@@ -776,6 +784,7 @@ export default function ProjectsPage() {
                 clients={clients}
                 pocOptions={pocOptions}
                 activeFilterCount={activeFilterCount}
+                canFilterVisibility={canManage}
                 onClear={clearFilters}
                 onClose={() => setFiltersOpen(false)}
               />
@@ -955,6 +964,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Bulk actions */}
+      {canManage && (
       <ProjectBulkActionBar
         selectedCount={selectedProjects.size}
         totalCount={filtered.length}
@@ -967,6 +977,7 @@ export default function ProjectsPage() {
         onDelete={() => setDeleteTarget("bulk")}
         onClear={clearSelection}
       />
+      )}
 
       {/* Content */}
       {loading ? (
@@ -984,9 +995,11 @@ export default function ProjectsPage() {
             No projects yet
           </p>
 
-          <p className="mt-1 text-xs text-muted-foreground">
-            Click "New Project" to create your first one.
-          </p>
+          {canManage && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Click "New Project" to create your first one.
+            </p>
+          )}
         </div>
       ) : view === "chart" ? (
         <>
@@ -1046,6 +1059,7 @@ export default function ProjectsPage() {
                   onDropColumn={stableColumnDrop}
                   dragOverProjectId={dragOverProjectId}
                   isDropTarget={dragOverStatus === status}
+                  readOnly={!canManage}
                 />
               );
             })}
@@ -1071,9 +1085,11 @@ export default function ProjectsPage() {
           onDeleteProject={(p) => setDeleteTarget(p)}
           page={listPage}
           setPage={setListPage}
+          readOnly={!canManage}
         />
       )}
 
+      {canManage && (
       <CreateProjectModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -1103,7 +1119,9 @@ export default function ProjectsPage() {
         clients={clients}
         deliverableTypes={deliverableTypes}
       />
+      )}
 
+      {canManage && (
       <ConfirmDeleteModal
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
@@ -1139,6 +1157,7 @@ export default function ProjectsPage() {
         warning="Historical work entries will be preserved."
         confirmLabel="Delete"
       />
+      )}
     </div>
   );
 }

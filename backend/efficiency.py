@@ -471,8 +471,9 @@ def create_efficiency_router(
         ]
 
     # ---------- Monthly capacity ----------
-    # NOTE: left as manager-or-admin, unchanged from before. Tell me if this should
-    # also be locked to managers only, matching activity potential below.
+    # Reading is open to every role (scoped by _visible_users); writing is
+    # manager-only, matching activity potential below. Admins and members
+    # get a read-only Efficiency view.
 
     @router.get("/monthly-capacity")
     async def list_monthly_capacity(
@@ -505,7 +506,7 @@ def create_efficiency_router(
 
     @router.post("/monthly-capacity", response_model=EmployeeWorkingCalendar)
     async def upsert_monthly_capacity(payload: EmployeeWorkingCalendarCreate, request: Request):
-        user = await require_manager_or_admin(request)
+        user = await require_manager(request)
         await _assert_can_view(user, payload.user_id)
 
         target = await db.users.find_one({"id": payload.user_id}, {"_id": 0, "id": 1})
@@ -551,7 +552,7 @@ def create_efficiency_router(
     async def update_monthly_capacity(
         capacity_id: str, payload: EmployeeWorkingCalendarUpdate, request: Request
     ):
-        user = await require_manager_or_admin(request)
+        user = await require_manager(request)
         existing = await db.efficiency_capacity.find_one({"id": capacity_id}, {"_id": 0})
         if not existing:
             raise HTTPException(status_code=404, detail="Capacity not found")
@@ -572,7 +573,7 @@ def create_efficiency_router(
 
     @router.delete("/monthly-capacity/{capacity_id}")
     async def delete_monthly_capacity(capacity_id: str, request: Request):
-        user = await require_manager_or_admin(request)
+        user = await require_manager(request)
         existing = await db.efficiency_capacity.find_one({"id": capacity_id}, {"_id": 0})
         if not existing:
             raise HTTPException(status_code=404, detail="Capacity not found")

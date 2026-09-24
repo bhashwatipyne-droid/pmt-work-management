@@ -8,13 +8,12 @@ export default function EfficiencySettingsPage() {
 
   if (loading || !currentUser) return null;
 
-  const isAdmin = currentUser.role === "admin";
   const isManager = currentUser.role === "manager";
 
-  if (!isAdmin && !isManager) {
+  if (!isManager) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
-        Efficiency settings are available to managers and admins only
+        Efficiency settings are available to managers only
       </div>
     );
   }
@@ -26,8 +25,8 @@ export default function EfficiencySettingsPage() {
       title: "Monthly capacity",
       description:
         "Set working days and leave per employee per month. Core hours and core days are derived from this.",
-      // Unchanged: admin and manager both allowed.
-      visible: true,
+      // Manager-only, like team potential.
+      visible: isManager,
     },
     {
       to: "/efficiency/settings/activity-targets",
@@ -35,7 +34,6 @@ export default function EfficiencySettingsPage() {
       title: "Team potential",
       description:
         "Set each team member's daily potential per core activity. This is what 100% productivity means for them.",
-      // Manager-only: admins can view reports but cannot set potential.
       visible: isManager,
     },
   ].filter((c) => c.visible);
@@ -78,12 +76,6 @@ export default function EfficiencySettingsPage() {
         ))}
       </div>
 
-      {isAdmin && (
-        <p className="mt-4 text-xs text-slate-400">
-          Team potential is set by each department's manager and isn't editable from an admin
-          account — only monthly capacity is shown here for you.
-        </p>
-      )}
     </div>
   );
 }

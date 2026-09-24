@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
+import { useAccess } from "@/hooks/useAccess";
 import { refreshCounts } from "@/lib/countsBus";
 import {
   getApprovalBoard,
@@ -83,6 +84,10 @@ const KBD_CLASS =
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
+  const access = useAccess();
+  // Everyone can open Approvals; only managers can approve, send back or
+  // move items between queues (lib/permissions.js, enforced by the API).
+  const canAct = access.canActOnApprovals;
 
   const [board, setBoard] = useState(initialBoard);
   const [loading, setLoading] = useState(true);
@@ -144,13 +149,13 @@ export default function ApprovalsPage() {
   };
 
   useEffect(() => {
-    if (currentUser && currentUser.role !== "member") {
+    if (currentUser) {
       trackEvent("approvals_opened", { role: currentUser.role });
     }
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (currentUser && currentUser.role !== "member") {
+    if (currentUser) {
       fetchBoard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,7 +165,7 @@ export default function ApprovalsPage() {
   busyRef.current = Boolean(dragging) || Boolean(movingId) || bulkLoading;
 
   useEffect(() => {
-    if (!currentUser || currentUser.role === "member") return undefined;
+    if (!currentUser) return undefined;
 
     const refresh = () => {
       if (document.hidden || busyRef.current) return;
@@ -298,7 +303,7 @@ export default function ApprovalsPage() {
 
   // ---------- Single-item actions ----------
   const decide = async (item, action) => {
-    if (!item) return;
+    if (!canAct || !item) return;
     const note = notes[item.id] || "";
 
     try {
@@ -328,7 +333,7 @@ export default function ApprovalsPage() {
   };
 
   const handleMove = async (item, targetType) => {
-    if (!item || item.approval_type === targetType) return;
+    if (!canAct || !item || item.approval_type === targetType) return;
 
     const sourceType = item.approval_type;
     const previousBoard = board;
@@ -369,7 +374,7 @@ export default function ApprovalsPage() {
   // ---------- Bulk actions ----------
   const handleBulkApprove = async () => {
     const ids = [...selectedIds];
-    if (!ids.length) return;
+    if (!canAct || !ids.length) return;
     setBulkLoading(true);
 
     try {
@@ -386,7 +391,7 @@ export default function ApprovalsPage() {
 
   const handleBulkSendBack = async () => {
     const ids = [...selectedIds];
-    if (!ids.length) return;
+    if (!canAct || !ids.length) return;
     setBulkLoading(true);
 
     try {
@@ -439,10 +444,10 @@ export default function ApprovalsPage() {
       } else if (key === "k") {
         event.preventDefault();
         moveSelection(-1);
-      } else if (key === "a" && aSel) {
+      } else if (key === "a" && aSel && canAct) {
         event.preventDefault(); // otherwise the browser selects the whole page
         decide(aSel, "approve");
-      } else if (key === "s" && aSel) {
+      } else if (key === "s" && aSel && canAct) {
         event.preventDefault(); // otherwise the browser offers to save the page
         decide(aSel, "send_back");
       }
@@ -451,24 +456,9 @@ export default function ApprovalsPage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aList, selectedId, aSel, notes]);
+  }, [aList, selectedId, aSel, notes, canAct]);
 
   if (userLoading || !currentUser) return null;
-
-  if (currentUser.role === "member") {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-background p-8">
-        <div className="text-center">
-          <div className="text-sm font-medium text-foreground">
-            Approvals is available to managers and admins only
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Ask a manager or admin to review deliverables.
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div data-testid={APPROVALS.page} className="flex h-full flex-col bg-background">
@@ -476,7 +466,7 @@ export default function ApprovalsPage() {
       <div className="flex items-center gap-3 px-5 pt-5">
         <h1 className="flex-1 text-2xl font-semibold tracking-tight text-foreground">Approvals</h1>
 
-        {selectedIds.size > 0 ? (
+        {canAct && selectedIds.size > 0 ? (
           // Gmail-style contextual bar — replaces the hint row the moment
           // anything is checked.
           <div className="flex items-center gap-2 rounded-lg bg-[#f0f0fd] px-3 py-1.5">
@@ -514,19 +504,32 @@ export default function ApprovalsPage() {
           </div>
         ) : (
           <div className="hidden items-center gap-2.5 text-xs text-muted-foreground md:flex">
+            {!canAct && (
+              <span
+                data-testid="approvals-view-only"
+                title="Only managers can approve or send items back"
+                className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600"
+              >
+                View only
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <kbd className={KBD_CLASS}>{MOD_LABEL}+J</kbd>
               <kbd className={KBD_CLASS}>{MOD_LABEL}+K</kbd>
               move
             </span>
-            <span className="flex items-center gap-1">
-              <kbd className={KBD_CLASS}>{MOD_LABEL}+A</kbd>
-              approve
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className={KBD_CLASS}>{MOD_LABEL}+S</kbd>
-              send back
-            </span>
+            {canAct && (
+              <>
+                <span className="flex items-center gap-1">
+                  <kbd className={KBD_CLASS}>{MOD_LABEL}+A</kbd>
+                  approve
+                </span>
+                <span className="flex items-center gap-1">
+                  <kbd className={KBD_CLASS}>{MOD_LABEL}+S</kbd>
+                  send back
+                </span>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -611,14 +614,16 @@ export default function ApprovalsPage() {
         {/* LIST */}
         <div className="flex w-[360px] shrink-0 flex-col border-r border-slate-200">
           <div className="flex h-10 shrink-0 items-center gap-3 border-b border-slate-200 px-4">
-            <input
-              type="checkbox"
-              aria-label="Select all in this queue"
-              checked={allInQueueSelected}
-              onChange={toggleSelectAllInQueue}
-              disabled={aList.length === 0}
-              className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-            />
+            {canAct && (
+              <input
+                type="checkbox"
+                aria-label="Select all in this queue"
+                checked={allInQueueSelected}
+                onChange={toggleSelectAllInQueue}
+                disabled={aList.length === 0}
+                className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
+              />
+            )}
             <span className="text-xs text-slate-500">
               {aList.length} pending
             </span>
@@ -644,7 +649,7 @@ export default function ApprovalsPage() {
                   <div
                     key={item.id}
                     data-testid={`${APPROVALS.listRowPrefix}-${item.id}`}
-                    draggable={!movingId}
+                    draggable={canAct && !movingId}
                     onDragStart={() => setDragging(item)}
                     onDragEnd={() => {
                       setDragging(null);
@@ -656,15 +661,17 @@ export default function ApprovalsPage() {
                       isSelected ? "bg-[#f0f0fd]" : "hover:bg-slate-50",
                     ].join(" ")}
                   >
-                    <input
-                      type="checkbox"
-                      data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
-                      checked={checked}
-                      onChange={() => toggleSelect(item.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-                      aria-label={`Select ${item.deliverable_name}`}
-                    />
+                    {canAct && (
+                      <input
+                        type="checkbox"
+                        data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
+                        checked={checked}
+                        onChange={() => toggleSelect(item.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
+                        aria-label={`Select ${item.deliverable_name}`}
+                      />
+                    )}
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -706,6 +713,7 @@ export default function ApprovalsPage() {
                   </h2>
                 </div>
 
+                {canAct && (
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
                   <span className="text-xs text-slate-500">Move to</span>
                   {COLUMNS.filter((c) => c.key !== aSel.approval_type).map((c) => (
@@ -720,6 +728,7 @@ export default function ApprovalsPage() {
                     </button>
                   ))}
                 </div>
+                )}
               </div>
 
               <div className="mt-5 grid grid-cols-[130px_1fr] gap-y-2.5 text-sm">
@@ -753,6 +762,8 @@ export default function ApprovalsPage() {
                 </div>
               )}
 
+              {canAct ? (
+              <>
               <label className="mt-5 flex flex-col gap-1.5">
                 <span className="text-sm font-medium text-foreground">Review note</span>
                 <textarea
@@ -789,6 +800,16 @@ export default function ApprovalsPage() {
                   Send back
                 </button>
               </div>
+              </>
+              ) : (
+                <div
+                  data-testid="approvals-read-only-note"
+                  className="mt-5 rounded-lg border border-border bg-muted/50 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground"
+                >
+                  You can follow this approval here. Only managers can approve it,
+                  send it back or move it to another queue.
+                </div>
+              )}
             </div>
           ) : (
             !loading && (

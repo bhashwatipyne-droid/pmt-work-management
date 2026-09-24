@@ -1,115 +1,46 @@
-import { useLocation, useNavigate } from "react-router-dom";
-import { Bug, User } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 
-import { useUser } from "@/context/UserContext";
 import { Sidebar } from "./Sidebar";
-import NotificationCenter from "@/components/notifications/NotificationCenter";
+import { CommandCenterProvider } from "./CommandCenter";
+import { getBreadcrumb, IS_MAC } from "./navItems";
 
-const CRUMBS = {
-  "/": "Work Sheet",
-  "/dashboard": "Dashboard",
-  "/efficiency": "Efficiency",
-  "/efficiency/settings/monthly-capacity": "Monthly Capacity",
-  "/efficiency/settings/activity-targets": "Core Activity Targets",
-  "/projects": "Projects",
-  "/team": "Team",
-  "/approvals": "Approvals",
-  "/clients": "Clients",
-  "/profile": "Profile & Account",
-};
+const KBD =
+  "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
 
-const getInitials = (name) => {
-  if (!name) return "U";
-
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-};
-
+// The bell, "Report a bug", help and the profile menu now live in the
+// sidebar (see Sidebar.jsx); the top bar is just where you are.
 export const AppLayout = ({ children }) => {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const { currentUser } = useUser();
-
-  const crumb = CRUMBS[pathname] || "PMT";
-  const initials = getInitials(currentUser?.name);
+  const { section, title } = getBreadcrumb(pathname);
 
   return (
-    <div className="flex h-screen bg-[#f7f9fc]">
-      <Sidebar />
+    <CommandCenterProvider>
+      <div className="flex h-screen bg-[#f7f9fc]">
+        <Sidebar />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
-          {/* Page title */}
-          <span className="text-sm font-semibold text-slate-800">
-            {crumb}
-          </span>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-[#eaeef4] bg-white px-5">
+            <span className="text-[13px] text-[#546490]">{section}</span>
+            {title && (
+              <>
+                <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                <span className="text-[13px] font-semibold text-slate-900">
+                  {title}
+                </span>
+              </>
+            )}
 
-          {/* Header actions */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                window.open(
-                  "https://forms.gle/ajVZLXfErLUd1coK9",
-                  "_blank",
-                  "noopener,noreferrer"
-                );
-              }}
-              className={[
-                "inline-flex h-9 items-center gap-2",
-                "rounded-lg",
-                "bg-[#2b2bb5] px-4",
-                "text-xs font-semibold text-white",
-                "shadow-sm",
-                "transition-all",
-                "hover:bg-[#23239a]",
-                "hover:shadow-md",
-                "focus:outline-none",
-                "focus:ring-[3px]",
-                "focus:ring-[#2b2bb5]/25",
-              ].join(" ")}
-            >
-              <Bug className="h-4 w-4" />
-              Report a bug
-            </button>
-            <NotificationCenter />
+            <div className="flex-1" />
 
-            <button
-              type="button"
-              aria-label="User profile"
-              title={currentUser?.name || "Profile"}
-              onClick={() => navigate("/profile")}
-              className={[
-                "flex h-9 w-9 items-center justify-center",
-                "rounded-full",
-                "bg-[#f0f0fd]",
-                "text-xs font-semibold",
-                "text-[#1a1a8a]",
-                "transition-colors",
-                "hover:bg-[#dcdcf8]",
-                "focus:outline-none",
-                "focus:ring-[3px]",
-                "focus:ring-[#2b2bb5]/20",
-              ].join(" ")}
-            >
-              {currentUser?.name ? (
-                initials
-              ) : (
-                <User className="h-4 w-4" />
-              )}
-            </button>
-          </div>
-        </header>
+            <span className="hidden items-center gap-1.5 text-xs text-[#546490] sm:flex">
+              Press <span className={KBD}>{IS_MAC ? "⌘K" : "Ctrl K"}</span> to find anything
+            </span>
+          </header>
 
-        <main className="flex flex-1 flex-col overflow-hidden">
-          {children}
-        </main>
+          <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
+        </div>
       </div>
-    </div>
+    </CommandCenterProvider>
   );
 };

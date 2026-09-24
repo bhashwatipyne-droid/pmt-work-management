@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAccess } from "@/hooks/useAccess";
 import {
   Settings2,
   CalendarRange,
@@ -44,8 +45,11 @@ export default function EfficiencyPage() {
   const [drawerUserId, setDrawerUserId] = useState(null);
   const [visibleRows, setVisibleRows] = useState([]);
 
-  const canConfigure = ["admin", "manager"].includes(currentUser?.role);
-  const isManager = currentUser?.role === "manager";
+  // Everyone can read Efficiency; only managers can change capacity or
+  // team potential (lib/permissions.js, enforced by the API).
+  const access = useAccess();
+  const canConfigure = access.canConfigureEfficiency;
+  const isManager = canConfigure;
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -140,6 +144,16 @@ export default function EfficiencyPage() {
           <Download className="h-3.5 w-3.5" />
           Export
         </button>
+
+        {!canConfigure && (
+          <span
+            data-testid="efficiency-view-only"
+            title="Only managers can change capacity or team potential"
+            className="inline-flex h-9 items-center rounded-full bg-slate-100 px-3 text-xs font-medium text-slate-600"
+          >
+            View only
+          </span>
+        )}
 
         {canConfigure && (
           <DropdownMenu>

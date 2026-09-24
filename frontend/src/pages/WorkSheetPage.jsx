@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
+import { APP_ACTIONS, registerAppAction } from "@/lib/appActions";
 import { refreshCounts, onCountsRefresh } from "@/lib/countsBus";
 import { startPolling } from "@/lib/polling";
 import { consumePrefetch, WORKSHEET_INITIAL_ROW_LIMIT } from "@/services/prefetch";
@@ -237,6 +238,8 @@ export default function WorkSheetPage() {
   const [bulkAdding, setBulkAdding] = useState(false);
   const [addingRow, setAddingRow] = useState(false);
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
+  // Toolbar chip / ⌘K action: show only rows that still need a deliverable.
+  const [onlyMissing, setOnlyMissing] = useState(false);
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -440,7 +443,7 @@ export default function WorkSheetPage() {
   // longer triggers a refetch.
   useEffect(() => {
     setSelectedIds([]);
-  }, [filters, activeSheet]);
+  }, [filters, activeSheet, onlyMissing]);
 
   // All filtering (search, date range, project/deliverable/type/category,
   // creator, reviewer, status) plus the per-tab stage scoping happens here,
@@ -456,6 +459,12 @@ export default function WorkSheetPage() {
     clients.forEach((c) => map.set(c.id, c.name));
     return map;
   }, [clients]);
+
+  const userNameById = useMemo(() => {
+    const map = new Map();
+    (users || []).forEach((u) => map.set(u.id, u.name || ""));
+    return map;
+  }, [users]);
 
   const projectById = useMemo(() => {
     const map = new Map();
@@ -474,7 +483,15 @@ export default function WorkSheetPage() {
         ? new Set(filters.stages.map((s) => String(s).trim().toLowerCase()))
         : null;
 
-    const search = (filters.search || "").trim().toLowerCase();
+    // Every word has to match somewhere in the row, in any order, so
+    // "icici contra carousel" finds a carousel in ICICI's Contra Fund
+    // project even though those words sit in different columns.
+    const searchTerms = (filters.search || "")
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    const search = searchTerms.length > 0;
     const projectIds = filters.project_ids?.length ? new Set(filters.project_ids) : null;
     const deliverableIds = filters.deliverable_ids?.length ? new Set(filters.deliverable_ids) : null;
     const deliverableTypes = filters.deliverable_types?.length ? new Set(filters.deliverable_types) : null;
@@ -504,8 +521,17 @@ export default function WorkSheetPage() {
           : "";
         const projectName = project?.name || "";
 
-        const haystack = `${item.deliverable_name || ""} ${item.remarks || ""} ${clientName} ${projectName}`.toLowerCase();
-        if (!haystack.includes(search)) return false;
+        const owner = userNameById.get(item.creator_id) || "";
+
+        const haystack = `${item.deliverable_name || ""} ${item.remarks || ""} ${clientName} ${projectName} ${item.deliverable_type || ""} ${owner}`.toLowerCase();
+        if (!searchTerms.every((term) => haystack.includes(term))) return false;
+      }
+
+      if (
+        onlyMissing &&
+        !isDeliverableMissing(item, options.deliverable_type_categories)
+      ) {
+        return false;
       }
 
       if (filters.date_from && (item.work_date || "") < filters.date_from) return false;
@@ -522,7 +548,16 @@ export default function WorkSheetPage() {
 
       return true;
     });
-  }, [items, filters, activeSheet, clientNameById, projectById]);
+  }, [
+    items,
+    filters,
+    activeSheet,
+    clientNameById,
+    projectById,
+    userNameById,
+    onlyMissing,
+    options.deliverable_type_categories,
+  ]);
 
   // Toolbar's "N missing a deliverable" badge — purely informational, so
   // scoped the same as the visible row count (post search/filter) rather
@@ -1284,6 +1319,61 @@ export default function WorkSheetPage() {
     bulkDeleteConfirmOpen,
   ]);
 
+  // Things the ⌘K palette (and the sidebar's pinned projects) ask this page
+  // to do. Refs keep the registered handlers pointing at the latest state.
+  const addRowActionRef = useRef(null);
+  addRowActionRef.current = () => {
+    if (loading) {
+      // Data still arriving (we just navigated here): try again shortly.
+      window.setTimeout(() => addRowActionRef.current?.(), 300);
+      return;
+    }
+    handleAddRow();
+  };
+
+  useEffect(() => {
+    const unsubscribers = [
+      registerAppAction(APP_ACTIONS.QUICK_LOG, () => {
+        if (isManager || isMember) setQuickLoggerOpen(true);
+      }),
+      registerAppAction(APP_ACTIONS.ADD_ROW, () => {
+        if (isManager || isMember) addRowActionRef.current?.();
+      }),
+      registerAppAction(APP_ACTIONS.SHOW_MISSING, () => {
+        setActiveSheet("Master");
+        setOnlyMissing(true);
+      }),
+    ];
+
+    return () => unsubscribers.forEach((off) => off());
+  }, [isManager, isMember]);
+
+  // Arriving from the palette or a pinned project with a search to apply.
+  useEffect(() => {
+    const incoming = location.state?.search;
+    if (typeof incoming === "string") {
+      setActiveSheet("Master");
+      setOnlyMissing(false);
+      setFiltersBySheet((current) => ({
+        ...current,
+        Master: {
+          ...emptyFilters,
+          project_ids: [],
+          deliverable_ids: [],
+          stages: [],
+          deliverable_types: [],
+          work_categories: [],
+          creator_ids: [],
+          reviewer_ids: [],
+          statuses: [],
+          search: incoming,
+        },
+      }));
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.key]);
+
   // Global "L" shortcut — opens the Quick Logger from anywhere on the
   // page, matching the floating trigger button's own hint. Same
   // editable-field guard as the Delete/Backspace shortcut above (typing
@@ -1350,6 +1440,8 @@ export default function WorkSheetPage() {
         resultCount={filteredItems.length}
         totalCount={items.length}
         missingDeliverableCount={missingDeliverableCount}
+        onlyMissing={onlyMissing}
+        onToggleMissing={() => setOnlyMissing((current) => !current)}
         loadingFullList={loadingFullList}
         groupBy={groupBy}
         onGroupByChange={handleGroupByChange}

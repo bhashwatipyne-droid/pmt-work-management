@@ -46,6 +46,8 @@ const ProjectCardBase = ({
   onDragOver,
   onDrop,
   isDragTarget = false,
+  // View-only: no selection checkbox, no drag handle, no dragging.
+  readOnly = false,
 }) => {
   const status =
     STATUS_COLORS[project.status] || STATUS_COLORS.Active;
@@ -57,7 +59,7 @@ const ProjectCardBase = ({
   return (
     <div
       data-testid={`${PROJECTS.cardPrefix}-${project.id}`}
-      draggable
+      draggable={!readOnly}
       onDragStart={(event) => onDragStart?.(event, project)}
       onDragEnd={onDragEnd}
       onDragOver={(event) => onDragOver?.(event, project)}
@@ -67,7 +69,7 @@ const ProjectCardBase = ({
         // Off-screen cards skip layout and paint until scrolled near; the
         // intrinsic size keeps the scrollbar stable in the meantime.
         "[content-visibility:auto] [contain-intrinsic-size:auto_250px]",
-        "cursor-grab active:cursor-grabbing",
+        readOnly ? "cursor-default" : "cursor-grab active:cursor-grabbing",
         "hover:-translate-y-0.5 hover:border-[#c8c8ee] hover:shadow-md",
         selected
           ? "border-[#aaaaf0] bg-[#fafaff] ring-1 ring-[#d8d8ff]"
@@ -77,21 +79,27 @@ const ProjectCardBase = ({
     >
       {/* Selection + drag affordance */}
       <div className="flex items-center justify-between">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={() => onSelect?.(project.id)}
-          onClick={(e) => e.stopPropagation()}
-          draggable={false}
-          className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
-          aria-label={`Select ${project.name}`}
-        />
+        {readOnly ? (
+          <span />
+        ) : (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onSelect?.(project.id)}
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+            className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
+            aria-label={`Select ${project.name}`}
+          />
+        )}
 
         <div className="flex items-center gap-2">
-          <GripVertical
-            className="h-4 w-4 text-slate-300"
-            aria-hidden="true"
-          />
+          {!readOnly && (
+            <GripVertical
+              className="h-4 w-4 text-slate-300"
+              aria-hidden="true"
+            />
+          )}
           <span
             className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
           >

@@ -27,6 +27,8 @@ export const ProjectFilterPanel = ({
   pocOptions,
   activeFilterCount,
   onClear,
+  // Hidden projects are an admin-only view; everyone else only sees visible ones.
+  canFilterVisibility = true,
 }) => {
   const dateRange = {
     from: dateFrom ? parseISO(dateFrom) : undefined,
@@ -176,6 +178,7 @@ export const ProjectFilterPanel = ({
             </Popover>
           </div>
 
+          {canFilterVisibility && (
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Visibility
@@ -193,6 +196,7 @@ export const ProjectFilterPanel = ({
               <option value="all">All projects</option>
             </select>
           </label>
+          )}
         </div>
     </div>
   );

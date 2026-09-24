@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, X, Pencil } from "lucide-react";
 
@@ -577,6 +578,17 @@ export default function TeamPage() {
   });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
+
+  // "Add team member" from the ⌘K palette lands here with this flag set.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (location.state?.openAdd) {
+      setModalOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.key]);
 
   const [loadingMembers, setLoadingMembers] = useState(true);
 

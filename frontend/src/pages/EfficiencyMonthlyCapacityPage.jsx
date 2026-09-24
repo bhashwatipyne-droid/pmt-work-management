@@ -86,7 +86,8 @@ export default function EfficiencyMonthlyCapacityPage() {
   const [saving, setSaving] = useState(false);
   const [savingNext, setSavingNext] = useState(false);
 
-  const canConfigure = ["admin", "manager"].includes(currentUser?.role);
+  // Manager-only: admins and members can read Efficiency but not edit capacity.
+  const canConfigure = currentUser?.role === "manager";
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -212,7 +213,7 @@ export default function EfficiencyMonthlyCapacityPage() {
   if (!canConfigure) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
-        Monthly capacity setup is available to managers and admins only
+        Monthly capacity setup is available to managers only
       </div>
     );
   }

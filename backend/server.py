@@ -1047,6 +1047,24 @@ async def require_admin(request: Request) -> User:
     return user
 
 
+async def require_manager(request: Request) -> User:
+    """Manager-only actions (approvals, efficiency capacity). Admins and members
+    can open those screens read-only but cannot act."""
+    user = await get_acting_user(request)
+    if user.role != "manager":
+        raise HTTPException(
+            status_code=403,
+            detail="Only managers can take this action"
+        )
+    return user
+
+
+def _approvals_view_all(user: User) -> bool:
+    """Admins and members see every pending approval, read-only. Managers see
+    the queue they can actually act on (see _approval_item_can_act)."""
+    return user.role in ("admin", "member")
+
+
 async def require_manager_or_admin(request: Request) -> User:
     user = await get_acting_user(request)
     if user.role not in {"admin", "manager"}:
@@ -2221,18 +2239,21 @@ async def list_work_items(
     if month:
         query["month"] = month
 
-    # Existing search
+    # Existing search. Escaped so typing "(" or "[" in the search box (or the
+    # command palette, which reuses this) matches literally instead of
+    # producing an invalid regular expression and a 500.
     if search:
+        search_pattern = re.escape(search)
         query["$or"] = [
             {
                 "deliverable_name": {
-                    "$regex": search,
+                    "$regex": search_pattern,
                     "$options": "i",
                 }
             },
             {
                 "remarks": {
-                    "$regex": search,
+                    "$regex": search_pattern,
                     "$options": "i",
                 }
             },
@@ -3943,7 +3964,13 @@ async def list_projects(
     limit: int = 1000,
     include_deliverables: bool = True,
 ):
-    await get_acting_user(request)
+    user = await get_acting_user(request)
+
+    # Projects are visible to every role, but hiding a project is an admin
+    # action, so the hidden/all views stay admin-only. Anyone else asking for
+    # them just gets the normal visible list.
+    if user.role != "admin":
+        visibility = "visible"
 
     query = {}
     and_clauses = []
@@ -3969,10 +3996,11 @@ async def list_projects(
         query["status"] = status
 
     if search:
+        search_pattern = re.escape(search)
         and_clauses.append({
             "$or": [
-                {"name": {"$regex": search, "$options": "i"}},
-                {"code": {"$regex": search, "$options": "i"}},
+                {"name": {"$regex": search_pattern, "$options": "i"}},
+                {"code": {"$regex": search_pattern, "$options": "i"}},
             ]
         })
 
@@ -4024,10 +4052,9 @@ async def project_metrics(request: Request):
 
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str, request: Request):
-    # The only frontend consumer of this endpoint is ProjectDetailPage,
-    # which is admin-only — enforce that here too, since a frontend-only
-    # gate doesn't stop a direct API call from any authenticated user.
-    await require_admin(request)
+    # Project detail is read-only for everyone; every write endpoint below
+    # (create / update / hide / delete / import) stays admin-only.
+    await get_acting_user(request)
     p = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -4346,7 +4373,7 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
 
 @api_router.post("/projects/{project_id}/hide")
 async def hide_project(project_id: str, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     existing = await db.projects.find_one(
         {"id": project_id},
@@ -4384,7 +4411,7 @@ async def hide_project(project_id: str, request: Request):
 
 @api_router.post("/projects/{project_id}/unhide")
 async def unhide_project(project_id: str, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     existing = await db.projects.find_one(
         {"id": project_id},
@@ -4422,7 +4449,7 @@ async def unhide_project(project_id: str, request: Request):
 
 @api_router.post("/projects/bulk-hide")
 async def bulk_hide_projects(payload: BulkProjectIdsPayload, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     project_ids = payload.project_ids
 
@@ -4452,7 +4479,7 @@ async def bulk_hide_projects(payload: BulkProjectIdsPayload, request: Request):
 
 @api_router.post("/projects/bulk-unhide")
 async def bulk_unhide_projects(payload: BulkProjectIdsPayload, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     project_ids = payload.project_ids
 
@@ -4601,7 +4628,7 @@ async def bulk_update_project_status(
 
 @api_router.post("/projects/bulk-delete")
 async def bulk_delete_projects(payload: BulkProjectIdsPayload, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     project_ids = payload.project_ids
 
@@ -4641,7 +4668,7 @@ async def bulk_delete_projects(payload: BulkProjectIdsPayload, request: Request)
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     existing = await db.projects.find_one(
         {"id": project_id},
@@ -5038,7 +5065,7 @@ async def delete_deliverable(
     deliverable_id: str,
     request: Request
 ):
-    user = await require_manager_or_admin(request)
+    user = await require_admin(request)
 
     existing = await db.deliverables.find_one(
         {"id": deliverable_id},
@@ -5356,8 +5383,9 @@ async def _delete_approvals_for_deliverables(deliverable_ids: list[str]):
 
 
 async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> bool:
-    if user.role == "admin":
-        return True
+    # Only managers act on approvals; admins and members are view-only.
+    if user.role != "manager":
+        return False
 
     # Explicitly assigned approvals belong only to the assigned user.
     if item.get("assigned_to"):
@@ -5575,7 +5603,7 @@ async def list_bulk_review(request: Request):
 async def _build_implicit_manager_items(user: User):
     """Build manager approvals for ready deliverables without workflows."""
 
-    if user.role not in ("admin", "manager"):
+    if user.role not in ("admin", "manager", "member"):
         return []
 
     # Fetch ready deliverables once.
@@ -5655,7 +5683,7 @@ async def list_approvals(request: Request):
 
     query = {"status": "PENDING"}
 
-    if user.role != "admin":
+    if not _approvals_view_all(user):
         query["$or"] = [
             {"assigned_to": user.id},
             {
@@ -5682,9 +5710,9 @@ async def list_approvals(request: Request):
 
     hydrated = await _hydrate_approval_items(items)
 
-    # Admins can see all approval items.
+    # Admins and members can see all approval items (read-only).
     # No permission query is required for every item.
-    if user.role == "admin":
+    if _approvals_view_all(user):
         for item in hydrated:
             item.pop("_deliverable", None)
         return hydrated
@@ -5724,7 +5752,7 @@ def _approval_visibility_query(user: User, visibility: str) -> dict:
     else:
         raise HTTPException(status_code=400, detail="Invalid visibility")
 
-    if user.role != "admin":
+    if not _approvals_view_all(user):
         clauses.append({
             "$or": [
                 {"assigned_to": user.id},
@@ -5765,7 +5793,7 @@ async def approval_pending_count(request: Request):
         {"_id": 0},
     ).to_list(500)
 
-    if user.role == "admin":
+    if _approvals_view_all(user):
         count = len(items)
     else:
         deliverable_ids = list({
@@ -5830,7 +5858,7 @@ async def approval_board(request: Request, visibility: Optional[str] = "visible"
     for item in hydrated:
         deliverable = item.get("_deliverable")
 
-        if user.role == "admin":
+        if _approvals_view_all(user):
             allowed = True
         else:
             allowed = (
@@ -6035,7 +6063,7 @@ async def advance_deliverable_stage(
 
 @api_router.post("/approval-items/{approval_item_id}/approve")
 async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
-    user = await get_acting_user(request)
+    user = await require_manager(request)
     item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
     if not item and approval_item_id.startswith("implicit-manager-"):
         deliverable_id = approval_item_id.removeprefix("implicit-manager-")
@@ -6072,7 +6100,7 @@ async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision
 
 @api_router.post("/approval-items/{approval_item_id}/send-back")
 async def send_back_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
-    user = await get_acting_user(request)
+    user = await require_manager(request)
     item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
     if not item and approval_item_id.startswith("implicit-manager-"):
         deliverable_id = approval_item_id.removeprefix("implicit-manager-")
@@ -6114,7 +6142,7 @@ async def send_back_approval_item(approval_item_id: str, payload: ApprovalDecisi
 
 @api_router.patch("/approval-items/{approval_item_id}/move")
 async def move_approval_item(approval_item_id: str, payload: ApprovalMove, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_manager(request)
     target = payload.approval_type.upper().strip()
     if target not in APPROVAL_TYPES:
         raise HTTPException(status_code=400, detail="Invalid approval type")
@@ -6131,7 +6159,7 @@ async def move_approval_item(approval_item_id: str, payload: ApprovalMove, reque
     d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
     if not d:
         raise HTTPException(status_code=404, detail="Deliverable not found")
-    if user.role != "admin" and not await _approval_item_can_act(user, item, d):
+    if not await _approval_item_can_act(user, item, d):
         raise HTTPException(status_code=403, detail="You are not authorized to move this approval")
     if item.get("approval_type") == target:
         return item
@@ -6213,7 +6241,7 @@ async def _resolve_real_approval_item(approval_item_id: str, user: User):
 
 @api_router.post("/approval-items/{approval_item_id}/hide")
 async def hide_approval_item(approval_item_id: str, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_manager(request)
 
     item = await _resolve_real_approval_item(approval_item_id, user)
 
@@ -6237,7 +6265,7 @@ async def hide_approval_item(approval_item_id: str, request: Request):
 
 @api_router.post("/approval-items/{approval_item_id}/unhide")
 async def unhide_approval_item(approval_item_id: str, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_manager(request)
 
     item = await _resolve_real_approval_item(approval_item_id, user)
 
@@ -6261,7 +6289,7 @@ async def unhide_approval_item(approval_item_id: str, request: Request):
 
 @api_router.post("/approval-items/bulk-hide")
 async def bulk_hide_approval_items(payload: BulkApprovalItemIdsPayload, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_manager(request)
 
     ids = payload.approval_item_ids
 
@@ -6293,7 +6321,7 @@ async def bulk_hide_approval_items(payload: BulkApprovalItemIdsPayload, request:
 
 @api_router.post("/approval-items/bulk-unhide")
 async def bulk_unhide_approval_items(payload: BulkApprovalItemIdsPayload, request: Request):
-    user = await require_manager_or_admin(request)
+    user = await require_manager(request)
 
     ids = payload.approval_item_ids
 
@@ -6319,8 +6347,8 @@ async def bulk_unhide_approval_items(payload: BulkApprovalItemIdsPayload, reques
 @api_router.post("/deliverables/{deliverable_id}/approve")
 async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
-    if user.role not in ("admin", "manager"):
-        raise HTTPException(status_code=403, detail="Only admin or manager can approve")
+    if user.role != "manager":
+        raise HTTPException(status_code=403, detail="Only managers can approve")
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")
@@ -6332,8 +6360,8 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
 @api_router.post("/deliverables/{deliverable_id}/reject")
 async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
-    if user.role not in ("admin", "manager"):
-        raise HTTPException(status_code=403, detail="Only admin or manager can reject")
+    if user.role != "manager":
+        raise HTTPException(status_code=403, detail="Only managers can reject")
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")

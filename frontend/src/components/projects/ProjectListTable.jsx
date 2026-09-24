@@ -49,6 +49,8 @@ export const ProjectListTable = ({
   onDeleteProject,
   page,
   setPage,
+  // View-only: no checkboxes and no hide / delete menu items.
+  readOnly = false,
 }) => {
   const totalPages = Math.max(
     1,
@@ -82,15 +84,17 @@ export const ProjectListTable = ({
         <table className="w-full min-w-[1180px] text-left">
           <thead>
             <tr className="border-b border-border bg-[#f7f9fc] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <th className="w-12 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={allPageSelected}
-                  onChange={togglePage}
-                  className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
-                  aria-label="Select visible projects"
-                />
-              </th>
+              {!readOnly && (
+                <th className="w-12 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={togglePage}
+                    className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
+                    aria-label="Select visible projects"
+                  />
+                </th>
+              )}
 
               <th className="px-4 py-3">Project</th>
               <th className="px-4 py-3">Client</th>
@@ -137,17 +141,19 @@ export const ProjectListTable = ({
                   ].join(" ")}
                 >
                   {/* Checkbox */}
-                  <td className="px-4 py-4">
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() =>
-                        onSelectProject?.(project.id)
-                      }
-                      className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
-                      aria-label={`Select ${project.name}`}
-                    />
-                  </td>
+                  {!readOnly && (
+                    <td className="px-4 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() =>
+                          onSelectProject?.(project.id)
+                        }
+                        className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
+                        aria-label={`Select ${project.name}`}
+                      />
+                    </td>
+                  )}
 
                   {/* Project */}
                   <td className="px-4 py-4">
@@ -240,7 +246,7 @@ export const ProjectListTable = ({
                           View project
                         </DropdownMenuItem>
 
-                        {project.hidden ? (
+                        {!readOnly && (project.hidden ? (
                           <DropdownMenuItem
                             onClick={() =>
                               onUnhideProject?.(project)
@@ -258,17 +264,19 @@ export const ProjectListTable = ({
                             <EyeOff className="h-4 w-4" />
                             Hide project
                           </DropdownMenuItem>
-                        )}
+                        ))}
 
-                        <DropdownMenuItem
-                          className="text-red-600 focus:text-red-600"
-                          onClick={() =>
-                            onDeleteProject?.(project)
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete project
-                        </DropdownMenuItem>
+                        {!readOnly && (
+                          <DropdownMenuItem
+                            className="text-red-600 focus:text-red-600"
+                            onClick={() =>
+                              onDeleteProject?.(project)
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete project
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>

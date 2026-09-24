@@ -96,7 +96,10 @@ const notificationIcon = (type) => {
   return <Icon className="h-4 w-4" />;
 };
 
-export default function NotificationCenter() {
+// placement: "header" (default) opens the panel under the bell and aligns it
+// to the right edge; "sidebar" is for the bell in the left-hand sidebar, where
+// the panel has to open towards the page instead.
+export default function NotificationCenter({ placement = "header" }) {
   const { currentUser, currentUserId } = useUser();
   const navigate = useNavigate();
 
@@ -349,7 +352,12 @@ export default function NotificationCenter() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-[390px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div
+          className={[
+            "absolute top-11 z-50 w-[390px] max-w-[calc(100vw-16px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl",
+            placement === "sidebar" ? "left-0" : "right-0",
+          ].join(" ")}
+        >
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <div>
               <div className="text-sm font-semibold text-slate-900">

@@ -10,10 +10,13 @@ import {
   Trash2,
   Upload,
   AlertTriangle,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
+import { useAccess } from "@/hooks/useAccess";
+import { usePinnedProjects } from "@/hooks/usePinnedProjects";
 import {
   getProject,
   getWorkItems,
@@ -105,6 +108,11 @@ export default function ProjectDetailPage() {
     users,
     loading: userLoading,
   } = useUser();
+
+  const access = useAccess();
+  // Everyone can open a project; only admins can change it.
+  const canManage = access.canManageProjects;
+  const { isPinned, togglePin } = usePinnedProjects();
 
   const [project, setProject] = useState(null);
   const [workItems, setWorkItems] = useState([]);
@@ -241,23 +249,6 @@ export default function ProjectDetailPage() {
 
   if (userLoading || !currentUser) return null;
 
-  if (currentUser.role !== "admin") {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm font-medium text-foreground">
-          Projects is available to Admins only
-        </p>
-
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-[#2b2bb5] transition-colors hover:bg-[#f0f0fd] hover:text-[#1a1a8a]"
-        >
-          Go to Work Sheet
-        </Link>
-      </div>
-    );
-  }
-
   if (loading || !project) {
     return <ProjectDetailSkeleton />;
   }
@@ -267,7 +258,6 @@ export default function ProjectDetailPage() {
     STATUS_COLORS.Active;
 
   const poc = project.client_poc;
-  const isElevated = currentUser.role !== "member";
 
   return (
     <div
@@ -314,7 +304,26 @@ export default function ProjectDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {currentUser.role === "admin" && (
+          <button
+            type="button"
+            onClick={() => {
+              const nowPinned = togglePin(project);
+              toast.success(nowPinned ? "Pinned to sidebar" : "Unpinned");
+            }}
+            aria-label={isPinned(project.id) ? "Unpin project" : "Pin project"}
+            aria-pressed={isPinned(project.id)}
+            title={isPinned(project.id) ? "Unpin from sidebar" : "Pin to sidebar"}
+            data-testid="project-detail-pin-btn"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-white text-muted-foreground transition-colors hover:bg-slate-50 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+          >
+            <Star
+              className={`h-4 w-4 ${
+                isPinned(project.id) ? "fill-amber-400 text-amber-500" : ""
+              }`}
+            />
+          </button>
+
+          {canManage && (
             <button
               type="button"
               onClick={() => setEditProjectOpen(true)}
@@ -326,7 +335,7 @@ export default function ProjectDetailPage() {
             </button>
           )}
 
-          {currentUser?.role !== "member" && (
+          {canManage && (
             <button
               type="button"
               onClick={() => setDeleteProjectOpen(true)}
@@ -338,8 +347,7 @@ export default function ProjectDetailPage() {
             </button>
           )}
 
-          {isElevated &&
-          currentUser.role === "admin" ? (
+          {canManage ? (
             <select
               data-testid="project-detail-status-select"
               value={project.status}
@@ -408,7 +416,7 @@ export default function ProjectDetailPage() {
               </span>
             </h2>
 
-            {currentUser.role === "admin" && (
+            {canManage && (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -542,7 +550,7 @@ export default function ProjectDetailPage() {
                         </div>
                       </div>
 
-                      {currentUser.role === "admin" && (
+                      {canManage && (
                         <button
                           data-testid={`project-detail-edit-deliverable-${d.id}`}
                           onClick={() =>

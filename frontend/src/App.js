@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import PushNotifications from "@/components/notifications/PushNotifications";
 import { AppShellSkeleton } from "@/components/skeletons/Skeletons";
+import { RequireAccess } from "@/components/layout/RequireAccess";
 
 // Every page used to be imported eagerly here, which meant visiting any
 // one route (even the Work Sheet) pulled the JS for every other page —
@@ -95,24 +96,33 @@ function AppShell() {
         <AppLayout>
           <Routes>
             <Route path="/" element={<WorkSheetPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route
+              path="/dashboard"
+              element={<RequireAccess><DashboardPage /></RequireAccess>}
+            />
             <Route path="/efficiency" element={<EfficiencyPage />} />
             <Route
               path="/efficiency/settings/monthly-capacity"
-              element={<EfficiencyMonthlyCapacityPage />}
+              element={<RequireAccess><EfficiencyMonthlyCapacityPage /></RequireAccess>}
             />
             <Route
               path="/efficiency/settings/activity-targets"
-              element={<EfficiencyActivityTargetsPage />}
+              element={<RequireAccess><EfficiencyActivityTargetsPage /></RequireAccess>}
             />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route
               path="/projects/:projectId"
               element={<ProjectDetailPage />}
             />
-            <Route path="/team" element={<TeamPage />} />
+            <Route
+              path="/team"
+              element={<RequireAccess><TeamPage /></RequireAccess>}
+            />
             <Route path="/approvals" element={<ApprovalsPage />} />
-            <Route path="/clients" element={<ClientsPage />} />
+            <Route
+              path="/clients"
+              element={<RequireAccess><ClientsPage /></RequireAccess>}
+            />
             <Route path="/profile" element={<ProfilePage />} />
           </Routes>
         </AppLayout>

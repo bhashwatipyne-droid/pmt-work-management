@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { toast } from "sonner";
 import {
@@ -716,6 +717,17 @@ export default function ClientsPage() {
 
   const [deleteClientTarget, setDeleteClientTarget] = useState(null);
   const [deletingClient, setDeletingClient] = useState(false);
+
+  // "Add client" from the ⌘K palette lands here with this flag set.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (location.state?.openAdd) {
+      setModal({ open: true, mode: "add", initial: null });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.key]);
 
   // Until the first response arrives the table shows a skeleton instead of
   // "No clients yet". Refreshes after an edit keep the current rows.

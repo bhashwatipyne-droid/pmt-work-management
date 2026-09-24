@@ -42,6 +42,7 @@ export const KanbanColumn = ({
   onDropProject,
   dragOverProjectId,
   isDropTarget = false,
+  readOnly = false,
 }) => {
   const c = STATUS_COLORS[status];
 
@@ -58,6 +59,7 @@ export const KanbanColumn = ({
       titleClassName={c?.text || "text-foreground"}
       headerAction={
         <div className="flex shrink-0 items-center gap-2">
+          {!readOnly && (
           <label
             className="inline-flex shrink-0 items-center gap-2"
             title={
@@ -81,6 +83,7 @@ export const KanbanColumn = ({
               className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5] disabled:cursor-not-allowed disabled:opacity-40"
             />
           </label>
+          )}
 
           <button
             type="button"
@@ -93,10 +96,10 @@ export const KanbanColumn = ({
           </button>
         </div>
       }
-      empty={projects.length === 0 ? "Drop a project here" : null}
+      empty={projects.length === 0 ? (readOnly ? "No projects" : "Drop a project here") : null}
       isDropTarget={isDropTarget}
-      onDragOver={(event) => onDragOverColumn?.(event, status)}
-      onDrop={(event) => onDropColumn?.(event, status)}
+      onDragOver={readOnly ? undefined : (event) => onDragOverColumn?.(event, status)}
+      onDrop={readOnly ? undefined : (event) => onDropColumn?.(event, status)}
     >
       {projects.length > 0 && (
         <div
@@ -116,6 +119,7 @@ export const KanbanColumn = ({
               onDragOver={onDragOverProject}
               onDrop={onDropProject}
               isDragTarget={dragOverProjectId === project.id}
+              readOnly={readOnly}
             />
           ))}
 

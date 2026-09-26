@@ -3961,8 +3961,8 @@ async def list_projects(
     status: Optional[str] = None,
     search: Optional[str] = None,
     visibility: Optional[str] = "visible",
-    limit: int = 1000,
-    include_deliverables: bool = True,
+    limit: int = 100,
+    include_deliverables: bool = False,
 ):
     user = await get_acting_user(request)
 

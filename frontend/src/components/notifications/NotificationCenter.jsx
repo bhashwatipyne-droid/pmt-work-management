@@ -277,7 +277,10 @@ export default function NotificationCenter({ placement = "header" }) {
     setActionId(notification.id);
 
     try {
-      await addWorkRowFromNotification(currentUserId, notification.id);
+      const createdItem = await addWorkRowFromNotification(
+        currentUserId,
+        notification.id
+      );
 
       await markNotificationRead(currentUserId, notification.id);
 
@@ -301,7 +304,12 @@ export default function NotificationCenter({ placement = "header" }) {
 
       toast.success("Row added to your worksheet");
       setOpen(false);
-      navigate("/", { state: { refreshWorkSheet: true } });
+      navigate(
+        "/",
+        createdItem?.id
+          ? { state: { newWorkItem: createdItem } }
+          : { state: { refreshWorkSheet: true } }
+      );
     } catch (err) {
       toast.error(
         err?.response?.data?.detail || "Could not add the worksheet row"

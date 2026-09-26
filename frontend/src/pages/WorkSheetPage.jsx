@@ -431,7 +431,15 @@ export default function WorkSheetPage() {
   // swapping the whole table for "Loading rows..." on arrival is jarring
   // and unnecessary, same as the equivalent fix on the Projects Kanban.
   useEffect(() => {
-    if (location.state?.refreshWorkSheet) {
+    if (location.state?.newWorkItem) {
+      // The created row travels with us via router state now, so it can be
+      // spliced straight into the local list — no need to re-download the
+      // whole (potentially thousands-of-rows) collection just to show it.
+      setItems((prev) => [location.state.newWorkItem, ...prev]);
+      navigate(location.pathname, { replace: true, state: {} });
+    } else if (location.state?.refreshWorkSheet) {
+      // Fallback for a NotificationCenter build that only sends the old
+      // boolean flag (no item payload) — still correct, just heavier.
       fetchItems(false);
       navigate(location.pathname, { replace: true, state: {} });
     }
@@ -677,15 +685,23 @@ export default function WorkSheetPage() {
   };
 
   const handleQuickLoggerSave = async (payloads) => {
+    const created = [];
+
     for (const payload of payloads) {
-      const created = await createWorkItem(currentUser.id, payload);
+      const item = await createWorkItem(currentUser.id, payload);
+      created.push(item);
 
       trackEvent("task_created", {
-        task_id: created.id,
+        task_id: item.id,
       });
     }
 
-    await fetchItems();
+    // Previously this called fetchItems(), which — once the full list has
+    // loaded once — always re-downloads the ENTIRE work-items collection
+    // (up to 5000 rows) from Mongo just to show the handful of rows that
+    // were just created. Every other create/edit path in this file already
+    // updates `items` locally (see handleAddRow etc.) — do the same here.
+    setItems((prev) => [...created, ...prev]);
     refreshCounts();
   };
 

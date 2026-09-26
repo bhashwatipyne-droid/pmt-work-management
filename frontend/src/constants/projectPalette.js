@@ -22,6 +22,7 @@ export const STATUS_COLORS = {
     text: "text-blue-700",
     badge: "bg-blue-100 text-blue-700",
     ring: "ring-blue-300",
+    cardBorder: "border-l-blue-500",
   },
 
   "Approval Pending": {
@@ -30,6 +31,7 @@ export const STATUS_COLORS = {
     text: "text-amber-700",
     badge: "bg-amber-100 text-amber-700",
     ring: "ring-amber-300",
+    cardBorder: "border-l-amber-500",
   },
 
   Completed: {
@@ -38,6 +40,7 @@ export const STATUS_COLORS = {
     text: "text-emerald-700",
     badge: "bg-emerald-100 text-emerald-700",
     ring: "ring-emerald-300",
+    cardBorder: "border-l-emerald-500",
   },
 
   "Ready for Invoice": {
@@ -46,6 +49,7 @@ export const STATUS_COLORS = {
     text: "text-teal-700",
     badge: "bg-teal-100 text-teal-700",
     ring: "ring-teal-300",
+    cardBorder: "border-l-teal-500",
   },
 
   "Raised Invoice": {
@@ -54,6 +58,7 @@ export const STATUS_COLORS = {
     text: "text-violet-700",
     badge: "bg-violet-100 text-violet-700",
     ring: "ring-violet-300",
+    cardBorder: "border-l-violet-500",
   },
 
   "On Hold": {
@@ -62,6 +67,7 @@ export const STATUS_COLORS = {
     text: "text-orange-700",
     badge: "bg-orange-100 text-orange-700",
     ring: "ring-orange-300",
+    cardBorder: "border-l-orange-500",
   },
 
   Scrapped: {
@@ -70,6 +76,7 @@ export const STATUS_COLORS = {
     text: "text-slate-700",
     badge: "bg-slate-100 text-slate-700",
     ring: "ring-slate-300",
+    cardBorder: "border-l-slate-500",
   },
 };
 

@@ -56,6 +56,19 @@ const ProjectCardBase = ({
 
   const handleOpen = () => onOpen?.(project);
 
+  // One square per unit across all stages, capped so a project with a huge
+  // stage count doesn't blow up the card's height.
+  const MAX_STAGE_SQUARES = 24;
+  const allStageSquares = Object.entries(STAGE_COLORS).flatMap(
+    ([stage, c]) =>
+      Array.from({ length: project.stage_counts?.[stage] ?? 0 }, () => ({
+        stage,
+        dot: c.dot,
+      }))
+  );
+  const stageSquares = allStageSquares.slice(0, MAX_STAGE_SQUARES);
+  const stageSquaresHidden = allStageSquares.length - stageSquares.length;
+
   return (
     <div
       data-testid={`${PROJECTS.cardPrefix}-${project.id}`}
@@ -65,7 +78,8 @@ const ProjectCardBase = ({
       onDragOver={(event) => onDragOver?.(event, project)}
       onDrop={(event) => onDrop?.(event, project)}
       className={[
-        "w-full rounded-xl border bg-white p-4 text-left transition-all",
+        "w-full rounded-xl border border-l-4 bg-white p-4 text-left transition-all",
+        status.cardBorder || "border-l-slate-300",
         // Off-screen cards skip layout and paint until scrolled near; the
         // intrinsic size keeps the scrollbar stable in the meantime.
         "[content-visibility:auto] [contain-intrinsic-size:auto_250px]",
@@ -79,19 +93,25 @@ const ProjectCardBase = ({
     >
       {/* Selection + drag affordance */}
       <div className="flex items-center justify-between">
-        {readOnly ? (
-          <span />
-        ) : (
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onSelect?.(project.id)}
-            onClick={(e) => e.stopPropagation()}
-            draggable={false}
-            className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
-            aria-label={`Select ${project.name}`}
-          />
-        )}
+        <div className="flex min-w-0 items-center gap-2">
+          {readOnly ? (
+            <span />
+          ) : (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onSelect?.(project.id)}
+              onClick={(e) => e.stopPropagation()}
+              draggable={false}
+              className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
+              aria-label={`Select ${project.name}`}
+            />
+          )}
+
+          <span className="truncate font-mono text-[10px] uppercase tracking-wide text-slate-400">
+            {project.code}
+          </span>
+        </div>
 
         <div className="flex items-center gap-2">
           {!readOnly && (
@@ -101,7 +121,7 @@ const ProjectCardBase = ({
             />
           )}
           <span
-            className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
+            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
           >
             {project.status}
           </span>
@@ -113,7 +133,7 @@ const ProjectCardBase = ({
         type="button"
         draggable={false}
         onClick={handleOpen}
-        className="mt-3 block w-full text-left line-clamp-2 text-sm font-semibold leading-5 text-foreground hover:text-[#2b2bb5]"
+        className="mt-2 block w-full text-left line-clamp-2 text-sm font-semibold leading-5 text-foreground hover:text-[#2b2bb5]"
       >
         {project.name}
       </button>
@@ -137,15 +157,34 @@ const ProjectCardBase = ({
         </div>
       </div>
 
+      {/* Stage progress: a mini row of unit squares, capped so it can't blow
+          up the card for a project with a large stage count. */}
+      {stageSquares.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {stageSquares.map((c, i) => (
+            <span
+              key={`${c.stage}-${i}`}
+              className={`h-2 w-2 rounded-sm ${c.dot}`}
+            />
+          ))}
+
+          {stageSquaresHidden > 0 && (
+            <span className="text-[10px] leading-[8px] text-muted-foreground">
+              +{stageSquaresHidden}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Stage counts */}
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5">
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
         {Object.entries(STAGE_COLORS).map(([stage, c]) => (
           <span
             key={stage}
             className="flex items-center gap-1.5"
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${c.dot}`}
+              className={`h-1.5 w-1.5 rounded-sm ${c.dot}`}
             />
 
             <span
@@ -157,24 +196,22 @@ const ProjectCardBase = ({
         ))}
       </div>
 
-      {/* Footer */}
-      <div className="mt-3 flex items-center justify-end border-t border-border pt-3">
-        <span className="text-[11px] text-muted-foreground">
-          {fmtDate(project.end_date)}
-        </span>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">
-          {project.deliverables_count ?? 0} deliverable
-          {(project.deliverables_count ?? 0) === 1 ? "" : "s"}
-        </span>
+      {/* Footer: date + deliverable count on the left, Open on the right */}
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span>
+            {project.deliverables_count ?? 0} deliverable
+            {(project.deliverables_count ?? 0) === 1 ? "" : "s"}
+          </span>
+          <span className="text-slate-300">•</span>
+          <span>{fmtDate(project.end_date)}</span>
+        </div>
 
         <button
           type="button"
           draggable={false}
           onClick={handleOpen}
-          className="inline-flex items-center gap-1 text-xs font-medium text-[#2b2bb5]"
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[#2b2bb5]"
         >
           Open
           <ArrowRight className="h-3 w-3" />

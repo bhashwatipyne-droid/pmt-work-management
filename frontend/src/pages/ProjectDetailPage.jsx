@@ -182,6 +182,22 @@ export default function ProjectDetailPage() {
     }
   };
 
+  // Lightweight refresh for edits that only change the project or its
+  // deliverables (saving/adding/importing a deliverable, editing the project).
+  // Work items, options and clients are unaffected by those, so re-downloading
+  // them - two work-item queries, the options and the whole client list - on
+  // every save was pure wasted bandwidth. One project fetch is all that's
+  // needed. No loading flag: the page stays put instead of flashing a skeleton.
+  const refreshProject = async () => {
+    try {
+      setProject(await getProject(currentUserId, projectId));
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || "Failed to refresh project"
+      );
+    }
+  };
+
   useEffect(() => {
     if (currentUser) {
       fetchAll();
@@ -227,7 +243,7 @@ export default function ProjectDetailPage() {
       updates
     );
 
-    await fetchAll();
+    await refreshProject();
   };
 
   const handleProjectDelete = async () => {
@@ -670,7 +686,7 @@ export default function ProjectDetailPage() {
             open: false,
           }))
         }
-        onSaved={fetchAll}
+        onSaved={refreshProject}
       />
 
       <ImportDeliverablesModal
@@ -678,7 +694,7 @@ export default function ProjectDetailPage() {
         projectId={projectId}
         deliverableTypes={deliverableTypes}
         onClose={() => setImportOpen(false)}
-        onImported={fetchAll}
+        onImported={refreshProject}
       />
 
       <ProjectEditModal

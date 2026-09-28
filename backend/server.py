@@ -2150,6 +2150,21 @@ async def get_options():
     }
 
 
+async def _content_rows_with_real_creator():
+    """Mongo clause that hides Content-stage work items whose creator is
+    missing OR points at a user that no longer exists (both render as
+    "Unassigned" on the Work Sheet). Other stages are untouched."""
+    user_ids = [
+        u["id"] async for u in db.users.find({}, {"_id": 0, "id": 1}) if u.get("id")
+    ]
+    return {
+        "$or": [
+            {"stage": {"$ne": "Content"}},
+            {"creator_id": {"$in": user_ids}},
+        ]
+    }
+
+
 @api_router.get("/work-items/pending-count")
 async def work_items_pending_count(request: Request):
     """Lightweight count for the sidebar's Work Sheet badge: items not yet
@@ -2162,10 +2177,7 @@ async def work_items_pending_count(request: Request):
     query = {
         "status": {"$ne": "Closed"},
         # Unassigned Content rows are hidden from the sheet, so don't count them.
-        "$or": [
-            {"stage": {"$ne": "Content"}},
-            {"creator_id": {"$nin": [None, ""]}},
-        ],
+        **(await _content_rows_with_real_creator()),
     }
 
     if user.role != "admin":
@@ -2253,12 +2265,7 @@ async def list_work_items(
 
     if hide_unassigned_content:
         # $and (not a top-level $or) so it can't collide with the search $or below.
-        query.setdefault("$and", []).append({
-            "$or": [
-                {"stage": {"$ne": "Content"}},
-                {"creator_id": {"$nin": [None, ""]}},
-            ]
-        })
+        query.setdefault("$and", []).append(await _content_rows_with_real_creator())
 
     # Existing search. Escaped so typing "(" or "[" in the search box (or the
     # command palette, which reuses this) matches literally instead of

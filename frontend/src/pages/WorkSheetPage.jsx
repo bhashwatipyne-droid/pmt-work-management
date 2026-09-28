@@ -139,7 +139,23 @@ export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
   const location = useLocation();
   const navigate = useNavigate();
-  const [items, setItems] = useState([]);
+  const [rawItems, setItems] = useState([]);
+
+  // Content rows whose creator is missing or no longer matches a real user show
+  // up as "Unassigned" and number in the thousands. The server already skips
+  // them; this drops any that slip through (e.g. an older backend) BEFORE any
+  // filtering, counting, grouping or rendering. Skipped until users have loaded
+  // so the sheet can't briefly hide everything.
+  const items = useMemo(() => {
+    if (!users?.length) return rawItems;
+    const known = new Set(users.map((u) => u.id));
+    return rawItems.filter(
+      (row) =>
+        String(row.stage || "").trim().toLowerCase() !== "content" ||
+        (row.creator_id && known.has(row.creator_id))
+    );
+  }, [rawItems, users]);
+
   const [activeSheet, setActiveSheet] = useState("Master");
   const [options, setOptions] = useState({});
   const [clients, setClients] = useState([]);

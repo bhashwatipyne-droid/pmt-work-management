@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { Eye } from "lucide-react";
+import { EyeOff } from "lucide-react";
 
-import { STATUS_COLORS } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
 import { ProjectCard } from "./ProjectCard";
-import { KanbanColumn as BaseKanbanColumn } from "@/components/ui/KanbanColumn";
+import { statusStyle } from "./projectVisuals";
 
 const COLUMN_TESTIDS = {
   Active: PROJECTS.columnActive,
@@ -15,6 +14,9 @@ const COLUMN_TESTIDS = {
   "On Hold": PROJECTS.columnOnHold,
   Scrapped: PROJECTS.columnScrapped,
 };
+
+// Column width from the design (the same 4-up grid as the metric cards).
+export const COLUMN_WIDTH = 279.5;
 
 // How many cards a column renders at first, and how many more each "Show
 // more" click adds. Rendering every project at once (800+ in total, roughly
@@ -27,12 +29,15 @@ const VISIBLE_STEP = 40;
 export const KanbanColumn = ({
   status,
   projects,
-  users,
   onOpenProject,
   selectedProjects,
+  selectionMode = false,
   onSelectProject,
   onSelectAll,
   allSelected,
+  onHideProject,
+  onUnhideProject,
+  onDeleteProject,
   onToggleVisibility,
   onDragOverColumn,
   onDropColumn,
@@ -44,7 +49,7 @@ export const KanbanColumn = ({
   isDropTarget = false,
   readOnly = false,
 }) => {
-  const c = STATUS_COLORS[status];
+  const s = statusStyle(status);
 
   const [limit, setLimit] = useState(INITIAL_VISIBLE);
   const shownProjects =
@@ -52,89 +57,96 @@ export const KanbanColumn = ({
   const hiddenCount = projects.length - shownProjects.length;
 
   return (
-    <BaseKanbanColumn
-      title={status}
-      count={projects.length}
-      dotClassName={c?.dot}
-      titleClassName={c?.text || "text-foreground"}
-      headerAction={
-        <div className="flex shrink-0 items-center gap-2">
-          {!readOnly && (
-          <label
-            className="inline-flex shrink-0 items-center gap-2"
-            title={
-              projects.length === 0
-                ? "No projects in this column"
-                : allSelected
-                  ? "Deselect all projects in this column"
-                  : "Select all projects in this column"
-            }
-          >
+    <div
+      onDragOver={readOnly ? undefined : (event) => onDragOverColumn?.(event, status)}
+      onDrop={readOnly ? undefined : (event) => onDropColumn?.(event, status)}
+      style={{ width: COLUMN_WIDTH, minWidth: COLUMN_WIDTH }}
+      className="flex shrink-0 flex-col"
+    >
+      {/* Header pill */}
+      <div
+        className="group flex h-[37px] items-center gap-2 rounded-[8px] border pl-3 pr-3"
+        style={{ background: s.headBg, borderColor: s.headBorder }}
+      >
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.dot }} />
+        <span
+          className="truncate text-[12.5px] font-semibold leading-none"
+          style={{ color: s.dot }}
+        >
+          {status}
+        </span>
+
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {selectionMode && !readOnly && projects.length > 0 && (
             <input
               type="checkbox"
               checked={allSelected}
-              disabled={projects.length === 0}
               onChange={() => onSelectAll?.(projects)}
-              aria-label={
-                allSelected
-                  ? `Deselect all ${status} projects`
-                  : `Select all ${status} projects`
-              }
-              className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={allSelected ? `Deselect all ${status} projects` : `Select all ${status} projects`}
+              className="h-3.5 w-3.5 cursor-pointer rounded accent-[#3b6ef6]"
             />
-          </label>
           )}
-
           <button
             type="button"
             onClick={() => onToggleVisibility?.(status)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[#667085] transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5]"
             title={`Hide ${status} column`}
             aria-label={`Hide ${status} column`}
+            className="hidden h-5 w-5 items-center justify-center rounded text-[#98a1af] hover:bg-white/70 hover:text-[#4b5563] focus-visible:flex group-hover:flex"
           >
-            <Eye className="h-4 w-4" />
+            <EyeOff className="h-3.5 w-3.5" />
           </button>
-        </div>
-      }
-      empty={projects.length === 0 ? (readOnly ? "No projects" : "Drop a project here") : null}
-      isDropTarget={isDropTarget}
-      onDragOver={readOnly ? undefined : (event) => onDragOverColumn?.(event, status)}
-      onDrop={readOnly ? undefined : (event) => onDropColumn?.(event, status)}
-    >
-      {projects.length > 0 && (
-        <div
-          data-testid={COLUMN_TESTIDS[status]}
-          className="flex flex-col gap-3"
-        >
-          {shownProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              users={users}
-              selected={selectedProjects?.has(project.id)}
-              onSelect={onSelectProject}
-              onOpen={onOpenProject}
-              onDragStart={onDragStartProject}
-              onDragEnd={onDragEndProject}
-              onDragOver={onDragOverProject}
-              onDrop={onDropProject}
-              isDragTarget={dragOverProjectId === project.id}
-              readOnly={readOnly}
-            />
-          ))}
+          <span
+            className="text-[11.5px] font-medium leading-none"
+            style={{ color: s.dot, opacity: 0.75 }}
+          >
+            {projects.length}
+          </span>
+        </span>
+      </div>
 
-          {hiddenCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setLimit((current) => current + VISIBLE_STEP)}
-              className="rounded-lg border border-dashed border-border bg-white/70 px-3 py-2 text-xs font-medium text-[#2b2bb5] transition-colors hover:bg-white"
-            >
-              Show {Math.min(VISIBLE_STEP, hiddenCount)} more ({hiddenCount} not
-              shown)
-            </button>
-          )}
-        </div>
-      )}
-    </BaseKanbanColumn>
+      {/* Cards */}
+      <div
+        data-testid={COLUMN_TESTIDS[status]}
+        className={`mt-[7px] flex min-h-[200px] flex-1 flex-col gap-[7px] rounded-[10px] transition-colors ${
+          isDropTarget ? "bg-[#eef1f6]" : ""
+        }`}
+      >
+        {shownProjects.map((project) => (
+          <ProjectCard
+            key={project.id}
+            project={project}
+            selected={selectedProjects?.has(project.id)}
+            selectionMode={selectionMode}
+            onSelect={onSelectProject}
+            onOpen={onOpenProject}
+            onHide={onHideProject}
+            onUnhide={onUnhideProject}
+            onDelete={onDeleteProject}
+            onDragStart={onDragStartProject}
+            onDragEnd={onDragEndProject}
+            onDragOver={onDragOverProject}
+            onDrop={onDropProject}
+            isDragTarget={dragOverProjectId === project.id}
+            readOnly={readOnly}
+          />
+        ))}
+
+        {projects.length === 0 && (
+          <div className="flex h-[120px] items-center justify-center rounded-[10px] border border-dashed border-[#dde1e7] text-[12px] text-[#98a1af]">
+            {readOnly ? "No projects" : "Drop a project here"}
+          </div>
+        )}
+
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setLimit((current) => current + VISIBLE_STEP)}
+            className="h-9 rounded-[10px] border border-dashed border-[#dde1e7] bg-white/60 text-[12px] font-medium text-[#3b6ef6] hover:bg-white"
+          >
+            Show {Math.min(VISIBLE_STEP, hiddenCount)} more ({hiddenCount} not shown)
+          </button>
+        )}
+      </div>
+    </div>
   );
 };

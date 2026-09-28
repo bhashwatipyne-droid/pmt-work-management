@@ -1,73 +1,65 @@
 import { memo } from "react";
+import { ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2 } from "lucide-react";
 
-import {
-  STAGE_COLORS,
-  STATUS_COLORS,
-} from "@/constants/projectPalette";
-
+import { STAGE_HEX, clientDotColor } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
-
 import {
-  ArrowRight,
-  Building2,
-  GripVertical,
-  User as UserIcon,
-} from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  MoreDots,
+  ProjectStatusBadge,
+  fmtDayMonth,
+  isProjectOverdue,
+  statusStyle,
+} from "./projectVisuals";
 
-const fmtDate = (iso) => {
-  if (!iso) return "—";
+const STAGES = Object.keys(STAGE_HEX);
 
-  try {
-    const d = new Date(iso);
+// Two rows of unit squares fit a card (12 per row); beyond that the last
+// slot says how many more there are.
+const MAX_SQUARES = 24;
 
-    return d.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-    });
-  } catch {
-    return iso;
-  }
-};
+const MENU_ITEM =
+  "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]";
 
 // memo(): the board can hold hundreds of cards, and everything on the page
 // (opening a modal, typing in search, ticking a checkbox, dragging) re-renders
-// the page component. Without memo every one of those re-rendered and
-// re-diffed every card. With it a card only re-renders when its own props
+// the page component. With memo a card only re-renders when its own props
 // change - which is why the handlers passed in must be stable (see
-// ProjectsPage) and `onOpen` receives the project instead of being a fresh
-// closure per card.
+// ProjectsPage) and receive the project instead of being fresh closures.
 const ProjectCardBase = ({
   project,
   onOpen,
   selected = false,
+  // Once anything is selected every card shows its checkbox.
+  selectionMode = false,
   onSelect,
+  onHide,
+  onUnhide,
+  onDelete,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDrop,
   isDragTarget = false,
-  // View-only: no selection checkbox, no drag handle, no dragging.
+  // View-only: no selection, no dragging, no hide/delete.
   readOnly = false,
 }) => {
-  const status =
-    STATUS_COLORS[project.status] || STATUS_COLORS.Active;
-
-  const poc = project.client_poc;
-
+  const s = statusStyle(project.status);
   const handleOpen = () => onOpen?.(project);
 
-  // One square per unit across all stages, capped so a project with a huge
-  // stage count doesn't blow up the card's height.
-  const MAX_STAGE_SQUARES = 24;
-  const allStageSquares = Object.entries(STAGE_COLORS).flatMap(
-    ([stage, c]) =>
-      Array.from({ length: project.stage_counts?.[stage] ?? 0 }, () => ({
-        stage,
-        dot: c.dot,
-      }))
+  const counts = project.stage_counts || {};
+  const squares = STAGES.flatMap((stage) =>
+    Array.from({ length: counts[stage] ?? 0 }, () => STAGE_HEX[stage])
   );
-  const stageSquares = allStageSquares.slice(0, MAX_STAGE_SQUARES);
-  const stageSquaresHidden = allStageSquares.length - stageSquares.length;
+  const overflow = squares.length > MAX_SQUARES;
+  const shownSquares = overflow ? squares.slice(0, MAX_SQUARES - 1) : squares;
+  const overdue = isProjectOverdue(project);
 
   return (
     <div
@@ -78,143 +70,178 @@ const ProjectCardBase = ({
       onDragOver={(event) => onDragOver?.(event, project)}
       onDrop={(event) => onDrop?.(event, project)}
       className={[
-        "w-full rounded-xl border border-l-4 bg-white p-4 text-left transition-all",
-        status.cardBorder || "border-l-slate-300",
-        // Off-screen cards skip layout and paint until scrolled near; the
-        // intrinsic size keeps the scrollbar stable in the meantime.
-        "[content-visibility:auto] [contain-intrinsic-size:auto_250px]",
+        "relative w-full rounded-[10px] border bg-white px-[18px] pb-3 pt-4 text-left transition-shadow",
+        // Off-screen cards skip layout and paint until scrolled near.
+        "[content-visibility:auto] [contain-intrinsic-size:auto_262px]",
         readOnly ? "cursor-default" : "cursor-grab active:cursor-grabbing",
-        "hover:-translate-y-0.5 hover:border-[#c8c8ee] hover:shadow-md",
-        selected
-          ? "border-[#aaaaf0] bg-[#fafaff] ring-1 ring-[#d8d8ff]"
-          : "border-border",
-        isDragTarget ? "border-[#2b2bb5] ring-2 ring-[#d8d8ff]" : "",
+        selected || isDragTarget ? "border-[#3b6ef6]" : "border-[#e7e9ee]",
+        isDragTarget ? "ring-2 ring-[#cfddfc]" : "hover:shadow-[0_2px_8px_rgba(17,21,28,0.06)]",
       ].join(" ")}
     >
-      {/* Selection + drag affordance */}
-      <div className="flex items-center justify-between">
-        <div className="flex min-w-0 items-center gap-2">
-          {readOnly ? (
-            <span />
-          ) : (
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={() => onSelect?.(project.id)}
-              onClick={(e) => e.stopPropagation()}
+      {/* 3px status edge, 1px in from the border, as in the design */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-px left-px top-px w-[3px] rounded-l-[8px]"
+        style={{ background: s.dot }}
+      />
+
+      {/* Code · status · more */}
+      <div className="flex h-[22px] items-center gap-[10px]">
+        {!readOnly && selectionMode && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onSelect?.(project.id)}
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+            className="-mr-1 h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-[#c3c8d2] accent-[#3b6ef6]"
+            aria-label={`Select ${project.name}`}
+          />
+        )}
+        <span className="truncate text-[11px] leading-none text-[#98a1af]">
+          {project.code}
+        </span>
+        <ProjectStatusBadge status={project.status} />
+
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
               draggable={false}
-              className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
-              aria-label={`Select ${project.name}`}
-            />
-          )}
-
-          <span className="truncate font-mono text-[10px] uppercase tracking-wide text-slate-400">
-            {project.code}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {!readOnly && (
-            <GripVertical
-              className="h-4 w-4 text-slate-300"
-              aria-hidden="true"
-            />
-          )}
-          <span
-            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
+              aria-label={`More actions for ${project.name}`}
+              className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] hover:bg-[#f4f5f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]"
+            >
+              <MoreDots />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            sideOffset={4}
+            className="w-44 rounded-[10px] border-[#e7e9ee] p-1 shadow-[0_6px_20px_rgba(17,21,28,0.1)]"
           >
-            {project.status}
-          </span>
-        </div>
+            <DropdownMenuItem className={MENU_ITEM} onSelect={handleOpen}>
+              <ArrowRight className="!h-3.5 !w-3.5 text-[#6b7280]" />
+              Open project
+            </DropdownMenuItem>
+            {!readOnly && (
+              <>
+                <DropdownMenuItem className={MENU_ITEM} onSelect={() => onSelect?.(project.id)}>
+                  <SquareCheck className="!h-3.5 !w-3.5 text-[#6b7280]" />
+                  {selected ? "Deselect" : "Select"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className={MENU_ITEM}
+                  onSelect={() => (project.hidden ? onUnhide : onHide)?.(project)}
+                >
+                  {project.hidden ? (
+                    <Eye className="!h-3.5 !w-3.5 text-[#6b7280]" />
+                  ) : (
+                    <EyeOff className="!h-3.5 !w-3.5 text-[#6b7280]" />
+                  )}
+                  {project.hidden ? "Unhide project" : "Hide project"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1 bg-[#f0f2f5]" />
+                <DropdownMenuItem
+                  className={`${MENU_ITEM} !text-[#b42318] focus:!bg-[#fef3f2]`}
+                  onSelect={() => onDelete?.(project)}
+                >
+                  <Trash2 className="!h-3.5 !w-3.5" />
+                  Delete project
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {/* Project name */}
+      {/* Name */}
       <button
         type="button"
         draggable={false}
         onClick={handleOpen}
-        className="mt-2 block w-full text-left line-clamp-2 text-sm font-semibold leading-5 text-foreground hover:text-[#2b2bb5]"
+        className="mt-[13px] block w-full text-left text-[15px] font-bold leading-[18px] text-[#11151c] line-clamp-2 hover:text-[#3b6ef6]"
       >
         {project.name}
       </button>
 
-      {/* Client + POC */}
-      <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-3.5 w-3.5 shrink-0" />
-
-          <span className="truncate">
-            {project.client_name || "—"}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <UserIcon className="h-3.5 w-3.5 shrink-0" />
-
-          <span className="truncate">
-            {poc || "Unassigned"}
-          </span>
-        </div>
+      {/* Client */}
+      <div className="mt-[6px] flex items-center gap-[7px]">
+        <span
+          className="h-[6px] w-[6px] shrink-0 rounded-[2px]"
+          style={{ background: clientDotColor(project.client_name) }}
+        />
+        <span className="truncate text-[12.5px] leading-[15px] text-[#6b7280]">
+          {project.client_name || "—"}
+        </span>
       </div>
 
-      {/* Stage progress: a mini row of unit squares, capped so it can't blow
-          up the card for a project with a large stage count. */}
-      {stageSquares.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1">
-          {stageSquares.map((c, i) => (
-            <span
-              key={`${c.stage}-${i}`}
-              className={`h-2 w-2 rounded-sm ${c.dot}`}
-            />
-          ))}
+      {/* POC */}
+      <div className="mt-[5px] flex items-center gap-[6px]">
+        <Phone className="h-3 w-3 shrink-0 text-[#98a1af]" strokeWidth={2} />
+        <span className="truncate text-[12px] leading-[15px] text-[#6b7280]">
+          {project.client_poc || "Unassigned"}
+        </span>
+      </div>
 
-          {stageSquaresHidden > 0 && (
-            <span className="text-[10px] leading-[8px] text-muted-foreground">
-              +{stageSquaresHidden}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Stage counts */}
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
-        {Object.entries(STAGE_COLORS).map(([stage, c]) => (
+      {/* One square per deliverable, coloured by its current stage. Two
+          rows tall at least, filled from the bottom, so the legend sits at
+          the same height on every card. */}
+      <div className="mt-[13px] flex min-h-[36px] flex-wrap content-end gap-1">
+        {shownSquares.map((color, i) => (
           <span
-            key={stage}
-            className="flex items-center gap-1.5"
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-sm ${c.dot}`}
-            />
-
-            <span
-              className={`text-[11px] font-medium ${c.text}`}
-            >
-              {stage} {project.stage_counts?.[stage] ?? 0}
-            </span>
-          </span>
+            key={i}
+            className="h-4 w-4 rounded-[4px]"
+            style={{ background: color }}
+          />
         ))}
+        {overflow && (
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-[4px] bg-[#f0f2f5] px-1 text-[9.5px] font-semibold text-[#6b7280]">
+            +{squares.length - shownSquares.length}
+          </span>
+        )}
       </div>
 
-      {/* Footer: date + deliverable count on the left, Open on the right */}
-      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span>
-            {project.deliverables_count ?? 0} deliverable
-            {(project.deliverables_count ?? 0) === 1 ? "" : "s"}
-          </span>
-          <span className="text-slate-300">•</span>
-          <span>{fmtDate(project.end_date)}</span>
-        </div>
+      {/* Stage legend */}
+      <div className="mt-[10px] flex flex-wrap gap-x-[10px] gap-y-1">
+        {STAGES.map((stage) => {
+          const n = counts[stage] ?? 0;
+          return (
+            <span key={stage} className="flex items-center gap-[5px]">
+              <span
+                className="h-[9px] w-[9px] rounded-[2px]"
+                style={{ background: n ? STAGE_HEX[stage] : "#dde1e7" }}
+              />
+              <span
+                className={`text-[10.5px] leading-[13px] ${
+                  n ? "font-medium text-[#4b5563]" : "text-[#a9b0bd]"
+                }`}
+              >
+                {stage} {n}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 h-[2px] bg-[#f0f2f5]" />
+
+      {/* Deadline · Open */}
+      <div className="mt-[9px] flex h-7 items-center justify-between">
+        <span
+          className={`text-[12px] ${overdue ? "text-[#b42318]" : "text-[#6b7280]"}`}
+          title={overdue ? "Past its deadline" : undefined}
+        >
+          {fmtDayMonth(project.end_date)}
+        </span>
 
         <button
           type="button"
           draggable={false}
           onClick={handleOpen}
-          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[#2b2bb5]"
+          className="inline-flex shrink-0 items-center gap-[3px] text-[12.5px] font-semibold text-[#3b6ef6] hover:text-[#1d4ed8]"
         >
           Open
-          <ArrowRight className="h-3 w-3" />
+          <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.25} />
         </button>
       </div>
     </div>

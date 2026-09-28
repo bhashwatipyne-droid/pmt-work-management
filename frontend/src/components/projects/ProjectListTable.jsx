@@ -1,359 +1,274 @@
-import {
-  CalendarDays,
-  MoreVertical,
-  Eye,
-  EyeOff,
-  Trash2,
-  UserRound,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, EyeOff, Trash2, ArrowRight } from "lucide-react";
 
-import {
-  STAGE_COLORS,
-  STATUS_COLORS,
-} from "@/constants/projectPalette";
-
+import { STAGE_HEX } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
-
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  MoreDots,
+  ProjectStatusBadge,
+  fmtDayMonth,
+  isProjectOverdue,
+  statusStyle,
+} from "./projectVisuals";
 
 const PAGE_SIZE = 10;
+const STAGES = Object.keys(STAGE_HEX);
 
-const fmtDate = (iso) => {
-  if (!iso) return "—";
+// Column widths from the Figma list frame (Campaign · Client · Status ·
+// Deliverables · Stages · Deadline), plus a narrow slot for the row menu.
+const GRID =
+  "grid grid-cols-[minmax(250px,1fr)_195px_167px_125px_153px_145px_28px] items-center";
 
-  try {
-    return new Date(iso).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-};
+const MENU_ITEM =
+  "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]";
 
 export const ProjectListTable = ({
   projects,
-  users,
   selectedProjects,
+  // Once anything is selected every row shows its checkbox.
+  selectionMode = false,
   onSelectProject,
   onSelectPage,
   onOpenProject,
   onHideProject,
   onUnhideProject,
   onDeleteProject,
+  onNewProject,
   page,
   setPage,
-  // View-only: no checkboxes and no hide / delete menu items.
+  // View-only: no checkboxes, no hide / delete, no "New project" row.
   readOnly = false,
 }) => {
-  const totalPages = Math.max(
-    1,
-    Math.ceil(projects.length / PAGE_SIZE)
-  );
-
+  const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-
-  const pageProjects = projects.slice(
-    (safePage - 1) * PAGE_SIZE,
-    safePage * PAGE_SIZE
-  );
-
+  const pageProjects = projects.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const pageIds = pageProjects.map((p) => p.id);
-
   const allPageSelected =
-    pageIds.length > 0 &&
-    pageIds.every((id) => selectedProjects.has(id));
-
-  const togglePage = () => {
-    onSelectPage?.(pageIds, !allPageSelected);
-  };
+    pageIds.length > 0 && pageIds.every((id) => selectedProjects.has(id));
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-white">
-      {/* The "Sort by" control lives once in the page's toolbar (above both
-          this table and the Kanban board) rather than duplicated here, so
-          the two views can never show a different order for the same
-          criterion - see ProjectsPage.jsx and lib/projectSort.js. */}
+    <div className="overflow-hidden rounded-[10px] border border-[#e7e9ee] bg-white">
       <div className="pmt-hscroll overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-left">
-          <thead>
-            <tr className="border-b border-border bg-[#f7f9fc] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="min-w-[1100px]">
+          {/* Header */}
+          <div
+            className={`${GRID} group h-[48px] border-b-2 border-[#edeff3] bg-[#fafbfc] px-[17px] text-[11px] font-medium uppercase leading-[13px] tracking-[0.07em] text-[#98a1af]`}
+          >
+            <span className="flex items-center gap-2">
               {!readOnly && (
-                <th className="w-12 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={allPageSelected}
-                    onChange={togglePage}
-                    className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
-                    aria-label="Select visible projects"
-                  />
-                </th>
+                <input
+                  type="checkbox"
+                  checked={allPageSelected}
+                  onChange={() => onSelectPage?.(pageIds, !allPageSelected)}
+                  aria-label="Select visible projects"
+                  className={`h-3.5 w-3.5 cursor-pointer rounded accent-[#3b6ef6] ${
+                    selectionMode ? "" : "hidden group-hover:block"
+                  }`}
+                />
               )}
+              Project
+            </span>
+            <span>Client</span>
+            <span>Status</span>
+            <span>Deliverables</span>
+            <span className="pr-4">
+              <span className="text-[#3b6ef6]">Content</span> ·{" "}
+              <span className="text-[#7c5cf6]">Design</span> ·{" "}
+              <span className="text-[#e08a0b]">Animate</span>
+            </span>
+            <span>Deadline</span>
+            <span />
+          </div>
 
-              <th className="px-4 py-3">Project</th>
-              <th className="px-4 py-3">Client</th>
-              <th className="px-4 py-3">POC / Owner</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Due Date</th>
+          {/* Rows */}
+          {pageProjects.map((project) => {
+            const selected = selectedProjects.has(project.id);
+            const counts = project.stage_counts || {};
+            const overdue = isProjectOverdue(project);
+            const showCheckbox = !readOnly;
 
-              {["Content", "Design", "Animate"].map(
-                (stage) => (
-                  <th key={stage} className="px-3 py-3">
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${STAGE_COLORS[stage].dot}`}
-                      />
-                      {stage}
-                    </span>
-                  </th>
-                )
-              )}
-
-              <th className="w-14 px-3 py-3"> </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {pageProjects.map((project) => {
-              const status =
-                STATUS_COLORS[project.status] ||
-                STATUS_COLORS["On Hold"];
-
-              const selected = selectedProjects.has(project.id);
-
-              const owner = project.client_poc;
-
-              return (
-                <tr
-                  key={project.id}
-                  data-testid={`${PROJECTS.listRowPrefix}-${project.id}`}
-                  className={[
-                    "border-b border-border last:border-0 transition-colors",
-                    selected
-                      ? "bg-[#fafaff]"
-                      : "hover:bg-[#fafbff]",
-                  ].join(" ")}
-                >
-                  {/* Checkbox */}
-                  {!readOnly && (
-                    <td className="px-4 py-4">
+            return (
+              <div
+                key={project.id}
+                data-testid={`${PROJECTS.listRowPrefix}-${project.id}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenProject?.(project)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onOpenProject?.(project);
+                }}
+                className={`${GRID} group h-[47px] cursor-pointer border-b-2 border-[#f2f4f7] px-[17px] transition-colors focus:outline-none ${
+                  selected ? "bg-[#f4f7ff]" : "hover:bg-[#fafbfc] focus-visible:bg-[#fafbfc]"
+                }`}
+              >
+                {/* Project: status dot (checkbox on hover) · code · name */}
+                <span className="flex min-w-0 items-center">
+                  <span className="relative flex h-3.5 w-[7px] shrink-0 items-center">
+                    <span
+                      className={`h-[7px] w-[7px] rounded-full ${
+                        showCheckbox && (selectionMode || selected) ? "invisible" : showCheckbox ? "group-hover:invisible" : ""
+                      }`}
+                      style={{ background: statusStyle(project.status).dot }}
+                    />
+                    {showCheckbox && (
                       <input
                         type="checkbox"
                         checked={selected}
-                        onChange={() =>
-                          onSelectProject?.(project.id)
-                        }
-                        className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] focus:ring-[#2b2bb5]"
+                        onChange={() => onSelectProject?.(project.id)}
+                        onClick={(e) => e.stopPropagation()}
                         aria-label={`Select ${project.name}`}
+                        className={`absolute -left-[3.5px] h-3.5 w-3.5 cursor-pointer rounded accent-[#3b6ef6] ${
+                          selectionMode || selected ? "" : "hidden group-hover:block"
+                        }`}
                       />
-                    </td>
-                  )}
+                    )}
+                  </span>
+                  <span className="ml-[9px] min-w-[59px] shrink-0 pr-[9px] text-[11px] text-[#98a1af]">
+                    {project.code}
+                  </span>
+                  <span className="truncate pr-4 text-[13.5px] font-semibold text-[#11151c]" title={project.name}>
+                    {project.name}
+                  </span>
+                </span>
 
-                  {/* Project */}
-                  <td className="px-4 py-4">
-                    <button
-                      type="button"
-                      onClick={() => onOpenProject?.(project)}
-                      className="text-left"
-                    >
-                      <div className="font-semibold text-foreground hover:text-[#2b2bb5]">
-                        {project.name}
-                      </div>
+                <span className="truncate pr-4 text-[12.5px] text-[#374151]" title={project.client_name}>
+                  {project.client_name || "—"}
+                </span>
 
-                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                        {project.code}
-                      </div>
-                    </button>
-                  </td>
+                <span>
+                  <ProjectStatusBadge status={project.status} />
+                </span>
 
-                  {/* Client */}
-                  <td className="max-w-[180px] px-4 py-4 text-sm text-slate-600">
-                    <span className="line-clamp-2">
-                      {project.client_name || "—"}
-                    </span>
-                  </td>
+                <span className="text-[12.5px] font-semibold text-[#374151]">
+                  {project.deliverables_count ?? 0}
+                </span>
 
-                  {/* Owner */}
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                      <UserRound className="h-3.5 w-3.5" />
-
-                      <span className="truncate">
-                        {owner || "Unassigned"}
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-4 py-4">
-                    <span
-                      className={`inline-flex items-center rounded-md px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}
-                    >
-                      {project.status}
-                    </span>
-                  </td>
-
-                  {/* Due date */}
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                      <CalendarDays className="h-4 w-4" />
-
-                      <span>{fmtDate(project.end_date)}</span>
-                    </div>
-                  </td>
-
-                  {/* Stage counts */}
-                  {["Content", "Design", "Animate"].map(
-                    (stage) => (
-                      <td key={stage} className="px-3 py-4">
+                <span className="flex items-center">
+                  {STAGES.map((stage) => {
+                    const n = counts[stage] ?? 0;
+                    return (
+                      <span key={stage} className="flex w-[28.6px] items-center gap-1" title={`${stage} ${n}`}>
                         <span
-                          className={`flex items-center gap-1.5 text-xs font-medium ${STAGE_COLORS[stage].text}`}
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ background: n ? STAGE_HEX[stage] : "#e3e6ec" }}
+                        />
+                        <span
+                          className="text-[11px] font-semibold"
+                          style={{ color: n ? STAGE_HEX[stage] : "#c3c8d2" }}
                         >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${STAGE_COLORS[stage].dot}`}
-                          />
-                          {project.stage_counts?.[stage] ?? 0}
+                          {n}
                         </span>
-                      </td>
-                    )
-                  )}
+                      </span>
+                    );
+                  })}
+                </span>
 
-                  {/* Actions */}
-                  <td className="px-3 py-4">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                          aria-label={`Actions for ${project.name}`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      </DropdownMenuTrigger>
+                <span className={`text-[12px] ${overdue ? "text-[#b42318]" : "text-[#6b7280]"}`}>
+                  {fmtDayMonth(project.end_date)}
+                </span>
 
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            onOpenProject?.(project)
-                          }
-                        >
-                          View project
-                        </DropdownMenuItem>
-
-                        {!readOnly && (project.hidden ? (
+                {/* Row menu, shown on hover */}
+                <span onClick={(e) => e.stopPropagation()} className="flex justify-end">
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`More actions for ${project.name}`}
+                        className="flex h-6 w-6 items-center justify-center rounded-[5px] opacity-0 hover:bg-[#eef0f3] focus:opacity-100 focus:outline-none group-hover:opacity-100 data-[state=open]:opacity-100"
+                      >
+                        <MoreDots />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={4}
+                      className="w-44 rounded-[10px] border-[#e7e9ee] p-1 shadow-[0_6px_20px_rgba(17,21,28,0.1)]"
+                    >
+                      <DropdownMenuItem className={MENU_ITEM} onSelect={() => onOpenProject?.(project)}>
+                        <ArrowRight className="!h-3.5 !w-3.5 text-[#6b7280]" />
+                        Open project
+                      </DropdownMenuItem>
+                      {!readOnly && (
+                        <>
                           <DropdownMenuItem
-                            onClick={() =>
-                              onUnhideProject?.(project)
-                            }
+                            className={MENU_ITEM}
+                            onSelect={() => (project.hidden ? onUnhideProject : onHideProject)?.(project)}
                           >
-                            <Eye className="h-4 w-4" />
-                            Unhide project
+                            {project.hidden ? (
+                              <Eye className="!h-3.5 !w-3.5 text-[#6b7280]" />
+                            ) : (
+                              <EyeOff className="!h-3.5 !w-3.5 text-[#6b7280]" />
+                            )}
+                            {project.hidden ? "Unhide project" : "Hide project"}
                           </DropdownMenuItem>
-                        ) : (
+                          <DropdownMenuSeparator className="my-1 bg-[#f0f2f5]" />
                           <DropdownMenuItem
-                            onClick={() =>
-                              onHideProject?.(project)
-                            }
+                            className={`${MENU_ITEM} !text-[#b42318] focus:!bg-[#fef3f2]`}
+                            onSelect={() => onDeleteProject?.(project)}
                           >
-                            <EyeOff className="h-4 w-4" />
-                            Hide project
-                          </DropdownMenuItem>
-                        ))}
-
-                        {!readOnly && (
-                          <DropdownMenuItem
-                            className="text-red-600 focus:text-red-600"
-                            onClick={() =>
-                              onDeleteProject?.(project)
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="!h-3.5 !w-3.5" />
                             Delete project
                           </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </span>
+              </div>
+            );
+          })}
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between border-t border-border px-5 py-3">
-        <span className="text-xs text-muted-foreground">
-          Showing{" "}
-          {projects.length === 0
-            ? 0
-            : (safePage - 1) * PAGE_SIZE + 1}
-          –
-          {Math.min(safePage * PAGE_SIZE, projects.length)} of{" "}
-          {projects.length} projects
-        </span>
-
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            disabled={safePage === 1}
-            onClick={() => setPage(Math.max(1, safePage - 1))}
-            className="h-8 w-8 rounded-md border border-border text-sm disabled:opacity-40"
-          >
-            ‹
-          </button>
-
-          {Array.from(
-            { length: Math.min(totalPages, 5) },
-            (_, index) => index + 1
-          ).map((number) => (
+          {!readOnly && (
             <button
-              key={number}
               type="button"
-              onClick={() => setPage(number)}
-              className={[
-                "h-8 min-w-8 rounded-md px-2 text-sm",
-                number === safePage
-                  ? "border border-[#c9c9f2] bg-[#f0f0fd] font-semibold text-[#2b2bb5]"
-                  : "text-slate-600 hover:bg-slate-50",
-              ].join(" ")}
+              onClick={onNewProject}
+              className="flex h-[35px] w-full items-center px-[17px] text-[12.5px] text-[#98a1af] transition-colors hover:text-[#3b6ef6]"
             >
-              {number}
+              + New project
             </button>
-          ))}
-
-          {totalPages > 5 && (
-            <>
-              <span className="px-1 text-slate-400">...</span>
-
-              <button
-                type="button"
-                onClick={() => setPage(totalPages)}
-                className="h-8 min-w-8 rounded-md px-2 text-sm"
-              >
-                {totalPages}
-              </button>
-            </>
           )}
-
-          <button
-            type="button"
-            disabled={safePage === totalPages}
-            onClick={() =>
-              setPage(Math.min(totalPages, safePage + 1))
-            }
-            className="h-8 w-8 rounded-md border border-border text-sm disabled:opacity-40"
-          >
-            ›
-          </button>
         </div>
       </div>
+
+      {/* Pagination (not in the design; only shown when there is more than
+          one page) */}
+      {totalPages > 1 && (
+        <div className="flex h-[42px] items-center justify-between border-t-2 border-[#f2f4f7] px-4">
+          <span className="text-[12px] text-[#98a1af]">
+            {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, projects.length)} of{" "}
+            {projects.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={safePage === 1}
+              onClick={() => setPage(Math.max(1, safePage - 1))}
+              aria-label="Previous page"
+              className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#4b5563] hover:bg-[#f4f5f7] disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="px-1 text-[12px] font-medium text-[#4b5563]">
+              {safePage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={safePage === totalPages}
+              onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+              aria-label="Next page"
+              className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#4b5563] hover:bg-[#f4f5f7] disabled:opacity-40"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

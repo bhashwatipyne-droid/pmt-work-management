@@ -1,7 +1,7 @@
 import { CalendarDays, Filter, RotateCcw } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
-import { PROJECT_STATUSES } from "@/constants/projectPalette";
+import { SORT_OPTIONS } from "@/lib/projectSort";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -11,8 +11,8 @@ import {
 
 export const ProjectFilterPanel = ({
   onClose,
-  statusFilter,
-  setStatusFilter,
+  sortBy,
+  setSortBy,
   clientFilter,
   setClientFilter,
   pocFilter,
@@ -68,19 +68,21 @@ export const ProjectFilterPanel = ({
         </div>
 
         <div className="space-y-4 p-4">
+          {/* Status lives in the page toolbar ("All status"); sorting,
+              which the design has no toolbar slot for, lives here. */}
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Status
+              Sort by
             </span>
             <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              data-testid="projects-sort-select"
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
               className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm font-medium text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
             >
-              <option value="">All status</option>
-              {PROJECT_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>

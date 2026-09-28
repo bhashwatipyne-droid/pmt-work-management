@@ -91,3 +91,53 @@ export const PROJECT_STATUSES = [
 ];
 
 export const STAGES = ["Content", "Design", "Animate"];
+
+// ---- Projects board / list (Figma "Campaigns" frames) -------------------
+// Exact hex values from the design. `dot` is the column dot, card edge and
+// list status dot; `head*` tint the column header; `badge*` style the
+// status pill on cards and list rows. Statuses the design doesn't show
+// (invoice / hold / scrapped) get colours from the same family.
+export const PROJECT_STATUS_STYLE = {
+  Active: {
+    dot: "#3b6ef6", headBg: "#f4f7ff", headBorder: "#dce6fe",
+    badgeBg: "#eff4ff", badgeBorder: "#cfddfc", badgeText: "#1d4ed8",
+  },
+  "Approval Pending": {
+    dot: "#e08a0b", headBg: "#fffbf2", headBorder: "#fbe6be",
+    badgeBg: "#fffaeb", badgeBorder: "#fce3a9", badgeText: "#b45309",
+  },
+  Completed: {
+    dot: "#0fa36b", headBg: "#f2fcf7", headBorder: "#cdeedd",
+    badgeBg: "#ecfdf3", badgeBorder: "#c9eedc", badgeText: "#047857",
+  },
+  "Ready for Invoice": {
+    dot: "#0d9488", headBg: "#f0fdfa", headBorder: "#c4ebe5",
+    badgeBg: "#effcf9", badgeBorder: "#bfe9e2", badgeText: "#0f766e",
+  },
+  "Raised Invoice": {
+    dot: "#7c5cf6", headBg: "#f7f5ff", headBorder: "#e2dbfe",
+    badgeBg: "#f5f1fe", badgeBorder: "#ddd2fa", badgeText: "#5b21b6",
+  },
+  "On Hold": {
+    dot: "#e2566c", headBg: "#fff5f6", headBorder: "#fbd5db",
+    badgeBg: "#fff1f3", badgeBorder: "#fbcfd6", badgeText: "#be123c",
+  },
+  Scrapped: {
+    dot: "#8a93a2", headBg: "#f7f8fa", headBorder: "#e3e6ec",
+    badgeBg: "#f3f4f6", badgeBorder: "#e3e6ec", badgeText: "#4b5563",
+  },
+};
+
+export const STAGE_HEX = {
+  Content: "#3b6ef6",
+  Design: "#7c5cf6",
+  Animate: "#e08a0b",
+};
+
+// Small coloured dot before a client's name: a stable colour per client.
+const CLIENT_DOTS = ["#e06a4b", "#2f7d8c", "#8a93a2", "#7c5cf6", "#0fa36b", "#e08a0b", "#3b6ef6"];
+export const clientDotColor = (name = "") => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return CLIENT_DOTS[hash % CLIENT_DOTS.length];
+};

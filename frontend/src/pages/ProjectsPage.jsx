@@ -7,15 +7,7 @@ import {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  Search,
-  Plus,
-  Eye,
-  LayoutGrid,
-  List,
-  X,
-  Filter,
-} from "lucide-react";
+import { Check, ChevronDown, Eye, Search, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
@@ -35,11 +27,16 @@ import {
   reorderProjects,
 } from "@/services/api";
 
-import { PROJECT_STATUSES } from "@/constants/projectPalette";
+import { PROJECT_STATUSES, PROJECT_STATUS_STYLE } from "@/constants/projectPalette";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PROJECTS } from "@/constants/testIds";
-import { ProjectMetricCard } from "@/components/projects/ProjectMetricCard";
-import { KanbanColumn } from "@/components/projects/KanbanColumn";
-import { KanbanBoard } from "@/components/ui/KanbanBoard";
+import { ProjectStatTile } from "@/components/projects/projectVisuals";
+import { COLUMN_WIDTH, KanbanColumn } from "@/components/projects/KanbanColumn";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { DEFAULT_SORT, SORT_OPTIONS, sortProjects } from "@/lib/projectSort";
 import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
@@ -74,7 +71,6 @@ export default function ProjectsPage() {
   const {
     currentUser,
     currentUserId,
-    users,
     loading: userLoading,
   } = useUser();
 
@@ -502,8 +498,10 @@ export default function ProjectsPage() {
     }
   };
 
+  // Status has its own toolbar control, so the panel's badge counts what's
+  // inside the panel: the other filters and the sort.
   const activeFilterCount =
-    Number(Boolean(statusFilter)) +
+    Number(Boolean(sortBy)) +
     Number(Boolean(clientFilter)) +
     Number(Boolean(pocFilter)) +
     Number(Boolean(dateFrom || dateTo)) +
@@ -516,6 +514,7 @@ export default function ProjectsPage() {
     setDateFrom("");
     setDateTo("");
     setVisibility("visible");
+    setSortBy(DEFAULT_SORT);
     clearSelection();
   };
 
@@ -685,6 +684,9 @@ export default function ProjectsPage() {
   const stableDrop = useStableCallback(handleProjectDrop);
   const stableColumnDragOver = useStableCallback(handleColumnDragOver);
   const stableColumnDrop = useStableCallback(handleColumnDrop);
+  const stableHideProject = useStableCallback(handleHideProject);
+  const stableUnhideProject = useStableCallback(handleUnhideProject);
+  const stableDeleteProject = useStableCallback((project) => setDeleteTarget(project));
   const stableOpenProject = useStableCallback((project) => {
     trackEvent("project_opened", {
       project_id: project.id,
@@ -696,87 +698,107 @@ export default function ProjectsPage() {
 
   if (userLoading || !currentUser) return null;
 
+  const selectionMode = selectedProjects.size > 0;
+  const boardWidth =
+    visibleStatuses.length * COLUMN_WIDTH + Math.max(0, visibleStatuses.length - 1) * 10;
+
   return (
     <div
       data-testid={PROJECTS.page}
-      className="flex-1 overflow-auto bg-[#f7f9fc] px-6 py-6 lg:px-8"
+      className="flex-1 overflow-auto bg-[#f6f6f9] px-6 pb-8 pt-[21px]"
     >
-      {/* Header */}
-      <div className="mb-5">
-        {/* Page header */}
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-              Projects{" "}
-              <span className="text-lg font-medium text-muted-foreground">
-                {projects.length}
-              </span>
-            </h1>
+      {/* Title + toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="flex items-baseline text-[22px] font-bold leading-[27px] text-[#11151c]">
+          Projects
+          <span className="ml-[9px] text-[13px] font-normal text-[#98a1af]">
+            {projects.length}
+          </span>
+        </h1>
 
-            <p className="mt-1 text-base text-muted-foreground">
-              {canManage
-                ? "Manage projects, deliverables and production timelines."
-                : "Browse projects, deliverables and production timelines."}
-              {!canManage && (
-                <span
-                  data-testid="projects-view-only"
-                  className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 align-middle text-xs font-medium text-slate-600"
-                >
-                  View only
-                </span>
-              )}
-            </p>
-          </div>
-
-          {canManage && (
-            <button
-              type="button"
-              data-testid={PROJECTS.newProjectBtn}
-              onClick={() => setModalOpen(true)}
-              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#23239b]"
-            >
-              <Plus className="h-4 w-4" />
-              New Project
-            </button>
-          )}
-        </div>
-
-        {/* Filters + view switcher */}
-        <div className="flex w-full items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Search */}
-          <div className="min-w-0 flex-1">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <label className="flex h-[34px] w-[242px] items-center gap-2 rounded-[8px] border border-[#e1e4ea] bg-white pl-3 pr-2 focus-within:border-[#3b6ef6] focus-within:ring-[3px] focus-within:ring-[#3b6ef6]/15">
+            <Search className="h-3 w-3 shrink-0 text-[#a2aab6]" strokeWidth={2.5} />
+            <input
+              data-testid={PROJECTS.searchInput}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects…"
+              className="min-w-0 flex-1 border-none bg-transparent text-[12.5px] text-[#11151c] outline-none placeholder:text-[#a2aab6]"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="text-[#a2aab6] hover:text-[#4b5563]"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </label>
 
-              <input
-                data-testid={PROJECTS.searchInput}
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search project name..."
-                className="h-10 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-              />
-            </div>
-          </div>
+          {/* Status - a menu rather than a native select so the button is
+              only as wide as the current choice, as in the design */}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid={PROJECTS.statusFilter}
+                aria-label="Filter by status"
+                className="flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-[#e1e4ea] bg-white pl-3 pr-[10px] text-[12.5px] text-[#4b5563] outline-none hover:bg-[#fafbfc] focus-visible:ring-[3px] focus-visible:ring-[#3b6ef6]/15"
+              >
+                {statusFilter && (
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: PROJECT_STATUS_STYLE[statusFilter]?.dot }}
+                  />
+                )}
+                {statusFilter || "All status"}
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={6}
+              className="w-48 rounded-[10px] border-[#e7e9ee] p-1 shadow-[0_6px_20px_rgba(17,21,28,0.1)]"
+            >
+              {["", ...PROJECT_STATUSES].map((s) => (
+                <DropdownMenuItem
+                  key={s || "all"}
+                  onSelect={() => setStatusFilter(s)}
+                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]"
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: s ? PROJECT_STATUS_STYLE[s]?.dot : "#c3c8d2" }}
+                  />
+                  <span className="flex-1">{s || "All status"}</span>
+                  {statusFilter === s && <Check className="!h-3.5 !w-3.5 text-[#3b6ef6]" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {/* Filters */}
+          {/* More filters + sort (not in the design, kept compact) */}
           <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
-                data-testid={PROJECTS.filtersButton || "projects-filters-button"}
-                className={[
-                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border bg-white px-3 text-sm font-medium outline-none transition-colors",
-                  "focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20",
+                data-testid={PROJECTS.filtersButton}
+                aria-label="More filters and sorting"
+                title="More filters and sorting"
+                className={`relative flex h-[34px] w-[34px] items-center justify-center rounded-[8px] border bg-white outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#3b6ef6]/15 ${
                   activeFilterCount > 0
-                    ? "border-[#2b2bb5] text-[#2b2bb5]"
-                    : "border-input text-foreground hover:bg-slate-50",
-                ].join(" ")}
+                    ? "border-[#3b6ef6] text-[#3b6ef6]"
+                    : "border-[#e1e4ea] text-[#4b5563] hover:bg-[#fafbfc]"
+                }`}
               >
-                <Filter className="h-4 w-4" />
-                Filters
+                <SlidersHorizontal className="h-3.5 w-3.5" />
                 {activeFilterCount > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2b2bb5] px-1.5 text-[10px] font-bold text-white">
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#3b6ef6] px-1 text-[9.5px] font-bold text-white">
                     {activeFilterCount}
                   </span>
                 )}
@@ -788,8 +810,8 @@ export default function ProjectsPage() {
               className="w-[360px] rounded-xl border border-slate-200 bg-white p-0 shadow-xl"
             >
               <ProjectFilterPanel
-                statusFilter={statusFilter}
-                setStatusFilter={setStatusFilter}
+                sortBy={sortBy}
+                setSortBy={setSortBy}
                 clientFilter={clientFilter}
                 setClientFilter={setClientFilter}
                 pocFilter={pocFilter}
@@ -810,145 +832,90 @@ export default function ProjectsPage() {
             </PopoverContent>
           </Popover>
 
-          {/* Sort by — same control and comparator for both the card and
-              list views (see lib/projectSort.js), so switching views never
-              changes what "sorted by deadline" means. "No sorting" (the
-              default) is the empty state: card view keeps manual drag
-              order, list view keeps whatever order the API returned. */}
-          <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-input bg-white px-3 text-xs text-muted-foreground">
-            <span className="hidden sm:inline">Sort by</span>
-            <select
-              data-testid={PROJECTS.sortSelect || "projects-sort-select"}
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="h-full border-none bg-transparent text-sm font-medium text-foreground outline-none"
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            {sortBy && (
+          {/* Kanban / List */}
+          <div className="flex h-[30px] items-center rounded-[8px] bg-[#edeff3] p-[2px]">
+            {[
+              ["chart", "Kanban", PROJECTS.chartViewBtn],
+              ["list", "List", PROJECTS.listViewBtn],
+            ].map(([key, label, testId]) => (
               <button
+                key={key}
                 type="button"
-                data-testid="projects-sort-clear"
-                onClick={() => setSortBy("")}
-                aria-label="Clear sorting"
-                title="Clear sorting"
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground"
+                data-testid={testId}
+                onClick={() => setView(key)}
+                aria-pressed={view === key}
+                className={`h-[26px] rounded-[6px] px-3 text-[12.5px] transition-colors ${
+                  view === key
+                    ? "bg-white font-semibold text-[#11151c] shadow-[0_1px_2px_rgba(17,21,28,0.12)]"
+                    : "font-medium text-[#6b7280] hover:text-[#11151c]"
+                }`}
               >
-                <X className="h-3.5 w-3.5" />
+                {label}
               </button>
-            )}
+            ))}
           </div>
 
-          {/* View switcher — icons only */}
-          <div className="flex h-10 shrink-0 items-center rounded-lg border border-input bg-white p-1">
+          {canManage && (
             <button
               type="button"
-              data-testid={PROJECTS.chartViewBtn}
-              onClick={() => setView("chart")}
-              title="Kanban view"
-              aria-label="Kanban view"
-              className={[
-                "flex h-8 w-9 items-center justify-center rounded-md transition-colors",
-                view === "chart"
-                  ? "bg-[#f0f0ff] text-[#2b2bb5]"
-                  : "text-muted-foreground hover:bg-muted",
-              ].join(" ")}
+              data-testid={PROJECTS.newProjectBtn}
+              onClick={() => setModalOpen(true)}
+              className="h-8 rounded-[8px] bg-[#11151c] px-3 text-[12.5px] font-semibold text-white transition-colors hover:bg-[#2a303b]"
             >
-              <LayoutGrid className="h-4 w-4" />
+              + New project
             </button>
-
-            <button
-              type="button"
-              data-testid={PROJECTS.listViewBtn}
-              onClick={() => setView("list")}
-              title="List view"
-              aria-label="List view"
-              className={[
-                "flex h-8 w-9 items-center justify-center rounded-md transition-colors",
-                view === "list"
-                  ? "bg-[#f0f0ff] text-[#2b2bb5]"
-                  : "text-muted-foreground hover:bg-muted",
-              ].join(" ")}
-            >
-              <List className="h-4 w-4" />
-            </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Active filter chips */}
-      {(pocFilter || clientFilter || statusFilter || dateFrom || dateTo || visibility !== "visible") && (
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          {pocFilter && (
-            <button
-              type="button"
-              onClick={() => setPocFilter("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              POC: {pocFilter}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {clientFilter && (
-            <button
-              type="button"
-              onClick={() => setClientFilter("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Client: {clientOptions.find((client) => client.id === clientFilter)?.name || clientFilter}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {statusFilter && (
-            <button
-              type="button"
-              onClick={() => setStatusFilter("")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Status: {statusFilter}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {(dateFrom || dateTo) && (
-            <button
-              type="button"
-              onClick={() => {
+      {/* Active filter chips (only when something from the filter panel is on) */}
+      {(pocFilter || clientFilter || dateFrom || dateTo || visibility !== "visible" || sortBy) && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {[
+            clientFilter && {
+              key: "client",
+              label: `Client: ${clientOptions.find((c) => c.id === clientFilter)?.name || clientFilter}`,
+              clear: () => setClientFilter(""),
+            },
+            pocFilter && { key: "poc", label: `POC: ${pocFilter}`, clear: () => setPocFilter("") },
+            (dateFrom || dateTo) && {
+              key: "due",
+              label: `Due: ${dateFrom || "Any"} – ${dateTo || "Any"}`,
+              clear: () => {
                 setDateFrom("");
                 setDateTo("");
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              Due: {dateFrom || "Any"} – {dateTo || "Any"}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
-          {visibility !== "visible" && (
-            <button
-              type="button"
-              onClick={() => handleVisibilityChange("visible")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0ff] px-3 py-1.5 text-xs font-medium text-[#2b2bb5]"
-            >
-              {visibility === "hidden" ? "Hidden projects" : "All projects"}
-              <X className="h-3 w-3" />
-            </button>
-          )}
-
+              },
+            },
+            visibility !== "visible" && {
+              key: "vis",
+              label: visibility === "hidden" ? "Hidden projects" : "All projects",
+              clear: () => handleVisibilityChange("visible"),
+            },
+            sortBy && {
+              key: "sort",
+              label: `Sorted: ${SORT_OPTIONS.find((o) => o.value === sortBy)?.label || sortBy}`,
+              clear: () => setSortBy(""),
+            },
+          ]
+            .filter(Boolean)
+            .map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={chip.clear}
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-[#dce6fe] bg-[#f4f7ff] px-2.5 text-[11.5px] font-medium text-[#1d4ed8]"
+              >
+                {chip.label}
+                <X className="h-3 w-3" />
+              </button>
+            ))}
           <button
             type="button"
             onClick={() => {
               clearFilters();
               setSearch("");
             }}
-            className="ml-1 text-xs font-medium text-[#2b2bb5] hover:underline"
+            className="ml-1 text-[11.5px] font-medium text-[#3b6ef6] hover:underline"
           >
             Clear all
           </button>
@@ -956,157 +923,147 @@ export default function ProjectsPage() {
       )}
 
       {/* Metrics */}
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <ProjectMetricCard
+      <div className="mt-4 grid grid-cols-2 gap-[10px] lg:grid-cols-4">
+        <ProjectStatTile
           testId={PROJECTS.metricActive}
-          label="Active Projects"
+          label="Active projects"
           value={metrics?.active_projects ?? 0}
         />
-
-        <ProjectMetricCard
+        <ProjectStatTile
           testId={PROJECTS.metricRework}
-          label="In Rework"
+          label="In rework"
           value={metrics?.in_rework ?? 0}
         />
-
-        <ProjectMetricCard
+        <ProjectStatTile
           testId={PROJECTS.metricDueWeek}
-          label="Due This Week"
+          label="Due this week"
           value={metrics?.due_this_week ?? 0}
         />
-
-        <ProjectMetricCard
+        <ProjectStatTile
           testId={PROJECTS.metricDeliverables}
           label="Deliverables"
           value={metrics?.total_deliverables ?? 0}
         />
       </div>
 
-      {/* Bulk actions */}
-      {canManage && (
-      <ProjectBulkActionBar
-        selectedCount={selectedProjects.size}
-        totalCount={filtered.length}
-        visibility={visibility}
-        statuses={PROJECT_STATUSES}
-        onSelectAll={selectAllFiltered}
-        onHide={handleBulkHide}
-        onUnhide={handleBulkUnhide}
-        onChangeStatus={handleBulkStatusChange}
-        onDelete={() => setDeleteTarget("bulk")}
-        onClear={clearSelection}
-      />
+      {/* Bulk actions (appear once something is selected) */}
+      {canManage && selectionMode && (
+        <div className="mt-4">
+          <ProjectBulkActionBar
+            selectedCount={selectedProjects.size}
+            totalCount={filtered.length}
+            visibility={visibility}
+            statuses={PROJECT_STATUSES}
+            onSelectAll={selectAllFiltered}
+            onHide={handleBulkHide}
+            onUnhide={handleBulkUnhide}
+            onChangeStatus={handleBulkStatusChange}
+            onDelete={() => setDeleteTarget("bulk")}
+            onClear={clearSelection}
+          />
+        </div>
       )}
 
-      {/* Content */}
-      {loading ? (
-        view === "chart" ? (
-          <ProjectsBoardSkeleton />
-        ) : (
-          <SettingsTableSkeleton columns={7} rows={9} label="Loading projects" />
-        )
-      ) : filtered.length === 0 ? (
-        <div
-          data-testid={PROJECTS.emptyState}
-          className="rounded-xl border border-dashed border-border bg-card py-16 text-center"
-        >
-          <p className="text-sm font-medium text-foreground">
-            No projects yet
-          </p>
-
-          {canManage && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Click "New Project" to create your first one.
+      {/* Content (the list sits 1px lower than the board in the design) */}
+      <div className={view === "list" ? "mt-[17px]" : "mt-4"}>
+        {loading ? (
+          view === "chart" ? (
+            <ProjectsBoardSkeleton />
+          ) : (
+            <SettingsTableSkeleton columns={7} rows={9} label="Loading projects" />
+          )
+        ) : filtered.length === 0 ? (
+          <div
+            data-testid={PROJECTS.emptyState}
+            className="rounded-[10px] border border-dashed border-[#dde1e7] bg-white py-16 text-center"
+          >
+            <p className="text-[13px] font-semibold text-[#11151c]">
+              {projects.length === 0 ? "No projects yet" : "No projects match these filters"}
             </p>
-          )}
-        </div>
-      ) : view === "chart" ? (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-slate-800">
-              Kanban View
-            </div>
-
+            {canManage && projects.length === 0 && (
+              <p className="mt-1 text-[12px] text-[#6b7280]">
+                Click "+ New project" to create your first one.
+              </p>
+            )}
+          </div>
+        ) : view === "chart" ? (
+          <>
             {hiddenStatuses.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Hidden:</span>
-
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11.5px] text-[#98a1af]">Hidden columns:</span>
                 {hiddenStatuses.map((status) => (
                   <button
                     key={status}
                     type="button"
                     onClick={() => toggleColumnVisibility(status)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-[#c8c8ee] hover:text-[#2b2bb5]"
+                    className="inline-flex h-6 items-center gap-1.5 rounded-full border border-[#e1e4ea] bg-white px-2.5 text-[11.5px] font-medium text-[#4b5563] hover:border-[#cfddfc] hover:text-[#1d4ed8]"
                   >
-                    <Eye className="h-3.5 w-3.5" />
+                    <Eye className="h-3 w-3" />
                     {status}
                   </button>
                 ))}
               </div>
             )}
-          </div>
 
-          <KanbanBoard minWidth="2340px" maxHeight="calc(100vh - 340px)">
-            {visibleStatuses.map((status) => {
-              const columnProjects = byStatus[status] || [];
+            <div
+              className="pmt-hscroll overflow-auto pb-4"
+              style={{ maxHeight: "calc(100vh - 290px)" }}
+            >
+              <div className="flex items-start gap-[10px]" style={{ minWidth: boardWidth }}>
+                {visibleStatuses.map((status) => {
+                  const columnProjects = byStatus[status] || [];
+                  const allColumnProjectsSelected =
+                    columnProjects.length > 0 &&
+                    columnProjects.every((project) => selectedProjects.has(project.id));
 
-              const columnProjectIds = columnProjects.map(
-                (project) => project.id
-              );
-
-              const allColumnProjectsSelected =
-                columnProjectIds.length > 0 &&
-                columnProjectIds.every((id) => selectedProjects.has(id));
-
-              return (
-                <KanbanColumn
-                  key={status}
-                  status={status}
-                  projects={columnProjects}
-                  users={users}
-                  selectedProjects={selectedProjects}
-                  onSelectProject={stableSelectProject}
-                  onSelectAll={stableSelectColumn}
-                  allSelected={allColumnProjectsSelected}
-                  onOpenProject={stableOpenProject}
-                  onToggleVisibility={stableToggleColumn}
-                  onDragStartProject={stableDragStart}
-                  onDragEndProject={stableDragEnd}
-                  onDragOverProject={stableDragOver}
-                  onDropProject={stableDrop}
-                  onDragOverColumn={stableColumnDragOver}
-                  onDropColumn={stableColumnDrop}
-                  dragOverProjectId={dragOverProjectId}
-                  isDropTarget={dragOverStatus === status}
-                  readOnly={!canManage}
-                />
-              );
-            })}
-          </KanbanBoard>
-        </>
-      ) : (
-        <ProjectListTable
-          projects={sortedFiltered}
-          users={users}
-          selectedProjects={selectedProjects}
-          onSelectProject={toggleProjectSelection}
-          onSelectPage={selectPage}
-          onOpenProject={(p) => {
-            trackEvent("project_opened", {
-              project_id: p.id,
-              status: p.status,
-            });
-
-            navigate(`/projects/${p.id}`);
-          }}
-          onHideProject={handleHideProject}
-          onUnhideProject={handleUnhideProject}
-          onDeleteProject={(p) => setDeleteTarget(p)}
-          page={listPage}
-          setPage={setListPage}
-          readOnly={!canManage}
-        />
-      )}
+                  return (
+                    <KanbanColumn
+                      key={status}
+                      status={status}
+                      projects={columnProjects}
+                      selectedProjects={selectedProjects}
+                      selectionMode={selectionMode}
+                      onSelectProject={stableSelectProject}
+                      onSelectAll={stableSelectColumn}
+                      allSelected={allColumnProjectsSelected}
+                      onOpenProject={stableOpenProject}
+                      onHideProject={stableHideProject}
+                      onUnhideProject={stableUnhideProject}
+                      onDeleteProject={stableDeleteProject}
+                      onToggleVisibility={stableToggleColumn}
+                      onDragStartProject={stableDragStart}
+                      onDragEndProject={stableDragEnd}
+                      onDragOverProject={stableDragOver}
+                      onDropProject={stableDrop}
+                      onDragOverColumn={stableColumnDragOver}
+                      onDropColumn={stableColumnDrop}
+                      dragOverProjectId={dragOverProjectId}
+                      isDropTarget={dragOverStatus === status}
+                      readOnly={!canManage}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : (
+          <ProjectListTable
+            projects={sortedFiltered}
+            selectedProjects={selectedProjects}
+            selectionMode={selectionMode}
+            onSelectProject={toggleProjectSelection}
+            onSelectPage={selectPage}
+            onOpenProject={stableOpenProject}
+            onHideProject={handleHideProject}
+            onUnhideProject={handleUnhideProject}
+            onDeleteProject={(p) => setDeleteTarget(p)}
+            onNewProject={() => setModalOpen(true)}
+            page={listPage}
+            setPage={setListPage}
+            readOnly={!canManage}
+          />
+        )}
+      </div>
 
       {canManage && (
       <CreateProjectModal

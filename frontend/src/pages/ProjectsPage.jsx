@@ -705,10 +705,10 @@ export default function ProjectsPage() {
   return (
     <div
       data-testid={PROJECTS.page}
-      className="flex-1 overflow-auto bg-[#f6f6f9] px-6 pb-8 pt-[21px]"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-6 pb-6 pt-[21px]"
     >
       {/* Title + toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-baseline text-[22px] font-bold leading-[27px] text-[#11151c]">
           Projects
           <span className="ml-[9px] text-[13px] font-normal text-[#98a1af]">
@@ -870,7 +870,7 @@ export default function ProjectsPage() {
 
       {/* Active filter chips (only when something from the filter panel is on) */}
       {(pocFilter || clientFilter || dateFrom || dateTo || visibility !== "visible" || sortBy) && (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1.5">
           {[
             clientFilter && {
               key: "client",
@@ -923,7 +923,7 @@ export default function ProjectsPage() {
       )}
 
       {/* Metrics */}
-      <div className="mt-4 grid grid-cols-2 gap-[10px] lg:grid-cols-4">
+      <div className="mt-4 grid shrink-0 grid-cols-2 gap-[10px] lg:grid-cols-4">
         <ProjectStatTile
           testId={PROJECTS.metricActive}
           label="Active projects"
@@ -948,7 +948,7 @@ export default function ProjectsPage() {
 
       {/* Bulk actions (appear once something is selected) */}
       {canManage && selectionMode && (
-        <div className="mt-4">
+        <div className="mt-4 shrink-0">
           <ProjectBulkActionBar
             selectedCount={selectedProjects.size}
             totalCount={filtered.length}
@@ -964,8 +964,14 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* Content (the list sits 1px lower than the board in the design) */}
-      <div className={view === "list" ? "mt-[17px]" : "mt-4"}>
+      {/* Content: fills the rest of the page's fixed height (the flex column
+          above is capped by AppLayout's <main overflow-hidden>) and scrolls
+          on its own, so this never needs to guess the toolbar's height with
+          a "100vh - Npx" constant - it just gets whatever space is left.
+          The list sits 1px lower than the board, per the design. */}
+      <div
+        className={`min-h-0 flex-1 overflow-auto ${view === "list" ? "mt-[17px]" : "mt-4"}`}
+      >
         {loading ? (
           view === "chart" ? (
             <ProjectsBoardSkeleton />
@@ -1005,10 +1011,11 @@ export default function ProjectsPage() {
               </div>
             )}
 
-            <div
-              className="pmt-hscroll overflow-auto pb-4"
-              style={{ maxHeight: "calc(100vh - 290px)" }}
-            >
+            {/* Horizontal scroll only - the board's own height is whatever
+                its tallest column needs; the Content wrapper above supplies
+                the vertical scrollbar, at the page's actual available
+                height rather than a guessed one. */}
+            <div className="pmt-hscroll overflow-x-auto pb-4">
               <div className="flex items-start gap-[10px]" style={{ minWidth: boardWidth }}>
                 {visibleStatuses.map((status) => {
                   const columnProjects = byStatus[status] || [];

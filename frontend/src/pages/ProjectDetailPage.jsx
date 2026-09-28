@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -27,6 +27,7 @@ import {
   updateProject,
   deleteProject,
   getClients,
+  updateDeliverable,
 } from "@/services/api";
 import { PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
 import { APP_ACTIONS, requestAppAction } from "@/lib/appActions";
@@ -235,6 +236,50 @@ const Avatar = ({ name, size = 24 }) => (
   </span>
 );
 
+// The deliverable name, editable in place (admins). Saves on Enter or when
+// focus leaves; Esc puts the old name back. Clicks and keys stay inside the
+// input so they don't also open the row's edit modal.
+const DeliverableNameInput = ({ name, onSave }) => {
+  const [value, setValue] = useState(name);
+  const cancelled = useRef(false);
+
+  useEffect(() => setValue(name), [name]);
+
+  const commit = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      setValue(name);
+      return;
+    }
+    const next = value.trim();
+    if (!next) {
+      setValue(name);
+      return;
+    }
+    if (next !== name) onSave(next);
+  };
+
+  return (
+    <input
+      aria-label="Deliverable name"
+      value={value}
+      title={value}
+      onChange={(e) => setValue(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      className="-ml-1.5 box-border h-[26px] w-full cursor-text truncate rounded-md border-none bg-transparent px-1.5 text-sm font-medium leading-[18px] text-[rgb(13,27,62)] outline-none hover:shadow-[inset_0_0_0_1px_rgb(239,240,242)] focus:bg-white focus:shadow-[inset_0_0_0_1px_rgb(43,43,181),0_0_0_3px_rgb(220,220,248)]"
+    />
+  );
+};
+
 const GroupHeader = ({ open, onToggle, dot, name, meta }) => (
   <button
     type="button"
@@ -363,6 +408,26 @@ export default function ProjectDetailPage() {
       toast.success(`Project marked ${status.toLowerCase()}`);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Update failed");
+    }
+  };
+
+  const setDeliverableName = (id, name) =>
+    setProject((p) => ({
+      ...p,
+      deliverables: (p.deliverables || []).map((x) =>
+        x.id === id ? { ...x, name } : x
+      ),
+    }));
+
+  const handleRename = async (deliverable, name) => {
+    const previous = deliverable.name;
+    setDeliverableName(deliverable.id, name);
+    try {
+      await updateDeliverable(currentUserId, deliverable.id, { name });
+      toast.success("Deliverable renamed");
+    } catch (err) {
+      setDeliverableName(deliverable.id, previous);
+      toast.error(err?.response?.data?.detail || "Could not rename deliverable");
     }
   };
 
@@ -816,12 +881,19 @@ export default function ProjectDetailPage() {
                               }`}
                             >
                               <span className="flex min-w-0 flex-col gap-0.5 py-1.5">
-                                <span
-                                  className="truncate text-sm font-medium leading-[26px] text-[rgb(13,27,62)]"
-                                  title={d.name}
-                                >
-                                  {d.name}
-                                </span>
+                                {canManage ? (
+                                  <DeliverableNameInput
+                                    name={d.name}
+                                    onSave={(name) => handleRename(d, name)}
+                                  />
+                                ) : (
+                                  <span
+                                    className="truncate text-sm font-medium leading-[26px] text-[rgb(13,27,62)]"
+                                    title={d.name}
+                                  >
+                                    {d.name}
+                                  </span>
+                                )}
                                 <span className="text-xs text-[rgb(84,100,144)]">
                                   {d.type || "—"}
                                 </span>

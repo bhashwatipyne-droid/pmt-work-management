@@ -4145,6 +4145,13 @@ async def get_project_work_log(project_id: str, request: Request):
         match["$or"].append({"deliverable_id": {"$in": deliverable_ids}})
 
     total = await db.work_items.count_documents(match)
+    # Hours logged across ALL of the project's rows (not just the capped page
+    # below) - the project header shows it next to the progress bar.
+    minutes_rows = await db.work_items.aggregate([
+        {"$match": match},
+        {"$group": {"_id": None, "minutes": {"$sum": {"$ifNull": ["$time_taken_minutes", 0]}}}},
+    ]).to_list(1)
+    total_minutes = minutes_rows[0]["minutes"] if minutes_rows else 0
     items = (
         await db.work_items
         .find(
@@ -4165,7 +4172,7 @@ async def get_project_work_log(project_id: str, request: Request):
         .batch_size(PROJECT_WORK_LOG_CAP)
         .to_list(PROJECT_WORK_LOG_CAP)
     )
-    return {"items": items, "total": total}
+    return {"items": items, "total": total, "total_minutes": total_minutes}
 
 
 def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: str):

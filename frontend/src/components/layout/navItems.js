@@ -100,7 +100,7 @@ export const getNavSections = (access) => {
 // Breadcrumb for the top bar: "Production › Work sheet".
 export const getBreadcrumb = (pathname) => {
   if (pathname.startsWith("/projects/")) {
-    return { section: "Production", title: "Project" };
+    return { section: "Production", title: "Projects" };
   }
   if (pathname === "/efficiency/settings/monthly-capacity") {
     return { section: "Efficiency", title: "Monthly capacity" };

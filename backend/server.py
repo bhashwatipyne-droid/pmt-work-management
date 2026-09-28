@@ -1327,13 +1327,31 @@ async def _admin_users() -> list[dict]:
     ).to_list(1000)
 
 
-async def _upsert_notifications_batch(notifications: list[dict]):
+# (user_id, dedupe_key) pairs this process has already written. The overdue scan
+# rebuilds the SAME notifications every minute; without this, every one of them
+# (thousands: overdue deliverables x recipients) is re-sent to MongoDB as an
+# upsert that matches and changes nothing - a steady stream of outbound
+# bandwidth. Only used by the overdue scan (skip_known=True). Worst case after a
+# restart is one full send, then only genuinely new notices go out.
+_known_notification_keys: set = set()
+_KNOWN_NOTIFICATION_KEYS_MAX = 200_000
+
+
+async def _upsert_notifications_batch(notifications: list[dict], skip_known: bool = False):
     """Write many notifications in a single round trip instead of one
     update_one() per notification. Each op is an independent upsert keyed
     on (user_id, dedupe_key), so ordered=False lets the rest of the batch
     succeed even if one entry races with a concurrent insert."""
     if not notifications:
         return
+
+    if skip_known:
+        notifications = [
+            n for n in notifications
+            if (n.get("user_id"), n.get("dedupe_key")) not in _known_notification_keys
+        ]
+        if not notifications:
+            return
 
     ops = []
     for notification in notifications:
@@ -1354,6 +1372,15 @@ async def _upsert_notifications_batch(notifications: list[dict]):
         )
 
     result = await db.notifications.bulk_write(ops, ordered=False)
+
+    if skip_known:
+        # Every op either inserted or matched an existing row, so all of them
+        # exist now and need not be sent again.
+        if len(_known_notification_keys) > _KNOWN_NOTIFICATION_KEYS_MAX:
+            _known_notification_keys.clear()
+        _known_notification_keys.update(
+            (n["user_id"], n["dedupe_key"]) for n in notifications
+        )
 
     # Push only the rows that were actually inserted. Upserts that matched an
     # existing (user_id, dedupe_key) are re-runs of a notification the user
@@ -1754,7 +1781,7 @@ async def _ensure_overdue_notifications():
                     "dedupe_key": f'deliverable-overdue:{deliverable.get("id")}:{stage}:{due_date}:{recipient["id"]}',
                 })
 
-    await _upsert_notifications_batch(pending_notifications)
+    await _upsert_notifications_batch(pending_notifications, skip_known=True)
 
 
 # ---------------- Reminder notifications ----------------

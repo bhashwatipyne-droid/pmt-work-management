@@ -30,7 +30,10 @@ const startPrefetch = (key, fetcher) => {
 export const prefetchWorksheet = () => {
   startPrefetch("worksheet-lookups", getWorksheetLookups);
   startPrefetch("worksheet-items-initial", () =>
-    getWorkItems("", { limit: WORKSHEET_INITIAL_ROW_LIMIT })
+    getWorkItems("", {
+      limit: WORKSHEET_INITIAL_ROW_LIMIT,
+      hide_unassigned_content: true,
+    })
   );
 };
 

@@ -358,7 +358,7 @@ export default function WorkSheetPage() {
       let gotEverything = false;
 
       consumePrefetch("worksheet-items-initial", () =>
-        getWorkItems(currentUser.id, { limit: INITIAL_ROW_LIMIT })
+        getWorkItems(currentUser.id, { limit: INITIAL_ROW_LIMIT, hide_unassigned_content: true })
       )
         .then((data) => {
           const rows = Array.isArray(data) ? data : [];
@@ -381,7 +381,7 @@ export default function WorkSheetPage() {
             return;
           }
 
-          getWorkItems(currentUser.id, {})
+          getWorkItems(currentUser.id, { hide_unassigned_content: true })
             .then((data) => {
               setItems(Array.isArray(data) ? data : []);
               hasLoadedFullListRef.current = true;
@@ -398,7 +398,7 @@ export default function WorkSheetPage() {
     // round-trip per filter change, so it's instant instead of waiting
     // on a request each time (and immune to a slow/sleeping backend
     // instance).
-    getWorkItems(currentUser.id, {})
+    getWorkItems(currentUser.id, { hide_unassigned_content: true })
       .then((data) => {
         setItems(Array.isArray(data) ? data : []);
         hasLoadedFullListRef.current = true;

@@ -2159,7 +2159,14 @@ async def work_items_pending_count(request: Request):
     see the total across every stage."""
     user = await get_acting_user(request)
 
-    query = {"status": {"$ne": "Closed"}}
+    query = {
+        "status": {"$ne": "Closed"},
+        # Unassigned Content rows are hidden from the sheet, so don't count them.
+        "$or": [
+            {"stage": {"$ne": "Content"}},
+            {"creator_id": {"$nin": [None, ""]}},
+        ],
+    }
 
     if user.role != "admin":
         stage = DEPARTMENT_TO_STAGE.get(user.department)
@@ -2193,6 +2200,11 @@ async def list_work_items(
     # caller that doesn't pass this keeps getting everything (up to 5000,
     # same as before), so this is purely additive.
     limit: Optional[int] = Query(default=None, ge=1, le=5000),
+
+    # Work Sheet only: skip Content-stage rows that have no creator (they show
+    # as "Unassigned" and number in the thousands). Opt-in so the project work
+    # log and other callers still see every row.
+    hide_unassigned_content: bool = False,
 ):
     await get_acting_user(request)
 
@@ -2238,6 +2250,15 @@ async def list_work_items(
     # Existing month filter
     if month:
         query["month"] = month
+
+    if hide_unassigned_content:
+        # $and (not a top-level $or) so it can't collide with the search $or below.
+        query.setdefault("$and", []).append({
+            "$or": [
+                {"stage": {"$ne": "Content"}},
+                {"creator_id": {"$nin": [None, ""]}},
+            ]
+        })
 
     # Existing search. Escaped so typing "(" or "[" in the search box (or the
     # command palette, which reuses this) matches literally instead of

@@ -19,7 +19,7 @@ import { useAccess } from "@/hooks/useAccess";
 import { usePinnedProjects } from "@/hooks/usePinnedProjects";
 import {
   getProject,
-  getWorkItems,
+  getProjectWorkLog,
   getOptions,
   updateProject,
   deleteProject,
@@ -116,6 +116,7 @@ export default function ProjectDetailPage() {
 
   const [project, setProject] = useState(null);
   const [workItems, setWorkItems] = useState([]);
+  const [workLogTotal, setWorkLogTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [delivModal, setDelivModal] = useState({
     open: false,
@@ -133,45 +134,20 @@ export default function ProjectDetailPage() {
     setLoading(true);
 
     try {
-      const [p, w, options, clientsData] = await Promise.all([
+      // One slim work-log query (the server merges the project_id and
+      // deliverable_id matches itself) instead of two full /work-items
+      // downloads. Clients are only needed by the edit-project modal, so they
+      // load on demand (see the effect below), not on every page open.
+      const [p, workLog, options] = await Promise.all([
         getProject(currentUserId, projectId),
-        getWorkItems(currentUserId, {
-          project_id: projectId,
-        }),
+        getProjectWorkLog(currentUserId, projectId),
         getOptions(),
-        getClients(),
       ]);
 
-      // Belt-and-braces: also pull in any work item that references one of
-      // this project's deliverables directly. A work item's project_id is
-      // supposed to always match its deliverable's project, but a handful of
-      // older or imported rows can have it blank or pointing somewhere else -
-      // filtering by project_id alone would then silently drop them from the
-      // Work Log even though the deliverable they belong to is right here.
-      const deliverableIds = (p.deliverables || [])
-        .map((d) => d.id)
-        .filter(Boolean);
-      let mergedWorkItems = w;
-
-      if (deliverableIds.length) {
-        try {
-          const byDeliverable = await getWorkItems(currentUserId, {
-            deliverable_id: deliverableIds,
-          });
-          const byId = new Map(mergedWorkItems.map((item) => [item.id, item]));
-          byDeliverable.forEach((item) => byId.set(item.id, item));
-          mergedWorkItems = [...byId.values()];
-        } catch {
-          // Non-fatal — the project_id-based list above still shows.
-        }
-      }
-
       setProject(p);
-      setWorkItems(mergedWorkItems);
-      setDeliverableTypes(
-        options.deliverable_types || []
-      );
-      setClients(clientsData || []);
+      setWorkItems(workLog.items || []);
+      setWorkLogTotal(workLog.total ?? (workLog.items || []).length);
+      setDeliverableTypes(options.deliverable_types || []);
     } catch (err) {
       toast.error(
         err?.response?.data?.detail ||
@@ -181,6 +157,14 @@ export default function ProjectDetailPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!editProjectOpen || clients.length) return;
+    getClients()
+      .then((data) => setClients(data || []))
+      .catch(() => toast.error("Could not load clients"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editProjectOpen]);
 
   // Lightweight refresh for edits that only change the project or its
   // deliverables (saving/adding/importing a deliverable, editing the project).
@@ -595,8 +579,13 @@ export default function ProjectDetailPage() {
           <h2 className="mb-4 text-sm font-semibold text-foreground">
             Work Log{" "}
             <span className="font-medium text-muted-foreground">
-              ({workItems.length})
+              ({workLogTotal})
             </span>
+            {workLogTotal > workItems.length && (
+              <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                showing latest {workItems.length}
+              </span>
+            )}
           </h2>
 
           {workItems.length === 0 ? (

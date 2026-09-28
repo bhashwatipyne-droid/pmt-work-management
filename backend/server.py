@@ -4092,6 +4092,55 @@ async def get_project(project_id: str, request: Request):
     return await _hydrate_project(p)
 
 
+PROJECT_WORK_LOG_CAP = 500
+
+
+@api_router.get("/projects/{project_id}/work-log")
+async def get_project_work_log(project_id: str, request: Request):
+    """Everything the project page's Work Log needs, in ONE query.
+
+    Replaces two full /work-items downloads (by project_id, then by
+    deliverable_id) that returned every field of every row. The table only
+    shows eight columns, so only those are read, the newest
+    PROJECT_WORK_LOG_CAP rows are sent, and `total` says how many exist.
+    """
+    await get_acting_user(request)
+
+    deliverable_ids = [
+        d["id"]
+        async for d in db.deliverables.find({"project_id": project_id}, {"_id": 0, "id": 1})
+        if d.get("id")
+    ]
+    match = {"$or": [{"project_id": project_id}]}
+    if deliverable_ids:
+        # Rows whose project_id is blank/wrong but which belong to one of this
+        # project's deliverables (older/imported rows) still show up.
+        match["$or"].append({"deliverable_id": {"$in": deliverable_ids}})
+
+    total = await db.work_items.count_documents(match)
+    items = (
+        await db.work_items
+        .find(
+            match,
+            {
+                "_id": 0,
+                "id": 1,
+                "work_date": 1,
+                "stage": 1,
+                "deliverable_name": 1,
+                "creator_id": 1,
+                "time_taken_minutes": 1,
+                "status": 1,
+            },
+        )
+        .sort([("work_date", -1), ("created_at", -1)])
+        .limit(PROJECT_WORK_LOG_CAP)
+        .batch_size(PROJECT_WORK_LOG_CAP)
+        .to_list(PROJECT_WORK_LOG_CAP)
+    )
+    return {"items": items, "total": total}
+
+
 def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: str):
     """Build every document needed to create a batch of deliverables, without
     touching the database. `specs` items carry: name, type, required_stages
@@ -6424,6 +6473,17 @@ async def server_timing_middleware(request: Request, call_next):
     response = await call_next(request)
     elapsed_ms = (time.perf_counter() - started) * 1000
     response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.0f}"
+    # Bandwidth diagnostics: content-length here is the size BEFORE gzip, so
+    # anything over ~300KB is a candidate for the outbound-bandwidth spikes.
+    # Search the Render logs for "BIG RESPONSE" to see which endpoints send most.
+    try:
+        size = int(response.headers.get("content-length", 0))
+    except ValueError:
+        size = 0
+    if size > 300_000 and request.method != "OPTIONS":
+        logger.warning(
+            "BIG RESPONSE %s %s %.0fKB", request.method, request.url.path, size / 1024
+        )
     if elapsed_ms > 800 and request.method != "OPTIONS":
         logger.warning(
             "SLOW REQUEST %s %s %.0fms status=%s",

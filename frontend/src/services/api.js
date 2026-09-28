@@ -229,6 +229,13 @@ export const getProjects = (userId, params) =>
     })
     .then((r) => r.data);
 
+export const getProjectWorkLog = (userId, id) =>
+  axios
+    .get(`${API}/projects/${id}/work-log`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
 export const getProjectMetrics = (userId) =>
   axios
     .get(`${API}/projects/metrics`, {

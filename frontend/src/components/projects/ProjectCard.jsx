@@ -258,21 +258,13 @@ const ProjectCardBase = ({
 
       <div className="mt-3 h-[2px] bg-[#f0f2f5]" />
 
-      {/* Deadline · Open */}
-      <div className="mt-[9px] flex h-7 items-center justify-between">
+      {/* Deadline */}
+      <div className="mt-[9px] flex h-7 items-center">
         <span
           className={`text-[12px] ${overdue ? "text-[#b42318]" : "text-[#6b7280]"}`}
           title={overdue ? "Past its deadline" : undefined}
         >
           {fmtDayMonth(project.end_date)}
-        </span>
-
-        <span
-          aria-hidden="true"
-          className="inline-flex shrink-0 items-center gap-[3px] text-[12.5px] font-semibold text-[#3b6ef6] group-hover/card:text-[#1d4ed8]"
-        >
-          Open
-          <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.25} />
         </span>
       </div>
     </div>

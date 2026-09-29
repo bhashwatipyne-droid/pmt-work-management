@@ -28,11 +28,13 @@ from datetime import datetime, timezone, timedelta
 try:
     # Works when the working directory is backend/ (e.g. `uvicorn server:app`)
     from efficiency import create_efficiency_router  # noqa: F401
+    from home_dashboard import create_home_dashboard_router  # noqa: F401
     import deliverable_import  # noqa: F401
 except ImportError:
     # Works when uvicorn imports this as a package member from the repo root
     # (e.g. Render's `uvicorn backend.server:app`)
     from backend.efficiency import create_efficiency_router  # noqa: F401
+    from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
     from backend import deliverable_import  # noqa: F401
 
 
@@ -6499,6 +6501,15 @@ api_router.include_router(
         now_iso=now_iso,
         log_activity=log_activity,
         deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,
+    )
+)
+
+api_router.include_router(
+    create_home_dashboard_router(
+        db=db,
+        require_admin=require_admin,
+        deliverable_required_for=deliverable_required_for,
+        time_gated_statuses=TIME_GATED_STATUSES,
     )
 )
 

@@ -610,6 +610,10 @@ export const getDashboardOverview = (userId) =>
     })
     .then((r) => r.data);
 
+// Everything the Home page needs for one month (see backend/home_dashboard.py).
+export const getDashboardHome = (month) =>
+  axios.get(`${API}/dashboard/home`, { params: { month } }).then((r) => r.data);
+
 // -------- Efficiency --------
 export const getEfficiencyOverview = (month) =>
   axios.get(`${API}/efficiency/overview`, { params: { month } }).then((r) => r.data);

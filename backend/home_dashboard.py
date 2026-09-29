@@ -27,6 +27,12 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
   revisions    times a deliverable was sent back, from all three places that
                record it: approval send-backs, deliverable edits, work-sheet
                reviews
+  approvals    per deliverable, its pending approval items (type + the person
+               assigned, if any) - who has to sign off
+  reviews      work-sheet entries a member marked "Ready for Review" that their
+               assigned reviewer has not acted on yet. Owner = the member who
+               logged it, reviewer = who it is assigned to, since = when it was
+               marked ready (dropped once older than MAX_OVERDUE_DAYS)
 
 Scrapped and hidden projects are left out entirely. Deliverables with no
 deadline at all can't be placed in a month and are left out of month scope.
@@ -122,6 +128,7 @@ def create_home_dashboard_router(
             window_items,
             members,
             last_log_rows,
+            review_items,
         ) = await asyncio.gather(
             db.projects.find(
                 {}, {"_id": 0, "id": 1, "name": 1, "client_id": 1, "status": 1, "hidden": 1}
@@ -175,7 +182,26 @@ def create_home_dashboard_router(
                 {"$match": {"creator_id": {"$nin": [None, ""]}}},
                 {"$group": {"_id": "$creator_id", "last": {"$max": "$work_date"}}},
             ]).to_list(None),
+            db.work_items.find(
+                {"status": "Ready for Review"},
+                {
+                    "_id": 0, "id": 1, "deliverable_name": 1, "project_id": 1, "deliverable_id": 1,
+                    "stage": 1, "creator_id": 1, "reviewer_id": 1, "updated_at": 1, "created_at": 1,
+                },
+            ).to_list(None),
         )
+
+        marked_ready_at: Dict[str, str] = {}
+        if review_items:
+            async for row in db.work_item_activity_log.aggregate([
+                {"$match": {
+                    "action": "WORK_ITEM_STATUS_CHANGED",
+                    "new_value": "Ready for Review",
+                    "work_item_id": {"$in": [w["id"] for w in review_items]},
+                }},
+                {"$group": {"_id": "$work_item_id", "at": {"$max": "$changed_at"}}},
+            ]):
+                marked_ready_at[row["_id"]] = row.get("at")
 
         # ---- lookups -------------------------------------------------------
         client_name = {c["id"]: c.get("name", "") for c in clients if c.get("id")}
@@ -289,12 +315,6 @@ def create_home_dashboard_router(
                     next_status = "On track"
 
             pending = pending_by_deliv.get(d["id"], [])
-            review_since = None
-            reviewer_id = None
-            if stage_status == "Ready for Review":
-                stamps = [p.get("requested_at") for p in pending if p.get("requested_at")]
-                review_since = min(stamps) if stamps else d.get("updated_at")
-                reviewer_id = next((p.get("assigned_to") for p in pending if p.get("assigned_to")), None)
 
             days_late = None
             if due and not done and due < today_s:
@@ -314,8 +334,31 @@ def create_home_dashboard_router(
                 "owner_id": owner.get((d["id"], stage)) or latest_any_stage.get(d["id"]),
                 "revisions": revs,
                 "pending_approvals": len(pending),
-                "review_since": review_since,
-                "reviewer_id": reviewer_id,
+                "approvals": [
+                    {"type": p.get("approval_type"), "assigned_to": p.get("assigned_to")}
+                    for p in pending
+                ],
+            })
+
+        # ---- work-sheet reviews still waiting on the reviewer ---------------
+        reviews_out = []
+        for w in review_items:
+            since = marked_ready_at.get(w["id"]) or w.get("updated_at") or w.get("created_at")
+            since_day = _day(since)
+            project_id = w.get("project_id")
+            if not since_day or since_day < overdue_floor:
+                continue
+            if project_id and project_id not in project_by_id:
+                continue
+            reviews_out.append({
+                "id": w["id"],
+                "name": w.get("deliverable_name") or "Untitled work item",
+                "project_id": project_id,
+                "deliverable_id": w.get("deliverable_id"),
+                "stage": w.get("stage"),
+                "owner_id": w.get("creator_id"),
+                "reviewer_id": w.get("reviewer_id"),
+                "since": since,
             })
 
         # ---- work-sheet hygiene ("PMT discipline") -------------------------
@@ -371,6 +414,7 @@ def create_home_dashboard_router(
                 "max_overdue_days": MAX_OVERDUE_DAYS,
             },
             "deliverables": rows_out,
+            "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,
             "members": {

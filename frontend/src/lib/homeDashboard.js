@@ -58,6 +58,13 @@ export const addDays = (iso, n) => {
   return d.toISOString().slice(0, 10);
 };
 
+const APPROVAL_TYPE_LABEL = {
+  MANAGER: "Manager approval",
+  LEADERSHIP: "Leadership approval",
+  CLIENT_SPOC: "Client approval",
+  COMPLIANCE: "Compliance approval",
+};
+
 const hoursSince = (iso) => {
   const t = iso ? new Date(iso).getTime() : NaN;
   return Number.isFinite(t) ? (Date.now() - t) / 3.6e6 : null;
@@ -89,6 +96,26 @@ export function buildHome({ data, team, filters, userName }) {
   const all = (data.deliverables || []).filter(matchesFilters);
   const inTeam = (r) => team === "All" || r.stage === team;
 
+  // Work-sheet entries a member marked Ready for Review that the reviewer has
+  // not acted on. Not tied to the month (it is a live queue); the same client /
+  // project / member filters and team view apply.
+  const reviewQueue = (data.reviews || []).filter((w) => {
+    const p = projects[w.project_id] || {};
+    return (
+      (!filters.client || p.client_id === filters.client) &&
+      (!filters.project || w.project_id === filters.project) &&
+      (!filters.member || w.owner_id === filters.member) &&
+      inTeam(w)
+    );
+  });
+  const reviewLate = reviewQueue.filter((w) => (hoursSince(w.since) ?? 0) > 24);
+  const approverOf = (approvals = []) => {
+    const label = (a) =>
+      a.assigned_to ? name(a.assigned_to) : APPROVAL_TYPE_LABEL[a.type] || "Approver not assigned";
+    const labels = [...new Set(approvals.map(label))];
+    return labels.length ? labels.join(", ") : null;
+  };
+
   // Month scope (rows with a bucket) for the current team view.
   const scoped = all.filter((r) => r.bucket && inTeam(r));
   const by = (b) => scoped.filter((r) => r.bucket === b);
@@ -110,10 +137,6 @@ export function buildHome({ data, team, filters, userName }) {
     r.stage_status === "Changes Requested" ||
     r.pending_approvals > 0;
   const blocked = attention.filter(waiting);
-  const reviewQueue = scoped.filter(
-    (r) => r.stage_status === "Ready for Review" && r.bucket !== "billed" && r.bucket !== "ready"
-  );
-  const reviewLate = reviewQueue.filter((r) => (hoursSince(r.review_since) ?? 0) > 24);
   const repeated = scoped.filter((r) => r.revisions >= 2);
 
   const signals = {
@@ -130,7 +153,7 @@ export function buildHome({ data, team, filters, userName }) {
       key: `crit-${r.id}`, pri: "Critical", cat: "crit", team: r.stage, row: r,
       title: `${r.name} is ${r.days_late} day${r.days_late === 1 ? "" : "s"} behind`,
       evidence: `${r.stage} · was due ${fmtDay(r.due)} · ${projects[r.project_id]?.name || ""}`,
-      owner: name(r.owner_id), by: "Today", age: `${r.days_late}d`, sort: r.days_late,
+      owner: name(r.owner_id), approver: null, by: "Today", age: `${r.days_late}d`, sort: r.days_late,
     })
   );
   blocked.forEach((r) => {
@@ -141,17 +164,18 @@ export function buildHome({ data, team, filters, userName }) {
       evidence: changes
         ? `${r.stage} · changes requested · ${r.revisions} revision${r.revisions === 1 ? "" : "s"}`
         : `${r.stage} · ${r.pending_approvals || 1} approval${r.pending_approvals > 1 ? "s" : ""} pending · due ${fmtDay(r.due)}`,
-      owner: name(r.owner_id), by: "Tomorrow",
+      owner: name(r.owner_id), approver: approverOf(r.approvals) || (changes ? null : "Approver not assigned"),
+      by: "Tomorrow",
       age: r.days_late ? `${r.days_late}d` : "—", sort: r.days_late || 0,
     });
   });
-  reviewLate.forEach((r) => {
-    const h = Math.round(hoursSince(r.review_since));
+  reviewLate.forEach((w) => {
+    const h = Math.round(hoursSince(w.since));
     actions.push({
-      key: `review-${r.id}`, pri: "Medium", cat: "review", team: r.stage, row: r,
-      title: `Close review on ${r.name}`,
-      evidence: `${h}h waiting · reviewer ${r.reviewer_id ? name(r.reviewer_id) : "managers"}`,
-      owner: r.reviewer_id ? name(r.reviewer_id) : name(r.owner_id), by: "Within 24h",
+      key: `review-${w.id}`, pri: "Medium", cat: "review", team: w.stage, row: w,
+      title: `${w.name} is waiting for review`,
+      evidence: `${w.stage || "No stage"} · ${h}h since marked ready · ${projects[w.project_id]?.name || "No project"}`,
+      owner: name(w.owner_id), approver: name(w.reviewer_id), by: "Within 24h",
       age: h >= 72 ? `${Math.round(h / 24)}d` : `${h}h`, sort: h / 24,
     });
   });
@@ -160,7 +184,7 @@ export function buildHome({ data, team, filters, userName }) {
       key: `rev-${r.id}`, pri: r.revisions >= 3 ? "Medium" : "Watch", cat: "rev", team: r.stage, row: r,
       title: `Resolve repeated revisions on ${r.name}`,
       evidence: `${r.revisions} revisions · ${r.stage} · ${name(r.owner_id)}`,
-      owner: name(r.owner_id), by: "This week", age: `${r.revisions} rev.`, sort: r.revisions,
+      owner: name(r.owner_id), approver: approverOf(r.approvals), by: "This week", age: `${r.revisions} rev.`, sort: r.revisions,
     })
   );
   const PRI = { Critical: 0, High: 1, Medium: 2, Watch: 3 };
@@ -200,9 +224,7 @@ export function buildHome({ data, team, filters, userName }) {
     .map(([pid, rows]) => {
       const n = (b) => rows.filter((r) => r.bucket === b).length;
       const act = n("on") + n("risk") + n("delay");
-      const review = rows.filter(
-        (r) => r.stage_status === "Ready for Review" && ["on", "risk", "delay"].includes(r.bucket)
-      ).length;
+      const review = reviewQueue.filter((w) => w.project_id === pid).length;
       const score = n("risk") * 2 + n("delay") * 3 + review;
       return {
         id: pid,

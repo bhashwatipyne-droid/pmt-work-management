@@ -258,7 +258,7 @@ export default function DashboardPage() {
   const delayDelta =
     cur.delay_rate != null && prev.delay_rate != null ? cur.delay_rate - prev.delay_rate : null;
 
-  const goProject = (id) => navigate(`/projects/${id}`);
+  const goProject = (id) => navigate(id ? `/projects/${id}` : "/");
   const openActions = (k) => {
     setCat(k);
     setShowAllActions(false);
@@ -283,7 +283,7 @@ export default function DashboardPage() {
   const cats = [
     { key: "crit", label: "Critical delays", sub: "of delayed deliverables · 3+ days behind", Icon: AlertCircle, bg: C.error50, fg: C.error500 },
     { key: "block", label: "Pending approvals / blockers", sub: "of attention items need follow-up", Icon: Hourglass, bg: C.warning100, fg: C.warningText },
-    { key: "review", label: "Reviews waiting >24h", sub: "of review queue", Icon: History, bg: C.warning100, fg: C.warningText },
+    { key: "review", label: "Reviews waiting >24h", sub: "of work waiting for review", Icon: History, bg: C.warning100, fg: C.warningText },
     { key: "rev", label: "Repeated revisions", sub: "of deliverables in view", Icon: RefreshCw, bg: C.brand50, fg: C.brand700 },
   ].map((c) => ({ ...c, ...h.signals[c.key] }));
 
@@ -709,7 +709,7 @@ export default function DashboardPage() {
               <div className="overflow-x-auto">
                 <div className="min-w-[880px]">
                   <div className={`${ACTION_GRID} ${HEAD_ROW}`}>
-                    <span>Priority</span><span>Action / evidence</span><span>Owner</span><span>Resolve by</span><span>Age</span><span />
+                    <span>Priority</span><span>Action / evidence</span><span>Owner / approver</span><span>Resolve by</span><span>Age</span><span />
                   </div>
                   {shownActions.map((a) => (
                     <button
@@ -730,7 +730,12 @@ export default function DashboardPage() {
                         <Avatar name={a.owner} />
                         <span className="flex min-w-0 flex-col gap-px">
                           <span className="truncate text-[13px] font-medium text-[rgb(13,27,62)]">{a.owner}</span>
-                          <span className="text-[11px] text-[rgb(138,151,181)]">Action owner / blocker</span>
+                          <span className="text-[11px] text-[rgb(138,151,181)]">Owner</span>
+                          {a.approver && (
+                            <span className="truncate text-[11px] text-[rgb(84,100,144)]" title={a.approver}>
+                              Approver · <span className="font-medium text-[rgb(13,27,62)]">{a.approver}</span>
+                            </span>
+                          )}
                         </span>
                       </span>
                       <span className="text-[13px] font-medium text-[rgb(13,27,62)]">{a.by}</span>
@@ -754,7 +759,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="px-4 py-2.5 text-[12px] leading-4 text-[rgb(84,100,144)] shadow-[inset_0_1px_0_rgb(234,238,244)]">
-                Owner is whoever last logged work on the deliverable at its current stage; resolve-by follows the signal&apos;s urgency.
+                Owner is whoever last logged work on the deliverable at its current stage (for review items, the member who marked it ready). Approver is who has to sign off; resolve-by follows the signal&apos;s urgency.
               </div>
             </section>
           </Block>

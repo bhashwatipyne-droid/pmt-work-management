@@ -188,7 +188,7 @@ export function buildHome({ data, team, filters, userName }) {
     })
   );
   const PRI = { Critical: 0, High: 1, Medium: 2, Watch: 3 };
-  actions.sort((a, b) => PRI[a.pri] - PRI[b.pri] || b.sort - a.sort);
+  actions.sort((a, b) => PRI[a.pri] - PRI[b.pri] || a.sort - b.sort);
 
   // ---- next 7 days (relative to today, not the viewed month) ----
   const next = all

@@ -166,6 +166,18 @@ def _text(value: Any) -> str:
     return str(value).strip()
 
 
+# What people type into an optional cell when they have nothing to put there.
+# For the optional columns (stage dates, approvals) these count as blank, the
+# same as an empty cell - they must not block the row as "not a date" etc.
+_PLACEHOLDERS = {"na", "n a", "nil", "none", "null", "tbd", "tba", "pending", "not applicable", "-", "--", "---", "x"}
+
+
+def _optional(value: Any) -> str:
+    """_text() for an optional cell: empty-looking placeholders become ''."""
+    text = _text(value)
+    return "" if text.lower().strip(" .") in _PLACEHOLDERS or _key(text) in _PLACEHOLDERS else text
+
+
 def _key(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
@@ -376,31 +388,44 @@ def validate_table(
         if current_stage is None and chosen_stages:
             current_stage = chosen_stages[0]
 
-        # ---- per-stage dates
+        # ---- per-stage dates. Every date column is optional. Missing, blank
+        # or placeholder ("NA", "-", "TBD") cells simply mean "no dates for
+        # this stage". Dates that cannot be used as a deadline window (a
+        # start with no end, or dates on a stage the row does not have) are
+        # ignored with a warning instead of blocking the whole row. Only
+        # something that is clearly a wrong value - text that is not a date,
+        # or an end before its start - is an error, because the sheet's
+        # author needs to look at it.
         stage_schedule: Dict[str, Dict[str, str]] = {}
         for stage in valid_stages:
             key = stage.lower()
             s_raw, e_raw = cell(row, f"{key}_start"), cell(row, f"{key}_end")
-            if not _text(s_raw) and not _text(e_raw):
+            s_txt, e_txt = _optional(s_raw), _optional(e_raw)
+            if not s_txt and not e_txt:
                 continue
+            bad_date = False
             try:
-                s_val = parse_date(s_raw)
+                s_val = parse_date(s_txt) if s_txt else None
             except ValueError:
                 s_val = None
-                errors.append(f'{stage} start "{_text(s_raw)}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY)')
+                bad_date = True
+                errors.append(f'{stage} start "{s_txt}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY, or leave it blank)')
             try:
-                e_val = parse_date(e_raw)
+                e_val = parse_date(e_txt) if e_txt else None
             except ValueError:
                 e_val = None
-                errors.append(f'{stage} end "{_text(e_raw)}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY)')
+                bad_date = True
+                errors.append(f'{stage} end "{e_txt}" is not a valid date (use YYYY-MM-DD or DD/MM/YYYY, or leave it blank)')
+            if bad_date:
+                continue
             if stage not in chosen_stages:
-                errors.append(f'{stage} has dates but is not one of this row\'s Stages - add it there or remove its dates')
+                warnings.append(f"{stage} dates ignored: {stage} is not one of this row's Stages")
                 continue
             # An end date alone is a normal deadline with no fixed start
             # (e.g. "starts whenever the previous stage finishes"). A start
-            # with no end isn't a useful deadline, so that's still an error.
-            if _text(s_raw) and not _text(e_raw):
-                errors.append(f"{stage} has a start date but no end date (deadline) - add one, or remove the start date")
+            # with no end isn't a usable deadline, so it is left out.
+            if s_val and not e_val:
+                warnings.append(f"{stage} start date ignored: it has no end date (deadline)")
             elif e_val and s_val and e_val < s_val:
                 errors.append(f"{stage}'s end date is before its start date")
             elif e_val:
@@ -418,7 +443,7 @@ def validate_table(
 
         # ---- approvals
         approvals: List[str] = []
-        for token in _split_list(_text(cell(row, "approvals"))):
+        for token in _split_list(_optional(cell(row, "approvals"))):
             key = re.sub(r"[^a-z]", "", token.lower())
             if key not in APPROVAL_ALIASES:
                 errors.append(f'Unknown approval "{token}" (use Leadership, Client SPOC, Compliance)')

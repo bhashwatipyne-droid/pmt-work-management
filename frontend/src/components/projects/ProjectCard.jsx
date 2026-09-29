@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2 } from "lucide-react";
 
 import { STAGE_HEX, clientDotColor } from "@/constants/projectPalette";
@@ -53,6 +53,31 @@ const ProjectCardBase = ({
   const s = statusStyle(project.status);
   const handleOpen = () => onOpen?.(project);
 
+  // The whole card opens the project on click. Clicks that come from the
+  // checkbox / menu are ignored, and so are clicks from the dropdown menu
+  // (it renders in a portal but React still bubbles its events up to the
+  // card - it is not a DOM descendant, which is what we test for).
+  const handleCardClick = (event) => {
+    if (!event.currentTarget.contains(event.target)) return;
+    if (event.target.closest("button, input, a, [role='menuitem']")) return;
+    handleOpen();
+  };
+
+  // Pointer by default (the card is a link); the grab hand only appears once
+  // the mouse has been held down for a moment, i.e. when a drag is starting.
+  const [holding, setHolding] = useState(false);
+  const holdTimer = useRef(null);
+  const clearHold = () => {
+    clearTimeout(holdTimer.current);
+    setHolding(false);
+  };
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
+  const handleMouseDown = (event) => {
+    if (readOnly || event.button !== 0) return;
+    if (event.target.closest("button, input, a")) return;
+    holdTimer.current = setTimeout(() => setHolding(true), 200);
+  };
+
   const counts = project.stage_counts || {};
   const squares = STAGES.flatMap((stage) =>
     Array.from({ length: counts[stage] ?? 0 }, () => STAGE_HEX[stage])
@@ -64,16 +89,31 @@ const ProjectCardBase = ({
   return (
     <div
       data-testid={`${PROJECTS.cardPrefix}-${project.id}`}
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && event.key === "Enter") handleOpen();
+      }}
+      onMouseDown={handleMouseDown}
+      onMouseUp={clearHold}
+      onMouseLeave={clearHold}
       draggable={!readOnly}
-      onDragStart={(event) => onDragStart?.(event, project)}
-      onDragEnd={onDragEnd}
+      onDragStart={(event) => {
+        clearHold();
+        onDragStart?.(event, project);
+      }}
+      onDragEnd={(event) => {
+        clearHold();
+        onDragEnd?.(event);
+      }}
       onDragOver={(event) => onDragOver?.(event, project)}
       onDrop={(event) => onDrop?.(event, project)}
       className={[
-        "relative w-full rounded-[10px] border bg-white px-[18px] pb-3 pt-4 text-left transition-shadow",
+        "group/card relative w-full rounded-[10px] border bg-white px-[18px] pb-3 pt-4 text-left transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]",
         // Off-screen cards skip layout and paint until scrolled near.
         "[content-visibility:auto] [contain-intrinsic-size:auto_262px]",
-        readOnly ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+        holding ? "cursor-grabbing" : "cursor-pointer",
         selected || isDragTarget ? "border-[#3b6ef6]" : "border-[#e7e9ee]",
         isDragTarget ? "ring-2 ring-[#cfddfc]" : "hover:shadow-[0_2px_8px_rgba(17,21,28,0.06)]",
       ].join(" ")}
@@ -98,9 +138,6 @@ const ProjectCardBase = ({
             aria-label={`Select ${project.name}`}
           />
         )}
-        <span className="truncate text-[11px] leading-none text-[#98a1af]">
-          {project.code}
-        </span>
         <ProjectStatusBadge status={project.status} />
 
         <DropdownMenu modal={false}>
@@ -108,6 +145,7 @@ const ProjectCardBase = ({
             <button
               type="button"
               draggable={false}
+              onClick={(e) => e.stopPropagation()}
               aria-label={`More actions for ${project.name}`}
               className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] hover:bg-[#f4f5f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]"
             >
@@ -155,14 +193,9 @@ const ProjectCardBase = ({
       </div>
 
       {/* Name */}
-      <button
-        type="button"
-        draggable={false}
-        onClick={handleOpen}
-        className="mt-[13px] block w-full text-left text-[15px] font-bold leading-[18px] text-[#11151c] line-clamp-2 hover:text-[#3b6ef6]"
-      >
+      <div className="mt-[13px] block w-full text-left text-[15px] font-bold leading-[18px] text-[#11151c] line-clamp-2 group-hover/card:text-[#3b6ef6]">
         {project.name}
-      </button>
+      </div>
 
       {/* Client */}
       <div className="mt-[6px] flex items-center gap-[7px]">
@@ -202,17 +235,17 @@ const ProjectCardBase = ({
       </div>
 
       {/* Stage legend */}
-      <div className="mt-[10px] flex flex-wrap gap-x-[10px] gap-y-1">
+      <div className="mt-[10px] grid grid-cols-3 gap-x-2">
         {STAGES.map((stage) => {
           const n = counts[stage] ?? 0;
           return (
-            <span key={stage} className="flex items-center gap-[5px]">
+            <span key={stage} className="flex min-w-0 items-center gap-[5px] whitespace-nowrap">
               <span
-                className="h-[9px] w-[9px] rounded-[2px]"
+                className="h-[9px] w-[9px] shrink-0 rounded-[2px]"
                 style={{ background: n ? STAGE_HEX[stage] : "#dde1e7" }}
               />
               <span
-                className={`text-[10.5px] leading-[13px] ${
+                className={`truncate text-[10.5px] leading-[13px] ${
                   n ? "font-medium text-[#4b5563]" : "text-[#a9b0bd]"
                 }`}
               >
@@ -234,15 +267,13 @@ const ProjectCardBase = ({
           {fmtDayMonth(project.end_date)}
         </span>
 
-        <button
-          type="button"
-          draggable={false}
-          onClick={handleOpen}
-          className="inline-flex shrink-0 items-center gap-[3px] text-[12.5px] font-semibold text-[#3b6ef6] hover:text-[#1d4ed8]"
+        <span
+          aria-hidden="true"
+          className="inline-flex shrink-0 items-center gap-[3px] text-[12.5px] font-semibold text-[#3b6ef6] group-hover/card:text-[#1d4ed8]"
         >
           Open
           <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.25} />
-        </button>
+        </span>
       </div>
     </div>
   );

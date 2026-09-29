@@ -23,7 +23,7 @@ const STAGES = Object.keys(STAGE_HEX);
 // Column widths from the Figma list frame (Campaign · Client · Status ·
 // Deliverables · Stages · Deadline), plus a narrow slot for the row menu.
 const GRID =
-  "grid grid-cols-[minmax(250px,1fr)_195px_167px_125px_153px_145px_28px] items-center";
+  "grid grid-cols-[minmax(250px,1fr)_195px_167px_125px_204px_145px_28px] items-center";
 
 const MENU_ITEM =
   "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]";
@@ -55,7 +55,7 @@ export const ProjectListTable = ({
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e7e9ee] bg-white">
       <div className="pmt-hscroll overflow-x-auto">
-        <div className="min-w-[1100px]">
+        <div className="min-w-[1130px]">
           {/* Header */}
           <div
             className={`${GRID} group h-[48px] border-b-2 border-[#edeff3] bg-[#fafbfc] px-[17px] text-[11px] font-medium uppercase leading-[13px] tracking-[0.07em] text-[#98a1af]`}
@@ -77,10 +77,10 @@ export const ProjectListTable = ({
             <span>Client</span>
             <span>Status</span>
             <span>Deliverables</span>
-            <span className="pr-4">
-              <span className="text-[#3b6ef6]">Content</span> ·{" "}
-              <span className="text-[#7c5cf6]">Design</span> ·{" "}
-              <span className="text-[#e08a0b]">Animate</span>
+            <span className="flex items-center whitespace-nowrap">
+              <span className="w-[68px] text-[#3b6ef6]">Content</span>
+              <span className="w-[64px] text-[#7c5cf6]">Design</span>
+              <span className="w-[64px] text-[#e08a0b]">Animate</span>
             </span>
             <span>Deadline</span>
             <span />
@@ -129,10 +129,7 @@ export const ProjectListTable = ({
                       />
                     )}
                   </span>
-                  <span className="ml-[9px] min-w-[59px] shrink-0 pr-[9px] text-[11px] text-[#98a1af]">
-                    {project.code}
-                  </span>
-                  <span className="truncate pr-4 text-[13.5px] font-semibold text-[#11151c]" title={project.name}>
+                  <span className="ml-[10px] truncate pr-4 text-[13.5px] font-semibold text-[#11151c]" title={project.name}>
                     {project.name}
                   </span>
                 </span>
@@ -153,7 +150,13 @@ export const ProjectListTable = ({
                   {STAGES.map((stage) => {
                     const n = counts[stage] ?? 0;
                     return (
-                      <span key={stage} className="flex w-[28.6px] items-center gap-1" title={`${stage} ${n}`}>
+                      <span
+                        key={stage}
+                        className={`flex items-center gap-1 whitespace-nowrap ${
+                          stage === "Content" ? "w-[68px]" : "w-[64px]"
+                        }`}
+                        title={`${stage} ${n}`}
+                      >
                         <span
                           className="h-1.5 w-1.5 rounded-full"
                           style={{ background: n ? STAGE_HEX[stage] : "#e3e6ec" }}

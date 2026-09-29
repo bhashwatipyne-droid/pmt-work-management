@@ -535,8 +535,9 @@ class ProjectCreate(BaseModel):
     client_id: str
     # Selected contact person for this project
     poc_id: Optional[str] = None
-    start_date: str
-    end_date: str
+    # Both dates are optional: a project can be created before its window is known.
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     status: Optional[str] = "Active"
     deliverables: Optional[List[DeliverableInput]] = []
 
@@ -559,8 +560,8 @@ class Project(BaseModel):
     client_id: str
     # Selected contact person for this project
     poc_id: Optional[str] = None
-    start_date: str
-    end_date: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     status: str = "Active"
 
     # Kanban ordering. Lower values render first within a status column.
@@ -4311,8 +4312,8 @@ async def create_project(payload: ProjectCreate, request: Request):
         name=payload.name,
         client_id=payload.client_id,
         poc_id=payload.poc_id,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
+        start_date=payload.start_date or None,
+        end_date=payload.end_date or None,
         status=payload.status or "Active",
         kanban_order=0,
         status_changed_at=ts,

@@ -162,11 +162,8 @@ export const CreateProjectModal = ({
       return toast.error("Please select a client");
     }
 
-    if (!startDate || !endDate) {
-      return toast.error("Start and end date are required");
-    }
-
-    if (endDate < startDate) {
+    // Start and end dates are optional; only check the order when both are set.
+    if (startDate && endDate && endDate < startDate) {
       return toast.error("End date must be after start date");
     }
 
@@ -191,8 +188,8 @@ export const CreateProjectModal = ({
         name: name.trim(),
         client_id: clientId,
         poc_id: pocId || null,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: startDate || null,
+        end_date: endDate || null,
         status,
         deliverables: cleanedDeliverables,
       });

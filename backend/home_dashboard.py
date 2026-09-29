@@ -13,7 +13,9 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                (stage_schedule[current_stage].end_dt, else the deliverable end_dt)
   final_due    the deliverable's overall deadline (end_dt)
   month scope  due falls in the month, plus anything still not done whose due
-               is before the month ("carried over")
+               is before the month ("carried over") - but only if it went overdue
+               in the last MAX_OVERDUE_DAYS; older leftovers are stale data, not
+               something management can act on
   bucket       billed   project Raised Invoice / Completed, or the deliverable
                         itself is Completed
                ready    project Ready for Invoice
@@ -41,6 +43,7 @@ AT_RISK_DAYS = 2
 CRITICAL_LATE_DAYS = 3
 STALE_WORKING_DAYS = 3
 NEXT_DAYS = 7
+MAX_OVERDUE_DAYS = 90
 
 BILLED_PROJECT_STATUSES = {"Raised Invoice", "Completed"}
 EXCLUDED_PROJECT_STATUSES = {"Scrapped"}
@@ -105,6 +108,7 @@ def create_home_dashboard_router(
         today_s, m_start_s, m_end_s = today.isoformat(), m_start.isoformat(), m_end.isoformat()
         risk_until = (today + timedelta(days=AT_RISK_DAYS)).isoformat()
         next_until = (today + timedelta(days=NEXT_DAYS)).isoformat()
+        overdue_floor = (today - timedelta(days=MAX_OVERDUE_DAYS)).isoformat()
 
         (
             projects,
@@ -247,7 +251,7 @@ def create_home_dashboard_router(
                 trend_first_pass[completed_on[:7]].append(revs == 0)
 
             in_month = bool(due) and m_start_s <= due <= m_end_s
-            carried = bool(due) and due < m_start_s and not done
+            carried = bool(due) and overdue_floor <= due < m_start_s and not done
             scoped = in_month or carried
 
             in_next = (
@@ -364,6 +368,7 @@ def create_home_dashboard_router(
                 "critical_late_days": CRITICAL_LATE_DAYS,
                 "stale_working_days": STALE_WORKING_DAYS,
                 "next_days": NEXT_DAYS,
+                "max_overdue_days": MAX_OVERDUE_DAYS,
             },
             "deliverables": rows_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},

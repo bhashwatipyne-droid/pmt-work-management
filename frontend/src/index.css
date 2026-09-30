@@ -273,10 +273,10 @@
 
   /* Date cells: calendar icon on the left. On the right it sat past the
      column's edge and was clipped out of sight. */
+  /* The input's left padding (pl-7) is set in WorkSheetRow; a padding rule
+     here would lose to the Input component's own px-3. */
   .sheet-date-input {
     position: relative;
-    padding-left: 26px;
-    padding-right: 4px;
   }
 
   .sheet-date-input::-webkit-calendar-picker-indicator {

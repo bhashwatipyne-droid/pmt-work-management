@@ -525,7 +525,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, work_date: e.target.value }))}
           onBlur={commitWorkDate}
-          className="sheet-date-input h-8 w-[130px]"
+          className="sheet-date-input h-8 w-[130px] pl-7 pr-1"
         />
 
         {renderFillHandle(0)}

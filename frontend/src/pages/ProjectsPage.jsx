@@ -39,6 +39,7 @@ import { ProjectStatTile } from "@/components/projects/projectVisuals";
 import { COLUMN_WIDTH, KanbanColumn } from "@/components/projects/KanbanColumn";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { DEFAULT_SORT, SORT_OPTIONS, sortProjects } from "@/lib/projectSort";
+import { buildLookalikeIndex } from "@/lib/lookalikes";
 import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
@@ -229,7 +230,8 @@ export default function ProjectsPage() {
         return (
           (p.name || "").toLowerCase().includes(q) ||
           (p.code || "").toLowerCase().includes(q) ||
-          (p.client_name || "").toLowerCase().includes(q)
+          (p.client_name || "").toLowerCase().includes(q) ||
+          (p.description || "").toLowerCase().includes(q)
         );
       });
     // Filtering only here — the active "Sort by" choice is applied once,
@@ -241,6 +243,21 @@ export default function ProjectsPage() {
     () => sortProjects(filtered, sortBy),
     [filtered, sortBy]
   );
+
+  // "Looks like …" on cards and list rows: names people confuse when they
+  // log time. A hint to rename one, or at least add a description.
+  const lookalikeTextById = useMemo(() => {
+    const clientNames = new Map(projects.map((p) => [p.client_id, p.client_name || ""]));
+    const index = buildLookalikeIndex(projects, (id) => clientNames.get(id) || "");
+    const texts = new Map();
+    index.forEach((twins, id) => {
+      texts.set(
+        id,
+        `Looks like ${twins[0].name}${twins.length > 1 ? ` +${twins.length - 1}` : ""}`
+      );
+    });
+    return texts;
+  }, [projects]);
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -1028,6 +1045,7 @@ export default function ProjectsPage() {
                       key={status}
                       status={status}
                       projects={columnProjects}
+                      lookalikeTextById={lookalikeTextById}
                       selectedProjects={selectedProjects}
                       selectionMode={selectionMode}
                       onSelectProject={stableSelectProject}
@@ -1056,6 +1074,7 @@ export default function ProjectsPage() {
         ) : (
           <ProjectListTable
             projects={sortedFiltered}
+            lookalikeTextById={lookalikeTextById}
             selectedProjects={selectedProjects}
             selectionMode={selectionMode}
             onSelectProject={toggleProjectSelection}
@@ -1100,6 +1119,12 @@ export default function ProjectsPage() {
           fetchAll(false);
         }}
         clients={clients}
+        projects={projects}
+        onClientsChanged={() =>
+          getClients()
+            .then((c) => setClients(c || []))
+            .catch(() => {})
+        }
         deliverableTypes={deliverableTypes}
       />
       )}

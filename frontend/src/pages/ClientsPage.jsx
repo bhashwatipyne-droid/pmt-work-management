@@ -24,6 +24,8 @@ import {
   deleteClient,
 } from "@/services/api";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
+import { AddClientModal } from "@/components/clients/AddClientModal";
+import { cleanPhoneInput, getInitials, isValidPhone } from "@/lib/contacts";
 import { CLIENTS } from "@/constants/testIds";
 import { ClientsListSkeleton } from "@/components/skeletons/Skeletons";
 
@@ -36,29 +38,6 @@ const secondaryButton =
 const primaryButton =
   "inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2b2bb5] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] focus:outline-none focus:ring-[3px] focus:ring-[#2b2bb5]/30 disabled:cursor-not-allowed disabled:bg-[#f0f0fd] disabled:text-[#c8d5ee]";
 
-const getInitials = (name = "") => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-
-  if (!parts.length) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
-
-// Phone numbers: digits with an optional leading +, and spaces, dashes or
-// brackets for readability. Letters used to be accepted.
-const cleanPhoneInput = (value) =>
-  String(value || "")
-    .replace(/[^0-9+\s\-()]/g, "")
-    .replace(/(?!^)\+/g, "");
-
-const isValidPhone = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return true; // phone is optional
-  if (!/^\+?[0-9\s\-()]+$/.test(text)) return false;
-  const digits = text.replace(/\D/g, "").length;
-  return digits >= 7 && digits <= 15;
-};
 
 const emptyContact = () => ({
   id: `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -975,8 +954,22 @@ export default function ClientsPage() {
         </table>
       </div>
 
+      <AddClientModal
+        open={modal.open && modal.mode === "add"}
+        onClose={() =>
+          setModal((current) => ({
+            ...current,
+            open: false,
+          }))
+        }
+        onSaved={fetchAll}
+        clients={clients}
+        projects={projects}
+        onOpenExisting={(client) => setSearch(client.name)}
+      />
+
       <ClientModal
-        open={modal.open}
+        open={modal.open && modal.mode === "edit"}
         mode={modal.mode}
         initial={modal.initial}
         onClose={() =>

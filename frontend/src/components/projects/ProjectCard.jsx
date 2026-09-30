@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2 } from "lucide-react";
 
 import { STAGE_HEX, clientDotColor } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
@@ -34,6 +34,8 @@ const MENU_ITEM =
 // ProjectsPage) and receive the project instead of being fresh closures.
 const ProjectCardBase = ({
   project,
+  // "Looks like <other project>" when the name is easy to confuse.
+  lookalikeText,
   onOpen,
   selected = false,
   // Once anything is selected every card shows its checkbox.
@@ -196,6 +198,22 @@ const ProjectCardBase = ({
       <div className="mt-[13px] block w-full text-left text-[15px] font-bold leading-[18px] text-[#11151c] line-clamp-2 group-hover/card:text-[#3b6ef6]">
         {project.name}
       </div>
+
+      {project.description && (
+        <div className="mt-[5px] text-[12px] leading-4 text-[#374151] line-clamp-2">
+          {project.description}
+        </div>
+      )}
+
+      {lookalikeText && (
+        <span
+          title="Similar names confuse people when they log time. Consider renaming one, or add a description."
+          className="mt-[6px] inline-flex max-w-full items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium leading-4 text-amber-800"
+        >
+          <AlertCircle className="h-3 w-3 shrink-0" />
+          <span className="truncate">{lookalikeText}</span>
+        </span>
+      )}
 
       {/* Client */}
       <div className="mt-[6px] flex items-center gap-[7px]">

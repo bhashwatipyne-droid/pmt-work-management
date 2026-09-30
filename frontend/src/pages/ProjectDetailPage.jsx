@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
+  AlertCircle,
   ArrowLeft,
   Building,
   User as UserIcon,
@@ -27,8 +28,10 @@ import {
   updateProject,
   deleteProject,
   getClients,
+  getWorksheetLookups,
   updateDeliverable,
 } from "@/services/api";
+import { findLookalikes } from "@/lib/lookalikes";
 import { PROJECT_STATUSES, STAGES } from "@/constants/projectPalette";
 import { APP_ACTIONS, requestAppAction } from "@/lib/appActions";
 import { DeliverableModal } from "@/components/projects/DeliverableModal";
@@ -333,6 +336,9 @@ export default function ProjectDetailPage() {
   const [editProjectOpen, setEditProjectOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState(false);
+  // Other projects with names easy to confuse with this one, warned about
+  // under the title so the team checks the project code when logging.
+  const [lookalikes, setLookalikes] = useState([]);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -363,6 +369,26 @@ export default function ProjectDetailPage() {
       setLoading(false);
     }
   };
+
+  // The Work Sheet's slim lookup (names, clients, codes) is enough to find
+  // look-alike project names; a failure just means no warning is shown.
+  useEffect(() => {
+    if (!project?.id) return undefined;
+    let cancelled = false;
+    getWorksheetLookups()
+      .then((data) => {
+        if (cancelled) return;
+        const names = new Map((data?.clients || []).map((c) => [c.id, c.name]));
+        setLookalikes(
+          findLookalikes(project, data?.projects || [], (id) => names.get(id) || "")
+        );
+      })
+      .catch(() => !cancelled && setLookalikes([]));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, project?.name, project?.client_id]);
 
   useEffect(() => {
     if (!editProjectOpen || clients.length) return;
@@ -568,20 +594,49 @@ export default function ProjectDetailPage() {
             <div className="flex min-w-[280px] flex-1 flex-col gap-2">
               <h1 className="m-0 text-[28px] font-bold leading-9 text-[rgb(13,27,62)] [text-wrap:pretty]">
                 {project.name}
+                {project.code && (
+                  <span className="ml-2 align-middle text-[13px] font-medium leading-[18px] text-[rgb(84,100,144)]">
+                    {project.code}
+                  </span>
+                )}
               </h1>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-[rgb(84,100,144)]">
-                <span className="flex items-center gap-1.5">
-                  <Building className="h-3.5 w-3.5" />
-                  {project.client_name || "—"}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <UserIcon className="h-3.5 w-3.5" />
-                  POC · {project.client_poc || "Unassigned"}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {fmtRange(project.start_date, project.end_date)}
-                </span>
+              {project.description && (
+                <p className="m-0 text-sm leading-5 text-[rgb(55,65,95)] [text-wrap:pretty]">
+                  {project.description}
+                </p>
+              )}
+              {lookalikes.length > 0 && (
+                <div
+                  data-testid="project-detail-lookalike-warning"
+                  className="flex items-start gap-2 self-start rounded-lg bg-amber-100 px-3 py-2 text-xs leading-4 text-[rgb(13,27,62)]"
+                >
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-800" />
+                  <span>
+                    Often confused with {lookalikes.map((p) => p.name).join(", ")}.
+                    {project.code
+                      ? ` Ask the team to check the code ${project.code} when logging.`
+                      : " Ask the team to check the project code when logging."}
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 pt-1">
+                {[
+                  { icon: Building, label: "Client", value: project.client_name || "—" },
+                  { icon: UserIcon, label: "Point of contact", value: project.client_poc || "Unassigned" },
+                  { icon: Calendar, label: "Timeline", value: fmtRange(project.start_date, project.end_date) },
+                ].map(({ icon: Icon, label, value }) => (
+                  <span key={label} className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[rgb(249,250,251)] text-[rgb(84,100,144)]">
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-px">
+                      <span className="text-[11px] leading-[14px] text-[rgb(84,100,144)]">{label}</span>
+                      <span className="truncate text-[13px] font-medium leading-4 text-[rgb(13,27,62)]">
+                        {value}
+                      </span>
+                    </span>
+                  </span>
+                ))}
               </div>
             </div>
 

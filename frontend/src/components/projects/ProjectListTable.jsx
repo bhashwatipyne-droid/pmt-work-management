@@ -30,6 +30,7 @@ const MENU_ITEM =
 
 export const ProjectListTable = ({
   projects,
+  lookalikeTextById,
   selectedProjects,
   // Once anything is selected every row shows its checkbox.
   selectionMode = false,
@@ -129,8 +130,21 @@ export const ProjectListTable = ({
                       />
                     )}
                   </span>
-                  <span className="ml-[10px] truncate pr-4 text-[13.5px] font-semibold text-[#11151c]" title={project.name}>
-                    {project.name}
+                  <span className="ml-[10px] flex min-w-0 flex-col pr-4">
+                    <span
+                      className="truncate text-[13.5px] font-semibold text-[#11151c]"
+                      title={[project.name, project.description].filter(Boolean).join(" · ")}
+                    >
+                      {project.name}
+                    </span>
+                    {lookalikeTextById?.get(project.id) && (
+                      <span
+                        className="truncate text-[11px] leading-[14px] text-amber-800"
+                        title="Similar names confuse people when they log time. Consider renaming one, or add a description."
+                      >
+                        {lookalikeTextById.get(project.id)}
+                      </span>
+                    )}
                   </span>
                 </span>
 

@@ -29,6 +29,7 @@ const VISIBLE_STEP = 40;
 export const KanbanColumn = ({
   status,
   projects,
+  lookalikeTextById,
   onOpenProject,
   selectedProjects,
   selectionMode = false,
@@ -115,6 +116,7 @@ export const KanbanColumn = ({
           <ProjectCard
             key={project.id}
             project={project}
+            lookalikeText={lookalikeTextById?.get(project.id)}
             selected={selectedProjects?.has(project.id)}
             selectionMode={selectionMode}
             onSelect={onSelectProject}

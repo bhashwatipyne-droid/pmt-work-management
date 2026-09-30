@@ -11,6 +11,7 @@ const ProjectEditModal = ({
   clients = [],
 }) => {
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [clientId, setClientId] = useState("");
   const [pocId, setPocId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -37,6 +38,7 @@ const ProjectEditModal = ({
     }
 
     setName(project.name || "");
+    setDescription(project.description || "");
     setClientId(project.client_id || "");
     setPocId(initialPocId);
     setStartDate(project.start_date || "");
@@ -76,6 +78,7 @@ const ProjectEditModal = ({
     try {
       await onSaved({
         name: name.trim(),
+        description: description.trim(),
         client_id: clientId,
         poc_id: pocId || null,
         start_date: startDate || null,
@@ -152,6 +155,18 @@ const ProjectEditModal = ({
             autoFocus
             className="w-full border-none bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/60"
           />
+
+          <label className="mt-3 flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-600">What is this project for?</span>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={saving}
+              placeholder="One line the team will see when picking a project, e.g. Oct 2026 edition, Gujarati versions"
+              className="h-9 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            />
+          </label>
 
           {/* Pill row: POC / Client / Start date / End date */}
           <div className="mt-4 flex flex-wrap items-center gap-2">

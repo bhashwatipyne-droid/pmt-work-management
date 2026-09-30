@@ -131,6 +131,12 @@
     z-index: 2;
   }
 
+  /* Cells take focus for keyboard navigation; the active-cell ring above is
+     the focus indicator, so skip the browser's own outline. */
+  .sheet-cell:focus {
+    outline: none;
+  }
+
   .sheet-cell-fill-range {
     background: #f0f0fd;
   }
@@ -263,6 +269,35 @@
 
   .sheet-mode .sheet-cell > textarea {
     line-height: 20px;
+  }
+
+  /* Date cells: calendar icon on the left. On the right it sat past the
+     column's edge and was clipped out of sight. */
+  .sheet-date-input {
+    position: relative;
+    padding-left: 26px;
+    padding-right: 4px;
+  }
+
+  .sheet-date-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    left: 6px;
+    margin: 0;
+    padding: 0;
+    width: 14px;
+    height: 14px;
+    opacity: 0.55;
+    cursor: pointer;
+  }
+
+  .sheet-date-input:hover::-webkit-calendar-picker-indicator,
+  .sheet-date-input:focus::-webkit-calendar-picker-indicator {
+    opacity: 0.9;
+  }
+
+  .sheet-date-input:disabled::-webkit-calendar-picker-indicator {
+    cursor: default;
+    opacity: 0.35;
   }
 
   .sheet-mode .sheet-cell a {

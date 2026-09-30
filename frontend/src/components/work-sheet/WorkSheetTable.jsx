@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { trackEvent } from "@/analytics";
+import { buildLookalikeIndex, isProjectClosed } from "@/lib/lookalikes";
 
 const COLUMNS = [
   "Date",
@@ -367,6 +368,40 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
     return map;
   }, [deliverables]);
+
+  // For the Project picker: client names, the look-alike index among the
+  // projects it can offer (not delivered/scrapped), and which projects each
+  // person already has rows for ("Recently used").
+  const clientNameById = useMemo(
+    () => new Map((clients || []).map((client) => [client.id, client.name])),
+    [clients]
+  );
+
+  const clientNameOf = useCallback(
+    (clientId) => clientNameById.get(clientId) || "",
+    [clientNameById]
+  );
+
+  const projectLookalikes = useMemo(
+    () =>
+      buildLookalikeIndex(
+        (projects || []).filter((project) => !isProjectClosed(project)),
+        clientNameOf
+      ),
+    [projects, clientNameOf]
+  );
+
+  const recentProjectsByCreator = useMemo(() => {
+    const map = new Map();
+
+    for (const item of items || []) {
+      if (!item.project_id || !item.creator_id) continue;
+      if (!map.has(item.creator_id)) map.set(item.creator_id, new Set());
+      map.get(item.creator_id).add(item.project_id);
+    }
+
+    return map;
+  }, [items]);
 
   const usersById = useMemo(() => {
     const map = {};
@@ -1900,6 +1935,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     clients={clients}
                     projects={projects}
                     deliverablesByProject={deliverablesByProject}
+                    clientNameOf={clientNameOf}
+                    lookalikes={projectLookalikes}
+                    recentProjectsByCreator={recentProjectsByCreator}
                     onUpdate={onUpdate}
                     onDelete={onDelete}
                     onDuplicate={onDuplicateRow}

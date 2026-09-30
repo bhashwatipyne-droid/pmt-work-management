@@ -537,6 +537,9 @@ class DeliverableInput(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     client_id: str
+    # One line the team sees when picking the project on the Work Sheet,
+    # e.g. "Oct 2026 edition, Gujarati versions" - tells similar projects apart.
+    description: Optional[str] = ""
     # Selected contact person for this project
     poc_id: Optional[str] = None
     # Both dates are optional: a project can be created before its window is known.
@@ -549,6 +552,7 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     client_id: Optional[str] = None
+    description: Optional[str] = None
     # Selected contact person for this project
     poc_id: Optional[str] = None
     start_date: Optional[str] = None
@@ -562,6 +566,7 @@ class Project(BaseModel):
     code: str
     name: str
     client_id: str
+    description: str = ""
     # Selected contact person for this project
     poc_id: Optional[str] = None
     start_date: Optional[str] = None
@@ -3250,7 +3255,12 @@ async def worksheet_lookups(request: Request):
         .limit(1000)
         .batch_size(1000)
         .to_list(1000),
-        db.projects.find(visible_projects, {"_id": 0, "id": 1, "name": 1, "client_id": 1})
+        # status: the sheet's pickers leave out delivered/scrapped projects.
+        # code / description: tell look-alike project names apart.
+        db.projects.find(
+            visible_projects,
+            {"_id": 0, "id": 1, "name": 1, "client_id": 1, "code": 1, "status": 1, "description": 1},
+        )
         .sort("created_at", -1)
         .limit(1000)
         .batch_size(1000)
@@ -4315,6 +4325,7 @@ async def create_project(payload: ProjectCreate, request: Request):
         code=code,
         name=payload.name,
         client_id=payload.client_id,
+        description=(payload.description or "").strip(),
         poc_id=payload.poc_id,
         start_date=payload.start_date or None,
         end_date=payload.end_date or None,

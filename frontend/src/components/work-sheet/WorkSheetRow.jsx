@@ -1,11 +1,13 @@
-import { Fragment, memo, useEffect, useState } from "react";
-import { ChevronsUpDown, Hand, Lock, RotateCcw, Sparkles } from "lucide-react";
+import { Fragment, memo, useEffect, useRef, useState } from "react";
+import { ChevronsUpDown, Hand, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
+import { ProjectPicker } from "./ProjectPicker";
+import { RemarksEditor } from "./RemarksEditor";
 import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
@@ -40,6 +42,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     clients = [],
     projects = [],
     deliverablesByProject = {},
+    clientNameOf = () => "",
+    lookalikes,
+    recentProjectsByCreator,
     onUpdate,
     selected,
     onToggleSelect,
@@ -81,6 +86,15 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const lockedForMe = isMember && isRowLockedForMember(currentUser, item, users);
   const canEditExtra = isElevated && canEditRow;
   const [openSelect, setOpenSelect] = useState(null);
+  const [remarksOpen, setRemarksOpen] = useState(false);
+  const remarksRef = useRef(null);
+
+  const openRemarks = () => setRemarksOpen(true);
+  // Back on the Remarks cell afterwards, so the arrow keys carry on from it.
+  const closeRemarks = () => {
+    remarksRef.current?.closest("[data-sheet-cell]")?.focus();
+    setRemarksOpen(false);
+  };
 
   const [local, setLocal] = useState({
     work_date: item.work_date ?? "",
@@ -127,9 +141,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     ? projects.find((p) => p.id === item.project_id)
     : undefined;
   const effectiveClientId = item.client_id || project?.client_id || undefined;
-  const projectOptions = effectiveClientId
-    ? projects.filter((p) => p.client_id === effectiveClientId)
-    : projects;
+  // "Recently used" in the Project picker: projects the viewer, or this
+  // row's creator, already has rows for.
+  const isRecentProject = (projectId) =>
+    !!(
+      recentProjectsByCreator?.get(currentUser.id)?.has(projectId) ||
+      recentProjectsByCreator?.get(item.creator_id)?.has(projectId)
+    );
   const projectDeliverables = deliverablesByProject[item.project_id] || [];
   // Client work needs a deliverable (or "Not available"); highlight the cell
   // until one is chosen.
@@ -288,14 +306,17 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onUpdate(item.id, { [field]: values[field] });
   };
 
-  const sheetCell = (col) => {
+  const navigationColFor = (col) => {
     const visualCol = visibleColumns.indexOf(COLUMN_NAMES[col]);
-    const navigationCol = visualCol === -1 ? col : visualCol;
+    return visualCol === -1 ? col : visualCol;
+  };
+
+  // Props for a cell's control (input, dropdown button). The table cell
+  // around it (cellProps below) is what keyboard navigation targets.
+  const sheetCell = (col) => {
+    const navigationCol = navigationColFor(col);
 
     return {
-      "data-sheet-cell": true,
-      "data-sheet-row": index,
-      "data-sheet-col": navigationCol,
       onMouseDown: () => onCellSelect?.({ row: index, col: navigationCol }),
       onFocus: () => onCellSelect?.({ row: index, col: navigationCol }),
       onKeyDown: (event) => {
@@ -334,6 +355,63 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           maxRow: totalRows,
           onExtendSelection,
         })(event);
+      },
+    };
+  };
+
+  // Props for the table cell itself. Every visible cell is focusable
+  // (tabIndex -1) and carries the grid coordinates, so arrow keys and Tab
+  // can land on it even when there is nothing to edit there: a row this
+  // person can't edit, or a read-only column such as Creator. Its key and
+  // focus handlers only act when the cell itself has focus; events from the
+  // control inside are already handled by sheetCell above.
+  //
+  // `navShell` cells (Date) keep keyboard focus on the cell rather than the
+  // input: a date input uses Left/Right for its day/month/year parts, so
+  // arrowing through the sheet would get stuck inside it. Enter (or a click)
+  // goes into the input to edit.
+  //
+  // `onExpand` (Remarks) opens the cell's full editor on Ctrl/⌘+Enter.
+  const cellProps = (col, extraClassName, { navShell = false, onExpand } = {}) => {
+    const navigationCol = navigationColFor(col);
+    const control = sheetCell(col);
+
+    return {
+      ...(navShell ? { "data-nav-shell": true } : {}),
+      style: cellStyle(col),
+      className: [
+        "sheet-cell",
+        isCellActive(col) && "sheet-cell-active",
+        isCellInFillRange(col) && "sheet-cell-fill-range",
+        isCellInRangeSelection(col) && "sheet-cell-range-select",
+        extraClassName,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      "data-sheet-cell": true,
+      "data-sheet-row": index,
+      "data-sheet-col": navigationCol,
+      tabIndex: -1,
+      onMouseDown: control.onMouseDown,
+      onFocus: (event) => {
+        if (event.target === event.currentTarget) control.onFocus();
+      },
+      onKeyDown: (event) => {
+        if (event.target !== event.currentTarget) return;
+        if (onExpand && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          onExpand();
+          return;
+        }
+        if (navShell && event.key === "Enter" && canEditRow) {
+          const input = event.currentTarget.querySelector("input");
+          if (input && !input.disabled) {
+            event.preventDefault();
+            input.focus();
+            return;
+          }
+        }
+        control.onKeyDown(event);
       },
     };
   };
@@ -436,16 +514,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     switch (column) {
       case "Date":
         return (
-<TableCell
-        style={cellStyle(0)}
-        className={[
-          "sheet-cell",
-          isCellActive(0) && "sheet-cell-active",
-          isCellInFillRange(0) && "sheet-cell-fill-range",
-          isCellInRangeSelection(0) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(0, null, { navShell: true })}>
         <Input
           {...sheetCell(0)}
           data-testid={`${WORKSHEET.dateInput}-${item.id}`}
@@ -456,7 +525,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, work_date: e.target.value }))}
           onBlur={commitWorkDate}
-          className="h-8 w-[130px]"
+          className="sheet-date-input h-8 w-[130px]"
         />
 
         {renderFillHandle(0)}
@@ -464,17 +533,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Client":
         return (
-<TableCell
-        style={cellStyle(1)}
-        className={[
-          "sheet-cell",
-          isCellActive(1) && "sheet-cell-active",
-          isCellInFillRange(1) && "sheet-cell-fill-range",
-          isCellInRangeSelection(1) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
+<TableCell {...cellProps(1)}>
         <SearchableSelect
           open={openSelect === "client"}
           onOpenChange={(open) => setOpenSelect(open ? "client" : null)}
@@ -509,61 +568,47 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Project":
         return (
-<TableCell
-        style={cellStyle(2)}
-        className={[
-          "sheet-cell",
-          isCellActive(2) && "sheet-cell-active",
-          isCellInFillRange(2) && "sheet-cell-fill-range",
-          isCellInRangeSelection(2) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
-        <SearchableSelect
+<TableCell {...cellProps(2)}>
+        <ProjectPicker
           open={openSelect === "project"}
           onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
-          value={item.project_id ? String(item.project_id) : NONE_VALUE}
-          onValueChange={(v) => {
-            const nextId = v === NONE_VALUE ? null : v;
-            const selectedProject = projects.find((project) => String(project.id) === String(nextId));
-            const patch = {
-              project_id: nextId,
-              client_id: selectedProject?.client_id || effectiveClientId || null,
-            };
-            if (nextId !== item.project_id) {
+          value={item.project_id}
+          projects={projects}
+          clientId={effectiveClientId}
+          clientNameOf={clientNameOf}
+          isRecent={isRecentProject}
+          lookalikes={lookalikes}
+          deliverablesByProject={deliverablesByProject}
+          onPick={(picked, deliverable) => {
+            // Picking a project also sets its client, so a new row can start
+            // from the project.
+            const patch = { project_id: picked.id, client_id: picked.client_id };
+            if (deliverable) {
+              patch.deliverable_id = deliverable.id;
+              patch.deliverable_not_available = false;
+            } else if (picked.id !== item.project_id) {
               patch.deliverable_id = null;
               patch.deliverable_not_available = false;
             }
             onUpdate(item.id, patch);
+
+            const twins = lookalikes?.get(picked.id) || [];
+            if (twins.length) {
+              toast(
+                `Set to ${picked.name}${picked.code ? ` (${picked.code})` : ""}, not ${twins[0].name}`
+              );
+            }
           }}
-          options={[
-            { value: NONE_VALUE, label: "—" },
-            ...projectOptions.map((project) => ({ value: String(project.id), label: project.name })),
-          ]}
-          placeholder={effectiveClientId ? "Project" : "Select client first"}
-          searchPlaceholder="Type project name..."
-          emptyText="No projects found for this client"
-          disabled={!canEditRow || !effectiveClientId}
+          disabled={!canEditRow}
           triggerProps={sheetCell(2)}
           data-testid={`worksheet-project-select-${item.id}`}
-          contentClassName="w-[380px] p-0"
         />
         {renderFillHandle(2)}
       </TableCell>
         );
       case "Deliverable":
         return (
-<TableCell
-        style={cellStyle(3)}
-        className={[
-          "sheet-cell",
-          isCellActive(3) && "sheet-cell-active",
-          isCellInFillRange(3) && "sheet-cell-fill-range",
-          isCellInRangeSelection(3) && "sheet-cell-range-select",
-          deliverableMissing && "shadow-[inset_2px_0_0_#fb7185]",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(3, deliverableMissing && "shadow-[inset_2px_0_0_#fb7185]")}>
         <SearchableSelect
           open={openSelect === "deliverable"}
           onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
@@ -614,16 +659,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Stage":
         return (
-<TableCell
-        style={cellStyle(4)}
-        className={[
-          "sheet-cell",
-          isCellActive(4) && "sheet-cell-active",
-          isCellInFillRange(4) && "sheet-cell-fill-range",
-          isCellInRangeSelection(4) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(4)}>
         <SearchableSelect
           open={openSelect === "stage"}
           onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
@@ -646,16 +682,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Deliverable Name":
         return (
-<TableCell
-        style={cellStyle(5)}
-        className={[
-          "sheet-cell",
-          isCellActive(5) && "sheet-cell-active",
-          isCellInFillRange(5) && "sheet-cell-fill-range",
-          isCellInRangeSelection(5) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(5)}>
         {canEditRow ? (
           <Input
             {...sheetCell(5)}
@@ -674,16 +701,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Deliverable Link":
         return (
-<TableCell
-        style={cellStyle(6)}
-        className={[
-          "sheet-cell",
-          isCellActive(6) && "sheet-cell-active",
-          isCellInFillRange(6) && "sheet-cell-fill-range",
-          isCellInRangeSelection(6) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(6)}>
         {canEditRow ? (
           <Input
             {...sheetCell(6)}
@@ -706,16 +724,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Deliverable Type":
         return (
-<TableCell
-        style={cellStyle(7)}
-        className={[
-          "sheet-cell",
-          isCellActive(7) && "sheet-cell-active",
-          isCellInFillRange(7) && "sheet-cell-fill-range",
-          isCellInRangeSelection(7) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(7)}>
         {canEditRow ? (
           <SearchableSelect
               open={openSelect === "type"}
@@ -746,21 +755,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Category":
         return (
-<TableCell
-        style={cellStyle(8)}
-        className={[
-          "sheet-cell",
-          isCellActive(8) && "sheet-cell-active",
-          isCellInFillRange(8) && "sheet-cell-fill-range",
-          isCellInRangeSelection(8) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(8)}>
         <span
-          {...sheetCell(8)}
           data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
           className="cell-plain block"
-          tabIndex={canEditRow ? 0 : -1}
         >
           {item.work_category || "—"}
         </span>
@@ -769,16 +767,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Version":
         return (
-<TableCell
-        style={cellStyle(9)}
-        className={[
-          "sheet-cell",
-          isCellActive(9) && "sheet-cell-active",
-          isCellInFillRange(9) && "sheet-cell-fill-range",
-          isCellInRangeSelection(9) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(9)}>
         <Input
           {...sheetCell(9)}
           data-testid={`${WORKSHEET.versionInput}-${item.id}`}
@@ -794,24 +783,16 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Time (min)":
         return (
-<TableCell
-        style={cellStyle(10)}
-        className={[
-          "sheet-cell",
-          isCellActive(10) && "sheet-cell-active",
-          isCellInFillRange(10) && "sheet-cell-fill-range",
-          isCellInRangeSelection(10) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(10)}>
         <div className="flex items-center gap-1">
           <Input
             {...sheetCell(10)}
             data-testid={`${WORKSHEET.timeInput}-${item.id}`}
-            type="number"
-            min="0"
-            max="1440"
-            step="5"
+            // Text, not type="number": a number box hides where the cursor
+            // is, so Left/Right could never move on to the next cell from
+            // here. commitTime still checks the value (0-1440 minutes).
+            type="text"
+            inputMode="decimal"
             required
             aria-required="true"
             aria-invalid={timeMissing}
@@ -859,16 +840,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Creator":
         return (
-<TableCell
-        style={cellStyle(11)}
-        className={[
-          "sheet-cell",
-          isCellActive(11) && "sheet-cell-active",
-          isCellInFillRange(11) && "sheet-cell-fill-range",
-          isCellInRangeSelection(11) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(11)}>
         {canEditExtra ? (
           <SearchableSelect
               open={openSelect === "creator"}
@@ -924,16 +896,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Reviewer":
         return (
-<TableCell
-        style={cellStyle(12)}
-        className={[
-          "sheet-cell",
-          isCellActive(12) && "sheet-cell-active",
-          isCellInFillRange(12) && "sheet-cell-fill-range",
-          isCellInRangeSelection(12) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(12)}>
         {canEditRow ? (
           <SearchableSelect
               open={openSelect === "reviewer"}
@@ -960,41 +923,71 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         );
       case "Remarks":
         return (
-<TableCell
-        style={cellStyle(13)}
-        className={[
-          "sheet-cell",
-          isCellActive(13) && "sheet-cell-active",
-          isCellInFillRange(13) && "sheet-cell-fill-range",
-          isCellInRangeSelection(13) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(13, null, { onExpand: openRemarks })}>
         <Textarea
           {...sheetCell(13)}
+          ref={remarksRef}
           data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
           value={local.remarks}
           disabled={!canEditRow}
           onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
           onBlur={() => commit("remarks", local.remarks)}
-          className="min-h-[32px] h-8 w-[200px] resize-none py-1"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              event.stopPropagation();
+              openRemarks();
+              return;
+            }
+            sheetCell(13).onKeyDown(event);
+          }}
+          onDoubleClick={openRemarks}
+          className="min-h-[32px] h-8 w-[200px] resize-none py-1 pr-8"
           rows={1}
         />
+        {(isCellActive(13) || (local.remarks || "").length > 28) && (
+          <button
+            type="button"
+            tabIndex={-1}
+            data-testid={`worksheet-remarks-expand-${item.id}`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openRemarks();
+            }}
+            aria-label="Expand remarks"
+            title={`Expand (${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘" : "Ctrl"} Enter)`}
+            className={`absolute right-2 top-1/2 z-[3] flex h-[22px] w-[22px] -translate-y-1/2 items-center justify-center rounded-md border border-slate-200 bg-white transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5] ${
+              isCellActive(13) ? "text-[#2b2bb5]" : "text-slate-400"
+            }`}
+          >
+            <Maximize2 className="h-3 w-3" />
+          </button>
+        )}
+        {remarksOpen && (
+          <RemarksEditor
+            anchorEl={remarksRef.current?.closest("[data-sheet-cell]")}
+            rowLabel={item.deliverable_name || deliverableName || projectName || ""}
+            value={local.remarks}
+            readOnly={!canEditRow}
+            onSave={(next) => {
+              const trimmed = next.trim();
+              setLocal((l) => ({ ...l, remarks: trimmed }));
+              if (trimmed !== (item.remarks || "")) {
+                commit("remarks", trimmed);
+                toast.success("Remarks saved");
+              }
+              closeRemarks();
+            }}
+            onClose={closeRemarks}
+          />
+        )}
         {renderFillHandle(13)}
       </TableCell>
         );
       case "Status":
         return (
-<TableCell
-        style={cellStyle(14)}
-        className={[
-          "sheet-cell",
-          isCellActive(14) && "sheet-cell-active",
-          isCellInFillRange(14) && "sheet-cell-fill-range",
-          isCellInRangeSelection(14) && "sheet-cell-range-select",
-        ]
-          .filter(Boolean)
-          .join(" ")}>
+<TableCell {...cellProps(14)}>
         <SearchableSelect
           open={openSelect === "status"}
           onOpenChange={(open) => setOpenSelect(open ? "status" : null)}

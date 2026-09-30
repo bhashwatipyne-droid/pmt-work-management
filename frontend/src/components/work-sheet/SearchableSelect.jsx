@@ -12,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../ui/popover";
+import { focusAdjacentCell } from "./useWorksheetKeyboardNavigation";
 
 export function SearchableSelect({
   value,
@@ -33,6 +34,10 @@ export function SearchableSelect({
 }) {
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
+  const triggerRef = useRef(null);
+  // Set when Tab leaves the dropdown for the next cell, so closing doesn't
+  // pull focus back to this cell's trigger.
+  const leavingByTabRef = useRef(false);
 
   const normalizedOptions = options
     .filter(Boolean)
@@ -49,10 +54,7 @@ export function SearchableSelect({
   useEffect(() => {
     if (!open) {
       setSearch("");
-      return;
     }
-
-    requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
   const handleOpenChange = (nextOpen) => {
@@ -86,6 +88,7 @@ export function SearchableSelect({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           {...triggerProps}
           disabled={disabled}
@@ -105,7 +108,23 @@ export function SearchableSelect({
         align="start"
         sideOffset={4}
         className={contentClassName}
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        onOpenAutoFocus={(event) => {
+          // Focus the search box once the content has mounted. Doing it from
+          // the open effect could run before the box existed, so a dropdown
+          // opened by typing kept focus on the cell and lost every key after
+          // the first.
+          event.preventDefault();
+          const input = inputRef.current;
+          if (!input) return;
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        }}
+        onCloseAutoFocus={(event) => {
+          if (leavingByTabRef.current) {
+            leavingByTabRef.current = false;
+            event.preventDefault();
+          }
+        }}
       >
         <Command shouldFilter={true} value={undefined}>
           <CommandInput
@@ -114,6 +133,19 @@ export function SearchableSelect({
             onValueChange={setSearch}
             placeholder={searchPlaceholder}
             onKeyDown={(event) => {
+              // Tab / Shift+Tab: close without changing the value and move
+              // on to the next / previous cell, like everywhere else in the
+              // sheet. Left alone, Tab went to whatever the browser found
+              // next in the page, far from the sheet.
+              if (event.key === "Tab") {
+                event.preventDefault();
+                event.stopPropagation();
+                leavingByTabRef.current = true;
+                onOpenChange?.(false);
+                focusAdjacentCell(triggerRef.current, event.shiftKey ? -1 : 1);
+                return;
+              }
+
               // Clicking this cell opened the popover and moved focus
               // into this search box — so normally every key here is
               // cmdk's own list search/navigation (stopPropagation stops

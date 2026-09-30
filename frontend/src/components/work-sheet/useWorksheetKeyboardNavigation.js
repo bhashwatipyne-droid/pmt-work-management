@@ -1,5 +1,15 @@
+// Every visible cell is a navigation stop: the table cell itself carries
+// data-sheet-cell/row/col and tabIndex=-1. Keyboard movement lands on the
+// cell's own control (input, dropdown button...) when it has an enabled one,
+// and on the cell itself otherwise - a row the user can't edit (admins are
+// view-only, members can't edit other people's rows) or a read-only column
+// like Creator. Moving only between enabled controls used to stop dead at
+// those cells, and blurring into them left focus on <body>, after which no
+// arrow key or Tab did anything.
 const getSheetCells = () =>
   Array.from(document.querySelectorAll("[data-sheet-cell]"));
+
+const CONTROL_SELECTOR = "input, textarea, button, [role='combobox']";
 
 export const focusCheckboxRow = (row) => {
   const el = document.querySelector(`[data-checkbox-row="${row}"]`);
@@ -12,12 +22,21 @@ export const focusCheckboxRow = (row) => {
   return true;
 };
 
-const findCell = (row, col) => {
-  return getSheetCells().find(
-    (element) =>
-      Number(element.dataset.sheetRow) === row &&
-      Number(element.dataset.sheetCol) === col
+const findCell = (row, col) =>
+  document.querySelector(
+    `[data-sheet-cell][data-sheet-row="${row}"][data-sheet-col="${col}"]`
   );
+
+const isUsable = (el) =>
+  !!el && !el.disabled && el.getAttribute("aria-disabled") !== "true";
+
+// The element to focus for a cell: its first enabled control, else the cell.
+// A cell marked data-nav-shell (Date) always takes focus itself, so moving
+// through it never gets caught in the date input's own arrow-key handling.
+const focusTargetFor = (cell) => {
+  if (cell.hasAttribute("data-nav-shell")) return cell;
+  const control = cell.querySelector(CONTROL_SELECTOR);
+  return isUsable(control) ? control : cell;
 };
 
 const focusCell = (row, col) => {
@@ -25,18 +44,17 @@ const focusCell = (row, col) => {
 
   if (!cell) return false;
 
-  const target =
-    cell.querySelector("input, textarea, button, [role='combobox']") || cell;
+  focusTargetFor(cell).focus();
 
-  if (
-    target.disabled ||
-    target.getAttribute("aria-disabled") === "true"
-  ) {
-    return false;
-  }
+  return true;
+};
 
-  target.focus();
-
+// Put focus back on the cell itself (not its control), e.g. after Escape, so
+// the cell stays active and the arrow keys keep working.
+export const focusCellShell = (row, col) => {
+  const cell = findCell(row, col);
+  if (!cell) return false;
+  cell.focus();
   return true;
 };
 
@@ -68,22 +86,23 @@ const focusNextAvailableCell = (row, col, direction) => {
       return b.row - a.row || b.col - a.col;
     });
 
-  for (const cell of cells) {
-    const target =
-      cell.element.querySelector(
-        "input, textarea, button, [role='combobox']"
-      ) || cell.element;
+  if (!cells.length) return false;
 
-    if (
-      !target.disabled &&
-      target.getAttribute("aria-disabled") !== "true"
-    ) {
-      target.focus();
-      return true;
-    }
-  }
+  focusTargetFor(cells[0].element).focus();
+  return true;
+};
 
-  return false;
+// Tab / Shift+Tab from outside the grid's own key handling - e.g. from a
+// dropdown's search box, which lives in a popover portal - to the cell after
+// (or before) the one `fromEl` belongs to.
+export const focusAdjacentCell = (fromEl, direction) => {
+  const cell = fromEl?.closest?.("[data-sheet-cell]");
+  if (!cell) return false;
+  return focusNextAvailableCell(
+    Number(cell.dataset.sheetRow),
+    Number(cell.dataset.sheetCol),
+    direction
+  );
 };
 
 export const createWorksheetKeyHandler = ({
@@ -157,11 +176,24 @@ export const createWorksheetKeyHandler = ({
         // below, same as pressing Left/Right on an empty/unfocused cell.
       }
 
+      // A textarea (Remarks) keeps Up/Down for moving between its own lines,
+      // and only hands them to the sheet from its first line (Up) or last
+      // line (Down). It used to keep them always, so a one-line Remarks
+      // cell swallowed Up/Down completely.
       if (
         target instanceof HTMLTextAreaElement &&
         ["ArrowUp", "ArrowDown"].includes(event.key)
       ) {
-        return;
+        const { value, selectionStart, selectionEnd } = target;
+        const onFirstLine = !value.slice(0, selectionStart).includes("\n");
+        const onLastLine = !value.slice(selectionEnd).includes("\n");
+        const leaves =
+          (event.key === "ArrowUp" && onFirstLine) ||
+          (event.key === "ArrowDown" && onLastLine);
+
+        if (!leaves) {
+          return;
+        }
       }
     }
 
@@ -190,26 +222,17 @@ export const createWorksheetKeyHandler = ({
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement;
 
-      // Commit whatever was typed before doing anything else — same
-      // reasoning as Enter below: don't rely purely on a focus-shift's
-      // side effect to trigger the blur-based commit.
-      if (isTextEditable) {
-        target.blur();
-
-        // Shift+Arrow deliberately never moves focus elsewhere (only the
-        // highlighted range grows/shrinks) — but blur() alone drops focus
-        // out of the field entirely with nothing to replace it, which
-        // kills every subsequent keydown in the sheet until the user
-        // clicks back in manually. Re-focus the same field immediately
-        // so the commit still happens but focus never actually leaves.
-        if (event.shiftKey) {
-          target.focus();
-        }
-      }
-
       const jumpToEdge = event.ctrlKey || event.metaKey;
 
       if (event.shiftKey) {
+        // Shift+Arrow never moves focus (only the highlighted range
+        // grows/shrinks), so commit what was typed with a blur and put
+        // focus straight back on the same field.
+        if (isTextEditable) {
+          target.blur();
+          target.focus();
+        }
+
         // Shift(+Ctrl)+Arrow — extend/shrink a rectangular selection from
         // the anchor cell (wherever focus currently is) without moving
         // focus itself. Pressing plain arrows afterward collapses it.
@@ -235,6 +258,10 @@ export const createWorksheetKeyHandler = ({
       nextRow = Math.max(1, Math.min(maxRow, nextRow));
       nextCol = Math.max(0, Math.min(maxCol, nextCol));
 
+      // Moving focus blurs the field, which is what commits a typed value.
+      // Every rendered cell can take focus, so this only fails when the
+      // target row isn't rendered (the sheet is virtualized); focus then
+      // stays where it is instead of dropping to <body>.
       focusCell(nextRow, nextCol);
       return;
     }
@@ -267,19 +294,20 @@ export const createWorksheetKeyHandler = ({
         target.blur();
       }
 
-      // Existing rows → move down/up.
+      // Existing rows → move down/up. If there is no row to move to, keep
+      // the current cell active rather than leaving focus on <body>.
       const nextRow = event.shiftKey ? row - 1 : row + 1;
 
-      if (nextRow >= 0) {
-        focusCell(nextRow, col);
+      if (nextRow < 1 || !focusCell(nextRow, col)) {
+        focusCellShell(row, col);
       }
 
       return;
     }
 
-    // Escape → leave the current field.
-    if (event.key === "Escape") {
-      target.blur();
+    // Escape → leave the field but stay on the cell, so arrows still work.
+    if (event.key === "Escape" && target !== findCell(row, col)) {
+      focusCellShell(row, col);
     }
   };
 };

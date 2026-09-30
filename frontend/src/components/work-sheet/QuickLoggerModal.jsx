@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, Clock, Save, Check, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
+import { buildLookalikeIndex, isProjectClosed } from "@/lib/lookalikes";
+import { LookalikePill, ProjectNameParts } from "./ProjectPicker";
 import {
   NOT_AVAILABLE_LABEL,
   NOT_AVAILABLE_VALUE,
@@ -101,6 +103,9 @@ export default function QuickLoggerModal({
   const [error, setError] = useState("");
   const [showRemark, setShowRemark] = useState(false);
   const [timeDefaults, setTimeDefaults] = useState({});
+  // Bumped to rebuild the suggestion list without anything typed: when the
+  // logger opens, and when the input is clicked after the list was dismissed.
+  const [suggestionsNonce, setSuggestionsNonce] = useState(0);
 
   // The logged-in person's minutes-per-unit for each Core activity. A failure
   // is harmless: durations just have to be typed, as before.
@@ -173,12 +178,31 @@ export default function QuickLoggerModal({
     );
   }, [draft.client_id, clientMap, clients, clientProjectParts.client]);
 
+  // Delivered and scrapped projects are left out: no new work is logged
+  // against them (same rule as the Work Sheet's Project picker).
   const clientProjects = useMemo(
     () =>
       resolvedClient
-        ? projects.filter((p) => p.client_id === resolvedClient.id)
+        ? projects.filter(
+            (p) => p.client_id === resolvedClient.id && !isProjectClosed(p)
+          )
         : [],
     [projects, resolvedClient]
+  );
+
+  const clientNameOf = useCallback(
+    (clientId) => clientMap.get(clientId)?.name || "",
+    [clientMap]
+  );
+
+  // Look-alike names among the projects on offer, flagged in the Project
+  // suggestions with the words that tell them apart in bold.
+  const lookalikes = useMemo(
+    () =>
+      open
+        ? buildLookalikeIndex(projects.filter((p) => !isProjectClosed(p)), clientNameOf)
+        : new Map(),
+    [open, projects, clientNameOf]
   );
 
   const resolvedProject = useMemo(() => {
@@ -296,6 +320,10 @@ export default function QuickLoggerModal({
     setError("");
     setShowRemark(false);
     committingRef.current = false;
+    // The modal stays mounted while closed, so on reopening nothing the
+    // suggestion effect depends on has changed and it would not run again:
+    // the Clients list only appeared once something was typed or clicked.
+    setSuggestionsNonce((n) => n + 1);
 
     entryStartedRef.current = false;
     savedSuccessfullyRef.current = false;
@@ -327,6 +355,7 @@ export default function QuickLoggerModal({
   }, [open, suggestions.length]);
 
   useEffect(() => {
+    if (!open) return;
     const step = currentStep;
     let next = [];
 
@@ -351,6 +380,8 @@ export default function QuickLoggerModal({
     setSuggestions(next);
     setHighlightedIndex(0);
   }, [
+    open,
+    suggestionsNonce,
     currentStep,
     clientProjects,
     clients,
@@ -809,6 +840,9 @@ export default function QuickLoggerModal({
                     })
                   }
                   onKeyDown={handleKeyDown}
+                  onClick={() => {
+                    if (!suggestions.length) setSuggestionsNonce((n) => n + 1);
+                  }}
                   placeholder="Acme Corp / The Last Mile / Rushing Waters / Carousel / 45m"
                   autoComplete="off"
                   spellCheck="false"
@@ -854,7 +888,25 @@ export default function QuickLoggerModal({
                                 : "text-foreground hover:bg-muted",
                             ].join(" ")}
                           >
-                            <span className="min-w-0 flex-1 truncate">{label}</span>
+                            {currentStep === "project" ? (
+                              <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="truncate">
+                                  <ProjectNameParts
+                                    project={item}
+                                    twins={lookalikes.get(item.id) || []}
+                                    clientNameOf={clientNameOf}
+                                  />
+                                </span>
+                                {(item.description || item.code) && (
+                                  <span className="truncate text-xs text-muted-foreground">
+                                    {[item.code, item.description].filter(Boolean).join(" · ")}
+                                  </span>
+                                )}
+                                {lookalikes.has(item.id) && <LookalikePill />}
+                              </span>
+                            ) : (
+                              <span className="min-w-0 flex-1 truncate">{label}</span>
+                            )}
                             {index === highlightedIndex && (
                               <span className="ml-3 text-[10px] text-muted-foreground">
                                 Enter

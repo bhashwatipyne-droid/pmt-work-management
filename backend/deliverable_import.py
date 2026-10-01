@@ -58,6 +58,13 @@ FINISH_WORDS = {"finish", "finished", "complete", "completed", "done", "closed"}
 # common and unambiguous enough to just accept outright.
 TYPE_ALIASES = {
     "reel": "Reel / Short Video",
+    # "One Pager" and "Infographic" are one deliverable type now.
+    "infographic": "One Pager / Infographic",
+    "infographics": "One Pager / Infographic",
+    "one pager": "One Pager / Infographic",
+    "one pagers": "One Pager / Infographic",
+    "onepager": "One Pager / Infographic",
+    "one pager infographic": "One Pager / Infographic",
 }
 _CANONICAL_STAGES = sorted(set(STAGE_ALIASES.values()))
 

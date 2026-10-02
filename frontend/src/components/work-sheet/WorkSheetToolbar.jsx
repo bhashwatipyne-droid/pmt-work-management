@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { WORKSHEET } from "@/constants/testIds";
 import { CountBadge } from "@/components/ui/CountBadge";
+import { MonthPicker } from "./MonthPicker";
 
 // Group-by options for the table. "None" turns grouping off and falls
 // back to the existing flat, sorted row list.
@@ -152,6 +153,11 @@ export const WorkSheetToolbar = ({
   onOpenBulkReview,
   bulkReviewCount = 0,
   onOpenHistory,
+  // Month stepper in the header. Omit `onMonthChange` and it is not shown.
+  // `month` is "YYYY-MM", or "" for every month.
+  month = "",
+  onMonthChange,
+  currentMonth,
   // Purely informational — same isDeliverableMissing rule that already
   // flags individual rows, just surfaced as a toolbar-level count. Not
   // clickable/filterable by design.
@@ -186,7 +192,15 @@ export const WorkSheetToolbar = ({
           {title}
         </h1>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onMonthChange && (
+            <MonthPicker
+              value={month}
+              onChange={onMonthChange}
+              currentMonth={currentMonth}
+            />
+          )}
+
           {onOpenBulkReview && (
             <Button onClick={onOpenBulkReview} size="sm" variant="outline">
               <ClipboardCheck className="h-4 w-4" />

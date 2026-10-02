@@ -6,11 +6,21 @@ const isMac =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
 const MOD = isMac ? "⌘" : "Ctrl";
 
-// Remarks opened out of its one-line cell into a proper editor, anchored over
-// the cell: room for a few lines of feedback, blockers or what changed. Enter
-// is a new line, Ctrl/⌘+Enter or Save saves, Esc cancels, and clicking away
-// saves. On a row the viewer can't edit it is read-only.
-export function RemarksEditor({ anchorEl, rowLabel, value, readOnly = false, onSave, onClose }) {
+// A long text cell (Remarks, Deliverable Name) opened out into a proper
+// editor, anchored over the cell: room for a few lines of feedback, blockers or
+// a long name. Enter is a new line, Ctrl/⌘+Enter or Save saves, Esc cancels,
+// and clicking away saves. On a row the viewer can't edit it is read-only.
+export function RemarksEditor({
+  anchorEl,
+  rowLabel,
+  value,
+  readOnly = false,
+  onSave,
+  onClose,
+  title = "Remarks",
+  placeholder = "Add remarks: feedback, blockers, what changed…",
+  emptyText = "No remarks",
+}) {
   const [draft, setDraft] = useState(value || "");
   const [pos, setPos] = useState(null);
   const textareaRef = useRef(null);
@@ -66,13 +76,13 @@ export function RemarksEditor({ anchorEl, rowLabel, value, readOnly = false, onS
       />
       <div
         role="dialog"
-        aria-label="Edit remarks"
+        aria-label={`Edit ${title.toLowerCase()}`}
         onKeyDown={handleKeyDown}
         style={{ left: pos.left, top: pos.top, width: pos.width }}
         className="fixed z-[61] flex max-h-[calc(100vh-16px)] flex-col overflow-hidden rounded-[10px] bg-white shadow-[inset_0_0_0_2px_#2b2bb5,0_6px_25px_rgba(13,28,61,0.15)]"
       >
         <div className="flex items-center gap-2 px-3 pb-2 pt-2.5">
-          <span className="text-xs font-semibold text-foreground">Remarks</span>
+          <span className="text-xs font-semibold text-foreground">{title}</span>
           {rowLabel && (
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">· {rowLabel}</span>
           )}
@@ -88,11 +98,11 @@ export function RemarksEditor({ anchorEl, rowLabel, value, readOnly = false, onS
 
         <textarea
           ref={textareaRef}
-          aria-label="Remarks"
+          aria-label={title}
           value={draft}
           readOnly={readOnly}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={readOnly ? "No remarks" : "Add remarks: feedback, blockers, what changed…"}
+          placeholder={readOnly ? emptyText : placeholder}
           rows={7}
           className="mx-3 max-h-[50vh] min-h-[140px] resize-y rounded-lg border-none bg-slate-50 px-3 py-2.5 text-sm leading-5 text-foreground outline-none"
         />

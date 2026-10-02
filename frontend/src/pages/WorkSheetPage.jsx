@@ -235,6 +235,24 @@ export default function WorkSheetPage() {
     [activeSheet]
   );
 
+  // Month shown on the sheet ("YYYY-MM"; "" = every month). Opens on the
+  // current month. Shared by all tabs, and kept out of `filters` so "Clear
+  // filters" does not widen it. Uses the same UTC "today" as new rows, so a
+  // row just added always lands in the month on screen.
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [month, setMonth] = useState(currentMonth);
+
+  // Rows created (or arriving) outside the month on screen would vanish the
+  // moment they appear; switch to the month they are in so they stay visible.
+  const revealMonthOf = useCallback((created) => {
+    const rows = Array.isArray(created) ? created : [created];
+    const first = rows.find(Boolean);
+    if (!first) return;
+    const rowMonth = first.month || (first.work_date || "").slice(0, 7);
+    if (!rowMonth) return;
+    setMonth((current) => (current && current !== rowMonth ? rowMonth : current));
+  }, []);
+
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortDirection, setSortDirection] = useState("desc");
   const [loading, setLoading] = useState(true);
@@ -452,6 +470,7 @@ export default function WorkSheetPage() {
       // spliced straight into the local list — no need to re-download the
       // whole (potentially thousands-of-rows) collection just to show it.
       setItems((prev) => [location.state.newWorkItem, ...prev]);
+      revealMonthOf(location.state.newWorkItem);
       navigate(location.pathname, { replace: true, state: {} });
     } else if (location.state?.refreshWorkSheet) {
       // Fallback for a NotificationCenter build that only sends the old
@@ -467,7 +486,7 @@ export default function WorkSheetPage() {
   // longer triggers a refetch.
   useEffect(() => {
     setSelectedIds([]);
-  }, [filters, activeSheet, onlyMissing]);
+  }, [filters, activeSheet, onlyMissing, month]);
 
   // All filtering (search, date range, project/deliverable/type/category,
   // creator, reviewer, status) plus the per-tab stage scoping happens here,
@@ -561,6 +580,7 @@ export default function WorkSheetPage() {
       if (filters.date_from && (item.work_date || "") < filters.date_from) return false;
       if (filters.date_to && (item.work_date || "") > filters.date_to) return false;
       if (filters.month && item.month !== filters.month) return false;
+      if (month && (item.month || (item.work_date || "").slice(0, 7)) !== month) return false;
 
       if (projectIds && !projectIds.has(item.project_id)) return false;
       if (deliverableIds && !deliverableIds.has(item.deliverable_id)) return false;
@@ -575,6 +595,7 @@ export default function WorkSheetPage() {
   }, [
     items,
     filters,
+    month,
     activeSheet,
     clientNameById,
     projectById,
@@ -684,6 +705,7 @@ export default function WorkSheetPage() {
 
       // New row goes to the top of the sheet, not the bottom.
       setItems((prev) => [created, ...prev]);
+      revealMonthOf(created);
 
       trackEvent("row_added", {
         worksheet: activeSheet,
@@ -718,6 +740,7 @@ export default function WorkSheetPage() {
     // were just created. Every other create/edit path in this file already
     // updates `items` locally (see handleAddRow etc.) — do the same here.
     setItems((prev) => [...created, ...prev]);
+    revealMonthOf(created);
     refreshCounts();
   };
 
@@ -743,6 +766,7 @@ export default function WorkSheetPage() {
         { stage }
       );
       setItems((prev) => [...prev, ...created]);
+      revealMonthOf(created);
 
       trackEvent("row_added", {
         worksheet: activeSheet,
@@ -1085,6 +1109,7 @@ export default function WorkSheetPage() {
       });
 
       setItems((prev) => [created, ...prev]);
+      revealMonthOf(created);
       // Land the new row next to the anchor in the same manual drag order
       // that reordering rows already maintains, rather than wherever the
       // default date sort would place it.
@@ -1187,6 +1212,7 @@ export default function WorkSheetPage() {
       );
 
       setItems((prev) => [...created, ...prev]);
+    revealMonthOf(created);
       tableRef.current?.resetColumnSort();
       tableRef.current?.scrollToTop();
       setSelectedIds([]);
@@ -1386,6 +1412,8 @@ export default function WorkSheetPage() {
     if (typeof incoming === "string") {
       setActiveSheet("Master");
       setOnlyMissing(false);
+      // A project's rows span months, so search across all of them.
+      setMonth("");
       setFiltersBySheet((current) => ({
         ...current,
         Master: {
@@ -1486,6 +1514,9 @@ export default function WorkSheetPage() {
         }
         bulkReviewCount={bulkReviewCount}
         onOpenHistory={() => setHistoryOpen(true)}
+        month={month}
+        onMonthChange={setMonth}
+        currentMonth={currentMonth}
       />
 
       <WorksheetFilterPanel

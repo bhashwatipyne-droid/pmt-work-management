@@ -26,7 +26,7 @@ export function SearchableSelect({
   onOpenChange,
   triggerProps = {},
   className = "",
-  contentClassName = "w-[360px] p-0",
+  contentClassName = "w-[400px] p-0",
   // Optional: render the closed trigger's value as something other than
   // plain text (e.g. a colored status chip). Receives the matched option
   // (or undefined) and the raw value.
@@ -93,14 +93,16 @@ export function SearchableSelect({
           {...triggerProps}
           disabled={disabled}
           onKeyDown={handleTriggerKeyDown}
-          className={`flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] outline-none ${className}`}
+          className={`flex min-h-8 w-full items-start justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none ${className}`}
         >
-          <span className="min-w-0 truncate">
+          {/* Long values wrap onto more lines (the cell grows) rather than
+              being cut off with an ellipsis. */}
+          <span className="min-w-0 flex-1 whitespace-normal break-words">
             {renderValue
               ? renderValue(selectedOption, value)
               : selectedOption?.label || (value ? String(value) : placeholder)}
           </span>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <ChevronsUpDown className="mt-[3px] h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
       </PopoverTrigger>
 

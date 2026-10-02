@@ -127,8 +127,14 @@ const getGroupInitials = (name) => {
 
 // The worksheet is intentionally virtualized without adding a new dependency.
 // Only the visible rows + a small overscan buffer are mounted in the DOM.
-const ROW_HEIGHT = 40;
-const HEADER_HEIGHT = 40;
+//
+// Cells wrap long text, so rows are not all the same height. Every mounted row
+// is measured (see rowObserver below); rows that have not been on screen yet
+// are positioned with an estimate (ESTIMATED_ROW_HEIGHT until some rows have
+// been measured, then their average) until they are.
+const ESTIMATED_ROW_HEIGHT = 56;
+const GROUP_HEADER_HEIGHT = 40;
+const MIN_HEADER_HEIGHT = 40;
 const OVERSCAN = 20;
 
 export const WorkSheetTable = forwardRef(function WorkSheetTable({
@@ -208,6 +214,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   });
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [draggedRow, setDraggedRow] = useState(null);
+  // Every row being carried by the current row drag: just the dragged row, or
+  // all the selected rows when a selected row is the one picked up.
+  const [draggedRowIds, setDraggedRowIds] = useState([]);
+  const [dropTarget, setDropTarget] = useState(null); // { id, pos: "before" | "after" }
+  const checkboxDragRef = useRef(null);
   const columnWidthsKey = `worksheet_column_widths_${currentUser.id}`;
 
   const [columnWidths, setColumnWidths] = useState(() => {
@@ -248,6 +259,50 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const onFillRef = useRef(onFill);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
+  const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(MIN_HEADER_HEIGHT);
+
+  // Measured height of each row that has been on screen, by item id.
+  const rowHeightsRef = useRef(new Map());
+  const [heightVersion, setHeightVersion] = useState(0);
+  const heightFrameRef = useRef(null);
+  const [rowObserver] = useState(() => {
+    if (typeof ResizeObserver === "undefined") return null;
+
+    return new ResizeObserver((entries) => {
+      let changed = false;
+
+      for (const entry of entries) {
+        const id = entry.target.dataset.rowId;
+        if (!id) continue;
+        const height = Math.round(
+          entry.borderBoxSize?.[0]?.blockSize ?? entry.target.offsetHeight
+        );
+        if (height > 0 && rowHeightsRef.current.get(id) !== height) {
+          rowHeightsRef.current.set(id, height);
+          changed = true;
+        }
+      }
+
+      // One re-position per frame however many rows resized.
+      if (changed && heightFrameRef.current == null) {
+        heightFrameRef.current = requestAnimationFrame(() => {
+          heightFrameRef.current = null;
+          setHeightVersion((version) => version + 1);
+        });
+      }
+    });
+  });
+
+  useEffect(
+    () => () => {
+      rowObserver?.disconnect();
+      if (heightFrameRef.current != null) {
+        cancelAnimationFrame(heightFrameRef.current);
+      }
+    },
+    [rowObserver]
+  );
 
   // Exposed so the page can force the sheet back to its default
   // (newest-first) order when a row is added — otherwise a row added
@@ -1069,23 +1124,83 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     setScrollTop(event.currentTarget.scrollTop);
   }, []);
 
-  const bodyScrollTop = Math.max(0, scrollTop - HEADER_HEIGHT);
+  // The header is frozen at the top while the rows scroll under it, and it can
+  // be taller than one line when a column title wraps.
+  useEffect(() => {
+    const element = headerRef.current;
+    if (!element) return undefined;
+
+    const update = () =>
+      setHeaderHeight(Math.max(MIN_HEADER_HEIGHT, Math.round(element.offsetHeight)));
+
+    update();
+    if (typeof ResizeObserver === "undefined") return undefined;
+
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // Top edge of every entry, from the measured heights (estimated where a row
+  // has not been measured yet). offsets[n] is the total height.
+  const offsets = useMemo(() => {
+    const result = new Array(displayEntries.length + 1);
+    const heights = rowHeightsRef.current;
+    // Rows not on screen yet are assumed to be as tall as the average of the
+    // ones already measured, so the scrollbar is about right from the start.
+    let measuredTotal = 0;
+    heights.forEach((height) => {
+      measuredTotal += height;
+    });
+    const estimate = heights.size
+      ? Math.max(MIN_HEADER_HEIGHT, Math.round(measuredTotal / heights.size))
+      : ESTIMATED_ROW_HEIGHT;
+    let acc = 0;
+
+    for (let i = 0; i < displayEntries.length; i += 1) {
+      result[i] = acc;
+      const entry = displayEntries[i];
+      acc +=
+        entry.type === "header"
+          ? GROUP_HEADER_HEIGHT
+          : heights.get(String(entry.item.id)) ?? estimate;
+    }
+    result[displayEntries.length] = acc;
+
+    return result;
+    // heightVersion is the signal that rowHeightsRef changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayEntries, heightVersion]);
+
+  // First index whose top edge is at or past `target`.
+  const indexAtOffset = (target) => {
+    let low = 0;
+    let high = displayEntries.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (offsets[mid] < target) low = mid + 1;
+      else high = mid;
+    }
+    return low;
+  };
+
+  const bodyScrollTop = Math.max(0, scrollTop - headerHeight);
 
   const visibleStart = Math.max(
     0,
-    Math.floor(bodyScrollTop / ROW_HEIGHT) - OVERSCAN
+    indexAtOffset(bodyScrollTop + 1) - 1 - OVERSCAN
   );
 
   const visibleEnd = Math.min(
     displayEntries.length,
-    Math.ceil((bodyScrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
+    indexAtOffset(bodyScrollTop + viewportHeight) + OVERSCAN
   );
 
   const visibleItems = displayEntries.slice(visibleStart, visibleEnd);
-  const topSpacerHeight = visibleStart * ROW_HEIGHT;
+  const topSpacerHeight = offsets[visibleStart] || 0;
   const bottomSpacerHeight = Math.max(
     0,
-    (displayEntries.length - visibleEnd) * ROW_HEIGHT
+    (offsets[displayEntries.length] || 0) - (offsets[visibleEnd] || 0)
   );
 
   const allVisibleIds = useMemo(
@@ -1567,21 +1682,168 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     setDraggedColumn(null);
   };
 
-  const handleRowDrop = (targetId) => {
-    if (columnSort.key || !draggedRow || draggedRow === targetId) return;
+  // Rows being dragged: if the picked-up row is one of several selected rows
+  // they all travel together (in sheet order); otherwise just that row.
+  const handleRowDragStart = (event, rowId) => {
+    const ids =
+      selectedSet.has(rowId) && selectedSet.size > 1
+        ? sortedItemsRef.current
+            .filter((item) => selectedSet.has(item.id))
+            .map((item) => item.id)
+        : [rowId];
+
+    event.dataTransfer.effectAllowed = "move";
+    // Firefox only starts a drag that carries some data.
+    event.dataTransfer.setData("text/plain", ids.join(","));
+
+    if (ids.length > 1) {
+      const ghost = document.createElement("div");
+      ghost.textContent = `${ids.length} rows`;
+      ghost.style.cssText =
+        "position:fixed;top:-1000px;left:-1000px;padding:6px 12px;border-radius:9999px;background:#2b2bb5;color:#fff;font:600 12px system-ui,sans-serif;white-space:nowrap";
+      document.body.appendChild(ghost);
+      event.dataTransfer.setDragImage(ghost, 16, 16);
+      setTimeout(() => ghost.remove(), 0);
+    }
+
+    setDraggedRow(rowId);
+    setDraggedRowIds(ids);
+  };
+
+  const clearRowDrag = () => {
+    setDraggedRow(null);
+    setDraggedRowIds([]);
+    setDropTarget(null);
+  };
+
+  // Where, if anywhere, the dragged rows may be dropped relative to `rowId`.
+  // Not onto themselves, not while a column sort decides the order, and when
+  // the sheet is grouped only within one group (moving rows between groups
+  // would mean changing their stage or owner, which a drag should not do).
+  const getRowDropPosition = (event, rowId) => {
+    if (!draggedRow || columnSort.key || draggedRowIds.includes(rowId)) {
+      return null;
+    }
+
+    if (groupBySafe) {
+      const byId = new Map(sortedItemsRef.current.map((item) => [item.id, item]));
+      const targetItem = byId.get(rowId);
+      if (!targetItem) return null;
+      const targetKey = resolveGroupKey(targetItem);
+      const sameGroup = draggedRowIds.every((id) => {
+        const item = byId.get(id);
+        return item && resolveGroupKey(item) === targetKey;
+      });
+      if (!sameGroup) return null;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  };
+
+  const handleRowDragOver = (event, rowId) => {
+    const pos = getRowDropPosition(event, rowId);
+
+    if (!pos) {
+      if (draggedRow) event.dataTransfer.dropEffect = "none";
+      setDropTarget((current) => (current ? null : current));
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget((current) =>
+      current && current.id === rowId && current.pos === pos
+        ? current
+        : { id: rowId, pos }
+    );
+  };
+
+  const handleRowDrop = (event, targetId) => {
+    const pos = getRowDropPosition(event, targetId);
+    const ids = draggedRowIds;
+
+    if (!pos || !ids.length) {
+      clearRowDrag();
+      return;
+    }
+
+    const moving = new Set(ids);
 
     setRowOrder((current) => {
-      const next = current.length ? [...current] : items.map((item) => item.id);
-      const fromIndex = next.indexOf(draggedRow);
-      const toIndex = next.indexOf(targetId);
-      if (fromIndex === -1 || toIndex === -1) return current;
-      next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, draggedRow);
-      return next;
+      if (!current.includes(targetId)) return current;
+      const carried = current.filter((id) => moving.has(id));
+      if (!carried.length) return current;
+      const rest = current.filter((id) => !moving.has(id));
+      const at = rest.indexOf(targetId) + (pos === "after" ? 1 : 0);
+      return [...rest.slice(0, at), ...carried, ...rest.slice(at)];
     });
     setActiveCell(null);
     setSelection(null);
-    setDraggedRow(null);
+    clearRowDrag();
+    toast.success(ids.length === 1 ? "Row moved" : `${ids.length} rows moved`);
+  };
+
+  // Press on a row's checkbox and drag down or up over the others to select
+  // them all (or, starting on a selected row, to deselect them). A plain click
+  // is left to the checkbox itself.
+  const handleCheckboxDragStart = (event, id, index) => {
+    if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    checkboxDragRef.current = {
+      startIndex: index,
+      on: !selectedSet.has(id),
+      base: selectedIds,
+      moved: false,
+    };
+
+    const stop = () => {
+      window.removeEventListener("mouseup", stop);
+      document.body.style.userSelect = "";
+      // The click that follows the mouseup is still to come; clear after it.
+      setTimeout(() => {
+        checkboxDragRef.current = null;
+      }, 0);
+    };
+    window.addEventListener("mouseup", stop);
+  };
+
+  const handleCheckboxDragEnter = (index) => {
+    const drag = checkboxDragRef.current;
+    if (!drag || (!drag.moved && index === drag.startIndex)) return;
+
+    if (!drag.moved) {
+      drag.moved = true;
+      document.body.style.userSelect = "none";
+      checkboxAnchorRef.current = drag.startIndex;
+      rangeSelectionRef.current = null;
+      setRangeSelection(null);
+    }
+
+    const start = Math.min(drag.startIndex, index);
+    const end = Math.max(drag.startIndex, index);
+    const inRange = sortedItemsRef.current
+      .slice(start - 1, end)
+      .filter((item) => canEditItem(item))
+      .map((item) => item.id);
+
+    if (drag.on) {
+      onSelectRange?.([...new Set([...drag.base, ...inRange])]);
+    } else {
+      const removed = new Set(inRange);
+      onSelectRange?.(drag.base.filter((id) => !removed.has(id)));
+    }
+  };
+
+  // A drag across checkboxes already changed the selection; the click that
+  // ends it must not toggle the row it started on a second time.
+  const handleCheckboxClickCapture = (event) => {
+    if (checkboxDragRef.current?.moved) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   };
 
   const getHiddenColumnsAfter = (columnIndex) => {
@@ -1663,18 +1925,19 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         data-testid={WORKSHEET.table}
         className="min-w-max border-collapse"
       >
-        <TableHeader>
+        {/* Frozen: the column titles stay at the top while the rows scroll. */}
+        <TableHeader ref={headerRef} className="sticky top-0 z-40 bg-[#f7f9fc]">
           <TableRow
             className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
             style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
           >
             <TableHead
-              className="row-num-head flex h-10 items-center justify-center border-r border-slate-200 bg-[#f7f9fc] px-3"
+              className="row-num-head flex min-h-10 items-center justify-center border-r border-slate-200 bg-[#f7f9fc] px-3"
               style={{ gridColumn: 1 }}
             />
 
 
-            <TableHead className="checkbox-cell relative flex h-10 items-center border-r border-slate-200 px-3" style={{ gridColumn: 2 }}>
+            <TableHead className="checkbox-cell relative flex min-h-10 items-center border-r border-slate-200 bg-[#f7f9fc] px-3" style={{ gridColumn: 2 }}>
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
                 checked={allSelected}
@@ -1711,7 +1974,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               return (
                 <TableHead
                   key={column}
-                  className={`group relative flex h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 text-[12px] font-bold text-slate-900 ${
+                  className={`group relative flex min-h-10 min-w-0 items-center justify-center whitespace-normal border-r border-slate-200 bg-[#f7f9fc] px-2 py-1 text-[12px] font-bold leading-4 text-slate-900 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
@@ -1738,10 +2001,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     <button
                       type="button"
                       onClick={(event) => event.stopPropagation()}
-                      className="flex max-w-full min-w-0 items-center overflow-hidden rounded px-1 py-0.5 text-center hover:text-slate-900"
+                      className="flex max-w-full min-w-0 items-center rounded px-1 py-0.5 text-center hover:text-slate-900"
                       title={column === "Time (min)" ? `${column} - required` : column}
                     >
-                      <span className="block truncate">{column}</span>
+                      <span className="block min-w-0 whitespace-normal break-words">{column}</span>
                       {/* Outside the truncating label so the marker stays visible in a narrow column. */}
                       {column === "Time (min)" && (
                         <span
@@ -1944,21 +2207,21 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     hiddenColumns={hiddenColumns}
                     columnOrder={columnOrder}
                     columnWidths={columnWidths}
-                    onRowDragStart={(event, rowId) => {
-                      event.dataTransfer.effectAllowed = "move";
-                      setDraggedRow(rowId);
-                    }}
-                    onRowDragOver={(event) => {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                    }}
+                    onRowDragStart={handleRowDragStart}
+                    onRowDragOver={handleRowDragOver}
                     onRowDrop={(event, rowId) => {
                       event.preventDefault();
-                      handleRowDrop(rowId);
+                      handleRowDrop(event, rowId);
                     }}
-                    onRowDragEnd={() => setDraggedRow(null)}
-                    isRowDragging={draggedRow === item.id}
-                    canDragRow={!columnSort.key && !groupBySafe}
+                    onRowDragEnd={clearRowDrag}
+                    isRowDragging={draggedRowIds.includes(item.id)}
+                    dropIndicator={dropTarget?.id === item.id ? dropTarget.pos : null}
+                    dragCount={selectedSet.has(item.id) ? selectedSet.size : 0}
+                    onCheckboxDragStart={handleCheckboxDragStart}
+                    onCheckboxDragEnter={handleCheckboxDragEnter}
+                    onCheckboxClickCapture={handleCheckboxClickCapture}
+                    rowObserver={rowObserver}
+                    canDragRow={!columnSort.key}
                     selected={selectedSet.has(item.id)}
                     onToggleSelect={(id) => handleCheckboxToggle(id, index)}
                     displayRowNumber={displayRowNumberById[item.id]}

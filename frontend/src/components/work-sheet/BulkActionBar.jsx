@@ -41,23 +41,23 @@ const BulkAssignPopover = ({ projects, deliverables, onApply, onClose }) => {
   };
 
   return (
-    <div data-testid="worksheet-bulk-assign-popover" className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
+    <div data-testid="worksheet-bulk-assign-popover" className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
       <Select value={projectId || NONE} onValueChange={(v) => { setProjectId(v === NONE ? "" : v); setDeliverableId(""); }}>
-        <SelectTrigger className="h-8 w-[150px]"><SelectValue placeholder="Project" /></SelectTrigger>
-        <SelectContent>
+        <SelectTrigger className="h-auto min-h-8 items-start py-1.5 text-left [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words w-[190px]"><SelectValue placeholder="Project" /></SelectTrigger>
+        <SelectContent className="max-w-[380px]">
           <SelectItem value={NONE}>—</SelectItem>
-          {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+          {projects.map((p) => <SelectItem key={p.id} value={p.id} className="items-start break-words">{p.name}</SelectItem>)}
         </SelectContent>
       </Select>
       <Select value={deliverableId || NONE} onValueChange={(v) => setDeliverableId(v === NONE ? "" : v)} disabled={!projectId}>
-        <SelectTrigger className="h-8 w-[150px]"><SelectValue placeholder="Deliverable" /></SelectTrigger>
-        <SelectContent>
+        <SelectTrigger className="h-auto min-h-8 items-start py-1.5 text-left [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words w-[190px]"><SelectValue placeholder="Deliverable" /></SelectTrigger>
+        <SelectContent className="max-w-[380px]">
           <SelectItem value={NONE}>—</SelectItem>
-          {projDelivs.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+          {projDelivs.map((d) => <SelectItem key={d.id} value={d.id} className="items-start break-words">{d.name}</SelectItem>)}
         </SelectContent>
       </Select>
       <Select value={stage || NONE} onValueChange={(v) => setStage(v === NONE ? "" : v)}>
-        <SelectTrigger className="h-8 w-[110px]"><SelectValue placeholder="Stage" /></SelectTrigger>
+        <SelectTrigger className="h-auto min-h-8 items-start py-1.5 text-left [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words w-[110px]"><SelectValue placeholder="Stage" /></SelectTrigger>
         <SelectContent>
           <SelectItem value={NONE}>—</SelectItem>
           {STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}

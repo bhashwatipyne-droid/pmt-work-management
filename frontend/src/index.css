@@ -113,7 +113,7 @@
 
   .sheet-cell {
     position: relative;
-    height: 40px;
+    min-height: 40px;
     padding: 4px 8px;
     border-right: 1px solid #e5e7eb;
     border-bottom: 1px solid #eef0f4;
@@ -197,15 +197,17 @@
     bottom: -4px;
   }
 
+  /* Read-only cell text wraps onto as many lines as it needs (the row grows
+     with it) instead of being clipped with an ellipsis. */
   .cell-plain {
     display: block;
-    overflow: hidden;
     max-width: 100%;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: anywhere;
     color: #334155;
     font-size: 13px;
-    line-height: 32px;
+    line-height: 20px;
+    padding: 6px 4px;
   }
 
   .row-num {
@@ -323,9 +325,18 @@
 @layer utilities {
   .sheet-mode .sheet-cell {
     box-sizing: border-box;
-    height: 40px;
+    height: auto;
     min-height: 40px;
     padding: 4px 8px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* In a tall (wrapped) row the dropdown button / text box fills its cell, so
+     the whole cell is what you click, not just its first line. */
+  .sheet-mode .sheet-cell > button,
+  .sheet-mode .sheet-cell > textarea {
+    flex: 1 1 auto;
   }
 
   .sheet-mode .sheet-cell > input,

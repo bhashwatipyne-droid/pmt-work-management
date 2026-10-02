@@ -444,9 +444,6 @@ export default function BulkReviewModal({
                               </div>
 
                               <p className="mt-0.5 text-sm text-foreground">
-                                {item.project_code
-                                  ? `${item.project_code} · `
-                                  : ""}
                                 {item.project_name || "—"}
                               </p>
                             </div>

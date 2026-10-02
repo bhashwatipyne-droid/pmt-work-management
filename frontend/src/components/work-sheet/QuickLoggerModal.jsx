@@ -882,7 +882,7 @@ export default function QuickLoggerModal({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => selectSuggestion(item)}
                             className={[
-                              "flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+                              "flex w-full items-start rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
                               index === highlightedIndex
                                 ? "bg-[#f0f0fd] text-[#1a1a8a]"
                                 : "text-foreground hover:bg-muted",
@@ -890,22 +890,22 @@ export default function QuickLoggerModal({
                           >
                             {currentStep === "project" ? (
                               <span className="flex min-w-0 flex-1 flex-col">
-                                <span className="truncate">
+                                <span className="whitespace-normal break-words">
                                   <ProjectNameParts
                                     project={item}
                                     twins={lookalikes.get(item.id) || []}
                                     clientNameOf={clientNameOf}
                                   />
                                 </span>
-                                {(item.description || item.code) && (
-                                  <span className="truncate text-xs text-muted-foreground">
-                                    {[item.code, item.description].filter(Boolean).join(" · ")}
+                                {item.description && (
+                                  <span className="whitespace-normal break-words text-xs text-muted-foreground">
+                                    {item.description}
                                   </span>
                                 )}
                                 {lookalikes.has(item.id) && <LookalikePill />}
                               </span>
                             ) : (
-                              <span className="min-w-0 flex-1 truncate">{label}</span>
+                              <span className="min-w-0 flex-1 whitespace-normal break-words">{label}</span>
                             )}
                             {index === highlightedIndex && (
                               <span className="ml-3 text-[10px] text-muted-foreground">

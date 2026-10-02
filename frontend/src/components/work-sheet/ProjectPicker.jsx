@@ -7,7 +7,7 @@ import { focusAdjacentCell } from "./useWorksheetKeyboardNavigation";
 // More than this many options and the list asks the user to type instead of
 // mounting a thousand rows at once.
 const MAX_OPTIONS = 150;
-const PREVIEW_WIDTH = 300;
+const PREVIEW_WIDTH = 340;
 
 // A project name with the words that tell it apart from its look-alikes in
 // bold ("ICICI Prudential Contra Fund – **Anniversary**").
@@ -34,7 +34,7 @@ export function LookalikePill() {
 
 const matchesQuery = (project, clientName, q) => {
   if (!q) return true;
-  const haystack = [project.name, clientName, project.code, project.description]
+  const haystack = [project.name, clientName, project.description]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -236,13 +236,13 @@ export function ProjectPicker({
           data-testid={testId}
           disabled={disabled}
           onKeyDown={handleTriggerKeyDown}
-          title={current ? [current.name, current.code].filter(Boolean).join(" · ") : undefined}
-          className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] outline-none"
+          title={current?.name}
+          className="flex min-h-8 w-full items-start justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none"
         >
-          <span className={`min-w-0 truncate ${current ? "" : "text-muted-foreground"}`}>
+          <span className={`min-w-0 flex-1 whitespace-normal break-words ${current ? "" : "text-muted-foreground"}`}>
             {current?.name || "Project"}
           </span>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <ChevronsUpDown className="mt-[3px] h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
       </PopoverTrigger>
 
@@ -250,7 +250,7 @@ export function ProjectPicker({
         ref={contentRef}
         align="start"
         sideOffset={4}
-        className="relative w-[440px] overflow-visible p-1.5"
+        className="relative w-[480px] max-w-[calc(100vw-16px)] overflow-visible p-1.5"
         onOpenAutoFocus={(event) => {
           // Runs once the content has mounted; focusing from the open effect
           // could run before the input existed, leaving typing on the cell.
@@ -276,7 +276,7 @@ export function ProjectPicker({
             setPreview(null);
           }}
           onKeyDown={handleSearchKeyDown}
-          placeholder="Search project, code or client"
+          placeholder="Search project or client"
           aria-label="Search projects"
           className="h-8 w-full rounded-md border border-input px-2 text-[13px] outline-none focus:border-[#2b2bb5]"
         />
@@ -297,9 +297,7 @@ export function ProjectPicker({
             const { project } = option;
             const twins = lookalikes?.get(project.id) || [];
             const otherClient = project.client_id !== clientId;
-            const sub = [otherClient ? clientNameOf(project.client_id) : "", project.code]
-              .filter(Boolean)
-              .join(" · ");
+            const sub = otherClient ? clientNameOf(project.client_id) : "";
             const isCurrent = String(project.id) === String(value);
 
             return (
@@ -320,21 +318,21 @@ export function ProjectPicker({
                     setHighlight(index);
                     showPreviewFor(project, e.currentTarget);
                   }}
-                  className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${
+                  className={`flex shrink-0 items-start gap-2 rounded-md px-2.5 py-1.5 text-left ${
                     index === highlight ? "bg-[#f0f0fd]" : ""
                   }`}
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm leading-[18px] text-foreground">
+                    <span className="whitespace-normal break-words text-sm leading-[18px] text-foreground">
                       <ProjectNameParts project={project} twins={twins} clientNameOf={clientNameOf} />
                     </span>
                     {project.description && (
-                      <span className="truncate text-xs leading-4 text-slate-600">{project.description}</span>
+                      <span className="whitespace-normal break-words text-xs leading-4 text-slate-600">{project.description}</span>
                     )}
-                    {sub && <span className="truncate text-[11px] leading-[14px] text-muted-foreground">{sub}</span>}
+                    {sub && <span className="whitespace-normal break-words text-[11px] leading-[14px] text-muted-foreground">{sub}</span>}
                     {twins.length > 0 && <LookalikePill />}
                   </span>
-                  {isCurrent && <Check className="h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />}
+                  {isCurrent && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />}
                 </button>
               </div>
             );
@@ -370,12 +368,12 @@ export function ProjectPicker({
             className="absolute z-10 flex max-h-[420px] flex-col gap-2.5 rounded-lg border border-border bg-white p-3 shadow-lg"
           >
             <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-semibold leading-[18px] text-foreground">{previewProject.name}</span>
+              <span className="break-words text-sm font-semibold leading-[18px] text-foreground">{previewProject.name}</span>
               {previewProject.description && (
                 <span className="text-xs leading-4 text-slate-600">{previewProject.description}</span>
               )}
               <span className="text-[11px] leading-[14px] text-muted-foreground">
-                {[clientNameOf(previewProject.client_id), previewProject.code, previewProject.status]
+                {[clientNameOf(previewProject.client_id), previewProject.status]
                   .filter(Boolean)
                   .join(" · ")}
               </span>
@@ -399,9 +397,9 @@ export function ProjectPicker({
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => pick(previewProject, d)}
                       title={`Use ${d.name}`}
-                      className="-mx-1.5 flex min-h-[30px] shrink-0 items-center rounded-md px-1.5 text-left text-[13px] text-foreground hover:bg-[#f0f0fd]"
+                      className="-mx-1.5 flex min-h-[30px] shrink-0 items-center rounded-md px-1.5 py-1 text-left text-[13px] leading-[18px] text-foreground hover:bg-[#f0f0fd]"
                     >
-                      <span className="truncate">{d.name}</span>
+                      <span className="min-w-0 whitespace-normal break-words">{d.name}</span>
                     </button>
                   ))}
                 </div>

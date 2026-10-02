@@ -3,7 +3,7 @@ import { ChevronsUpDown, Hand, Lock, Maximize2, RotateCcw, Sparkles } from "luci
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
 import { ProjectPicker } from "./ProjectPicker";
@@ -67,6 +67,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onRowDrop,
     onRowDragEnd,
     isRowDragging = false,
+    dropIndicator = null,
+    dragCount = 0,
+    onCheckboxDragStart,
+    onCheckboxDragEnter,
+    onCheckboxClickCapture,
+    rowObserver,
     canDragRow = true,
     hiddenRowIdsBefore = [],
     hiddenRowIdsAfter = [],
@@ -88,12 +94,30 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const [openSelect, setOpenSelect] = useState(null);
   const [remarksOpen, setRemarksOpen] = useState(false);
   const remarksRef = useRef(null);
+  const [nameOpen, setNameOpen] = useState(false);
+  const nameRef = useRef(null);
+  const rowRef = useRef(null);
+
+  // Rows grow with their wrapped text, so the table measures each mounted row
+  // (it positions the rows it does not render from these heights).
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || !rowObserver) return undefined;
+    rowObserver.observe(el);
+    return () => rowObserver.unobserve(el);
+  }, [rowObserver]);
 
   const openRemarks = () => setRemarksOpen(true);
   // Back on the Remarks cell afterwards, so the arrow keys carry on from it.
   const closeRemarks = () => {
     remarksRef.current?.closest("[data-sheet-cell]")?.focus();
     setRemarksOpen(false);
+  };
+
+  const openName = () => setNameOpen(true);
+  const closeName = () => {
+    nameRef.current?.closest("[data-sheet-cell]")?.focus();
+    setNameOpen(false);
   };
 
   const [local, setLocal] = useState({
@@ -561,7 +585,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           triggerProps={sheetCell(1)}
           data-testid={`worksheet-client-select-${item.id}`}
-          contentClassName="w-[260px] p-0"
+          contentClassName="w-[300px] p-0"
         />
         {renderFillHandle(1)}
       </TableCell>
@@ -594,9 +618,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
             const twins = lookalikes?.get(picked.id) || [];
             if (twins.length) {
-              toast(
-                `Set to ${picked.name}${picked.code ? ` (${picked.code})` : ""}, not ${twins[0].name}`
-              );
+              toast(`Set to ${picked.name}, not ${twins[0].name}`);
             }
           }}
           disabled={!canEditRow}
@@ -652,7 +674,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow || !item.project_id}
           triggerProps={sheetCell(3)}
           data-testid={`worksheet-deliverable-select-${item.id}`}
-          contentClassName="w-[400px] p-0"
+          contentClassName="w-[460px] p-0"
         />
         {renderFillHandle(3)}
       </TableCell>
@@ -675,26 +697,79 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           disabled={!canEditRow}
           triggerProps={sheetCell(4)}
           data-testid={`worksheet-stage-select-${item.id}`}
-          contentClassName="w-[180px] p-0"
+          contentClassName="w-[200px] p-0"
         />
         {renderFillHandle(4)}
       </TableCell>
         );
       case "Deliverable Name":
         return (
-<TableCell {...cellProps(5)}>
+<TableCell {...cellProps(5, null, { onExpand: canEditRow ? openName : undefined })}>
         {canEditRow ? (
-          <Input
+          <AutoGrowTextarea
             {...sheetCell(5)}
+            ref={nameRef}
             data-testid={`${WORKSHEET.deliverableInput}-${item.id}`}
             value={local.deliverable_name}
-            onChange={(e) => setLocal((l) => ({ ...l, deliverable_name: e.target.value }))}
+            onChange={(e) =>
+              // A name is one line however long it is; Enter moves down the
+              // sheet, so a pasted line break becomes a space.
+              setLocal((l) => ({ ...l, deliverable_name: e.target.value.replace(/\s*[\r\n]+\s*/g, " ") }))
+            }
             onBlur={() => commit("deliverable_name", local.deliverable_name)}
-            className="h-8 w-[180px]"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                event.stopPropagation();
+                openName();
+                return;
+              }
+              sheetCell(5).onKeyDown(event);
+            }}
+            className="pr-8"
             placeholder="Deliverable name"
           />
         ) : (
           <span className="cell-plain block">{item.deliverable_name || "—"}</span>
+        )}
+        {canEditRow && (isCellActive(5) || (local.deliverable_name || "").length > 30) && (
+          <button
+            type="button"
+            tabIndex={-1}
+            data-testid={`worksheet-name-expand-${item.id}`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openName();
+            }}
+            aria-label="Expand deliverable name"
+            title={`Expand (${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘" : "Ctrl"} Enter)`}
+            className={`absolute right-2 top-2 z-[3] flex h-[22px] w-[22px] items-center justify-center rounded-md border border-slate-200 bg-white transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5] ${
+              isCellActive(5) ? "text-[#2b2bb5]" : "text-slate-400"
+            }`}
+          >
+            <Maximize2 className="h-3 w-3" />
+          </button>
+        )}
+        {nameOpen && (
+          <RemarksEditor
+            anchorEl={nameRef.current?.closest("[data-sheet-cell]")}
+            rowLabel={projectName || clientName || ""}
+            title="Deliverable"
+            placeholder="Deliverable name"
+            value={local.deliverable_name}
+            readOnly={!canEditRow}
+            onSave={(next) => {
+              const normalized = next.replace(/\s*[\r\n]+\s*/g, " ").trim();
+              setLocal((l) => ({ ...l, deliverable_name: normalized }));
+              if (normalized !== (item.deliverable_name || "")) {
+                commit("deliverable_name", normalized);
+                toast.success("Deliverable name saved");
+              }
+              closeName();
+            }}
+            onClose={closeName}
+          />
         )}
         {renderFillHandle(5)}
       </TableCell>
@@ -703,17 +778,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         return (
 <TableCell {...cellProps(6)}>
         {canEditRow ? (
-          <Input
+          <AutoGrowTextarea
             {...sheetCell(6)}
             data-testid={`${WORKSHEET.deliverableLinkInput}-${item.id}`}
             value={local.deliverable_link}
-            onChange={(e) => setLocal((l) => ({ ...l, deliverable_link: e.target.value }))}
+            onChange={(e) =>
+              setLocal((l) => ({ ...l, deliverable_link: e.target.value.replace(/[\r\n]+/g, "") }))
+            }
             onBlur={() => commit("deliverable_link", local.deliverable_link)}
-            className="h-7 w-[180px]"
+            className="break-all"
             placeholder="Paste drive link"
           />
         ) : item.deliverable_link ? (
-          <a href={item.deliverable_link} target="_blank" rel="noreferrer" className="cell-plain block truncate text-indigo-600 underline">
+          <a href={item.deliverable_link} target="_blank" rel="noreferrer" className="cell-plain block break-all text-indigo-600 underline">
             {item.deliverable_link}
           </a>
         ) : (
@@ -745,7 +822,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               disabled={!canEditRow}
               triggerProps={sheetCell(7)}
               data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
-              contentClassName="w-[400px] p-0"
+              contentClassName="w-[440px] p-0"
             />
         ) : (
           <span className="cell-plain block">{item.deliverable_type || "—"}</span>
@@ -857,7 +934,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               disabled={!canEditExtra}
               triggerProps={sheetCell(11)}
               data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
-              contentClassName="w-[240px] p-0"
+              contentClassName="w-[280px] p-0"
               renderValue={(option) => {
                 const name = option?.label || "Unassigned";
                 const initials = getInitials(name);
@@ -869,7 +946,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                     >
                       {initials}
                     </span>
-                    <span className="min-w-0 truncate text-[13px] text-slate-700">{name}</span>
+                    <span className="min-w-0 break-words text-[13px] leading-5 text-slate-700">{name}</span>
                   </span>
                 );
               }}
@@ -881,7 +958,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             >
               {getInitials(nameOf(item.creator_id))}
             </span>
-            <span className="cell-plain min-w-0 truncate">{nameOf(item.creator_id)}</span>
+            <span className="cell-plain min-w-0">{nameOf(item.creator_id)}</span>
             {lockedForMe && (
               <Lock
                 className="h-3 w-3 shrink-0 text-muted-foreground"
@@ -913,7 +990,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               disabled={!canEditRow}
               triggerProps={sheetCell(12)}
               data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
-              contentClassName="w-[240px] p-0"
+              contentClassName="w-[280px] p-0"
             />
         ) : (
           <span className="cell-plain block">{item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}</span>
@@ -924,7 +1001,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       case "Remarks":
         return (
 <TableCell {...cellProps(13, null, { onExpand: openRemarks })}>
-        <Textarea
+        <AutoGrowTextarea
           {...sheetCell(13)}
           ref={remarksRef}
           data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
@@ -942,8 +1019,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             sheetCell(13).onKeyDown(event);
           }}
           onDoubleClick={openRemarks}
-          className="min-h-[32px] h-8 w-[200px] resize-none py-1 pr-8"
-          rows={1}
+          className="pr-8"
         />
         {(isCellActive(13) || (local.remarks || "").length > 28) && (
           <button
@@ -957,7 +1033,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             }}
             aria-label="Expand remarks"
             title={`Expand (${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘" : "Ctrl"} Enter)`}
-            className={`absolute right-2 top-1/2 z-[3] flex h-[22px] w-[22px] -translate-y-1/2 items-center justify-center rounded-md border border-slate-200 bg-white transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5] ${
+            className={`absolute right-2 top-2 z-[3] flex h-[22px] w-[22px] items-center justify-center rounded-md border border-slate-200 bg-white transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5] ${
               isCellActive(13) ? "text-[#2b2bb5]" : "text-slate-400"
             }`}
           >
@@ -1012,7 +1088,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           triggerProps={sheetCell(14)}
           data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
           className="border-none bg-transparent shadow-none p-0"
-          contentClassName="w-[240px] p-0"
+          contentClassName="w-[280px] p-0"
         />
         {renderFillHandle(14)}
       </TableCell>
@@ -1026,9 +1102,17 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
   return (
     <TableRow
+      ref={rowRef}
       data-testid={`worksheet-row-${item.id}`}
-      className={`group ${isRowDragging ? "opacity-60" : ""} ${
+      data-row-id={item.id}
+      className={`group relative ${isRowDragging ? "opacity-60" : ""} ${
         selected ? "sheet-row-selected" : ""
+      } ${
+        dropIndicator
+          ? `after:pointer-events-none after:absolute after:inset-x-0 after:z-40 after:h-0.5 after:bg-[#2b2bb5] after:content-[''] ${
+              dropIndicator === "before" ? "after:top-0" : "after:bottom-0"
+            }`
+          : ""
       }`}
       style={{
         display: "grid",
@@ -1107,15 +1191,22 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 ? "cursor-grab hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
                 : "cursor-default opacity-40"
             }`}
-            title="Drag row"
-            aria-label="Drag row"
+            title={dragCount > 1 ? `Drag ${dragCount} selected rows` : "Drag row"}
+            aria-label={dragCount > 1 ? `Drag ${dragCount} selected rows` : "Drag row"}
           >
             <Hand className="h-3.5 w-3.5" />
           </button>
           <span>{index}</span>
         </div>
       </TableCell>
-      <TableCell className="checkbox-cell">
+      <TableCell
+        className="checkbox-cell"
+        // Press on one checkbox and drag over the others to select (or, if
+        // that row was already selected, deselect) every row in between.
+        onMouseDown={(event) => onCheckboxDragStart?.(event, item.id, index)}
+        onMouseEnter={() => onCheckboxDragEnter?.(index)}
+        onClickCapture={onCheckboxClickCapture}
+      >
         <Checkbox
           data-testid={`worksheet-row-checkbox-${item.id}`}
           data-checkbox-row={index}

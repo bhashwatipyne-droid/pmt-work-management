@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
+from contextvars import ContextVar
 import json
 import time
 import math
@@ -776,6 +777,24 @@ def _valid_minutes(value) -> Optional[float]:
     return minutes if math.isfinite(minutes) else None
 
 
+# A bulk update applies the same patch to many rows, so the same benchmark /
+# client / project would otherwise be looked up once PER ROW - each one a
+# database round trip, which is what made "change status" on a big selection
+# take seconds. A bulk endpoint sets this to a dict for the duration of the
+# request and the lookups below share it; outside a bulk request it is None
+# and nothing is cached.
+_lookup_cache: ContextVar[Optional[dict]] = ContextVar("lookup_cache", default=None)
+
+
+async def _cached_lookup(key: tuple, fetch):
+    cache = _lookup_cache.get()
+    if cache is None:
+        return await fetch()
+    if key not in cache:
+        cache[key] = await fetch()
+    return cache[key]
+
+
 async def get_time_benchmark(user_ids: list, deliverable_type: Optional[str]) -> Optional[float]:
     """Minutes-per-unit the first of `user_ids` has set for this activity, or None.
     Only Core activities have targets, so Non-Core types never have a benchmark."""
@@ -786,9 +805,12 @@ async def get_time_benchmark(user_ids: list, deliverable_type: Optional[str]) ->
         if not uid or uid in seen:
             continue
         seen.add(uid)
-        doc = await db.efficiency_employee_targets.find_one(
-            {"user_id": uid, "activity_name": deliverable_type, "active": {"$ne": False}},
-            {"_id": 0, "time_per_unit_minutes": 1},
+        doc = await _cached_lookup(
+            ("benchmark", uid, deliverable_type),
+            lambda uid=uid: db.efficiency_employee_targets.find_one(
+                {"user_id": uid, "activity_name": deliverable_type, "active": {"$ne": False}},
+                {"_id": 0, "time_per_unit_minutes": 1},
+            ),
         )
         minutes = _valid_minutes((doc or {}).get("time_per_unit_minutes"))
         if minutes and minutes > 0:
@@ -997,17 +1019,32 @@ async def scoped_update_fields(
         if "stage" in update_fields and department_stage and update_fields["stage"] != department_stage:
             raise HTTPException(status_code=403, detail="Members can only assign work to their department")
     elif user.role == "manager":
-        if not creator_department or creator_department != user.department:
+        # A row nobody has been named on yet (e.g. blank rows added before
+        # managers owned the rows they add) belongs to whoever works its stage,
+        # so a manager of that stage may edit it - mainly to pick its creator.
+        blank_row_in_own_stage = (
+            not existing.get("creator_id")
+            and DEPARTMENT_TO_STAGE.get(user.department) is not None
+            and existing.get("stage") in (None, "", DEPARTMENT_TO_STAGE.get(user.department))
+        )
+        if not blank_row_in_own_stage and (
+            not creator_department or creator_department != user.department
+        ):
             raise HTTPException(status_code=403, detail="You can only edit work items logged by your own department")
     if "client_id" in update_fields and update_fields["client_id"]:
-        client = await db.clients.find_one({"id": update_fields["client_id"]}, {"_id": 0, "id": 1})
+        client_id = update_fields["client_id"]
+        client = await _cached_lookup(
+            ("client", client_id),
+            lambda: db.clients.find_one({"id": client_id}, {"_id": 0, "id": 1}),
+        )
         if not client:
             raise HTTPException(status_code=400, detail="Invalid client")
 
     if "project_id" in update_fields and update_fields["project_id"]:
-        project = await db.projects.find_one(
-            {"id": update_fields["project_id"]},
-            {"_id": 0, "client_id": 1},
+        project_id = update_fields["project_id"]
+        project = await _cached_lookup(
+            ("project", project_id),
+            lambda: db.projects.find_one({"id": project_id}, {"_id": 0, "client_id": 1}),
         )
         if not project:
             raise HTTPException(status_code=400, detail="Invalid project")
@@ -2629,14 +2666,14 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
             data["reviewer_id"] = None
             data["manager_id"] = None
         else:
-            # A manager's "Add N Rows" provisions blank rows FOR the team,
-            # not for the manager personally - leaving creator_id empty
-            # (rather than defaulting to the manager's own id) is what keeps
-            # these rows open to the whole department under the
-            # any-named-creator-locks-the-row rule in scoped_update_fields.
-            # An explicitly supplied creator_id (assigning the batch to a
-            # specific person) is still honored.
-            data["creator_id"] = data.get("creator_id") or None
+            # Same as adding a single row: the manager who adds the rows owns
+            # them until they pick a creator. Leaving creator_id empty (as
+            # this used to) made every row show "Unassigned" and uneditable
+            # for the manager - a manager may only edit rows whose creator is
+            # in their own department - and a Content row with no creator is
+            # also hidden from the sheet. An explicitly supplied creator_id
+            # (assigning the batch to a specific person) is still honored.
+            data["creator_id"] = data.get("creator_id") or user.id
         ts = now_iso()
         item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
         docs.append(item.model_dump())
@@ -2672,6 +2709,22 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
 
     existing_by_id = {item["id"]: item for item in existing_items}
 
+    # Every creator's department and role in ONE query. These used to be two
+    # awaited queries per selected row, one after another.
+    creator_ids = list({
+        item.get("creator_id") for item in existing_items if item.get("creator_id")
+    })
+    creators_by_id = {}
+    if creator_ids:
+        creator_docs = await db.users.find(
+            {"id": {"$in": creator_ids}},
+            {"_id": 0, "id": 1, "department": 1, "role": 1},
+        ).to_list(len(creator_ids))
+        creators_by_id = {doc["id"]: doc for doc in creator_docs}
+
+    # Share benchmark / client / project lookups across the rows of this request.
+    _lookup_cache.set({})
+
     operations = []
     activity_logs = []
 
@@ -2683,10 +2736,9 @@ async def bulk_update_work_items(payload: BulkUpdatePayload, request: Request):
         if not existing:
             continue
 
-        creator_department = await get_user_department(
-            existing.get("creator_id")
-        )
-        creator_role = await get_user_role(existing.get("creator_id"))
+        creator_doc = creators_by_id.get(existing.get("creator_id")) or {}
+        creator_department = creator_doc.get("department")
+        creator_role = creator_doc.get("role")
 
         try:
             update_fields = await scoped_update_fields(

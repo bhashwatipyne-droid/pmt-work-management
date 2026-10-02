@@ -148,6 +148,26 @@ export function SearchableSelect({
                 return;
               }
 
+              // Left / Right with nothing typed: close the list without
+              // changing the value and step to the neighbouring cell, so the
+              // arrow keys keep working after a click opened this dropdown.
+              // (Up / Down stay with the list.)
+              if (
+                (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+                !search &&
+                !event.shiftKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                leavingByTabRef.current = true;
+                onOpenChange?.(false);
+                focusAdjacentCell(triggerRef.current, event.key === "ArrowLeft" ? -1 : 1);
+                return;
+              }
+
               // Clicking this cell opened the popover and moved focus
               // into this search box — so normally every key here is
               // cmdk's own list search/navigation (stopPropagation stops

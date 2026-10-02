@@ -1919,6 +1919,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
+      // Moving focus to a cell scrolls it into view; without this it could
+      // stop underneath the frozen header.
+      style={{ scrollPaddingTop: headerHeight + 8 }}
       className="flex-1 min-h-0 overflow-auto bg-white sheet-mode [&>div]:!w-max [&>div]:!overflow-visible"
     >
       <Table

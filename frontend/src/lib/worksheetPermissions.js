@@ -13,6 +13,12 @@
 // whether the creator is a member, manager, or admin. Mirrors the backend's
 // scoped_update_fields peer-lock exactly, so the UI never lets someone start
 // an edit the server would then reject.
+const MANAGER_STAGE_BY_DEPARTMENT = {
+  Content: "Content",
+  Design: "Design",
+  Animation: "Animate",
+};
+
 export const isRowLockedForMember = (currentUser, item, users = []) => {
   if (!currentUser || currentUser.role !== "member") return false;
 
@@ -47,8 +53,16 @@ export const canEditWorkItem = (currentUser, item, users = []) => {
           String(item.creator_id).trim().toLowerCase()
     );
 
-  return (
-    !!currentUser.department &&
-    creator?.department === currentUser.department
-  );
+  if (!currentUser.department) return false;
+
+  // A row nobody has been named on yet (e.g. blank rows added before managers
+  // owned the rows they add) belongs to whoever works its stage, so a manager
+  // of that stage can edit it - mainly to pick its creator. Mirrors the
+  // backend's scoped_update_fields.
+  const ownStage = MANAGER_STAGE_BY_DEPARTMENT[currentUser.department];
+  if (!item.creator_id && ownStage && (!item.stage || item.stage === ownStage)) {
+    return true;
+  }
+
+  return creator?.department === currentUser.department;
 };

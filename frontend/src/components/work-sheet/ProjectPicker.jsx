@@ -196,6 +196,24 @@ export function ProjectPicker({
       return;
     }
 
+    // Left / Right with nothing typed: close and step to the neighbouring
+    // cell (Up / Down move through the list).
+    if (
+      (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+      !search &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      leavingByTabRef.current = true;
+      close();
+      focusAdjacentCell(triggerRef.current, event.key === "ArrowLeft" ? -1 : 1);
+      return;
+    }
+
     if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
       event.stopPropagation();

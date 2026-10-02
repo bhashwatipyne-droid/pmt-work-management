@@ -16,6 +16,7 @@ API = f"{BASE_URL}/api"
 
 ADMIN = "admin-1"
 MEMBER = "member-1"
+MANAGER = "manager-1"  # Content manager
 
 created_ids = []
 
@@ -118,3 +119,23 @@ def test_bulk_create_admin_can_pass_template_fields():
         created_ids.append(row["id"])
         assert row["project_id"] == pid
         assert row["stage"] == "Content"
+
+
+def test_bulk_create_manager_owns_rows_and_can_edit_them():
+    """A manager's "Add N rows" used to leave creator_id empty, so every row showed
+    "Unassigned" and the manager could not edit it. They own the rows they add (like
+    a single "Add row"), and can change the creator afterwards."""
+    r = _post_bulk(2, template={"stage": "Content"}, user_id=MANAGER)
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    for row in rows:
+        created_ids.append(row["id"])
+        assert row["creator_id"] == MANAGER, "manager must own the rows they bulk-create"
+
+    patch = requests.patch(
+        f"{API}/work-items/{rows[0]['id']}",
+        headers={"X-User-Id": MANAGER, "Content-Type": "application/json"},
+        json={"remarks": "editable"},
+        timeout=30,
+    )
+    assert patch.status_code == 200, patch.text

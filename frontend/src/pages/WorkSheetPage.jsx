@@ -1255,14 +1255,37 @@ export default function WorkSheetPage() {
   }, []);
 
   const handleBulkStatus = async (status) => {
+    const ids = [...selectedIds];
+    const idSet = new Set(ids);
+    const before = new Map(
+      itemsRef.current.filter((it) => idSet.has(it.id)).map((it) => [it.id, it])
+    );
+
+    // Show the new status straight away instead of after the round trip; the
+    // server's answer below replaces it, and any row it refused (or the whole
+    // batch, if the request fails) goes back to what it was.
+    setItems((prev) =>
+      prev.map((it) => (idSet.has(it.id) ? { ...it, status } : it))
+    );
+    setSelectedIds([]);
+
     try {
-      const updated = await bulkUpdateWorkItems(currentUser.id, selectedIds, { status });
+      const updated = await bulkUpdateWorkItems(currentUser.id, ids, { status });
       const byId = Object.fromEntries(updated.map((u) => [u.id, u]));
-      setItems((prev) => prev.map((it) => byId[it.id] || it));
-      toast.success(`Updated ${updated.length} row${updated.length === 1 ? "" : "s"}`);
-      setSelectedIds([]);
+      setItems((prev) =>
+        prev.map((it) => {
+          if (byId[it.id]) return byId[it.id];
+          return before.has(it.id) ? before.get(it.id) : it;
+        })
+      );
+      const skipped = ids.length - updated.length;
+      toast.success(
+        `Updated ${updated.length} row${updated.length === 1 ? "" : "s"}` +
+          (skipped > 0 ? ` (${skipped} could not be changed)` : "")
+      );
       refreshCounts();
     } catch (e) {
+      setItems((prev) => prev.map((it) => before.get(it.id) || it));
       toast.error(e.response?.data?.detail || "Bulk update failed");
     }
   };

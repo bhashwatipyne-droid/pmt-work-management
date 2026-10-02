@@ -50,7 +50,26 @@ export default function ApprovalsFilterModal({
   const setField = (key) => (value) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
-  const clearDraft = () => setDraft({ ...EMPTY_VALUES });
+  // "Clear all" clears the filters right away. It used to only empty the
+  // form, so the filters stayed applied (and the count badge stayed lit) until
+  // you also pressed "Apply filters" - which looked like clearing did nothing.
+  const clearAll = () => {
+    setDraft({ ...EMPTY_VALUES });
+    onApply({ ...EMPTY_VALUES });
+    setOpen(false);
+  };
+
+  // A filter whose stage/project is no longer in the queue (e.g. its last item
+  // was approved) is still applied. Keep it in the list so the dropdown shows
+  // what is really filtering the list instead of a misleading "All".
+  const stageList =
+    draft.stageFilter && !stages.includes(draft.stageFilter)
+      ? [...stages, draft.stageFilter]
+      : stages;
+  const projectList =
+    draft.projectFilter && !projectOptions.includes(draft.projectFilter)
+      ? [...projectOptions, draft.projectFilter]
+      : projectOptions;
 
   const handleApply = () => {
     // Someone can type the dates in either order — treat an inverted range
@@ -64,6 +83,7 @@ export default function ApprovalsFilterModal({
   };
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
@@ -95,7 +115,7 @@ export default function ApprovalsFilterModal({
 
           <button
             type="button"
-            onClick={clearDraft}
+            onClick={clearAll}
             className="text-xs font-medium text-[#2b2bb5] hover:underline"
           >
             Clear all
@@ -115,7 +135,7 @@ export default function ApprovalsFilterModal({
               className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
             >
               <option value="">All</option>
-              {stages.map((s) => (
+              {stageList.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -184,7 +204,7 @@ export default function ApprovalsFilterModal({
               className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
             >
               <option value="">All</option>
-              {projectOptions.map((name) => (
+              {projectList.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
@@ -202,5 +222,17 @@ export default function ApprovalsFilterModal({
         </button>
       </PopoverContent>
     </Popover>
+
+    {/* Clear without opening the panel. */}
+    {activeFilterCount > 0 && (
+      <button
+        type="button"
+        onClick={clearAll}
+        className="shrink-0 text-xs font-medium text-[#2b2bb5] hover:underline"
+      >
+        Clear filters
+      </button>
+    )}
+    </>
   );
 }

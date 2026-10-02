@@ -210,13 +210,15 @@
     padding: 6px 4px;
   }
 
+  /* Row gutter = drag grip + checkbox. Both cells share one background and
+     the divider sits after the checkbox, so they read as a single column. */
   .row-num {
-    width: 44px;
-    min-width: 44px;
-    padding: 0 8px;
-    border-right: 1px solid #e5e7eb;
+    width: 26px;
+    min-width: 26px;
+    padding: 8px 0 0 4px;
+    border-right: 0;
     border-bottom: 1px solid #eef0f4;
-    background: #f7f9fc;
+    background: #ffffff;
     color: #94a3b8;
     font-size: 11px;
     text-align: center;
@@ -225,6 +227,16 @@
 
   .sheet-mode tbody tr:hover .row-num {
     color: #64748b;
+  }
+
+  .sheet-mode tbody .checkbox-cell {
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #eef0f4;
+    background: #ffffff;
+  }
+
+  .sheet-mode tbody .sheet-row-selected .checkbox-cell {
+    background: #eef6ff;
   }
 
   .sheet-mode tbody tr:hover {

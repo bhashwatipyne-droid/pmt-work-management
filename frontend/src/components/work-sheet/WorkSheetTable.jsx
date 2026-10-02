@@ -1932,14 +1932,15 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
           >
             <TableHead
-              className="row-num-head flex min-h-10 items-center justify-center border-r border-slate-200 bg-[#f7f9fc] px-3"
+              className="row-num-head flex min-h-10 items-center justify-center bg-[#f7f9fc] px-0"
               style={{ gridColumn: 1 }}
             />
 
 
-            <TableHead className="checkbox-cell relative flex min-h-10 items-center border-r border-slate-200 bg-[#f7f9fc] px-3" style={{ gridColumn: 2 }}>
+            <TableHead className="checkbox-cell relative flex min-h-10 items-center border-r border-slate-200 bg-[#f7f9fc] pl-1 pr-0" style={{ gridColumn: 2 }}>
               <Checkbox
                 data-testid="worksheet-select-all-checkbox"
+                className="rounded-[5px] border-slate-300 shadow-none"
                 checked={allSelected}
                 onCheckedChange={onToggleSelectAll}
                 disabled={allVisibleIds.length === 0}

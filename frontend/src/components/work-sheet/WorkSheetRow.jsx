@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from "react";
-import { ChevronsUpDown, Hand, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
+import { ChevronsUpDown, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -1176,31 +1176,36 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           </button>
         )}
 
-        <div className="flex items-center justify-center gap-0.5">
-          <button
-            type="button"
-            draggable={canDragRow}
-            onDragStart={(event) => {
-              if (!canDragRow) return;
-              event.stopPropagation();
-              onRowDragStart?.(event, item.id);
-            }}
-            onClick={(event) => event.stopPropagation()}
-            className={`inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 opacity-60 transition hover:bg-slate-200 hover:text-slate-700 hover:opacity-100 active:opacity-100 ${
-              canDragRow
-                ? "cursor-grab hover:bg-slate-200 hover:text-slate-600 active:cursor-grabbing"
-                : "cursor-default opacity-40"
-            }`}
-            title={dragCount > 1 ? `Drag ${dragCount} selected rows` : "Drag row"}
-            aria-label={dragCount > 1 ? `Drag ${dragCount} selected rows` : "Drag row"}
-          >
-            <Hand className="h-3.5 w-3.5" />
-          </button>
-          <span>{index}</span>
-        </div>
+        {/* Six-dot grip, like a spreadsheet's row handle. Drag it to move the
+            row (or every selected row, when this row is one of them). */}
+        <button
+          type="button"
+          draggable={canDragRow}
+          onDragStart={(event) => {
+            if (!canDragRow) return;
+            event.stopPropagation();
+            onRowDragStart?.(event, item.id);
+          }}
+          onClick={(event) => event.stopPropagation()}
+          className={`grid h-6 w-4 grid-cols-[repeat(2,3px)] auto-rows-[3px] content-center justify-center gap-[2px] rounded text-slate-300 transition-colors ${
+            canDragRow
+              ? "cursor-grab hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing"
+              : "cursor-default opacity-50"
+          }`}
+          title={
+            dragCount > 1
+              ? `Drag ${dragCount} selected rows (row ${index})`
+              : `Drag to move row ${index}`
+          }
+          aria-label={dragCount > 1 ? `Drag ${dragCount} selected rows` : `Drag row ${index}`}
+        >
+          {[0, 1, 2, 3, 4, 5].map((dot) => (
+            <span key={dot} className="rounded-full bg-current" />
+          ))}
+        </button>
       </TableCell>
       <TableCell
-        className="checkbox-cell"
+        className="checkbox-cell pl-1 pt-[10px]"
         // Press on one checkbox and drag over the others to select (or, if
         // that row was already selected, deselect) every row in between.
         onMouseDown={(event) => onCheckboxDragStart?.(event, item.id, index)}
@@ -1210,6 +1215,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         <Checkbox
           data-testid={`worksheet-row-checkbox-${item.id}`}
           data-checkbox-row={index}
+          className="rounded-[5px] border-slate-300 shadow-none"
           checked={selected}
           disabled={!canEditRow}
           onCheckedChange={() => onToggleSelect(item.id)}

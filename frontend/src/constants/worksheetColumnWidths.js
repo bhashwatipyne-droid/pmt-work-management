@@ -20,8 +20,9 @@ export const COLUMN_WIDTHS = {
   Status: "170px",
 };
 
-export const ROW_NUM_WIDTH = "44px";
-export const CHECKBOX_WIDTH = "44px";
+// The two gutter columns read as one: a drag grip, then the row checkbox.
+export const ROW_NUM_WIDTH = "26px";
+export const CHECKBOX_WIDTH = "34px";
 
 export const buildGridTemplateColumns = (
   visibleColumns,

@@ -39,12 +39,16 @@ const focusTargetFor = (cell) => {
   return isUsable(control) ? control : cell;
 };
 
+// Arrow keys (and Enter, which moves down after an edit) land on the cell
+// itself, never inside its input or dropdown: moving around the sheet must not
+// start editing anything. Enter on the cell is what starts an edit (see the
+// cell's key handler in WorkSheetRow).
 const focusCell = (row, col) => {
   const cell = findCell(row, col);
 
   if (!cell) return false;
 
-  focusTargetFor(cell).focus();
+  cell.focus();
 
   return true;
 };
@@ -58,7 +62,7 @@ export const focusCellShell = (row, col) => {
   return true;
 };
 
-const focusNextAvailableCell = (row, col, direction) => {
+const focusNextAvailableCell = (row, col, direction, intoControl = true) => {
   const cells = getSheetCells()
     .map((element) => ({
       element,
@@ -88,21 +92,48 @@ const focusNextAvailableCell = (row, col, direction) => {
 
   if (!cells.length) return false;
 
-  focusTargetFor(cells[0].element).focus();
+  // Tab goes straight into the next cell's control so data entry can carry
+  // on; the arrow keys stop on the cell (intoControl = false).
+  (intoControl ? focusTargetFor(cells[0].element) : cells[0].element).focus();
   return true;
 };
 
 // Tab / Shift+Tab from outside the grid's own key handling - e.g. from a
 // dropdown's search box, which lives in a popover portal - to the cell after
 // (or before) the one `fromEl` belongs to.
-export const focusAdjacentCell = (fromEl, direction) => {
+export const focusAdjacentCell = (fromEl, direction, intoControl = true) => {
   const cell = fromEl?.closest?.("[data-sheet-cell]");
   if (!cell) return false;
   return focusNextAvailableCell(
     Number(cell.dataset.sheetRow),
     Number(cell.dataset.sheetCol),
-    direction
+    direction,
+    intoControl
   );
+};
+
+// Start editing a cell that has keyboard focus (Enter / F2): text boxes get
+// the caret at the end, a dropdown opens. Returns false if there is nothing
+// to edit in the cell.
+export const startEditingCell = (cell) => {
+  const control = cell?.querySelector(
+    "input:not([disabled]), textarea:not([disabled]), button[aria-haspopup]:not([disabled])"
+  );
+  if (!control) return false;
+
+  if (control instanceof HTMLButtonElement) {
+    control.click();
+    return true;
+  }
+
+  control.focus();
+  try {
+    const end = control.value.length;
+    control.setSelectionRange(end, end);
+  } catch {
+    // Date inputs have no caret.
+  }
+  return true;
 };
 
 export const createWorksheetKeyHandler = ({
@@ -268,6 +299,11 @@ export const createWorksheetKeyHandler = ({
 
     // Enter.
     if (event.key === "Enter") {
+      // On a dropdown's button Enter opens it (the button's own click) - it
+      // used to be taken here as "move down", so a dropdown could not be
+      // opened from the keyboard.
+      if (target instanceof HTMLButtonElement) return;
+
       event.preventDefault();
 
       // Draft row can provide its own Enter behavior.

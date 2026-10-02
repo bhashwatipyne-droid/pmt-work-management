@@ -210,7 +210,7 @@ export function ProjectPicker({
       event.stopPropagation();
       leavingByTabRef.current = true;
       close();
-      focusAdjacentCell(triggerRef.current, event.key === "ArrowLeft" ? -1 : 1);
+      focusAdjacentCell(triggerRef.current, event.key === "ArrowLeft" ? -1 : 1, false);
       return;
     }
 

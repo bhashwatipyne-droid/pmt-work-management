@@ -11,7 +11,7 @@ import { RemarksEditor } from "./RemarksEditor";
 import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
-import { createWorksheetKeyHandler } from "./useWorksheetKeyboardNavigation";
+import { createWorksheetKeyHandler, startEditingCell } from "./useWorksheetKeyboardNavigation";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import {
   NOT_AVAILABLE_LABEL,
@@ -427,13 +427,20 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           onExpand();
           return;
         }
-        if (navShell && event.key === "Enter" && canEditRow) {
-          const input = event.currentTarget.querySelector("input");
-          if (input && !input.disabled) {
-            event.preventDefault();
-            input.focus();
-            return;
-          }
+        // Enter (or F2) on a cell you have arrowed to starts editing it: a
+        // text box gets the caret, a dropdown opens. Moving around never
+        // edits; nothing happens on a cell you cannot edit.
+        if (
+          (event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.altKey) ||
+          event.key === "F2"
+        ) {
+          event.preventDefault();
+          if (canEditRow) startEditingCell(event.currentTarget);
+          return;
         }
         control.onKeyDown(event);
       },

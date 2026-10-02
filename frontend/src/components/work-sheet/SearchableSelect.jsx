@@ -164,7 +164,7 @@ export function SearchableSelect({
                 event.stopPropagation();
                 leavingByTabRef.current = true;
                 onOpenChange?.(false);
-                focusAdjacentCell(triggerRef.current, event.key === "ArrowLeft" ? -1 : 1);
+                focusAdjacentCell(triggerRef.current, event.key === "ArrowLeft" ? -1 : 1, false);
                 return;
               }
 
@@ -201,6 +201,14 @@ export function SearchableSelect({
               // to; just let the event bubble up undisturbed instead of
               // eating it.
               if (isCopyOrPaste) {
+                return;
+              }
+
+              // Up / Down / Home / End / Enter are the list's own keys: they
+              // have to reach the list (it listens on its root, above this
+              // box) or the options cannot be picked from the keyboard. The
+              // cell's key handler ignores events from inside the popover.
+              if (["ArrowUp", "ArrowDown", "Home", "End", "Enter"].includes(event.key)) {
                 return;
               }
 

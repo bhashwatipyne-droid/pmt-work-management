@@ -23,7 +23,7 @@ import {
   MIN_WORK_DATE,
   isValidWorkDate,
 } from "@/lib/worksheetDates";
-import { isTimeMissing, parseTimeInput, timeBadge } from "@/lib/timeRules";
+import { isTimeMissing, lowTimeMessage, parseTimeInput, timeBadge } from "@/lib/timeRules";
 import { avatarColorClasses } from "@/lib/avatarColors";
 
 const NONE_VALUE = "__none__";
@@ -94,6 +94,8 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const [openSelect, setOpenSelect] = useState(null);
   const [remarksOpen, setRemarksOpen] = useState(false);
   const remarksRef = useRef(null);
+  // Inline error under the Time box (e.g. a time far below the benchmark).
+  const [timeError, setTimeError] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
   const nameRef = useRef(null);
   const rowRef = useRef(null);
@@ -482,6 +484,23 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       return;
     }
 
+    // A time far below this type's benchmark is not saved: say why, right
+    // here, and leave what was typed so it can be corrected. Only when the
+    // value is being changed - an old low value is left alone.
+    if (parsed.minutes !== Number(item.time_taken_minutes || 0)) {
+      const message = lowTimeMessage(
+        parsed.minutes,
+        item.time_benchmark_minutes,
+        item.deliverable_type
+      );
+      if (message) {
+        setTimeError(message);
+        setLocal((current) => ({ ...current, time_taken_minutes: parsed.minutes }));
+        return;
+      }
+    }
+
+    setTimeError("");
     setLocal((current) => ({ ...current, time_taken_minutes: parsed.minutes }));
     commit("time_taken_minutes", parsed.minutes);
   };
@@ -888,10 +907,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             }
             value={local.time_taken_minutes}
             disabled={!canEditRow}
-            onChange={(e) => setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }))}
+            onChange={(e) => {
+              setTimeError("");
+              setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }));
+            }}
             onBlur={commitTime}
+            aria-invalid={timeMissing || Boolean(timeError)}
             className={`h-7 w-[64px] px-2 ${
-              timeMissing
+              timeMissing || timeError
                 ? "border-rose-400 bg-rose-50/70 ring-1 ring-rose-200 focus-visible:ring-rose-300"
                 : ""
             }`}
@@ -919,6 +942,15 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             </button>
           )}
         </div>
+        {timeError && (
+          <p
+            role="alert"
+            data-testid={`worksheet-time-error-${item.id}`}
+            className="mt-1 text-[11px] leading-4 text-rose-600"
+          >
+            {timeError}
+          </p>
+        )}
         {renderFillHandle(10)}
       </TableCell>
         );

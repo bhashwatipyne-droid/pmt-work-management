@@ -765,6 +765,26 @@ TIME_REQUIRED_MESSAGE = (
     "Please enter the time taken (in minutes) before moving this row forward."
 )
 
+# Guardrail against implausibly LOW manual times: logging 30 minutes against a
+# deliverable whose benchmark is 500 almost always means the work was a small
+# revision, which belongs under "Changes". A time typed by a person (never one
+# filled from the benchmark) below this share of their benchmark is refused.
+# Keep in step with LOW_TIME_RATIO / LOW_TIME_EXEMPT_TYPES in
+# frontend/src/lib/timeRules.js.
+LOW_TIME_RATIO = 0.25
+# Types where short times are legitimate (and "Changes" is where people are
+# sent to log small fixes).
+LOW_TIME_EXEMPT_TYPES = {
+    "Changes",
+    "Other Initiatives",
+    "Client Meets & Discussions",
+    "Team Reviews and Feedback",
+}
+
+
+def _minutes_label(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else f"{value:g}"
+
 
 def _valid_minutes(value) -> Optional[float]:
     """A finite float, or None for anything that is not a usable number."""
@@ -890,6 +910,27 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
             current, source = benchmark, "auto"
         else:
             raise HTTPException(status_code=400, detail=TIME_REQUIRED_MESSAGE)
+
+    # Only a time a person typed (or kept while switching type) is checked, and
+    # only when it is being entered now - closing or reviewing a row never
+    # trips over an old low value. Admins are exempt, and with no benchmark
+    # there is nothing to compare against.
+    if (
+        (time_in_patch or type_changed)
+        and source == "manual"
+        and benchmark
+        and 0 < current < LOW_TIME_RATIO * benchmark
+        and new_type not in LOW_TIME_EXEMPT_TYPES
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{_minutes_label(current)} min is far below your benchmark of "
+                f"{_minutes_label(benchmark)} min for {new_type}. If this was a "
+                "revision or small fix, select 'Changes' as the type instead."
+            ),
+        )
 
     update_fields["time_taken_minutes"] = current
     update_fields["time_source"] = source

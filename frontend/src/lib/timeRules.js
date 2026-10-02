@@ -16,6 +16,31 @@ export const TIME_GATED_STATUSES = ["Ongoing", "Ready for Review"];
 export const TIME_REQUIRED_MESSAGE =
   "Please enter the time taken (in minutes) before moving this row forward.";
 
+// Guardrail against implausibly LOW manual times (mirrors the backend's
+// LOW_TIME_RATIO / LOW_TIME_EXEMPT_TYPES): a time well under the person's own
+// benchmark for the type usually means a small revision, which belongs under
+// "Changes". The backend enforces it; this lets the sheet say so before saving.
+export const LOW_TIME_RATIO = 0.25;
+export const LOW_TIME_EXEMPT_TYPES = [
+  "Changes",
+  "Other Initiatives",
+  "Client Meets & Discussions",
+  "Team Reviews and Feedback",
+];
+
+const minutesLabel = (value) => String(Math.round(value * 100) / 100);
+
+// A message when `minutes` (typed by a person) is far below `benchmark` for
+// `type`, otherwise null. No benchmark, no type, or an exempt type -> null.
+export const lowTimeMessage = (minutes, benchmark, type) => {
+  const bench = Number(benchmark) || 0;
+  if (!type || bench <= 0 || LOW_TIME_EXEMPT_TYPES.includes(type)) return null;
+  if (!(minutes > 0) || minutes >= LOW_TIME_RATIO * bench) return null;
+  return `${minutesLabel(minutes)} min is far below your benchmark of ${minutesLabel(
+    bench
+  )} min for ${type}. If this was a revision or small fix, select 'Changes' as the type instead.`;
+};
+
 export const hasTime = (item) => Number(item?.time_taken_minutes) > 0;
 
 // A row needs time as soon as it has a deliverable type or has moved past

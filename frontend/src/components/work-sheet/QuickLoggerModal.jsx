@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { X, Clock, Save, Check, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
+import { lowTimeMessage } from "@/lib/timeRules";
 import { buildLookalikeIndex, isProjectClosed } from "@/lib/lookalikes";
 import { LookalikePill, ProjectNameParts } from "./ProjectPicker";
 import {
@@ -538,6 +539,17 @@ export default function QuickLoggerModal({
           : "Enter a valid Duration, such as 45m or 1h."
       );
       return false;
+    }
+
+    // A typed duration far below this person's benchmark for the type is
+    // refused (same rule the server applies). Durations filled from the
+    // benchmark are never flagged.
+    if (typedDuration && !durationIsAuto) {
+      const lowTime = lowTimeMessage(typedDuration, benchmarkMinutes, resolvedType);
+      if (lowTime) {
+        setError(lowTime);
+        return false;
+      }
     }
 
     committingRef.current = true;

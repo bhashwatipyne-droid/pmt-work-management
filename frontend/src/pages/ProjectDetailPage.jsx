@@ -594,11 +594,6 @@ export default function ProjectDetailPage() {
             <div className="flex min-w-[280px] flex-1 flex-col gap-2">
               <h1 className="m-0 text-[28px] font-bold leading-9 text-[rgb(13,27,62)] [text-wrap:pretty]">
                 {project.name}
-                {project.code && (
-                  <span className="ml-2 align-middle text-[13px] font-medium leading-[18px] text-[rgb(84,100,144)]">
-                    {project.code}
-                  </span>
-                )}
               </h1>
               {project.description && (
                 <p className="m-0 text-sm leading-5 text-[rgb(55,65,95)] [text-wrap:pretty]">
@@ -613,9 +608,7 @@ export default function ProjectDetailPage() {
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-800" />
                   <span>
                     Often confused with {lookalikes.map((p) => p.name).join(", ")}.
-                    {project.code
-                      ? ` Ask the team to check the code ${project.code} when logging.`
-                      : " Ask the team to check the project code when logging."}
+                    {" Ask the team to check the project name and client when logging."}
                   </span>
                 </div>
               )}

@@ -236,8 +236,7 @@ export default function ApprovalsPage() {
     return (
       (item.project_name || "").toLowerCase().includes(q) ||
       (item.deliverable_name || "").toLowerCase().includes(q) ||
-      (item.client_name || "").toLowerCase().includes(q) ||
-      (item.project_code || "").toLowerCase().includes(q)
+      (item.client_name || "").toLowerCase().includes(q)
     );
   };
 
@@ -675,9 +674,6 @@ export default function ApprovalsPage() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[11px] font-medium text-slate-500">
-                          {item.project_code}
-                        </span>
                         <span className="flex-1" />
                         <span className="text-xs text-slate-500">{ageLabel(item.requested_at)}</span>
                       </div>
@@ -706,7 +702,6 @@ export default function ApprovalsPage() {
                       <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                       Pending
                     </span>
-                    <span className="text-xs font-medium text-slate-500">{aSel.project_code}</span>
                   </div>
                   <h2 className="text-lg font-semibold text-foreground">
                     {aSel.deliverable_name}

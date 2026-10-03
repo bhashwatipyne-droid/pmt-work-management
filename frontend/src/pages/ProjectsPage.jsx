@@ -17,6 +17,7 @@ import {
   getProjectMetrics,
   getClients,
   getOptions,
+  getWorksheetLookups,
   hideProject,
   unhideProject,
   deleteProject,
@@ -81,6 +82,10 @@ export default function ProjectsPage() {
   const [deliverableTypes, setDeliverableTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // project id -> its deliverable names (lowercase), so the search box can find
+  // a project by one of its deliverables. Loaded once, the first time someone
+  // types, so opening the page does not pay for it.
+  const [deliverableNamesByProject, setDeliverableNamesByProject] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [pocFilter, setPocFilter] = useState("");
@@ -205,6 +210,29 @@ export default function ProjectsPage() {
   // Typing stays instant; the (heavier) re-filtering of the board follows it.
   const deferredSearch = useDeferredValue(search);
 
+  useEffect(() => {
+    if (!search.trim() || deliverableNamesByProject) return;
+    let cancelled = false;
+
+    getWorksheetLookups()
+      .then((data) => {
+        if (cancelled) return;
+        const byProject = {};
+        (data?.deliverables || []).forEach((d) => {
+          if (!d.project_id || !d.name) return;
+          (byProject[d.project_id] ||= []).push(d.name.toLowerCase());
+        });
+        setDeliverableNamesByProject(byProject);
+      })
+      .catch(() => {
+        // Search still works on project fields; try again on the next keystroke.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [search, deliverableNamesByProject]);
+
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
 
@@ -231,13 +259,14 @@ export default function ProjectsPage() {
           (p.name || "").toLowerCase().includes(q) ||
           (p.code || "").toLowerCase().includes(q) ||
           (p.client_name || "").toLowerCase().includes(q) ||
-          (p.description || "").toLowerCase().includes(q)
+          (p.description || "").toLowerCase().includes(q) ||
+          (deliverableNamesByProject?.[p.id] || []).some((name) => name.includes(q))
         );
       });
     // Filtering only here — the active "Sort by" choice is applied once,
     // below, and reused for both the list rows and the Kanban columns so
     // the two views never disagree about the order.
-  }, [projects, deferredSearch, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
+  }, [projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
 
   const sortedFiltered = useMemo(
     () => sortProjects(filtered, sortBy),
@@ -742,7 +771,7 @@ export default function ProjectsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects…"
+              placeholder="Search projects or deliverables…"
               className="min-w-0 flex-1 border-none bg-transparent text-[12.5px] text-[#11151c] outline-none placeholder:text-[#a2aab6]"
             />
             {search && (

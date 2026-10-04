@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from "react";
-import { ChevronsUpDown, Info, Layers, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
+import { Check, ChevronsUpDown, Info, Lock, Maximize2, RotateCcw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -1330,21 +1330,16 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             }
           }}
         >
-          <div className="sticky left-0 flex w-[min(1040px,calc(100vw-340px))] flex-wrap items-start gap-x-8 gap-y-3 px-5 py-4">
-            <div className="flex min-w-[260px] items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#dcdcf8] bg-white text-[#2b2bb5]">
-                <Layers className="h-5 w-5" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">{item.deliverable_type}</p>
-                <p className="text-xs text-muted-foreground">
-                  How many {unitLower}s do you want to add?
-                </p>
-              </div>
+          <div className="sticky left-0 flex w-[calc(100vw-320px)] min-w-[640px] max-w-[1500px] flex-wrap items-center gap-x-6 gap-y-3 px-6 py-4">
+            <div className="min-w-[220px]">
+              <p className="text-sm font-semibold leading-5 text-foreground">{item.deliverable_type}</p>
+              <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
+                How many {unitLower}s do you want to add?
+              </p>
             </div>
 
-            <label className="flex w-[180px] flex-col gap-1">
-              <span className="text-xs font-medium text-foreground">Number of {unitLower}s</span>
+            <label className="flex w-[168px] shrink-0 flex-col gap-1.5">
+              <span className="text-xs font-medium leading-4 text-foreground">Number of {unitLower}s</span>
               <input
                 type="number"
                 min={1}
@@ -1369,15 +1364,15 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 }`}
               />
               {unitError && (
-                <span role="alert" className="text-[11px] text-rose-600">
+                <span role="alert" className="text-[11px] leading-4 text-rose-600">
                   {unitError}
                 </span>
               )}
             </label>
 
-            <div className="flex min-w-[240px] flex-1 items-start gap-2 rounded-lg border border-[#dcdcf8] bg-[#eef0ff] px-3 py-2.5">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#2b2bb5]" />
-              <div className="text-xs leading-4 text-[#1a1a8a]">
+            <div className="flex min-w-[300px] flex-1 items-center gap-3 rounded-lg border border-[#dcdcf8] bg-[#eef0ff] px-4 py-3">
+              <Info className="h-4 w-4 shrink-0 text-[#2b2bb5]" />
+              <div className="text-xs leading-5 text-[#1a1a8a]">
                 <p className="font-semibold">
                   {unitError ? "Enter a number to continue" : `This will create ${unitNumber} row${unitNumber === 1 ? "" : "s"}`}
                 </p>
@@ -1387,13 +1382,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               </div>
             </div>
 
-            <div className="ml-auto flex items-center gap-2 self-center">
+            <div className="ml-auto flex shrink-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setUnitOpen(false)}
                 disabled={unitBusy}
-                className="h-9 rounded-lg border border-border bg-white px-4 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-4 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
               >
+                <X className="h-4 w-4" />
                 Cancel
               </button>
               <button
@@ -1401,8 +1397,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 onClick={submitUnits}
                 disabled={Boolean(unitError) || unitBusy}
                 data-testid={`worksheet-unit-add-${item.id}`}
-                className="h-9 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
               >
+                <Check className="h-4 w-4" />
                 {unitBusy
                   ? "Adding…"
                   : unitError

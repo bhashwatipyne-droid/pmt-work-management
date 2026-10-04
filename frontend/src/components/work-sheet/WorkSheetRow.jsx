@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from "react";
-import { ChevronsUpDown, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
+import { ChevronsUpDown, Info, Layers, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -46,6 +46,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     lookalikes,
     recentProjectsByCreator,
     onUpdate,
+    onExpandUnits,
     selected,
     onToggleSelect,
     activeCell,
@@ -96,6 +97,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const remarksRef = useRef(null);
   // Inline error under the Time box (e.g. a time far below the benchmark).
   const [timeError, setTimeError] = useState("");
+  // Inline "how many slides / reels / pages?" editor shown under the row after
+  // picking a type that is measured in units.
+  const [unitOpen, setUnitOpen] = useState(false);
+  const [unitCount, setUnitCount] = useState("10");
+  const [unitBusy, setUnitBusy] = useState(false);
   const [nameOpen, setNameOpen] = useState(false);
   const nameRef = useRef(null);
   const rowRef = useRef(null);
@@ -837,6 +843,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 const nextType = v === NONE_VALUE ? "" : v;
                 const category = options.deliverable_type_categories?.[nextType] || "";
                 onUpdate(item.id, { deliverable_type: nextType, work_category: category });
+                // A type measured in units opens the inline quantity editor;
+                // any other type closes it. Nothing is created until "Add".
+                setUnitOpen(Boolean(nextType && options.deliverable_type_units?.[nextType]));
               }}
               options={[
                 { value: NONE_VALUE, label: "—" },
@@ -1139,6 +1148,33 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
 
 
+  // The editor follows the row's CURRENT type, so changing PPT -> Carousel
+  // updates its wording and picking a type without units makes it disappear.
+  const unitLabel = options.deliverable_type_units?.[item.deliverable_type];
+  const unitLower = unitLabel ? unitLabel.toLowerCase() : "";
+  const showUnitEditor = unitOpen && Boolean(unitLabel) && canEditRow;
+  const unitText = String(unitCount).trim();
+  const unitNumber = Number(unitText);
+  const unitError =
+    unitText === ""
+      ? "Enter how many"
+      : !/^\d+$/.test(unitText)
+        ? "Use a whole number"
+        : unitNumber < 1
+          ? "Must be at least 1"
+          : unitNumber > 100
+            ? "100 at most at a time"
+            : "";
+
+  const submitUnits = async () => {
+    if (unitError || unitBusy || !onExpandUnits) return;
+    setUnitBusy(true);
+    const ok = await onExpandUnits(item, unitNumber, unitLabel);
+    setUnitBusy(false);
+    // On failure the editor stays open with the number as typed.
+    if (ok) setUnitOpen(false);
+  };
+
   return (
     <TableRow
       ref={rowRef}
@@ -1279,6 +1315,104 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           {renderColumnCell(column)}
         </Fragment>
       ))}
+
+      {showUnitEditor && (
+        <td
+          data-testid={`worksheet-unit-editor-${item.id}`}
+          style={{ gridColumn: "1 / -1" }}
+          className="border-b border-t border-[#dcdcf8] bg-[#f4f6ff] p-0"
+          onKeyDown={(event) => {
+            // Nothing typed here should reach the sheet's own shortcuts.
+            event.stopPropagation();
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setUnitOpen(false);
+            }
+          }}
+        >
+          <div className="sticky left-0 flex w-[min(1040px,calc(100vw-340px))] flex-wrap items-start gap-x-8 gap-y-3 px-5 py-4">
+            <div className="flex min-w-[260px] items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#dcdcf8] bg-white text-[#2b2bb5]">
+                <Layers className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{item.deliverable_type}</p>
+                <p className="text-xs text-muted-foreground">
+                  How many {unitLower}s do you want to add?
+                </p>
+              </div>
+            </div>
+
+            <label className="flex w-[180px] flex-col gap-1">
+              <span className="text-xs font-medium text-foreground">Number of {unitLower}s</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                inputMode="numeric"
+                value={unitCount}
+                autoFocus
+                aria-invalid={Boolean(unitError)}
+                data-testid={`worksheet-unit-count-${item.id}`}
+                onChange={(event) => setUnitCount(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitUnits();
+                  }
+                }}
+                className={`h-10 rounded-lg border bg-white px-3 text-sm outline-none focus:ring-[3px] ${
+                  unitError
+                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-200"
+                    : "border-input focus:border-[#2b2bb5] focus:ring-[#2b2bb5]/20"
+                }`}
+              />
+              {unitError && (
+                <span role="alert" className="text-[11px] text-rose-600">
+                  {unitError}
+                </span>
+              )}
+            </label>
+
+            <div className="flex min-w-[240px] flex-1 items-start gap-2 rounded-lg border border-[#dcdcf8] bg-[#eef0ff] px-3 py-2.5">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#2b2bb5]" />
+              <div className="text-xs leading-4 text-[#1a1a8a]">
+                <p className="font-semibold">
+                  {unitError ? "Enter a number to continue" : `This will create ${unitNumber} row${unitNumber === 1 ? "" : "s"}`}
+                </p>
+                <p className="text-[#1a1a8a]/80">
+                  1 row per {unitLower}, named {item.deliverable_type.replace(/\s+-\s+Per\s+\w+$/, "")} - {unitLabel} 1, {unitLabel} 2…
+                </p>
+              </div>
+            </div>
+
+            <div className="ml-auto flex items-center gap-2 self-center">
+              <button
+                type="button"
+                onClick={() => setUnitOpen(false)}
+                disabled={unitBusy}
+                className="h-9 rounded-lg border border-border bg-white px-4 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitUnits}
+                disabled={Boolean(unitError) || unitBusy}
+                data-testid={`worksheet-unit-add-${item.id}`}
+                className="h-9 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {unitBusy
+                  ? "Adding…"
+                  : unitError
+                    ? "Add rows"
+                    : `Add ${unitNumber} row${unitNumber === 1 ? "" : "s"}`}
+              </button>
+            </div>
+          </div>
+        </td>
+      )}
     </TableRow>
   );
 });

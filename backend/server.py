@@ -105,6 +105,18 @@ DELIVERABLE_TYPES = [
 
 WORK_CATEGORIES = ["Core", "Non-Core"]
 
+# Deliverable types that are measured one unit at a time (the "Activity
+# Potential" unit basis): picking one on the Work Sheet asks how many units and
+# creates one row per unit. Value = what one unit is called.
+DELIVERABLE_TYPE_UNITS = {
+    "Presentation (PPT) - Per Slide": "Slide",
+    "Carousel": "Slide",
+    "Reel / Short Video": "Reel",
+    "Booklet": "Page",
+    "Brochure": "Page",
+}
+MAX_UNIT_ROWS = 100
+
 DELIVERABLE_TYPE_CATEGORIES = {
     # Core
     "Other Initiatives": "Core",
@@ -2250,6 +2262,7 @@ async def get_options():
     return {
         "deliverable_types": DELIVERABLE_TYPES,
         "deliverable_type_categories": DELIVERABLE_TYPE_CATEGORIES,
+        "deliverable_type_units": DELIVERABLE_TYPE_UNITS,
         "work_categories": WORK_CATEGORIES,
         "statuses": STATUSES,
         "member_forward_statuses": MEMBER_FORWARD_STATUSES,
@@ -2721,6 +2734,96 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
     if docs:
         await db.work_items.insert_many(docs)
     return docs
+
+
+class ExpandUnitsPayload(BaseModel):
+    count: int
+
+
+def unit_row_name(deliverable_type: str, unit: str, index: int) -> str:
+    """"Presentation (PPT) - Per Slide" -> "Presentation (PPT) - Slide 3"."""
+    base = re.sub(r"\s+-\s+Per\s+\w+$", "", deliverable_type).strip()
+    return f"{base} - {unit} {index}"
+
+
+@api_router.post("/work-items/{item_id}/expand-units")
+async def expand_work_item_units(item_id: str, payload: ExpandUnitsPayload, request: Request):
+    """Turn a row whose type is measured in units (slides, reels, pages) into
+    `count` rows, one per unit, in a single insert. The row itself becomes the
+    first unit when it has no name yet; otherwise every unit is a new row. The
+    new rows share the row's client / project / deliverable / stage / people."""
+    user = await get_acting_user(request)
+    if user.role == "admin":
+        raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
+
+    existing = await db.work_items.find_one({"id": item_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Work item not found")
+
+    deliverable_type = existing.get("deliverable_type") or ""
+    unit = DELIVERABLE_TYPE_UNITS.get(deliverable_type)
+    if not unit:
+        raise HTTPException(status_code=400, detail="This deliverable type is not measured in units")
+    if payload.count < 1 or payload.count > MAX_UNIT_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Number of rows must be between 1 and {MAX_UNIT_ROWS}",
+        )
+
+    # Same permission as editing the row.
+    await scoped_update_fields(
+        user,
+        existing,
+        {},
+        await get_user_department(existing.get("creator_id")),
+        await get_user_role(existing.get("creator_id")),
+    )
+
+    work_date = existing.get("work_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    base = {
+        key: existing.get(key)
+        for key in (
+            "client_id", "project_id", "deliverable_id", "stage",
+            "creator_id", "reviewer_id", "manager_id", "work_category",
+        )
+    }
+    base["deliverable_not_available"] = bool(existing.get("deliverable_not_available"))
+    base["deliverable_type"] = deliverable_type
+    base["status"] = "Not Started"
+    base["version"] = existing.get("version") or ""
+
+    # Each unit starts with the person's own benchmark time, like picking the
+    # type on a single row.
+    time_fields = {"deliverable_type": deliverable_type}
+    await apply_time_rules(user, {}, time_fields, creator_id=base.get("creator_id"))
+    base.update({k: v for k, v in time_fields.items() if k != "deliverable_type"})
+
+    first_is_source = not (existing.get("deliverable_name") or "").strip()
+    updated = []
+    if first_is_source:
+        source_update = {
+            "deliverable_name": unit_row_name(deliverable_type, unit, 1),
+            "updated_at": now_iso(),
+        }
+        await db.work_items.update_one({"id": item_id}, {"$set": source_update})
+        updated.append({**existing, **source_update})
+
+    ts = now_iso()
+    docs = []
+    for index in range(2 if first_is_source else 1, payload.count + 1):
+        item = WorkItem(
+            work_date=work_date,
+            month=work_date[:7],
+            created_at=ts,
+            updated_at=ts,
+            deliverable_name=unit_row_name(deliverable_type, unit, index),
+            **base,
+        )
+        docs.append(item.model_dump())
+    if docs:
+        await db.work_items.insert_many(docs)
+
+    return {"updated": updated, "created": [{k: v for k, v in d.items() if k != "_id"} for d in docs]}
 
 
 @api_router.post("/work-items/bulk-update", response_model=List[WorkItem])

@@ -149,6 +149,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   onDelete,
   onDuplicateRow,
   onFill,
+  onExpandUnits,
   filters,
   setFilters,
   selectedIds,
@@ -2206,6 +2207,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     lookalikes={projectLookalikes}
                     recentProjectsByCreator={recentProjectsByCreator}
                     onUpdate={onUpdate}
+                    onExpandUnits={onExpandUnits}
                     onDelete={onDelete}
                     onDuplicate={onDuplicateRow}
                     hiddenColumns={hiddenColumns}

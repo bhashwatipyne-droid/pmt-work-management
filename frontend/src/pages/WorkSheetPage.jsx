@@ -9,6 +9,7 @@ import {
   bulkDeleteWorkItems,
   bulkUpdateWorkItems,
   bulkCreateWorkItems,
+  expandWorkItemUnits,
   createWorkItem,
   deleteWorkItem,
   getOptions,
@@ -1254,6 +1255,48 @@ export default function WorkSheetPage() {
     setSortDirection((current) => (current === "desc" ? "asc" : "desc"));
   }, []);
 
+  // Inline "how many slides?" editor under a row: one row per unit. The new
+  // rows go straight under the row they came from. Resolves true on success;
+  // on failure the editor stays open (the caller keeps the number typed).
+  const handleExpandUnits = async (item, count, unitLabel) => {
+    try {
+      const { updated = [], created = [] } = await expandWorkItemUnits(
+        currentUser.id,
+        item.id,
+        count
+      );
+      const updatedById = Object.fromEntries(updated.map((u) => [u.id, u]));
+
+      setItems((prev) => [
+        ...created,
+        ...prev.map((it) => updatedById[it.id] || it),
+      ]);
+      revealMonthOf(created[0] || updated[0]);
+
+      tableRef.current?.resetColumnSort();
+      let anchorId = item.id;
+      created.forEach((row) => {
+        tableRef.current?.insertRowNear(row.id, anchorId, "below");
+        anchorId = row.id;
+      });
+
+      trackEvent("row_added", {
+        worksheet: activeSheet,
+        row_id: item.id,
+        count,
+        unit: unitLabel,
+      });
+      toast.success(
+        `${count} ${String(unitLabel).toLowerCase()}${count === 1 ? "" : "s"} added to worksheet`
+      );
+      refreshCounts();
+      return true;
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Could not add the rows");
+      return false;
+    }
+  };
+
   const handleBulkStatus = async (status) => {
     const ids = [...selectedIds];
     const idSet = new Set(ids);
@@ -1628,6 +1671,7 @@ export default function WorkSheetPage() {
           onDelete={setDeleteTarget}
           onDuplicateRow={handleDuplicateRow}
           onFill={handleFill}
+          onExpandUnits={handleExpandUnits}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}

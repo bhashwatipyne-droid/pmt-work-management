@@ -209,7 +209,9 @@ function ResetPasswordCard({ token, onDone, onBack }) {
   );
 }
 
-export default function LoginPage() {
+// `onResetDone` / `onResetCancel` let the app know the password-reset screen is
+// finished - it is shown from the emailed link even when someone is signed in.
+export default function LoginPage({ onResetDone, onResetCancel } = {}) {
   const { login } = useUser();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -280,8 +282,14 @@ export default function LoginPage() {
         {view === "reset" && (
           <ResetPasswordCard
             token={resetToken}
-            onDone={() => showSignIn("Password updated. Sign in with your new password.")}
-            onBack={() => showSignIn()}
+            onDone={() => {
+              showSignIn("Password updated. Sign in with your new password.");
+              onResetDone?.();
+            }}
+            onBack={() => {
+              showSignIn();
+              onResetCancel?.();
+            }}
           />
         )}
 

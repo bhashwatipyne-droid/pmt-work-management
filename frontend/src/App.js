@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "@/App.css";
 import {
   BrowserRouter,
@@ -52,7 +52,16 @@ const PAGE_NAMES = {
 };
 
 function AppShell() {
-  const { loading, isAuthenticated, currentUser } = useUser();
+  const { loading, isAuthenticated, currentUser, logout } = useUser();
+  // The emailed reset link (/?reset_token=...) shows the "choose a new
+  // password" screen even if someone is already signed in in this browser.
+  const [resetInProgress, setResetInProgress] = useState(() => {
+    try {
+      return Boolean(new URLSearchParams(window.location.search).get("reset_token"));
+    } catch {
+      return false;
+    }
+  });
   const location = useLocation();
   const lastTrackedPath = useRef(null);
 
@@ -90,8 +99,15 @@ function AppShell() {
 
   return (
     <Suspense fallback={<AppShellSkeleton />}>
-      {!isAuthenticated ? (
-        <LoginPage />
+      {!isAuthenticated || resetInProgress ? (
+        <LoginPage
+          onResetDone={async () => {
+            // After a reset, sign in again with the new password.
+            if (isAuthenticated) await logout();
+            setResetInProgress(false);
+          }}
+          onResetCancel={() => setResetInProgress(false)}
+        />
       ) : (
         <AppLayout>
           <Routes>

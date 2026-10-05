@@ -10,6 +10,7 @@ import hashlib
 import secrets
 import smtplib
 from email.message import EmailMessage
+from email.utils import parseaddr
 from contextvars import ContextVar
 import json
 import time
@@ -2205,8 +2206,9 @@ async def login(payload: LoginPayload, response: Response):
 # Email goes out over SMTP, configured with environment variables:
 #   SMTP_HOST, SMTP_PORT (587), SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
 #   SMTP_STARTTLS (true), and FRONTEND_URL (e.g. https://pmt.example.com) for
-#   the link. Without SMTP_HOST nothing is sent: the link is written to the
-#   server log instead.
+#   the link. Some hosts (Render's free plan) block SMTP; there, set
+#   BREVO_API_KEY (and EMAIL_FROM = a sender verified in Brevo) to send over
+#   HTTPS instead. With neither, nothing is sent: the link is logged.
 RESET_TOKEN_MINUTES = 30
 RESET_REQUEST_COOLDOWN_SECONDS = 60
 FORGOT_PASSWORD_MESSAGE = (
@@ -2236,6 +2238,60 @@ def _send_email_sync(to_address: str, subject: str, body: str) -> None:
         if username:
             smtp.login(username, os.environ.get("SMTP_PASSWORD", ""))
         smtp.send_message(message)
+
+
+def _sender_parts() -> tuple:
+    """(display name, address) of the "from" identity, from SMTP_FROM / EMAIL_FROM."""
+    raw = (
+        os.environ.get("EMAIL_FROM", "").strip()
+        or os.environ.get("SMTP_FROM", "").strip()
+        or os.environ.get("SMTP_USER", "").strip()
+    )
+    name, address = parseaddr(raw)
+    return name or "PMT", address
+
+
+async def _send_email_brevo(to_address: str, subject: str, body: str) -> None:
+    """Send over Brevo's HTTPS API. Unlike SMTP this works on hosts that block
+    outbound mail ports (Render's free plan does). Needs BREVO_API_KEY and a
+    sender address verified in Brevo (EMAIL_FROM)."""
+    import httpx
+
+    name, address = _sender_parts()
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": os.environ["BREVO_API_KEY"].strip(),
+                "accept": "application/json",
+                "content-type": "application/json",
+            },
+            json={
+                "sender": {"name": name, "email": address},
+                "to": [{"email": to_address}],
+                "subject": subject,
+                "textContent": body,
+            },
+        )
+        response.raise_for_status()
+
+
+async def _deliver_email(to_address: str, subject: str, body: str, fallback_note: str = "") -> None:
+    """Send with Brevo when BREVO_API_KEY is set, else SMTP when SMTP_HOST is
+    set, else just log. Never raises - a failed send is logged."""
+    try:
+        if os.environ.get("BREVO_API_KEY", "").strip():
+            await _send_email_brevo(to_address, subject, body)
+        elif os.environ.get("SMTP_HOST", "").strip():
+            await asyncio.to_thread(_send_email_sync, to_address, subject, body)
+        else:
+            logger.warning("No email provider configured (BREVO_API_KEY or SMTP_HOST). %s", fallback_note)
+    except Exception:
+        logger.exception("Could not send the email %r to %s", subject, to_address)
+
+
+# Keeps references to in-flight background sends so they are not garbage-collected.
+_background_sends: set = set()
 
 
 class ForgotPasswordPayload(BaseModel):
@@ -2291,13 +2347,19 @@ async def forgot_password(payload: ForgotPasswordPayload, request: Request):
         "If you did not ask for this, you can ignore this email - your password has not changed."
     )
 
-    if not os.environ.get("SMTP_HOST", "").strip():
-        logger.warning("Password reset requested but SMTP is not configured. Reset link for %s: %s", email, link)
-    else:
-        try:
-            await asyncio.to_thread(_send_email_sync, email, "Reset your PMT password", body)
-        except Exception:
-            logger.exception("Could not send the password reset email to %s", email)
+    # Sent in the background so the request answers at once (a slow or blocked
+    # mail server must not leave the person waiting, or make the response time
+    # reveal whether the account exists).
+    task = asyncio.create_task(
+        _deliver_email(
+            email,
+            "Reset your PMT password",
+            body,
+            fallback_note=f"Reset link for {email}: {link}",
+        )
+    )
+    _background_sends.add(task)
+    task.add_done_callback(_background_sends.discard)
 
     return {"message": FORGOT_PASSWORD_MESSAGE}
 

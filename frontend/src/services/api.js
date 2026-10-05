@@ -69,6 +69,15 @@ export const loginUser = (login, password) =>
 export const logoutUser = () =>
   axios.post(`${API}/auth/logout`, {}).then((r) => r.data);
 
+// Forgot / reset password (no sign-in needed).
+export const requestPasswordReset = (login) =>
+  axios.post(`${API}/auth/forgot-password`, { login }).then((r) => r.data);
+
+export const resetPassword = (token, newPassword) =>
+  axios
+    .post(`${API}/auth/reset-password`, { token, new_password: newPassword })
+    .then((r) => r.data);
+
 export const getMe = () =>
   axios.get(`${API}/auth/me`).then((r) => r.data);
 

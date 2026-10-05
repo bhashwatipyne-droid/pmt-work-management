@@ -6,6 +6,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
+import hashlib
+import secrets
+import smtplib
+from email.message import EmailMessage
 from contextvars import ContextVar
 import json
 import time
@@ -2192,6 +2196,136 @@ async def login(payload: LoginPayload, response: Response):
     return LoginResponse(**doc, access_token=token)
 
 
+# ---------------- Forgot / reset password ----------------
+# A reset link is emailed to the address on the account. Only a hash of the
+# token is stored, it works once and expires after RESET_TOKEN_MINUTES. The
+# response to "forgot password" is always the same, so it never reveals whether
+# a username or email exists.
+#
+# Email goes out over SMTP, configured with environment variables:
+#   SMTP_HOST, SMTP_PORT (587), SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
+#   SMTP_STARTTLS (true), and FRONTEND_URL (e.g. https://pmt.example.com) for
+#   the link. Without SMTP_HOST nothing is sent: the link is written to the
+#   server log instead.
+RESET_TOKEN_MINUTES = 30
+RESET_REQUEST_COOLDOWN_SECONDS = 60
+FORGOT_PASSWORD_MESSAGE = (
+    "If an account matches, a password reset link has been sent to its email address."
+)
+
+
+def _hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _send_email_sync(to_address: str, subject: str, body: str) -> None:
+    host = os.environ.get("SMTP_HOST", "").strip()
+    sender = os.environ.get("SMTP_FROM", "").strip() or os.environ.get("SMTP_USER", "").strip()
+    message = EmailMessage()
+    message["To"] = to_address
+    message["From"] = sender
+    message["Subject"] = subject
+    message.set_content(body)
+
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    starttls = os.environ.get("SMTP_STARTTLS", "true").strip().lower() != "false"
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        if starttls:
+            smtp.starttls()
+        username = os.environ.get("SMTP_USER", "").strip()
+        if username:
+            smtp.login(username, os.environ.get("SMTP_PASSWORD", ""))
+        smtp.send_message(message)
+
+
+class ForgotPasswordPayload(BaseModel):
+    login: str
+
+
+class ResetPasswordPayload(BaseModel):
+    token: str
+    new_password: str
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordPayload, request: Request):
+    login = payload.login.strip().lower()
+    if not login:
+        return {"message": FORGOT_PASSWORD_MESSAGE}
+
+    doc = await db.users.find_one(
+        {"$or": [{"username": login}, {"email": login}]},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "active": 1},
+    )
+    email = (doc or {}).get("email") or ""
+    if not doc or not doc.get("active", True) or not email:
+        return {"message": FORGOT_PASSWORD_MESSAGE}
+
+    now = datetime.now(timezone.utc)
+    recent = await db.password_resets.find_one(
+        {
+            "user_id": doc["id"],
+            "created_at": {"$gt": (now - timedelta(seconds=RESET_REQUEST_COOLDOWN_SECONDS)).isoformat()},
+        },
+        {"_id": 0, "user_id": 1},
+    )
+    if recent:
+        return {"message": FORGOT_PASSWORD_MESSAGE}
+
+    token = secrets.token_urlsafe(32)
+    await db.password_resets.delete_many({"user_id": doc["id"]})
+    await db.password_resets.insert_one({
+        "token_hash": _hash_reset_token(token),
+        "user_id": doc["id"],
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=RESET_TOKEN_MINUTES)).isoformat(),
+    })
+
+    base = (os.environ.get("FRONTEND_URL", "") or request.headers.get("origin", "")).rstrip("/")
+    link = f"{base}/?reset_token={token}"
+    body = (
+        f"Hi {doc.get('name') or ''},\n\n"
+        "We received a request to reset your PMT password. Use the link below to choose a new one. "
+        f"It works once and expires in {RESET_TOKEN_MINUTES} minutes.\n\n"
+        f"{link}\n\n"
+        "If you did not ask for this, you can ignore this email - your password has not changed."
+    )
+
+    if not os.environ.get("SMTP_HOST", "").strip():
+        logger.warning("Password reset requested but SMTP is not configured. Reset link for %s: %s", email, link)
+    else:
+        try:
+            await asyncio.to_thread(_send_email_sync, email, "Reset your PMT password", body)
+        except Exception:
+            logger.exception("Could not send the password reset email to %s", email)
+
+    return {"message": FORGOT_PASSWORD_MESSAGE}
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(payload: ResetPasswordPayload):
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    record = await db.password_resets.find_one(
+        {"token_hash": _hash_reset_token(payload.token.strip())},
+        {"_id": 0},
+    )
+    if not record or record.get("expires_at", "") < datetime.now(timezone.utc).isoformat():
+        raise HTTPException(
+            status_code=400,
+            detail="This reset link is invalid or has expired. Request a new one.",
+        )
+
+    await db.users.update_one(
+        {"id": record["user_id"]},
+        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    )
+    # One use only - and any other pending link for the account goes with it.
+    await db.password_resets.delete_many({"user_id": record["user_id"]})
+    return {"message": "Password updated. You can sign in now."}
+
+
 @api_router.post("/auth/logout")
 async def logout(response: Response):
     response.delete_cookie(key="access_token", path="/")
@@ -2505,10 +2639,12 @@ async def review_work_item(
 ):
     user = await get_acting_user(request)
 
-    if user.role != "manager":
+    # Managers - and admins, whom members often name as the reviewer - review
+    # the work items assigned to them.
+    if user.role not in ("manager", "admin"):
         raise HTTPException(
             status_code=403,
-            detail="Only manager can review work items",
+            detail="Only a manager or admin can review work items",
         )
 
     if action not in ("approve", "request_changes"):
@@ -2534,10 +2670,7 @@ async def review_work_item(
             detail="Work item is not ready for review",
         )
 
-    if (
-        user.role == "manager"
-        and existing.get("reviewer_id") != user.id
-    ):
+    if existing.get("reviewer_id") != user.id:
         raise HTTPException(
             status_code=403,
             detail="This work item is not assigned to you",
@@ -5844,11 +5977,8 @@ async def bulk_review_count(request: Request):
     if user.role not in ("admin", "manager"):
         return {"count": 0}
 
-    query = {"status": "Ready for Review"}
-
-    # Managers only see work explicitly assigned to them; admins see all.
-    if user.role == "manager":
-        query["reviewer_id"] = user.id
+    # Managers and admins only see work explicitly assigned to them as reviewer.
+    query = {"status": "Ready for Review", "reviewer_id": user.id}
 
     count = await db.work_items.count_documents(query)
     return {"count": count}
@@ -5856,7 +5986,7 @@ async def bulk_review_count(request: Request):
 
 @api_router.get("/bulk-review")
 async def list_bulk_review(request: Request):
-    """Work items assigned to the logged-in manager and ready for review."""
+    """Work items assigned to the logged-in manager or admin and ready for review."""
     user = await get_acting_user(request)
 
     if user.role not in ("admin", "manager"):
@@ -5865,14 +5995,12 @@ async def list_bulk_review(request: Request):
             detail="Only admin or manager can access bulk review"
         )
 
+    # Managers and admins only see work explicitly assigned to them as the
+    # reviewer (members often pick an admin as reviewer).
     query = {
-        "status": "Ready for Review"
+        "status": "Ready for Review",
+        "reviewer_id": user.id,
     }
-
-    # Managers only see work explicitly assigned to them.
-    # Admins can see all ready-for-review work.
-    if user.role == "manager":
-        query["reviewer_id"] = user.id
 
     items = await db.work_items.find(
         query,

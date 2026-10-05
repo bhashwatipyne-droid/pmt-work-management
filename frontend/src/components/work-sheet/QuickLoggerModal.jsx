@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, Clock, Save, Check, AlertCircle } from "lucide-react";
+import { X, Clock, Plus, Trash2, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
 import { lowTimeMessage } from "@/lib/timeRules";
@@ -747,320 +747,313 @@ export default function QuickLoggerModal({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[1px]">
-      <div className="flex h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f0f0fd]">
-                <Clock className="h-4 w-4 text-[#2b2bb5]" />
-              </div>
-              <h2 className="text-lg font-semibold text-foreground">
-                Log everything at once
-              </h2>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Type one line per task. Arrow keys navigate, Enter selects, and
-              Enter on a complete line logs it.
-            </p>
-          </div>
+  const stepTitle =
+    currentStep === "client"
+      ? "Clients"
+      : currentStep === "project"
+      ? "Projects"
+      : currentStep === "deliverable"
+      ? "Deliverables"
+      : "Types";
 
+  const chips = [
+    ["Client", resolvedClient?.name],
+    ["Project", resolvedProject?.name],
+    ["Deliverable", resolvedDeliverable?.name || resolvedDeliverable?.deliverable_name],
+    ["Type", resolvedType],
+    [
+      "Time",
+      parsedDuration ? `${formatDuration(parsedDuration)}${durationIsAuto ? " (auto)" : ""}` : "",
+    ],
+  ];
+
+  const totalMinutes = savedEntries.reduce(
+    (total, entry) => total + Number(entry.time_taken_minutes || 0),
+    0
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(12,12,13,0.1)] px-4 pt-[10vh]">
+      <div
+        role="dialog"
+        aria-label="Quick log"
+        className="flex max-h-[calc(100vh-10vh-16px)] w-[680px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_15px_25px_rgba(13,28,61,0.12)]"
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2.5 px-5 pt-4">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0f0fd] text-[#2b2bb5]">
+            <Clock className="h-4 w-4" />
+          </span>
+          <h2 className="flex-1 text-base font-semibold text-foreground">Quick log</h2>
           <button
             type="button"
             onClick={handleClose}
             disabled={saving}
             aria-label="Close"
-            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-slate-100 disabled:opacity-50"
           >
-            <X className="h-5 w-5" />
+            <X className="h-[18px] w-[18px]" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-[#f7f9fc] p-6">
-          <div className="mx-auto w-full max-w-5xl space-y-5">
-            {savedEntries.length > 0 && (
-              <section>
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Logged this session
-                </div>
-                <div className="space-y-2">
-                  {savedEntries.map((entry, index) => (
-                    <div
-                      key={`${entry.project_id}-${entry.deliverable_id}-${entry.deliverable_type}-${index}`}
-                      className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
-                    >
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#f0f0fd]">
-                        <Check className="h-3.5 w-3.5 text-[#2b2bb5]" />
-                      </div>
-                      <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                        {[
-                          clientMap.get(entry.client_id)?.name,
-                          projectMap.get(entry.project_id)?.name,
-                          entry.deliverable_not_available
-                            ? NOT_AVAILABLE_LABEL
-                            : entry.deliverable_name,
-                          entry.deliverable_type,
-                        ]
-                          .filter(Boolean)
-                          .join(" / ")}
-                      </div>
-                      <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
-                        {formatDuration(entry.time_taken_minutes)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+        {/* Entry line */}
+        <div ref={entryCardRef} className="flex flex-col gap-2.5 px-5 pb-4 pt-3.5">
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={draft.text}
+              onChange={(event) =>
+                updateDraft({
+                  text: event.target.value,
+                  client_id: "",
+                  project_id: "",
+                  deliverable_id: "",
+                  deliverable_type: "",
+                  time_taken_minutes: "",
+                })
+              }
+              onKeyDown={handleKeyDown}
+              onClick={() => {
+                if (!suggestions.length) setSuggestionsNonce((n) => n + 1);
+              }}
+              placeholder="Client / Project / Deliverable / Type / Time"
+              autoComplete="off"
+              spellCheck="false"
+              className="h-11 w-full rounded-lg border-none bg-white px-3.5 text-[15px] text-foreground shadow-[inset_0_0_0_1px_#2b2bb5,0_0_0_3px_#dcdcf8] outline-none placeholder:text-muted-foreground"
+              aria-label="Quick work entry"
+            />
 
-            <section
-              ref={entryCardRef}
-              className="rounded-2xl border border-border bg-card p-5 shadow-sm"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">
-                    New work entry
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    Client / Project / Deliverable / Type / Time
-                  </div>
+            {suggestions.length > 0 && (
+              <div
+                role="listbox"
+                className="absolute inset-x-0 top-[50px] z-20 rounded-[10px] bg-white p-1 shadow-[0_0_0_1px_rgb(234,238,244),0_6px_15px_rgba(13,28,61,0.08)]"
+              >
+                <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-bold uppercase leading-[14px] tracking-[0.05em] text-muted-foreground">
+                  {stepTitle}
                 </div>
-                {draft.text && (
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    {currentStep === "complete"
-                      ? "Ready to log"
-                      : `Select ${currentStep}`}
-                  </span>
-                )}
-              </div>
-
-              <div className="relative">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={draft.text}
-                  onChange={(event) =>
-                    updateDraft({
-                      text: event.target.value,
-                      client_id: "",
-                      project_id: "",
-                      deliverable_id: "",
-                      deliverable_type: "",
-                      time_taken_minutes: "",
-                    })
-                  }
-                  onKeyDown={handleKeyDown}
-                  onClick={() => {
-                    if (!suggestions.length) setSuggestionsNonce((n) => n + 1);
-                  }}
-                  placeholder="Acme Corp / The Last Mile / Rushing Waters / Carousel / 45m"
-                  autoComplete="off"
-                  spellCheck="false"
-                  className="h-14 w-full rounded-xl border border-input bg-card px-4 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
-                  aria-label="Quick work entry"
-                />
-
-                {suggestions.length > 0 && (
-                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-                    <div className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {currentStep === "client"
-                        ? "Clients"
+                <div className="max-h-64 overflow-y-auto">
+                  {suggestions.map((item, index) => {
+                    const label =
+                      typeof item === "string"
+                        ? item
                         : currentStep === "project"
-                        ? "Projects"
-                        : currentStep === "deliverable"
-                        ? "Deliverables"
-                        : "Types"}
-                    </div>
-                    <div className="max-h-64 overflow-y-auto p-1.5">
-                      {suggestions.map((item, index) => {
-                        const label =
-                          typeof item === "string"
-                            ? item
-                            : currentStep === "project"
-                            ? item.name
-                            : item.name ||
-                              item.deliverable_name ||
-                              "Untitled deliverable";
+                        ? item.name
+                        : item.name || item.deliverable_name || "Untitled deliverable";
 
-                        return (
-                          <button
-                            key={typeof item === "string" ? item : item.id}
-                            ref={(node) => {
-                              suggestionRefs.current[index] = node;
-                            }}
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => selectSuggestion(item)}
-                            className={[
-                              "flex w-full items-start rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                              index === highlightedIndex
-                                ? "bg-[#f0f0fd] text-[#1a1a8a]"
-                                : "text-foreground hover:bg-muted",
-                            ].join(" ")}
-                          >
-                            {currentStep === "project" ? (
-                              <span className="flex min-w-0 flex-1 flex-col">
-                                <span className="whitespace-normal break-words">
-                                  <ProjectNameParts
-                                    project={item}
-                                    twins={lookalikes.get(item.id) || []}
-                                    clientNameOf={clientNameOf}
-                                  />
-                                </span>
-                                {item.description && (
-                                  <span className="whitespace-normal break-words text-xs text-muted-foreground">
-                                    {item.description}
-                                  </span>
-                                )}
-                                {lookalikes.has(item.id) && <LookalikePill />}
-                              </span>
-                            ) : (
-                              <span className="min-w-0 flex-1 whitespace-normal break-words">{label}</span>
-                            )}
-                            {index === highlightedIndex && (
-                              <span className="ml-3 text-[10px] text-muted-foreground">
-                                Enter
+                    return (
+                      <button
+                        key={typeof item === "string" ? item : item.id}
+                        ref={(node) => {
+                          suggestionRefs.current[index] = node;
+                        }}
+                        type="button"
+                        role="option"
+                        aria-selected={index === highlightedIndex}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => selectSuggestion(item)}
+                        className={[
+                          "flex min-h-8 w-full items-start gap-2 rounded-[7px] px-2.5 py-1 text-left text-[13px] transition-colors",
+                          index === highlightedIndex
+                            ? "bg-[#f0f0fd] text-foreground"
+                            : "text-foreground hover:bg-[#f0f0fd]",
+                        ].join(" ")}
+                      >
+                        {currentStep === "project" ? (
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="whitespace-normal break-words">
+                              <ProjectNameParts
+                                project={item}
+                                twins={lookalikes.get(item.id) || []}
+                                clientNameOf={clientNameOf}
+                              />
+                            </span>
+                            {item.description && (
+                              <span className="whitespace-normal break-words text-xs leading-4 text-slate-600">
+                                {item.description}
                               </span>
                             )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[
-                  ["Client", resolvedClient?.name],
-                  ["Project", resolvedProject?.name],
-                  [
-                    "Deliverable",
-                    resolvedDeliverable?.name ||
-                      resolvedDeliverable?.deliverable_name,
-                  ],
-                  ["Deliverable Type", resolvedType],
-                  [
-                    "Time",
-                    parsedDuration
-                      ? `${formatDuration(parsedDuration)}${durationIsAuto ? " (auto)" : ""}`
-                      : "",
-                  ],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className={[
-                      "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs",
-                      value
-                        ? "border-[#dcdcf8] bg-[#f0f0fd] text-[#1a1a8a]"
-                        : "border-border bg-muted text-muted-foreground",
-                    ].join(" ")}
-                  >
-                    {value ? (
-                      <Check className="h-3 w-3" />
-                    ) : (
-                      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-50" />
-                    )}
-                    <span className="font-medium">{label}</span>
-                    {value && (
-                      <span className="max-w-[220px] truncate">{value}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {error && (
-                <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  {error}
+                            {lookalikes.has(item.id) && <LookalikePill />}
+                          </span>
+                        ) : (
+                          <span className="min-w-0 flex-1 self-center whitespace-normal break-words">
+                            {label}
+                          </span>
+                        )}
+                        {index === highlightedIndex && (
+                          <span className="self-center text-[11px] text-muted-foreground">Enter</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-
-              {showRemark && (
-                <div className="mt-4">
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Remark
-                  </label>
-                  <input
-                    type="text"
-                    value={draft.remarks}
-                    onChange={(e) => updateDraft({ remarks: e.target.value })}
-                    placeholder="Optional note..."
-                    className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
-                  />
-                </div>
-              )}
-
-              {durationIsAuto && (
-                <p className="mt-3 text-xs text-indigo-600">
-                  Time filled automatically from your benchmark for {resolvedType} (
-                  {formatDuration(benchmarkMinutes)}). Type a duration, or pick one
-                  below, to change it.
-                </p>
-              )}
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="mr-1 text-xs font-medium text-muted-foreground">
-                  Quick duration:
-                </span>
-                {DURATION_PRESETS.map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    onClick={() => setQuickDuration(minutes)}
-                    className={[
-                      "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                      parsedDuration === minutes
-                        ? "border-[#2b2bb5] bg-[#f0f0fd] text-[#1a1a8a]"
-                        : "border-border bg-card text-muted-foreground hover:border-[#dcdcf8] hover:bg-[#fafbff] hover:text-foreground",
-                    ].join(" ")}
-                  >
-                    {formatDuration(minutes)}
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => setShowRemark((v) => !v)}
-                  className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium text-[#2b2bb5] hover:bg-[#f0f0fd]"
-                >
-                  {showRemark ? "Hide remark" : "+ Add remark"}
-                </button>
               </div>
-            </section>
+            )}
+          </div>
+
+          {/* What has been understood so far */}
+          <div className="flex flex-wrap gap-1.5">
+            {chips.map(([label, value]) => (
+              <span
+                key={label}
+                title={value ? `${label}: ${value}` : label}
+                className={[
+                  "inline-flex h-[26px] max-w-[200px] items-center gap-1.5 rounded-full px-2.5 text-xs",
+                  value
+                    ? "bg-[#f0f0fd] text-[#1a1a8a] shadow-[inset_0_0_0_1px_#dcdcf8]"
+                    : "bg-white text-muted-foreground shadow-[inset_0_0_0_1px_rgb(226,232,240)]",
+                ].join(" ")}
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    value ? "bg-[#2b2bb5]" : "bg-slate-300"
+                  }`}
+                />
+                <span className="truncate">{value || label}</span>
+              </span>
+            ))}
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          {showRemark && (
+            <input
+              type="text"
+              value={draft.remarks}
+              onChange={(e) => updateDraft({ remarks: e.target.value })}
+              placeholder="Remark (optional)"
+              aria-label="Remark"
+              className="h-9 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
+            />
+          )}
+
+          {durationIsAuto && (
+            <p className="text-xs text-[#2b2bb5]">
+              Time filled from your benchmark for {resolvedType} ({formatDuration(benchmarkMinutes)}).
+              Type a duration, or pick one below, to change it.
+            </p>
+          )}
+
+          {/* Duration presets + add */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs text-muted-foreground">Duration</span>
+            {DURATION_PRESETS.map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                onClick={() => setQuickDuration(minutes)}
+                className={[
+                  "h-[26px] rounded-[7px] px-2.5 text-xs font-medium transition-colors",
+                  parsedDuration === minutes
+                    ? "bg-[#f0f0fd] text-[#1a1a8a] shadow-[inset_0_0_0_1px_#2b2bb5]"
+                    : "bg-white text-slate-700 shadow-[inset_0_0_0_1px_rgb(226,232,240)] hover:bg-[#f0f0fd]",
+                ].join(" ")}
+              >
+                {formatDuration(minutes)}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setShowRemark((v) => !v)}
+              className="ml-1 h-[26px] rounded-[7px] px-2 text-xs font-medium text-[#2b2bb5] hover:bg-[#f0f0fd]"
+            >
+              {showRemark ? "Hide remark" : "+ Remark"}
+            </button>
+
+            <span className="flex-1" />
+
+            <button
+              type="button"
+              onClick={() => commitDraft()}
+              disabled={!draft.text.trim()}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#f0f0fd] px-3 text-[13px] font-semibold text-[#2b2bb5] transition-colors hover:bg-[#dcdcf8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add entry
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
-          <div className="text-xs text-muted-foreground">
-            {savedEntries.length}{" "}
-            {savedEntries.length === 1 ? "entry" : "entries"}
+        {/* Entries collected so far */}
+        <div className="max-h-[260px] min-h-[120px] overflow-y-auto bg-[#f7f9fc] shadow-[inset_0_1px_0_rgb(234,238,244)]">
+          {savedEntries.length === 0 ? (
+            <div className="px-5 py-7 text-center text-[13px] leading-5 text-muted-foreground">
+              Type one line per task and press Enter.
+              <br />
+              Entries collect here until you save them.
+            </div>
+          ) : (
+            savedEntries.map((entry, index) => (
+              <div
+                key={`${entry.project_id}-${entry.deliverable_id}-${entry.deliverable_type}-${index}`}
+                className="flex items-center gap-3 px-5 py-2.5 text-[13px] shadow-[inset_0_-1px_0_rgb(234,238,244)]"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate font-medium text-foreground">
+                    {entry.deliverable_not_available
+                      ? NOT_AVAILABLE_LABEL
+                      : entry.deliverable_name || entry.deliverable_type}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[
+                      clientMap.get(entry.client_id)?.name,
+                      projectMap.get(entry.project_id)?.name,
+                      entry.deliverable_type,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatDuration(entry.time_taken_minutes)}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Remove entry"
+                  onClick={() =>
+                    setSavedEntries((prev) => prev.filter((_, i) => i !== index))
+                  }
+                  className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-slate-200"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 px-5 py-3 shadow-[inset_0_1px_0_rgb(234,238,244)]">
+          <span className="flex-1 text-xs text-muted-foreground">
+            {savedEntries.length === 0
+              ? "No entries yet"
+              : `${savedEntries.length} ${savedEntries.length === 1 ? "entry" : "entries"} · ${formatDuration(totalMinutes)}`}
             <span className="hidden sm:inline">
               {" · "}↓/↑ navigate · Enter select/log · Cmd/Ctrl + Enter save
             </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={saving}
-              className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || (!savedEntries.length && !draft.text.trim())}
-              className="flex items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? "Saving..." : `Save all (${savedEntries.length})`}
-            </button>
-          </div>
+          </span>
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={saving}
+            className="h-9 rounded-lg px-3.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || (!savedEntries.length && !draft.text.trim())}
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving..." : savedEntries.length ? `Save ${savedEntries.length}` : "Save"}
+          </button>
         </div>
       </div>
     </div>

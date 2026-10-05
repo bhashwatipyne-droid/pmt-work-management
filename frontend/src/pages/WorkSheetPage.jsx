@@ -287,6 +287,9 @@ export default function WorkSheetPage() {
   const tableRef = useRef(null);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
+  // Managers review the work assigned to them; so do admins (members often
+  // name an admin as the reviewer).
+  const canBulkReview = isManager || isAdmin;
   const isMember = currentUser?.role === "member";
 
   // Admins are view-only on the Work Sheet. Managers/members can only add
@@ -305,12 +308,12 @@ export default function WorkSheetPage() {
   // that just changed it, which is exactly the moment it's most likely
   // to be stale.
   const fetchBulkReviewCount = useCallback(() => {
-    if (!currentUser?.id || !isManager) return;
+    if (!currentUser?.id || !canBulkReview) return;
 
     getBulkReviewCount(currentUser.id)
       .then((data) => setBulkReviewCount(data?.count || 0))
       .catch(() => {});
-  }, [currentUser?.id, isManager]);
+  }, [currentUser?.id, canBulkReview]);
 
   // Same audience as the Bulk Review button itself (isManager ? ... :
   // undefined, below) — admins can technically call the endpoint too, but
@@ -320,7 +323,7 @@ export default function WorkSheetPage() {
   // manager, another tab); this user's own actions refresh it instantly via
   // the countsBus event.
   useEffect(() => {
-    if (!currentUser?.id || !isManager) return undefined;
+    if (!currentUser?.id || !canBulkReview) return undefined;
 
     fetchBulkReviewCount();
     const stopPolling = startPolling(fetchBulkReviewCount, 15000);
@@ -330,11 +333,139 @@ export default function WorkSheetPage() {
       stopPolling();
       unsubscribe();
     };
-  }, [currentUser?.id, isManager, fetchBulkReviewCount]);
+  }, [currentUser?.id, canBulkReview, fetchBulkReviewCount]);
 
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  // ---- Undo (Ctrl/Cmd+Z) -----------------------------------------------------
+  // Every change made on this sheet pushes an entry that knows how to reverse
+  // it; Ctrl/Cmd+Z runs the latest. Typing in a text box keeps the browser's own
+  // undo, so this only fires when focus is not in one.
+  const undoStackRef = useRef([]);
+  const undoBusyRef = useRef(false);
+  const updateRef = useRef(null);
+
+  const pushUndo = useCallback((label, undo) => {
+    undoStackRef.current.push({ label, undo });
+    if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+  }, []);
+
+  // Rows deleted by an undo of "add", or by the user, come back as new rows
+  // (same content, new id).
+  const restoreRows = async (rows) => {
+    const created = await Promise.all(
+      rows.map((r) =>
+        createWorkItem(currentUser.id, {
+          work_date: r.work_date,
+          deliverable_name: r.deliverable_name || "",
+          deliverable_type: r.deliverable_type || "",
+          deliverable_link: r.deliverable_link || "",
+          work_category: r.work_category || "",
+          version: r.version || "",
+          time_taken_minutes: r.time_taken_minutes || 0,
+          quantity: r.quantity ?? 1.0,
+          creator_id: r.creator_id || null,
+          reviewer_id: r.reviewer_id || null,
+          manager_id: r.manager_id || null,
+          client_id: r.client_id || null,
+          project_id: r.project_id || null,
+          deliverable_id: r.deliverable_id || null,
+          deliverable_not_available: Boolean(r.deliverable_not_available),
+          stage: r.stage || null,
+          remarks: r.remarks || "",
+          status: r.status || "Not Started",
+        })
+      )
+    );
+    setItems((prev) => [...created, ...prev]);
+    revealMonthOf(created);
+    refreshCounts();
+  };
+
+  const removeRows = async (ids) => {
+    await bulkDeleteWorkItems(currentUser.id, ids);
+    const gone = new Set(ids);
+    setItems((prev) => prev.filter((row) => !gone.has(row.id)));
+    setSelectedIds((prev) => prev.filter((id) => !gone.has(id)));
+    refreshCounts();
+  };
+
+  // Put field values back: `entries` = [{ id, values: { field: oldValue } }].
+  // Rows that had the same old values go back in one request.
+  const revertFields = async (entries) => {
+    const groups = new Map();
+    entries.forEach(({ id, values }) => {
+      const key = JSON.stringify(values);
+      if (!groups.has(key)) groups.set(key, { values, ids: [] });
+      groups.get(key).ids.push(id);
+    });
+
+    for (const { values, ids } of groups.values()) {
+      const updated = await bulkUpdateWorkItems(currentUser.id, ids, values);
+      const byId = Object.fromEntries(updated.map((u) => [u.id, u]));
+      setItems((prev) => prev.map((it) => byId[it.id] || it));
+    }
+    refreshCounts();
+  };
+
+  const snapshotFields = (ids, keys) =>
+    itemsRef.current
+      .filter((it) => ids.includes(it.id))
+      .map((it) => ({
+        id: it.id,
+        values: Object.fromEntries(
+          keys.map((k) => [k, it[k] ?? (typeof it[k] === "string" ? "" : null)])
+        ),
+      }));
+
+  const runUndo = async () => {
+    if (undoBusyRef.current) return;
+    const entry = undoStackRef.current.pop();
+    if (!entry) {
+      toast("Nothing to undo");
+      return;
+    }
+
+    undoBusyRef.current = true;
+    try {
+      await entry.undo();
+      toast.success(`Undid: ${entry.label}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || `Could not undo: ${entry.label}`);
+    } finally {
+      undoBusyRef.current = false;
+    }
+  };
+  const runUndoRef = useRef(runUndo);
+  runUndoRef.current = runUndo;
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
+      if (String(event.key).toLowerCase() !== "z") return;
+
+      const el = event.target;
+      const tag = el?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el?.isContentEditable ||
+        el?.getAttribute?.("role") === "combobox"
+      ) {
+        return; // the text box's own undo
+      }
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+
+      event.preventDefault();
+      runUndoRef.current();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(
@@ -707,6 +838,7 @@ export default function WorkSheetPage() {
       // New row goes to the top of the sheet, not the bottom.
       setItems((prev) => [created, ...prev]);
       revealMonthOf(created);
+      pushUndo("added row", () => removeRows([created.id]));
 
       trackEvent("row_added", {
         worksheet: activeSheet,
@@ -768,6 +900,7 @@ export default function WorkSheetPage() {
       );
       setItems((prev) => [...prev, ...created]);
       revealMonthOf(created);
+      pushUndo(`added ${created.length} rows`, () => removeRows(created.map((r) => r.id)));
 
       trackEvent("row_added", {
         worksheet: activeSheet,
@@ -789,7 +922,7 @@ export default function WorkSheetPage() {
   // re-renders (which happen on every edit via setItems). Reads the revert
   // snapshot from itemsRef instead of closing over `items`, so `items` can
   // safely stay out of the dependency array.
-  const handleUpdate = useCallback(async (id, patch) => {
+  const handleUpdate = useCallback(async (id, patch, opts = {}) => {
     const currentItem = itemsRef.current.find(
       (item) => item.id === id
     );
@@ -903,6 +1036,25 @@ export default function WorkSheetPage() {
         fields: Object.keys(patch),
       });
 
+      if (!opts.skipUndo && previous) {
+        const keys = Object.keys(patch);
+        const changed = keys.some(
+          (k) => String(previous[k] ?? "") !== String(patch[k] ?? "")
+        );
+        if (changed) {
+          const back = Object.fromEntries(
+            keys.map((k) => [
+              k,
+              previous[k] ?? (typeof patch[k] === "string" ? "" : null),
+            ])
+          );
+          pushUndo("cell edit", async () => {
+            const result = await updateRef.current(id, back, { skipUndo: true });
+            if (!result?.success) throw new Error("update failed");
+          });
+        }
+      }
+
       if (patch.status && currentItem?.status !== patch.status) {
         trackEvent("task_status_changed", {
           row_id: id,
@@ -939,6 +1091,7 @@ export default function WorkSheetPage() {
       };
     }
   }, [currentUser, options]);
+  updateRef.current = handleUpdate;
 
   const handleDelete = async (item) => {
     if (!item?.id) return;
@@ -950,7 +1103,10 @@ export default function WorkSheetPage() {
 
       setItems((prev) => prev.filter((row) => row.id !== item.id));
 
-      toast.success("Entry deleted");
+      pushUndo("deleted entry", () => restoreRows([item]));
+      toast.success("Entry deleted", {
+        action: { label: "Undo", onClick: () => runUndoRef.current() },
+      });
       setDeleteTarget(null);
       refreshCounts();
     } catch (e) {
@@ -1010,6 +1166,18 @@ export default function WorkSheetPage() {
           updatedById[item.id] || item
         )
       );
+
+      const changedBack = previous
+        .filter((entry) => updatedById[entry.id])
+        .map((entry) => ({
+          id: entry.id,
+          values: { [field]: entry.value ?? (typeof value === "string" ? "" : null) },
+        }));
+      if (changedBack.length) {
+        pushUndo(`fill of ${changedBack.length} cell${changedBack.length === 1 ? "" : "s"}`, () =>
+          revertFields(changedBack)
+        );
+      }
     } catch (e) {
       // Revert only affected cells.
       setItems((prev) =>
@@ -1158,6 +1326,7 @@ export default function WorkSheetPage() {
       });
 
       setItems((prev) => [created, ...prev]);
+      pushUndo("duplicated row", () => removeRows([created.id]));
       tableRef.current?.resetColumnSort();
       tableRef.current?.scrollToTop();
 
@@ -1213,7 +1382,10 @@ export default function WorkSheetPage() {
       );
 
       setItems((prev) => [...created, ...prev]);
-    revealMonthOf(created);
+      revealMonthOf(created);
+      pushUndo(`duplicated ${created.length} row${created.length === 1 ? "" : "s"}`, () =>
+        removeRows(created.map((r) => r.id))
+      );
       tableRef.current?.resetColumnSort();
       tableRef.current?.scrollToTop();
       setSelectedIds([]);
@@ -1273,6 +1445,15 @@ export default function WorkSheetPage() {
       ]);
       revealMonthOf(created[0] || updated[0]);
 
+      // Undo: remove the new rows, and give the first one its blank name back.
+      const nameBefore = item.deliverable_name || "";
+      pushUndo(`${count} ${String(unitLabel).toLowerCase()}${count === 1 ? "" : "s"} added`, async () => {
+        if (created.length) await removeRows(created.map((r) => r.id));
+        if (updated.length) {
+          await updateRef.current(item.id, { deliverable_name: nameBefore }, { skipUndo: true });
+        }
+      });
+
       tableRef.current?.resetColumnSort();
       let anchorId = item.id;
       created.forEach((row) => {
@@ -1322,6 +1503,14 @@ export default function WorkSheetPage() {
         })
       );
       const skipped = ids.length - updated.length;
+      const statusBefore = [...before.values()]
+        .filter((it) => byId[it.id])
+        .map((it) => ({ id: it.id, values: { status: it.status } }));
+      if (statusBefore.length) {
+        pushUndo(`status change on ${statusBefore.length} row${statusBefore.length === 1 ? "" : "s"}`, () =>
+          revertFields(statusBefore)
+        );
+      }
       toast.success(
         `Updated ${updated.length} row${updated.length === 1 ? "" : "s"}` +
           (skipped > 0 ? ` (${skipped} could not be changed)` : "")
@@ -1335,9 +1524,16 @@ export default function WorkSheetPage() {
 
   const handleBulkAssign = async (patch) => {
     try {
+      const assignBefore = snapshotFields(selectedIds, Object.keys(patch));
       const updated = await bulkUpdateWorkItems(currentUser.id, selectedIds, patch);
       const byId = Object.fromEntries(updated.map((u) => [u.id, u]));
       setItems((prev) => prev.map((it) => byId[it.id] || it));
+      const assignedBack = assignBefore.filter((entry) => byId[entry.id]);
+      if (assignedBack.length) {
+        pushUndo(`assign on ${assignedBack.length} row${assignedBack.length === 1 ? "" : "s"}`, () =>
+          revertFields(assignedBack)
+        );
+      }
       toast.success(`Assigned ${updated.length} row${updated.length === 1 ? "" : "s"}`);
       setSelectedIds([]);
     } catch (e) {
@@ -1363,9 +1559,20 @@ export default function WorkSheetPage() {
         idsToDelete
       );
 
+      const deletedItems = itemsRef.current.filter((item) =>
+        idsToDelete.includes(item.id)
+      );
+
       setItems((prev) =>
         prev.filter((item) => !idsToDelete.includes(item.id))
       );
+
+      if (deletedItems.length) {
+        pushUndo(
+          `deleted ${deletedItems.length} row${deletedItems.length === 1 ? "" : "s"}`,
+          () => restoreRows(deletedItems)
+        );
+      }
 
       trackEvent("row_deleted", {
         worksheet: activeSheet,
@@ -1576,7 +1783,7 @@ export default function WorkSheetPage() {
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
         onOpenBulkReview={
-          isManager ? () => setBulkReviewOpen(true) : undefined
+          canBulkReview ? () => setBulkReviewOpen(true) : undefined
         }
         bulkReviewCount={bulkReviewCount}
         onOpenHistory={() => setHistoryOpen(true)}

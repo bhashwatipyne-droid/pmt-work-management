@@ -116,6 +116,8 @@ DELIVERABLE_TYPE_UNITS = {
     "Brochure": "Page",
 }
 MAX_UNIT_ROWS = 100
+# Only this department gets the per-unit editor (members and managers).
+UNIT_ROWS_DEPARTMENT = "Design"
 
 DELIVERABLE_TYPE_CATEGORIES = {
     # Core
@@ -2755,6 +2757,9 @@ async def expand_work_item_units(item_id: str, payload: ExpandUnitsPayload, requ
     user = await get_acting_user(request)
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
+    # Per-unit rows are a Design team feature (members and managers).
+    if user.department != UNIT_ROWS_DEPARTMENT:
+        raise HTTPException(status_code=403, detail="Adding rows per unit is only available to the Design team")
 
     existing = await db.work_items.find_one({"id": item_id}, {"_id": 0})
     if not existing:

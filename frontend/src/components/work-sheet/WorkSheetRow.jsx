@@ -845,7 +845,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 onUpdate(item.id, { deliverable_type: nextType, work_category: category });
                 // A type measured in units opens the inline quantity editor;
                 // any other type closes it. Nothing is created until "Add".
-                setUnitOpen(Boolean(nextType && options.deliverable_type_units?.[nextType]));
+                setUnitOpen(
+                  currentUser.department === "Design" &&
+                    Boolean(nextType && options.deliverable_type_units?.[nextType])
+                );
               }}
               options={[
                 { value: NONE_VALUE, label: "—" },
@@ -1152,7 +1155,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   // updates its wording and picking a type without units makes it disappear.
   const unitLabel = options.deliverable_type_units?.[item.deliverable_type];
   const unitLower = unitLabel ? unitLabel.toLowerCase() : "";
-  const showUnitEditor = unitOpen && Boolean(unitLabel) && canEditRow;
+  // Design team only (members and managers); everyone else picks types as before.
+  const showUnitEditor =
+    unitOpen && Boolean(unitLabel) && canEditRow && currentUser.department === "Design";
   const unitText = String(unitCount).trim();
   const unitNumber = Number(unitText);
   const unitError =

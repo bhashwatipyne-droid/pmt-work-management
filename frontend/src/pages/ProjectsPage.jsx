@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
 import { useAccess } from "@/hooks/useAccess";
+import { useUndo } from "@/hooks/useUndo";
 import {
   getProjects,
   getProjectMetrics,
@@ -81,6 +82,9 @@ export default function ProjectsPage() {
   const [clients, setClients] = useState([]);
   const [deliverableTypes, setDeliverableTypes] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Ctrl/Cmd+Z: hide / restore, status changes and board moves. (Deleting a
+  // project is permanent, so it cannot be undone.)
+  const { pushUndo } = useUndo();
   const [search, setSearch] = useState("");
   // project id -> its deliverable names (lowercase), so the search box can find
   // a project by one of its deliverables. Loaded once, the first time someone
@@ -424,6 +428,10 @@ export default function ProjectsPage() {
     try {
       await hideProject(currentUserId, project.id);
 
+      pushUndo("hid project", async () => {
+        await unhideProject(currentUserId, project.id);
+        await fetchAll(false);
+      });
       toast.success("Project hidden");
 
       setSelectedProjects((current) => {
@@ -444,6 +452,10 @@ export default function ProjectsPage() {
     try {
       await unhideProject(currentUserId, project.id);
 
+      pushUndo("restored project", async () => {
+        await hideProject(currentUserId, project.id);
+        await fetchAll(false);
+      });
       toast.success("Project restored");
 
       await fetchAll(false);
@@ -462,6 +474,10 @@ export default function ProjectsPage() {
     try {
       await bulkHideProjects(currentUserId, ids);
 
+      pushUndo(`hid ${ids.length} project${ids.length === 1 ? "" : "s"}`, async () => {
+        await bulkUnhideProjects(currentUserId, ids);
+        await fetchAll(false);
+      });
       toast.success(
         `${ids.length} project${ids.length === 1 ? "" : "s"} hidden`
       );
@@ -483,6 +499,10 @@ export default function ProjectsPage() {
     try {
       await bulkUnhideProjects(currentUserId, ids);
 
+      pushUndo(`restored ${ids.length} project${ids.length === 1 ? "" : "s"}`, async () => {
+        await bulkHideProjects(currentUserId, ids);
+        await fetchAll(false);
+      });
       toast.success(
         `${ids.length} project${ids.length === 1 ? "" : "s"} restored`
       );
@@ -502,11 +522,27 @@ export default function ProjectsPage() {
     if (!ids.length || !newStatus) return;
 
     try {
+      // Remember each project's status so it can be put back.
+      const statusBefore = new Map();
+      projects.forEach((project) => {
+        if (ids.includes(project.id)) {
+          if (!statusBefore.has(project.status)) statusBefore.set(project.status, []);
+          statusBefore.get(project.status).push(project.id);
+        }
+      });
+
       await bulkUpdateProjectStatus(
         currentUserId,
         ids,
         newStatus
       );
+
+      pushUndo(`status change on ${ids.length} project${ids.length === 1 ? "" : "s"}`, async () => {
+        for (const [oldStatus, oldIds] of statusBefore) {
+          await bulkUpdateProjectStatus(currentUserId, oldIds, oldStatus);
+        }
+        await fetchAll(false);
+      });
 
       toast.success(
         `${ids.length} project${ids.length === 1 ? "" : "s"} moved to ${newStatus}`
@@ -621,6 +657,7 @@ export default function ProjectsPage() {
     if (!draggedProject) return;
 
     const oldStatus = draggedProject.status;
+    const oldIndex = getColumnProjectIds(oldStatus).indexOf(draggedProjectId);
     const sourceIds = getColumnProjectIds(oldStatus).filter(
       (id) => id !== draggedProjectId
     );
@@ -674,6 +711,11 @@ export default function ProjectsPage() {
 
     try {
       await reorderProjects(currentUserId, draggedProjectId, status, targetIndex);
+      const movedId = draggedProjectId;
+      pushUndo(oldStatus === status ? "project order change" : "project move", async () => {
+        await reorderProjects(currentUserId, movedId, oldStatus, Math.max(0, oldIndex));
+        await fetchAll(false);
+      });
       toast.success(
         oldStatus === status ? "Project order updated" : `Project moved to ${status}`
       );

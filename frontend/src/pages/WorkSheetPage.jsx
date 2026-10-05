@@ -1879,6 +1879,7 @@ export default function WorkSheetPage() {
           onDuplicateRow={handleDuplicateRow}
           onFill={handleFill}
           onExpandUnits={handleExpandUnits}
+          onUndoable={pushUndo}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}

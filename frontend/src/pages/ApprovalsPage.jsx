@@ -22,6 +22,7 @@ import {
 } from "@/services/api";
 import { APPROVALS } from "@/constants/testIds";
 import ApprovalsFilterModal from "@/components/approvals/ApprovalsFilterModal";
+import { useUndo } from "@/hooks/useUndo";
 import { trackEvent } from "../analytics";
 
 const COLUMNS = [
@@ -84,6 +85,10 @@ const KBD_CLASS =
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
+  // Ctrl/Cmd+Z undoes moving an item to another queue. Approving or sending
+  // back advances the deliverable through its workflow (and notifies people),
+  // so those are not undoable.
+  const { pushUndo } = useUndo();
   const access = useAccess();
   // Everyone can open Approvals; only managers can approve, send back or
   // move items between queues (lib/permissions.js, enforced by the API).
@@ -354,6 +359,10 @@ export default function ApprovalsPage() {
 
     try {
       await moveApprovalItem(currentUserId, item.id, targetType);
+      pushUndo("moved approval", async () => {
+        await moveApprovalItem(currentUserId, item.id, sourceType);
+        await fetchBoard({ silent: true });
+      });
       trackEvent("approval_assignee_changed", {
         approval_item_id: item.id,
         from_approval_type: sourceType,

@@ -150,6 +150,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   onDuplicateRow,
   onFill,
   onExpandUnits,
+  // Lets the page's Ctrl/Cmd+Z undo a drag-reorder: (label, undoFn) => void.
+  onUndoable,
   filters,
   setFilters,
   selectedIds,
@@ -213,6 +215,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       return [];
     }
   });
+  const rowOrderRef = useRef(rowOrder);
+  rowOrderRef.current = rowOrder;
+  const columnOrderRef = useRef(columnOrder);
+  columnOrderRef.current = columnOrder;
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [draggedRow, setDraggedRow] = useState(null);
   // Every row being carried by the current row drag: just the dragged row, or
@@ -1669,6 +1675,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const handleColumnDrop = (targetColumn) => {
     if (!draggedColumn || draggedColumn === targetColumn) return;
 
+    const columnsBefore = columnOrderRef.current;
+    onUndoable?.("column move", () => setColumnOrder(columnsBefore));
+
     setColumnOrder((current) => {
       const next = [...current];
       const fromIndex = next.indexOf(draggedColumn);
@@ -1770,6 +1779,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     }
 
     const moving = new Set(ids);
+
+    const rowsBefore = rowOrderRef.current;
+    onUndoable?.(ids.length === 1 ? "row move" : `move of ${ids.length} rows`, () =>
+      setRowOrder(rowsBefore)
+    );
 
     setRowOrder((current) => {
       if (!current.includes(targetId)) return current;

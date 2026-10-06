@@ -2085,8 +2085,8 @@ async def _stuck_approval_notifications(now: datetime) -> list[dict]:
                 if u.get("role") == "manager"
                 and DEPARTMENT_TO_STAGE.get(u.get("department")) == deliverable.get("current_stage")
             ]
-        elif approval_type == "COMPLIANCE":
-            recipients = [u["id"] for u in users if u.get("department") == "Administration"]
+        elif approval_type in ANY_MANAGER_APPROVAL_TYPES:
+            recipients = [u["id"] for u in users if u.get("role") == "manager"]
         else:
             recipients = []
         if not recipients:
@@ -5906,6 +5906,11 @@ async def _delete_approvals_for_deliverables(deliverable_ids: list[str]):
     await db.notifications.delete_many({"deliverable_id": {"$in": deliverable_ids}})
 
 
+# Approval queues that every manager can see and act on (MANAGER stays scoped
+# to the manager whose department owns the deliverable's current stage).
+ANY_MANAGER_APPROVAL_TYPES = ["LEADERSHIP", "CLIENT_SPOC", "COMPLIANCE"]
+
+
 async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> bool:
     # Only managers act on approvals; admins and members are view-only.
     if user.role != "manager":
@@ -5934,8 +5939,11 @@ async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> b
 
         return required_department == user.department
 
-    if approval_type == "COMPLIANCE":
-        return user.department == "Administration"
+    # Leadership, Client SPOC and Compliance are not tied to a production
+    # stage. Managers are the ones who move cards into these queues, and
+    # admins can't approve, so any manager may see and act on them.
+    if approval_type in ANY_MANAGER_APPROVAL_TYPES:
+        return True
 
     return False
 
@@ -6210,9 +6218,8 @@ async def list_approvals(request: Request):
                 "assigned_to": None,
             },
             {
-                "approval_type": "COMPLIANCE",
+                "approval_type": {"$in": ANY_MANAGER_APPROVAL_TYPES},
                 "assigned_to": None,
-                "department": "Administration",
             },
         ]
 
@@ -6280,9 +6287,8 @@ def _approval_visibility_query(user: User, visibility: str) -> dict:
                     "assigned_to": None,
                 },
                 {
-                    "approval_type": "COMPLIANCE",
+                    "approval_type": {"$in": ANY_MANAGER_APPROVAL_TYPES},
                     "assigned_to": None,
-                    "department": "Administration",
                 },
             ]
         })

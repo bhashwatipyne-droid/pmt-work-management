@@ -748,13 +748,21 @@ export default function WorkSheetPage() {
   );
 
   // Per-tab counts shown next to each tab label (e.g. "Content 7") —
-  // scoped to the tab's own stage only, independent of any active
-  // search/filter, so switching filters doesn't make the tabs themselves
-  // jump around.
+  // scoped to the tab's own stage and to the month on screen (same rule the
+  // row filter uses), independent of any active search/filter, so switching
+  // filters doesn't make the tabs themselves jump around. With "every month"
+  // selected (month = "") this is the all-time total.
   const tabCounts = useMemo(() => {
-    const counts = { Master: items.length, Content: 0, Design: 0, Animate: 0 };
+    const counts = { Master: 0, Content: 0, Design: 0, Animate: 0 };
 
     items.forEach((item) => {
+      if (
+        month &&
+        (item.month || (item.work_date || "").slice(0, 7)) !== month
+      ) {
+        return;
+      }
+      counts.Master += 1;
       const stage = String(item.stage || "").trim();
       if (stage === "Content") counts.Content += 1;
       else if (stage === "Design") counts.Design += 1;
@@ -762,7 +770,7 @@ export default function WorkSheetPage() {
     });
 
     return counts;
-  }, [items]);
+  }, [items, month]);
 
   const sortedItems = useMemo(() => {
     return [...filteredItems].sort((a, b) => {
@@ -1771,7 +1779,7 @@ export default function WorkSheetPage() {
         onAddRow={handleAddRow}
         canAdd={canAddToActiveSheet}
         resultCount={filteredItems.length}
-        totalCount={items.length}
+        totalCount={tabCounts[activeSheet] ?? items.length}
         missingDeliverableCount={missingDeliverableCount}
         onlyMissing={onlyMissing}
         onToggleMissing={() => setOnlyMissing((current) => !current)}

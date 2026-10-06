@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from "react";
-import { Check, ChevronsUpDown, Info, Lock, Maximize2, RotateCcw, Sparkles, X } from "lucide-react";
+import { ChevronsUpDown, ListChecks, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -25,6 +25,15 @@ import {
 } from "@/lib/worksheetDates";
 import { isTimeMissing, lowTimeMessage, parseTimeInput, timeBadge } from "@/lib/timeRules";
 import { avatarColorClasses } from "@/lib/avatarColors";
+import {
+  MAX_QUANTITY,
+  durationApplies,
+  isQtySet,
+  loggedCount,
+  qtyApplies,
+  quantityOf,
+  unitName,
+} from "@/lib/quantity";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
@@ -46,7 +55,8 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     lookalikes,
     recentProjectsByCreator,
     onUpdate,
-    onExpandUnits,
+    onOpenQty,
+    qtyPanelOpen = false,
     selected,
     onToggleSelect,
     activeCell,
@@ -97,11 +107,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const remarksRef = useRef(null);
   // Inline error under the Time box (e.g. a time far below the benchmark).
   const [timeError, setTimeError] = useState("");
-  // Inline "how many slides / reels / pages?" editor shown under the row after
-  // picking a type that is measured in units.
-  const [unitOpen, setUnitOpen] = useState(false);
-  const [unitCount, setUnitCount] = useState("10");
-  const [unitBusy, setUnitBusy] = useState(false);
+  // What is typed into the Qty / Duration boxes before it is saved.
+  const [qtyText, setQtyText] = useState("");
+  const [durationText, setDurationText] = useState(
+    item.video_duration_minutes ?? ""
+  );
   const [nameOpen, setNameOpen] = useState(false);
   const nameRef = useRef(null);
   const rowRef = useRef(null);
@@ -136,6 +146,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     time_taken_minutes: item.time_taken_minutes,
     remarks: item.remarks,
   });
+
+  useEffect(() => {
+    setDurationText(item.video_duration_minutes ?? "");
+  }, [item.video_duration_minutes]);
 
   useEffect(() => {
     setLocal({
@@ -210,6 +224,8 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     12: "Reviewer",
     13: "Remarks",
     14: "Status",
+    15: "Qty",
+    16: "Duration (min)",
   };
 
   const orderedColumns = columnOrder.length
@@ -259,6 +275,8 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       12: "reviewer_id",
       13: "remarks",
       14: "status",
+      15: "quantity",
+      16: "video_duration_minutes",
     };
 
     const field = fields[col];
@@ -311,6 +329,19 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     if (field === "deliverable_id") {
       // Clearing the cell also clears a "Not available" choice.
       onUpdate(item.id, { deliverable_id: null, deliverable_not_available: false });
+      return;
+    }
+
+    if (field === "quantity") {
+      // Back to the default of one unit, with no per-unit breakdown.
+      if (isQtySet(item)) onUpdate(item.id, { quantity: 1, quantity_items: [] });
+      return;
+    }
+
+    if (field === "video_duration_minutes") {
+      if (item.video_duration_minutes != null) {
+        onUpdate(item.id, { video_duration_minutes: null });
+      }
       return;
     }
 
@@ -843,12 +874,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 const nextType = v === NONE_VALUE ? "" : v;
                 const category = options.deliverable_type_categories?.[nextType] || "";
                 onUpdate(item.id, { deliverable_type: nextType, work_category: category });
-                // A type measured in units opens the inline quantity editor;
-                // any other type closes it. Nothing is created until "Add".
-                setUnitOpen(
-                  currentUser.department === "Design" &&
-                    Boolean(nextType && options.deliverable_type_units?.[nextType])
-                );
               }}
               options={[
                 { value: NONE_VALUE, label: "—" },
@@ -868,6 +893,113 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         {renderFillHandle(7)}
       </TableCell>
         );
+      case "Qty": {
+        const applies = qtyApplies(item);
+        const isSet = isQtySet(item);
+        const count = quantityOf(item);
+
+        return (
+<TableCell {...cellProps(15)}>
+        {!applies ? (
+          <span
+            className="cell-plain block text-center text-slate-300"
+            title="Qty applies to Design and Animate rows only"
+          >
+            —
+          </span>
+        ) : isSet ? (
+          // A number is already entered: this is a button that opens the
+          // side panel (quantity + time for each unit), so it looks like one.
+          <button
+            type="button"
+            {...sheetCell(15)}
+            aria-haspopup="dialog"
+            aria-expanded={qtyPanelOpen}
+            data-testid={`worksheet-qty-chip-${item.id}`}
+            title={`${count} ${unitName(item, options, count)} - click to log time for each`}
+            onClick={() => onOpenQty?.(item.id)}
+            className="qty-chip flex h-[26px] w-full items-center gap-1.5 rounded-[7px] pl-2 pr-1.5 tabular-nums transition-colors"
+          >
+            <span className="text-[13px] font-bold">{count}</span>
+            <span className="flex-1 text-left text-[11px] opacity-80">
+              {loggedCount(item)}/{count}
+            </span>
+            <ListChecks className="h-3 w-3 shrink-0" />
+          </button>
+        ) : (
+          <Input
+            {...sheetCell(15)}
+            data-testid={`worksheet-qty-input-${item.id}`}
+            type="text"
+            inputMode="numeric"
+            placeholder="+ Qty"
+            title="Type a number, then click it to log time for each one"
+            aria-label="Quantity"
+            value={qtyText}
+            disabled={!canEditRow}
+            onChange={(e) => setQtyText(e.target.value.replace(/[^0-9]/g, ""))}
+            onBlur={() => {
+              const text = qtyText.trim();
+              setQtyText("");
+              if (!text) return;
+              const n = Number(text);
+              if (!Number.isInteger(n) || n < 1 || n > MAX_QUANTITY) {
+                toast.error(`Quantity must be a whole number from 1 to ${MAX_QUANTITY}.`);
+                return;
+              }
+              onUpdate(item.id, { quantity: n, quantity_items: Array(n).fill(null) });
+            }}
+            className="h-7 w-full min-w-0 border-dashed px-2 text-center placeholder:text-slate-400"
+          />
+        )}
+        {renderFillHandle(15)}
+      </TableCell>
+        );
+      }
+      case "Duration (min)": {
+        const applies = durationApplies(item);
+
+        return (
+<TableCell {...cellProps(16)}>
+        {!applies ? (
+          <span
+            className="cell-plain block text-center text-slate-300"
+            title="Duration applies to Animate rows only"
+          >
+            —
+          </span>
+        ) : (
+          <Input
+            {...sheetCell(16)}
+            data-testid={`worksheet-duration-input-${item.id}`}
+            type="text"
+            inputMode="decimal"
+            placeholder="min"
+            title="Final video length in minutes"
+            aria-label="Video duration in minutes"
+            value={durationText}
+            disabled={!canEditRow}
+            onChange={(e) => setDurationText(e.target.value)}
+            onBlur={() => {
+              const text = String(durationText ?? "").trim();
+              const current = item.video_duration_minutes ?? null;
+              const value = text === "" ? null : Number(text);
+
+              if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1440)) {
+                toast.error("Duration must be a number of minutes (0 to 1440).");
+                setDurationText(current ?? "");
+                return;
+              }
+              if (value === current) return;
+              onUpdate(item.id, { video_duration_minutes: value });
+            }}
+            className="h-7 w-[72px] px-2"
+          />
+        )}
+        {renderFillHandle(16)}
+      </TableCell>
+        );
+      }
       case "Category":
         return (
 <TableCell {...cellProps(8)}>
@@ -1151,35 +1283,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
 
 
-  // The editor follows the row's CURRENT type, so changing PPT -> Carousel
-  // updates its wording and picking a type without units makes it disappear.
-  const unitLabel = options.deliverable_type_units?.[item.deliverable_type];
-  const unitLower = unitLabel ? unitLabel.toLowerCase() : "";
-  // Design team only (members and managers); everyone else picks types as before.
-  const showUnitEditor =
-    unitOpen && Boolean(unitLabel) && canEditRow && currentUser.department === "Design";
-  const unitText = String(unitCount).trim();
-  const unitNumber = Number(unitText);
-  const unitError =
-    unitText === ""
-      ? "Enter how many"
-      : !/^\d+$/.test(unitText)
-        ? "Use a whole number"
-        : unitNumber < 1
-          ? "Must be at least 1"
-          : unitNumber > 100
-            ? "100 at most at a time"
-            : "";
-
-  const submitUnits = async () => {
-    if (unitError || unitBusy || !onExpandUnits) return;
-    setUnitBusy(true);
-    const ok = await onExpandUnits(item, unitNumber, unitLabel);
-    setUnitBusy(false);
-    // On failure the editor stays open with the number as typed.
-    if (ok) setUnitOpen(false);
-  };
-
   return (
     <TableRow
       ref={rowRef}
@@ -1321,100 +1424,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         </Fragment>
       ))}
 
-      {showUnitEditor && (
-        <td
-          data-testid={`worksheet-unit-editor-${item.id}`}
-          style={{ gridColumn: "1 / -1" }}
-          className="border-b border-t border-[#dcdcf8] bg-[#f4f6ff] p-0"
-          onKeyDown={(event) => {
-            // Nothing typed here should reach the sheet's own shortcuts.
-            event.stopPropagation();
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setUnitOpen(false);
-            }
-          }}
-        >
-          <div className="sticky left-0 flex w-[calc(100vw-320px)] min-w-[640px] max-w-[1500px] flex-wrap items-center gap-x-6 gap-y-3 px-6 py-4">
-            <div className="min-w-[220px]">
-              <p className="text-sm font-semibold leading-5 text-foreground">{item.deliverable_type}</p>
-              <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
-                How many {unitLower}s do you want to add?
-              </p>
-            </div>
-
-            <label className="flex w-[168px] shrink-0 flex-col gap-1.5">
-              <span className="text-xs font-medium leading-4 text-foreground">Number of {unitLower}s</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                inputMode="numeric"
-                value={unitCount}
-                autoFocus
-                aria-invalid={Boolean(unitError)}
-                data-testid={`worksheet-unit-count-${item.id}`}
-                onChange={(event) => setUnitCount(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    submitUnits();
-                  }
-                }}
-                className={`h-10 rounded-lg border bg-white px-3 text-sm outline-none focus:ring-[3px] ${
-                  unitError
-                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-200"
-                    : "border-input focus:border-[#2b2bb5] focus:ring-[#2b2bb5]/20"
-                }`}
-              />
-              {unitError && (
-                <span role="alert" className="text-[11px] leading-4 text-rose-600">
-                  {unitError}
-                </span>
-              )}
-            </label>
-
-            <div className="flex min-w-[300px] flex-1 items-center gap-3 rounded-lg border border-[#dcdcf8] bg-[#eef0ff] px-4 py-3">
-              <Info className="h-4 w-4 shrink-0 text-[#2b2bb5]" />
-              <div className="text-xs leading-5 text-[#1a1a8a]">
-                <p className="font-semibold">
-                  {unitError ? "Enter a number to continue" : `This will create ${unitNumber} row${unitNumber === 1 ? "" : "s"}`}
-                </p>
-                <p className="text-[#1a1a8a]/80">
-                  1 row per {unitLower}, named {item.deliverable_type.replace(/\s+-\s+Per\s+\w+$/, "")} - {unitLabel} 1, {unitLabel} 2…
-                </p>
-              </div>
-            </div>
-
-            <div className="ml-auto flex shrink-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setUnitOpen(false)}
-                disabled={unitBusy}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-4 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-              >
-                <X className="h-4 w-4" />
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={submitUnits}
-                disabled={Boolean(unitError) || unitBusy}
-                data-testid={`worksheet-unit-add-${item.id}`}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Check className="h-4 w-4" />
-                {unitBusy
-                  ? "Adding…"
-                  : unitError
-                    ? "Add rows"
-                    : `Add ${unitNumber} row${unitNumber === 1 ? "" : "s"}`}
-              </button>
-            </div>
-          </div>
-        </td>
-      )}
     </TableRow>
   );
 });

@@ -27,6 +27,10 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel, Field, ConfigDict
 
+# A work row counts as finished when it is Closed or Scrap (Scrap is treated
+# the same as Closed - keep in step with DONE_STATUSES in server.py).
+DONE_STATUSES = ("Closed", "Scrap")
+
 
 # ---------------- Constants ----------------
 
@@ -384,7 +388,7 @@ def create_efficiency_router(
                 non_core_minutes += mins
                 key = it.get("deliverable_type") or "Other"
                 non_core_by_type[key] = non_core_by_type.get(key, 0.0) + mins
-            elif it.get("status") == "Closed":
+            elif it.get("status") in DONE_STATUSES:
                 key = it.get("deliverable_type") or "Other"
                 qty = float(it.get("quantity") or 1.0)
                 closed_by_type[key] = closed_by_type.get(key, 0.0) + qty
@@ -872,7 +876,7 @@ def create_efficiency_router(
         row = rows[0]
 
         closed_items = await db.work_items.find(
-            {"month": month, "creator_id": user_id, "status": "Closed"},
+            {"month": month, "creator_id": user_id, "status": {"$in": list(DONE_STATUSES)}},
             {"_id": 0, "id": 1, "deliverable_name": 1, "deliverable_type": 1,
              "work_category": 1, "work_date": 1, "time_taken_minutes": 1, "project_id": 1},
         ).sort("work_date", 1).to_list(5000)

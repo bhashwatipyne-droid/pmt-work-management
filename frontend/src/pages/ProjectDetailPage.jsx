@@ -104,6 +104,7 @@ const WORK_STATUS_BADGE = {
   "Changes Requested": "Warning",
   Rework: "Error",
   Closed: "Success",
+  Scrap: "Error",
 };
 
 const DELIV_GRID =

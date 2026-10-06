@@ -5,6 +5,7 @@ const STATUS_STYLES = {
   "Ready for Review": "bg-blue-100 text-blue-700 border-blue-300",
   "Changes Requested": "bg-rose-100 text-rose-700 border-rose-300",
   Closed: "bg-emerald-100 text-emerald-700 border-emerald-300",
+  Scrap: "bg-red-600 text-white border-red-600",
 };
 
 export const StatusBadge = ({ status }) => (

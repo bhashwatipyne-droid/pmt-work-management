@@ -254,8 +254,9 @@ export default function ProjectsPage() {
         }
 
         // Filter by project due date
-        if (dateFrom && (!p.end_date || p.end_date < dateFrom)) return false;
-        if (dateTo && (!p.end_date || p.end_date > dateTo)) return false;
+        const endDay = (p.end_date || "").slice(0, 10);
+        if (dateFrom && (!endDay || endDay < dateFrom)) return false;
+        if (dateTo && (!endDay || endDay > dateTo)) return false;
 
         if (!q) return true;
 

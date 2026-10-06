@@ -111,14 +111,22 @@ DELIVERABLE_TYPES = [
 WORK_CATEGORIES = ["Core", "Non-Core"]
 
 # Deliverable types that are measured one unit at a time (the "Activity
-# Potential" unit basis): picking one on the Work Sheet asks how many units and
-# creates one row per unit. Value = what one unit is called.
+# Potential" unit basis). Value = what one unit is called; the Work Sheet's Qty
+# column uses it to say "23 slides" / "4 pages" (Animate rows always count
+# scenes instead). The older "one row per unit" endpoint reads it too.
 DELIVERABLE_TYPE_UNITS = {
     "Presentation (PPT) - Per Slide": "Slide",
     "Carousel": "Slide",
     "Reel / Short Video": "Reel",
     "Booklet": "Page",
     "Brochure": "Page",
+    "Two Pager": "Page",
+    "Video Storyboard": "Frame",
+    "Teaser": "Video",
+    "Teaser Short Video": "Video",
+    "Long Video": "Video",
+    "Poster": "Post",
+    "Minimalist": "Post",
 }
 MAX_UNIT_ROWS = 100
 # Only this department gets the per-unit editor (members and managers).
@@ -167,11 +175,17 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Follow Up (Over 10-15 mins)": "Non-Core",
 }
 
-STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review", "Changes Requested", "Rework", "Closed"]
+STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review", "Changes Requested", "Rework", "Closed", "Scrap"]
 # "On Hold" is a pause a member can set on their own row (e.g. waiting on a
 # client), same as Ongoing/Ready for Review - it does not need a reviewer.
-MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review"]
-MEMBER_EDITABLE_FIELDS = {"work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
+# "Scrap" is work thrown away; the row's owner can set it without a review.
+MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review", "Scrap"]
+# A row in one of these is finished for every count and rule that used to look
+# for "Closed" alone: efficiency, the sidebar's pending badge, dashboards and
+# the Non-Core "needs time before it can be closed" check. Scrap is treated the
+# same as Closed - the time was spent either way.
+DONE_STATUSES = ("Closed", "Scrap")
+MEMBER_EDITABLE_FIELDS = {"quantity", "quantity_items", "video_duration_minutes", "work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
 PROJECT_STATUSES = [
     "Active",
@@ -183,6 +197,11 @@ PROJECT_STATUSES = [
     "Scrapped",
 ]
 STAGES = ["Content", "Design", "Animate"]
+
+# How many projects one list call may return. The Projects board, the Work
+# Sheet pickers and the command palette all want the whole portfolio; a low
+# default (it used to be 100) silently hid every project past the newest 100.
+PROJECT_LIST_LIMIT = 5000
 
 
 def normalize_stages(stages: Optional[List[str]]) -> List[str]:
@@ -422,7 +441,16 @@ class WorkItem(BaseModel):
     # The benchmark that applied when the type was chosen, kept so the UI can
     # show how far an edited time is from it. None = no benchmark exists.
     time_benchmark_minutes: Optional[float] = None
+    # Design/Animate rows: how many units (slides, pages, scenes...) this one
+    # row covers, e.g. 23 for a 23-slide deck. Efficiency counts it for Closed
+    # rows. Always 1 for any other stage.
     quantity: float = 1.0
+    # Minutes per unit, in order (None = not logged yet). Empty when the row
+    # has no per-unit breakdown. When any is logged, time_taken_minutes is
+    # their total (see apply_quantity_rules).
+    quantity_items: List[Optional[float]] = Field(default_factory=list)
+    # Animate rows only: length of the finished video, in minutes.
+    video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
@@ -449,6 +477,8 @@ class WorkItemCreate(BaseModel):
     version: Optional[str] = ""
     time_taken_minutes: Optional[float] = 0
     quantity: Optional[float] = 1.0
+    quantity_items: Optional[List[Optional[float]]] = None
+    video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
@@ -469,6 +499,9 @@ class WorkItemUpdate(BaseModel):
     work_category: Optional[str] = None
     version: Optional[str] = None
     time_taken_minutes: Optional[float] = None
+    quantity: Optional[float] = None
+    quantity_items: Optional[List[Optional[float]]] = None
+    video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     manager_id: Optional[str] = None
@@ -756,7 +789,7 @@ def validate_work_category_rules(merged: dict):
     if not category:
         category = DELIVERABLE_TYPE_CATEGORIES.get(merged.get("deliverable_type") or "")
 
-    if category == "Non-Core" and merged.get("status") == "Closed":
+    if category == "Non-Core" and merged.get("status") in DONE_STATUSES:
         minutes = merged.get("time_taken_minutes") or 0
         if float(minutes) <= 0:
             raise HTTPException(
@@ -816,6 +849,102 @@ def _valid_minutes(value) -> Optional[float]:
     return minutes if math.isfinite(minutes) else None
 
 
+# ---------------- Quantity: one row, N units ----------------
+#
+# A Design or Animate row can cover several units (a 23-slide deck is one row
+# with quantity 23, not 23 rows). The row's time is the total for all of them,
+# and the per-unit minutes can be logged in a breakdown (quantity_items) -
+# when any are logged, the row's time is simply their total.
+QUANTITY_STAGES = {"Design", "Animate"}
+MAX_QUANTITY = 200
+
+
+def units_of(row: dict) -> int:
+    """How many units a row covers for time purposes: its quantity on a
+    Design/Animate row, 1 everywhere else."""
+    if row.get("stage") not in QUANTITY_STAGES:
+        return 1
+    try:
+        return max(1, min(int(float(row.get("quantity") or 1)), MAX_QUANTITY))
+    except (TypeError, ValueError):
+        return 1
+
+
+def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
+    """Validate quantity / quantity_items / video_duration_minutes and keep
+    them consistent with the stage and with each other. Mutates update_fields;
+    raises HTTPException(400) on a violation. `existing` is {} when creating."""
+    # Creating from a payload that leaves the optional fields out.
+    if "quantity_items" in update_fields and update_fields["quantity_items"] is None:
+        update_fields.pop("quantity_items")
+    if "quantity" in update_fields and update_fields["quantity"] is None:
+        update_fields["quantity"] = 1.0
+
+    merged = {**existing, **update_fields}
+    stage = merged.get("stage")
+
+    if stage not in QUANTITY_STAGES:
+        if (
+            ("quantity" in update_fields and float(update_fields["quantity"]) != 1.0)
+            or update_fields.get("quantity_items")
+        ):
+            raise HTTPException(status_code=400, detail="Quantity applies to Design and Animate rows only.")
+        if update_fields.get("video_duration_minutes") is not None:
+            raise HTTPException(status_code=400, detail="Duration applies to Animate rows only.")
+        # Stage moved away from Design/Animate: the old quantity no longer means anything.
+        if "stage" in update_fields and (
+            float(existing.get("quantity") or 1) != 1.0
+            or existing.get("quantity_items")
+            or existing.get("video_duration_minutes") is not None
+        ):
+            update_fields.update({"quantity": 1.0, "quantity_items": [], "video_duration_minutes": None})
+        return
+
+    if stage != "Animate":
+        if update_fields.get("video_duration_minutes") is not None:
+            raise HTTPException(status_code=400, detail="Duration applies to Animate rows only.")
+        if "stage" in update_fields and existing.get("video_duration_minutes") is not None:
+            update_fields["video_duration_minutes"] = None
+
+    if update_fields.get("video_duration_minutes") is not None:
+        duration = _valid_minutes(update_fields["video_duration_minutes"])
+        if duration is None or duration < 0 or duration > MAX_WORK_ITEM_MINUTES:
+            raise HTTPException(status_code=400, detail="Duration must be a number of minutes (0 to 1440).")
+        update_fields["video_duration_minutes"] = round(duration, 2)
+
+    if "quantity" in update_fields:
+        raw = _valid_minutes(update_fields["quantity"])
+        if raw is None or raw != int(raw) or raw < 1 or raw > MAX_QUANTITY:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Quantity must be a whole number from 1 to {MAX_QUANTITY}.",
+            )
+        update_fields["quantity"] = float(int(raw))
+
+    if "quantity_items" in update_fields or ("quantity" in update_fields and existing.get("quantity_items")):
+        units = units_of(merged)
+        items = update_fields.get("quantity_items", existing.get("quantity_items")) or []
+        cleaned = []
+        for value in items[:units]:
+            if value is None:
+                cleaned.append(None)
+                continue
+            minutes = _valid_minutes(value)
+            if minutes is None or minutes < 0 or minutes > MAX_WORK_ITEM_MINUTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Time for one unit must be a number of minutes (0 to 1440).",
+                )
+            cleaned.append(round(minutes, 2) if minutes > 0 else None)
+        # Keep one slot per unit so the panel and the total always agree.
+        cleaned += [None] * (units - len(cleaned))
+        update_fields["quantity_items"] = cleaned
+        total = round(sum(v for v in cleaned if v), 2)
+        if total > 0:
+            # The row's time is the total of what was logged per unit.
+            update_fields["time_taken_minutes"] = total
+
+
 # A bulk update applies the same patch to many rows, so the same benchmark /
 # client / project would otherwise be looked up once PER ROW - each one a
 # database round trip, which is what made "change status" on a big selection
@@ -870,6 +999,8 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
     "time is required before a row moves forward". Mutates update_fields; raises
     HTTPException(400) on a violation. `existing` is {} when creating."""
     time_in_patch = "time_taken_minutes" in update_fields
+    units = units_of({**existing, **update_fields})
+    old_units = units_of(existing)
 
     if time_in_patch:
         raw = update_fields["time_taken_minutes"]
@@ -879,10 +1010,15 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
                 status_code=400,
                 detail="Time taken must be a number of minutes (0 or more).",
             )
-        if minutes > MAX_WORK_ITEM_MINUTES:
+        # 24 hours per unit: a 23-slide deck row may hold 23 days of slides.
+        if minutes > MAX_WORK_ITEM_MINUTES * units:
             raise HTTPException(
                 status_code=400,
-                detail="Time for a single row cannot exceed 24 hours (1440 minutes). Split it across rows.",
+                detail=(
+                    "Time for a single row cannot exceed 24 hours (1440 minutes)"
+                    + (" per unit" if units > 1 else "")
+                    + ". Split it across rows."
+                ),
             )
         update_fields["time_taken_minutes"] = round(minutes, 2)
 
@@ -892,7 +1028,8 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
     new_status = update_fields.get("status")
     moving_forward = new_status in TIME_GATED_STATUSES and new_status != existing.get("status")
 
-    if not (time_in_patch or type_changed or moving_forward):
+    units_changed = units != old_units
+    if not (time_in_patch or type_changed or moving_forward or units_changed):
         return
 
     current = (
@@ -905,6 +1042,9 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
     benchmark = None
     if new_type:
         benchmark = await get_time_benchmark(_time_worker_ids(user, existing, creator_id), new_type)
+        # The benchmark is per unit; a row covering N units is expected to take N times it.
+        if benchmark:
+            benchmark = round(benchmark * units, 2)
 
     if time_in_patch:
         if current <= 0 and benchmark:
@@ -923,6 +1063,11 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
         elif current <= 0 or source == "auto":
             current, source = benchmark, "auto"
         # else: a person typed this value; keep it (edge case), only the benchmark moves.
+    elif units_changed:
+        # Changing the quantity rescales a time the app filled in itself;
+        # a time a person typed is left alone.
+        if benchmark and (current <= 0 or source == "auto"):
+            current, source = benchmark, "auto"
 
     if moving_forward and current <= 0:
         if benchmark:
@@ -935,7 +1080,7 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
     # trips over an old low value. Admins are exempt, and with no benchmark
     # there is nothing to compare against.
     if (
-        (time_in_patch or type_changed)
+        (time_in_patch or type_changed or units_changed)
         and source == "manual"
         and benchmark
         and 0 < current < LOW_TIME_RATIO * benchmark
@@ -1139,6 +1284,7 @@ async def scoped_update_fields(
         raise HTTPException(status_code=400, detail="Invalid stage")
 
     apply_deliverable_rules(existing, update_fields)
+    apply_quantity_rules(existing, update_fields)
     await apply_time_rules(user, existing, update_fields)
 
     validate_work_category_rules({**existing, **update_fields})
@@ -2512,7 +2658,7 @@ async def work_items_pending_count(request: Request):
     user = await get_acting_user(request)
 
     query = {
-        "status": {"$ne": "Closed"},
+        "status": {"$nin": list(DONE_STATUSES)},
         # Unassigned Content rows are hidden from the sheet, so don't count them.
         **(await _content_rows_with_real_creator()),
     }
@@ -2691,6 +2837,7 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
 
     data["deliverable_not_available"] = bool(data.get("deliverable_not_available"))
     apply_deliverable_rules({}, data)
+    apply_quantity_rules({}, data)
     await apply_time_rules(user, {}, data, creator_id=data.get("creator_id"))
 
     validate_work_category_rules({**data, "work_date": work_date})
@@ -2921,6 +3068,7 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
     work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     validate_work_date(work_date)
     month = work_date[:7]
+    apply_quantity_rules({}, tpl)
     await apply_time_rules(user, {}, tpl, creator_id=user.id)
     docs = []
     for _ in range(payload.count):
@@ -3422,7 +3570,7 @@ async def dashboard_summary(request: Request):
             creators.add(it["creator_id"])
         if it.get("month") == current_month:
             items_this_month += 1
-            if it.get("status") == "Closed":
+            if it.get("status") in DONE_STATUSES:
                 closed_this_month += 1
     needs_attention = status_counts.get("Ready for Review", 0) + status_counts.get("Changes Requested", 0)
     return {
@@ -3627,7 +3775,7 @@ async def migrate_client_contacts():
 @api_router.get("/clients", response_model=List[Client])
 async def list_clients(request: Request):
     await get_acting_user(request)
-    return await db.clients.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+    return await db.clients.find({}, {"_id": 0}).sort("name", 1).to_list(None)
 
 
 @api_router.get("/worksheet/deliverable-names")
@@ -3673,9 +3821,7 @@ async def worksheet_lookups(request: Request):
     clients, projects, deliverables = await asyncio.gather(
         db.clients.find({}, {"_id": 0, "id": 1, "name": 1})
         .sort("name", 1)
-        .limit(1000)
-        .batch_size(1000)
-        .to_list(1000),
+        .to_list(None),
         # status: the sheet's pickers leave out delivered/scrapped projects.
         # code / description: tell look-alike project names apart.
         db.projects.find(
@@ -3683,14 +3829,12 @@ async def worksheet_lookups(request: Request):
             {"_id": 0, "id": 1, "name": 1, "client_id": 1, "code": 1, "status": 1, "description": 1},
         )
         .sort("created_at", -1)
-        .limit(1000)
         .batch_size(1000)
-        .to_list(1000),
+        .to_list(None),
         db.deliverables.find({}, {"_id": 0, "id": 1, "name": 1, "project_id": 1})
         .sort("created_at", 1)
-        .limit(5000)
         .batch_size(5000)
-        .to_list(5000),
+        .to_list(None),
     )
 
     return {
@@ -4327,7 +4471,7 @@ async def _hydrate_projects(
         deliverables = await db.deliverables.find(
             {"project_id": {"$in": project_ids}},
             {"_id": 0},
-        ).to_list(5000)
+        ).to_list(None)
     else:
         # List pages only need the counts (in total and per stage), not the
         # full nested documents - which for a few hundred projects is
@@ -4357,14 +4501,14 @@ async def _hydrate_projects(
     clients = await db.clients.find(
         {"id": {"$in": client_ids}},
         {"_id": 0},
-    ).to_list(1000)
+    ).to_list(None)
 
     # Attach approval configuration without storing it on the deliverable document.
     if deliverables:
         approval_rows = await db.approval_workflows.find(
             {"deliverable_id": {"$in": [d["id"] for d in deliverables]}},
             {"_id": 0, "deliverable_id": 1, "required_types": 1},
-        ).to_list(5000)
+        ).to_list(None)
         approval_types_by_deliverable = {
             row["deliverable_id"]: row.get("required_types", [])
             for row in approval_rows
@@ -4469,7 +4613,7 @@ async def list_projects(
     status: Optional[str] = None,
     search: Optional[str] = None,
     visibility: Optional[str] = "visible",
-    limit: int = 100,
+    limit: int = PROJECT_LIST_LIMIT,
     include_deliverables: bool = False,
 ):
     user = await get_acting_user(request)
@@ -4515,7 +4659,7 @@ async def list_projects(
     if and_clauses:
         query["$and"] = and_clauses
 
-    limit = max(1, min(limit, 1000))
+    limit = max(1, min(limit, PROJECT_LIST_LIMIT))
 
     # batch_size: otherwise the driver returns 101 projects and then makes one
     # more round trip to the database per following batch.
@@ -4538,7 +4682,7 @@ async def project_metrics(request: Request):
     # deliverable document (capped at 5000) only to take len() of the list.
     # The two reads don't depend on each other, so run them together.
     projects, total_deliverables = await asyncio.gather(
-        db.projects.find({}, {"_id": 0, "status": 1, "end_date": 1}).to_list(1000),
+        db.projects.find({}, {"_id": 0, "status": 1, "end_date": 1}).to_list(None),
         db.deliverables.count_documents({}),
     )
     today = datetime.now(timezone.utc).date()
@@ -5340,9 +5484,9 @@ async def list_deliverables(
 ):
     await get_acting_user(request)
     query = {"project_id": project_id} if project_id else {}
-    deliverables = await db.deliverables.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    deliverables = await db.deliverables.find(query, {"_id": 0}).sort("created_at", 1).to_list(None)
     ids = [d["id"] for d in deliverables]
-    workflows = await db.approval_workflows.find({"deliverable_id": {"$in": ids}}, {"_id": 0, "deliverable_id": 1, "required_types": 1}).to_list(5000) if ids else []
+    workflows = await db.approval_workflows.find({"deliverable_id": {"$in": ids}}, {"_id": 0, "deliverable_id": 1, "required_types": 1}).to_list(None) if ids else []
     by_id = {w["deliverable_id"]: w.get("required_types", []) for w in workflows}
     for d in deliverables:
         d["approval_types"] = by_id.get(d["id"], [])

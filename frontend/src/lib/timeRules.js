@@ -46,7 +46,7 @@ export const hasTime = (item) => Number(item?.time_taken_minutes) > 0;
 // A row needs time as soon as it has a deliverable type or has moved past
 // "Not Started" - blank draft rows and closed history are not nagged.
 export const isTimeRequired = (item) =>
-  item?.status !== "Closed" &&
+  !["Closed", "Scrap"].includes(item?.status) &&
   (Boolean(item?.deliverable_type) || TIME_GATED_STATUSES.includes(item?.status));
 
 export const isTimeMissing = (item) => isTimeRequired(item) && !hasTime(item);

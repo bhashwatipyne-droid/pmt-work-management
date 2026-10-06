@@ -135,17 +135,6 @@ export const bulkCreateWorkItems = (userId, count, template) =>
     )
     .then((r) => r.data);
 
-// One row per slide / reel / page: the row becomes the first unit and the rest
-// are created in a single request.
-export const expandWorkItemUnits = (userId, id, count) =>
-  axios
-    .post(
-      `${API}/work-items/${id}/expand-units`,
-      { count },
-      { headers: authHeaders(userId) }
-    )
-    .then((r) => r.data);
-
 export const bulkUpdateWorkItems = (userId, ids, patch) =>
   axios
     .post(

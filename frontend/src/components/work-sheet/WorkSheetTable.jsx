@@ -26,7 +26,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { parseTimeInput } from "@/lib/timeRules";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
-import { focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
+import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
+import { QuantityPanel } from "./QuantityPanel";
+import { RangeSelectionBar } from "./RangeSelectionBar";
+import { isQtySet, qtyApplies, quantityOf, MAX_QUANTITY } from "@/lib/quantity";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
@@ -43,6 +46,8 @@ const COLUMNS = [
   "Deliverable Name",
   "Deliverable Link",
   "Deliverable Type",
+  "Qty",
+  "Duration (min)",
   "Category",
   "Version",
   "Time (min)",
@@ -154,7 +159,6 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   onDelete,
   onDuplicateRow,
   onFill,
-  onExpandUnits,
   // Lets the page's Ctrl/Cmd+Z undo a drag-reorder: (label, undoFn) => void.
   onUndoable,
   filters,
@@ -183,6 +187,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const [rangeSelection, setRangeSelection] = useState(null);
   const rangeSelectionRef = useRef(null);
   const activeCellRef = useRef(null);
+  // The row whose Qty side panel is open, and the cell to return focus to.
+  const [qtyPanel, setQtyPanel] = useState(null);
+  const qtyPanelRef = useRef(null);
+  qtyPanelRef.current = qtyPanel;
+  // Left edge for the cell-count bar, so it sits just right of the sidebar.
+  const [rangeBarLeft, setRangeBarLeft] = useState(16);
+  const rangeDragRef = useRef(null);
+  const suppressClickRef = useRef(false);
   const checkboxAnchorRef = useRef(null);
   const [columnSort, setColumnSort] = useState({
     key: null,
@@ -204,9 +216,17 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     try {
       const saved = JSON.parse(localStorage.getItem(`worksheet_column_order_${currentUser.id}`) || "null");
       if (!Array.isArray(saved)) return COLUMNS;
-      const valid = saved.filter((column) => COLUMNS.includes(column));
-      const missing = COLUMNS.filter((column) => !valid.includes(column));
-      return [...valid, ...missing];
+      const order = saved.filter((column) => COLUMNS.includes(column));
+      // A column added after this order was saved (Qty, Duration) goes right
+      // after the column that precedes it by default, not at the far end.
+      COLUMNS.forEach((column, index) => {
+        if (order.includes(column)) return;
+        const before = COLUMNS.slice(0, index)
+          .reverse()
+          .find((name) => order.includes(name));
+        order.splice(before ? order.indexOf(before) + 1 : 0, 0, column);
+      });
+      return order;
     } catch {
       return COLUMNS;
     }
@@ -642,6 +662,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   const getSortValue = useCallback(
     (item, column) => {
+      if (column === "Qty") return isQtySet(item) ? quantityOf(item) : "";
+      if (column === "Duration (min)") return item.video_duration_minutes ?? "";
+
       const field = COLUMN_FIELDS[column];
 
       if (!field) return "";
@@ -1349,6 +1372,21 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
           return null;
         case "Version":
           return { version: clear ? "" : text };
+        case "Qty": {
+          // Only Design / Animate rows have a quantity.
+          if (!qtyApplies(targetItem)) return null;
+          if (clear) return { quantity: 1, quantity_items: [] };
+          const n = Number(text.replace(/[^\d]/g, ""));
+          if (!Number.isInteger(n) || n < 1 || n > MAX_QUANTITY) return null;
+          return { quantity: n, quantity_items: Array(n).fill(null) };
+        }
+        case "Duration (min)": {
+          if (targetItem.stage !== "Animate") return null;
+          if (clear) return { video_duration_minutes: null };
+          const n = Number(text.replace(/[^\d.]/g, ""));
+          if (!Number.isFinite(n) || n < 0 || n > 1440) return null;
+          return { video_duration_minutes: n };
+        }
         case "Time (min)": {
           if (clear) return { time_taken_minutes: 0 };
           const num = Number(text.replace(/[^\d.-]/g, ""));
@@ -1382,6 +1420,50 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     },
     [clients, projects, deliverablesByProject, options, nonAdminUsers, reviewerUsers]
   );
+
+  // Copies a block of cells (1-based rows, 0-based visible columns) as
+  // tab/newline-separated text, so it pastes cleanly into Sheets/Excel.
+  const copyBlock = useCallback(
+    (startRow, endRow, startCol, endCol) => {
+      if (!navigator.clipboard) {
+        toast.error(
+          "Clipboard access isn't available here (needs HTTPS or a supported browser)"
+        );
+        return;
+      }
+
+      const cols = visibleColumns.slice(startCol, endCol + 1);
+      const rowsData = sortedItemsRef.current.slice(startRow - 1, endRow);
+
+      const tsv = rowsData
+        .map((item) =>
+          cols.map((column) => String(getSortValue(item, column) ?? "")).join("\t")
+        )
+        .join("\n");
+
+      navigator.clipboard
+        .writeText(tsv)
+        .then(() => {
+          const count = rowsData.length * cols.length;
+
+          trackEvent("copy_paste_used", {
+            action: "copy",
+            cell_count: count,
+          });
+
+          toast.success(count > 1 ? `Copied ${count} cells` : "Copied");
+        })
+        .catch(() => {
+          toast.error("Couldn't copy — clipboard access was blocked");
+        });
+    },
+    [visibleColumns, getSortValue]
+  );
+
+  const clearRangeSelection = useCallback(() => {
+    rangeSelectionRef.current = null;
+    setRangeSelection(null);
+  }, []);
 
   // Ctrl/Cmd+C copies the active cell or, if a Shift+Arrow range is
   // selected, the whole rectangle — as tab/newline-separated text, so it
@@ -1479,31 +1561,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
       if (isCopy) {
         event.preventDefault();
-        const cols = visibleColumns.slice(startCol, endCol + 1);
-        const rowsData = sortedItemsRef.current.slice(startRow - 1, endRow);
-
-        const tsv = rowsData
-          .map((item) =>
-            cols.map((column) => String(getSortValue(item, column) ?? "")).join("\t")
-          )
-          .join("\n");
-
-        navigator.clipboard
-          .writeText(tsv)
-          .then(() => {
-            const count = rowsData.length * cols.length;
-
-            trackEvent("copy_paste_used", {
-              action: "copy",
-              cell_count: count,
-            });
-
-            toast.success(count > 1 ? `Copied ${count} cells` : "Copied");
-          })
-          .catch(() => {
-            toast.error("Couldn't copy — clipboard access was blocked");
-          });
-
+        copyBlock(startRow, endRow, startCol, endCol);
         return;
       }
 
@@ -1612,7 +1670,258 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [visibleColumns, getSortValue, resolvePasteValue, canEditItem, onUpdate]);
+  }, [visibleColumns, copyBlock, resolvePasteValue, canEditItem, onUpdate]);
+
+  // ----- Selecting a block of cells with the mouse -----------------------
+  // Drag across cells, or Shift+click a second cell. (Shift+Arrow is handled
+  // above.) The cells hold controls - inputs, dropdowns - so the drag is only
+  // treated as a selection once the pointer reaches a DIFFERENT cell; a click
+  // or a drag inside one cell works exactly as before.
+  const cellAtPoint = (x, y) => {
+    const el = document.elementFromPoint(x, y)?.closest?.("[data-sheet-cell]");
+    if (!el) return null;
+    const row = Number(el.getAttribute("data-sheet-row"));
+    const col = Number(el.getAttribute("data-sheet-col"));
+    return Number.isFinite(row) && Number.isFinite(col) ? { row, col } : null;
+  };
+
+  const setRangeTo = (anchor, target) => {
+    const next = {
+      anchorRow: anchor.row,
+      anchorCol: anchor.col,
+      row: target.row,
+      col: target.col,
+    };
+    const current = rangeSelectionRef.current;
+    if (
+      current &&
+      current.anchorRow === next.anchorRow &&
+      current.anchorCol === next.anchorCol &&
+      current.row === next.row &&
+      current.col === next.col
+    ) {
+      return;
+    }
+    rangeSelectionRef.current = next;
+    setRangeSelection(next);
+  };
+
+  const handleSheetPointerDownCapture = (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest?.(".sheet-fill-handle")) return;
+    const cell = event.target.closest?.("[data-sheet-cell]");
+    if (!cell) return;
+    const row = Number(cell.getAttribute("data-sheet-row"));
+    const col = Number(cell.getAttribute("data-sheet-col"));
+    if (!Number.isFinite(row) || !Number.isFinite(col)) return;
+
+    const current = rangeSelectionRef.current;
+
+    // Shift+click: grow the block from the anchor to the clicked cell.
+    if (event.shiftKey) {
+      const anchor = current
+        ? { row: current.anchorRow, col: current.anchorCol }
+        : activeCellRef.current;
+      if (anchor) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClickRef.current = true;
+        setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+        setRangeTo(anchor, { row, col });
+        return;
+      }
+    }
+
+    // A plain click starts over (it used to be left to the cell's own focus
+    // handler, which keeps the block when the click lands on its anchor).
+    if (current) clearRangeSelection();
+
+    const start = { row, col };
+    const drag = { start, active: false, x: event.clientX, y: event.clientY, frame: null };
+    rangeDragRef.current = drag;
+
+    const scroller = scrollRef.current;
+    const autoScroll = () => {
+      drag.frame = null;
+      if (!drag.active || !scroller) return;
+      const rect = scroller.getBoundingClientRect();
+      const edge = 48;
+      let dx = 0;
+      let dy = 0;
+      if (drag.y > rect.bottom - edge) dy = Math.min(28, (drag.y - (rect.bottom - edge)) / 2 + 4);
+      else if (drag.y < rect.top + headerHeight + edge / 2) dy = -Math.min(28, (rect.top + headerHeight + edge / 2 - drag.y) / 2 + 4);
+      if (drag.x > rect.right - edge) dx = Math.min(28, (drag.x - (rect.right - edge)) / 2 + 4);
+      else if (drag.x < rect.left + edge) dx = -Math.min(28, (rect.left + edge - drag.x) / 2 + 4);
+      if (dx || dy) {
+        scroller.scrollBy(dx, dy);
+        const target = cellAtPoint(drag.x, drag.y);
+        if (target) setRangeTo(start, target);
+        drag.frame = requestAnimationFrame(autoScroll);
+      }
+    };
+
+    const onMove = (moveEvent) => {
+      drag.x = moveEvent.clientX;
+      drag.y = moveEvent.clientY;
+      const target = cellAtPoint(drag.x, drag.y);
+
+      if (!drag.active) {
+        if (!target || (target.row === start.row && target.col === start.col)) return;
+        drag.active = true;
+        // A dropdown that opened on the press must not stay open under the block.
+        if (
+          document.querySelector(
+            '[data-sheet-cell] [aria-expanded="true"]:not([aria-haspopup="dialog"])'
+          )
+        ) {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        }
+        document.body.style.userSelect = "none";
+        window.getSelection?.()?.removeAllRanges();
+      }
+
+      if (target) setRangeTo(start, target);
+      if (drag.frame == null) drag.frame = requestAnimationFrame(autoScroll);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      if (drag.frame != null) cancelAnimationFrame(drag.frame);
+      document.body.style.userSelect = "";
+      if (drag.active) {
+        // The click that ends a drag must not open whatever it ended on.
+        suppressClickRef.current = true;
+        setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+      }
+      rangeDragRef.current = null;
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  const handleSheetClickCapture = (event) => {
+    if (!suppressClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  // Esc clears the block first (a second Esc then behaves as before).
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (!rangeSelectionRef.current || qtyPanelRef.current) return;
+      if (
+        event.target?.closest?.(
+          '[role="dialog"], [role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]'
+        )
+      ) {
+        return;
+      }
+      clearRangeSelection();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [clearRangeSelection]);
+
+  // What the cell-count bar shows. Worked out from the data, not the page, so
+  // rows scrolled out of view (the sheet only mounts the visible ones) count.
+  const rangeStats = useMemo(() => {
+    if (!rangeSelection) return null;
+
+    const r1 = Math.min(rangeSelection.anchorRow, rangeSelection.row);
+    const r2 = Math.max(rangeSelection.anchorRow, rangeSelection.row);
+    const c1 = Math.min(rangeSelection.anchorCol, rangeSelection.col);
+    const c2 = Math.max(rangeSelection.anchorCol, rangeSelection.col);
+    const rows = sortedTableItems.slice(r1 - 1, r2);
+    const cols = visibleColumns.slice(c1, c2 + 1);
+    if (!rows.length || !cols.length || rows.length * cols.length < 2) return null;
+
+    let filled = 0;
+    const unique = new Set();
+    const times = [];
+    const statuses = new Map();
+
+    for (const item of rows) {
+      for (const column of cols) {
+        const value = getSortValue(item, column);
+        if (value !== "" && value !== null && value !== undefined) {
+          filled += 1;
+          unique.add(String(value));
+        }
+        if (column === "Time (min)") {
+          const minutes = Number(item.time_taken_minutes);
+          if (minutes > 0) times.push(minutes);
+        }
+        if (column === "Status" && item.status) {
+          statuses.set(item.status, (statuses.get(item.status) || 0) + 1);
+        }
+      }
+    }
+
+    const count = rows.length * cols.length;
+    const statusOrder = options.statuses || [];
+
+    return {
+      rows: rows.length,
+      cols: cols.length,
+      count,
+      filled,
+      empty: count - filled,
+      unique: unique.size,
+      times,
+      statusCounts: [...statuses.entries()].sort(
+        (a, b) => statusOrder.indexOf(a[0]) - statusOrder.indexOf(b[0])
+      ),
+      block: { r1, r2, c1, c2 },
+    };
+  }, [rangeSelection, sortedTableItems, visibleColumns, getSortValue, options.statuses]);
+
+  // Keep the bar just right of the sidebar, even when the sidebar collapses.
+  const hasRangeStats = Boolean(rangeStats);
+  useEffect(() => {
+    if (!hasRangeStats) return undefined;
+    const element = scrollRef.current;
+    if (!element) return undefined;
+
+    const update = () => setRangeBarLeft(Math.round(element.getBoundingClientRect().left) + 16);
+    update();
+
+    window.addEventListener("resize", update);
+    const observer =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    observer?.observe(element);
+    return () => {
+      window.removeEventListener("resize", update);
+      observer?.disconnect();
+    };
+  }, [hasRangeStats]);
+
+  // ----- Qty side panel ---------------------------------------------------
+  const openQtyPanel = useCallback((id) => {
+    const active = activeCellRef.current;
+    setQtyPanel({ id, restore: active ? { row: active.row, col: active.col } : null });
+  }, []);
+
+  const closeQtyPanel = useCallback(() => {
+    const restore = qtyPanelRef.current?.restore;
+    setQtyPanel(null);
+    if (restore) requestAnimationFrame(() => focusCellShell(restore.row, restore.col));
+  }, []);
+
+  const qtyPanelItem = qtyPanel ? items.find((entry) => entry.id === qtyPanel.id) : null;
+
+  // The panel goes away with its row (deleted, or no longer a Qty row).
+  useEffect(() => {
+    if (qtyPanel && (!qtyPanelItem || !isQtySet(qtyPanelItem))) setQtyPanel(null);
+  }, [qtyPanel, qtyPanelItem]);
 
   const gridTemplateColumns = buildGridTemplateColumns(
     visibleColumns,
@@ -1945,9 +2254,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   };
 
   return (
+    <>
     <div
       ref={scrollRef}
       onScroll={handleScroll}
+      onPointerDownCapture={handleSheetPointerDownCapture}
+      onClickCapture={handleSheetClickCapture}
       // Moving focus to a cell scrolls it into view; without this it could
       // stop underneath the frozen header.
       style={{ scrollPaddingTop: headerHeight + 8 }}
@@ -2235,7 +2547,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     lookalikes={projectLookalikes}
                     recentProjectsByCreator={recentProjectsByCreator}
                     onUpdate={onUpdate}
-                    onExpandUnits={onExpandUnits}
+                    onOpenQty={openQtyPanel}
+                    qtyPanelOpen={qtyPanel?.id === item.id}
                     onDelete={onDelete}
                     onDuplicate={onDuplicateRow}
                     hiddenColumns={hiddenColumns}
@@ -2286,5 +2599,33 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         </TableBody>
       </Table>
     </div>
+
+    {qtyPanelItem && (
+      <QuantityPanel
+        key={qtyPanelItem.id}
+        item={qtyPanelItem}
+        options={options}
+        canEdit={canEditItem(qtyPanelItem)}
+        onUpdate={onUpdate}
+        onClose={closeQtyPanel}
+      />
+    )}
+
+    {rangeStats && (
+      <RangeSelectionBar
+        stats={rangeStats}
+        left={rangeBarLeft}
+        onCopy={() =>
+          copyBlock(
+            rangeStats.block.r1,
+            rangeStats.block.r2,
+            rangeStats.block.c1,
+            rangeStats.block.c2
+          )
+        }
+        onClear={clearRangeSelection}
+      />
+    )}
+    </>
   );
 });

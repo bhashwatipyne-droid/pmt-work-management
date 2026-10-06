@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { DASHBOARD } from "@/constants/testIds";
 
-const STATUS_COLS = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Closed"];
+const STATUS_COLS = ["Not Started", "Ongoing", "Ready for Review", "Changes Requested", "Closed", "Scrap"];
 
 export const TeamWorkloadTable = ({ team }) => (
   <div className="rounded-xl border border-border bg-card">

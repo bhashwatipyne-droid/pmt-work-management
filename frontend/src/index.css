@@ -147,11 +147,11 @@
   }
 
   .sheet-cell-range-select {
-    background: #eef2ff;
+    background: #e3ecfd;
   }
 
   .sheet-cell-range-select.sheet-cell-active {
-    background: #eef2ff;
+    background: #e3ecfd;
     box-shadow: inset 0 0 0 2px #2b2bb5;
   }
 
@@ -283,6 +283,27 @@
 
   .sheet-mode .sheet-cell > textarea {
     line-height: 20px;
+  }
+
+  /* Qty chip: a number is entered, so the cell is a button that opens the
+     side panel. Needs its own look - the rules above blank every button that
+     is a direct child of a cell. */
+  .sheet-mode .sheet-cell > button.qty-chip {
+    background: #f0f0fd;
+    color: #1a1a8a;
+    box-shadow: inset 0 0 0 1px #dcdcf8;
+  }
+
+  .sheet-mode .sheet-cell > button.qty-chip:hover {
+    background: #e6e6fb;
+    border-color: transparent;
+  }
+
+  .sheet-mode .sheet-cell > button.qty-chip[aria-expanded="true"],
+  .sheet-mode .sheet-cell > button.qty-chip[aria-expanded="true"]:hover {
+    background: #2b2bb5;
+    color: #ffffff;
+    box-shadow: none;
   }
 
   /* Date cells: calendar icon on the left. On the right it sat past the

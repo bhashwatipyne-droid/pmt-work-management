@@ -41,8 +41,10 @@ const ProjectEditModal = ({
     setDescription(project.description || "");
     setClientId(project.client_id || "");
     setPocId(initialPocId);
-    setStartDate(project.start_date || "");
-    setEndDate(project.end_date || "");
+    // Older imported projects store "2025-07-07 05:30:00"; a date input only
+    // understands the date part.
+    setStartDate((project.start_date || "").slice(0, 10));
+    setEndDate((project.end_date || "").slice(0, 10));
     setError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, open, clients]);

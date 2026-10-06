@@ -11,6 +11,8 @@ export const COLUMN_WIDTHS = {
   "Deliverable Name": "180px",
   "Deliverable Link": "180px",
   "Deliverable Type": "170px",
+  Qty: "120px",
+  "Duration (min)": "140px",
   Category: "140px",
   Version: "100px",
   "Time (min)": "110px",

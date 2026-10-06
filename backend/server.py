@@ -6648,9 +6648,10 @@ async def advance_deliverable_stage(
     return updated
 
 
-@api_router.post("/approval-items/{approval_item_id}/approve")
-async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
-    user = await require_approver(request)
+async def _load_approvable_item(user: User, approval_item_id: str):
+    """Fetch an approval item (or the synthetic implicit-manager one) plus its
+    deliverable and run the checks every approve path shares. Raises
+    HTTPException exactly like the single-item endpoint always did."""
     item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
     if not item and approval_item_id.startswith("implicit-manager-"):
         deliverable_id = approval_item_id.removeprefix("implicit-manager-")
@@ -6664,25 +6665,109 @@ async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision
         raise HTTPException(status_code=400, detail="This approval is not pending")
     if not await _approval_item_can_act(user, item, d):
         raise HTTPException(status_code=403, detail="You are not authorized to approve this item")
+    return item, d
+
+
+async def _apply_approval(user: User, item: dict, d: dict, note: str):
+    """Record one approval and advance the deliverable if nothing else is
+    pending. Returns the deliverable id. Does NOT build the heavy response."""
     ts = now_iso()
+    approval_item_id = item["id"]
     if item.get("approval_workflow_id") is None:
-        await advance_deliverable_stage(d, user.id, payload.note or "")
-        await db.approval_history.insert_one({"id": str(uuid.uuid4()), "approval_item_id": approval_item_id, "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id, "comment": payload.note or "", "created_at": ts})
-        return await get_deliverable_approvals(d["id"], request)
-    await db.approval_items.update_one(
-        {"id": approval_item_id},
-        {"$set": {"status": "APPROVED", "approved_by": user.id, "approved_at": ts, "comments": payload.note or "", "updated_at": ts}},
-    )
-    workflow = await _get_approval_workflow(d["id"])
-    pending = await db.approval_items.count_documents({"approval_workflow_id": workflow["id"], "status": "PENDING"})
-    if pending == 0:
-        await advance_deliverable_stage(d, user.id, payload.note or "")
+        await advance_deliverable_stage(d, user.id, note)
+    else:
+        # Only flip an item that is still PENDING so a duplicate/parallel
+        # request cannot approve (and advance the stage) twice.
+        res = await db.approval_items.update_one(
+            {"id": approval_item_id, "status": "PENDING"},
+            {"$set": {"status": "APPROVED", "approved_by": user.id, "approved_at": ts, "comments": note, "updated_at": ts}},
+        )
+        if res.modified_count == 0:
+            raise HTTPException(status_code=400, detail="This approval is not pending")
+        pending = await db.approval_items.count_documents(
+            {"approval_workflow_id": item["approval_workflow_id"], "status": "PENDING"}
+        )
+        if pending == 0:
+            await advance_deliverable_stage(d, user.id, note)
     await db.approval_history.insert_one({
         "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
         "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id,
-        "comment": payload.note or "", "created_at": ts,
+        "comment": note, "created_at": ts,
     })
+    return d["id"]
+
+
+@api_router.post("/approval-items/{approval_item_id}/approve")
+async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
+    user = await require_approver(request)
+    item, d = await _load_approvable_item(user, approval_item_id)
+    await _apply_approval(user, item, d, payload.note or "")
     return await get_deliverable_approvals(d["id"], request)
+
+
+class ApprovalBulkDecision(BaseModel):
+    ids: List[str] = Field(default_factory=list)
+    note: Optional[str] = ""
+
+
+@api_router.post("/approval-items/bulk-approve")
+async def bulk_approve_approval_items(payload: ApprovalBulkDecision, request: Request):
+    """Approve many items in one request.
+
+    The browser used to fire one POST per card in parallel. Each of those paid
+    its own auth lookup, ran the stage hand-off and then rebuilt the full
+    approvals payload for the deliverable, and two cards of the same
+    deliverable could race each other and advance the stage twice. Here the
+    items are de-duplicated, grouped by deliverable (processed one after the
+    other so the "nothing pending -> advance" check is reliable) and
+    different deliverables run with a small concurrency limit.
+    """
+    user = await require_approver(request)
+    ids = list(dict.fromkeys(i for i in payload.ids if i))[:500]
+    if not ids:
+        return {"approved": [], "failed": []}
+    note = payload.note or ""
+
+    real_ids = [i for i in ids if not i.startswith("implicit-manager-")]
+    found = {
+        x["id"]: x
+        for x in await db.approval_items.find({"id": {"$in": real_ids}}, {"_id": 0}).to_list(len(real_ids) or 1)
+    } if real_ids else {}
+
+    def deliverable_of(item_id: str):
+        if item_id in found:
+            return found[item_id].get("deliverable_id")
+        if item_id.startswith("implicit-manager-"):
+            return item_id.removeprefix("implicit-manager-")
+        return None
+
+    groups: dict = {}
+    failed: list = []
+    for item_id in ids:
+        did = deliverable_of(item_id)
+        if not did:
+            failed.append({"id": item_id, "detail": "Approval item not found"})
+            continue
+        groups.setdefault(did, []).append(item_id)
+
+    approved: list = []
+    sem = asyncio.Semaphore(4)
+
+    async def run_group(item_ids: list):
+        async with sem:
+            for item_id in item_ids:
+                try:
+                    item, d = await _load_approvable_item(user, item_id)
+                    await _apply_approval(user, item, d, note)
+                    approved.append(item_id)
+                except HTTPException as exc:
+                    failed.append({"id": item_id, "detail": exc.detail})
+                except Exception:
+                    logger.exception("Bulk approve failed for %s", item_id)
+                    failed.append({"id": item_id, "detail": "Approval failed"})
+
+    await asyncio.gather(*(run_group(g) for g in groups.values()))
+    return {"approved": approved, "failed": failed}
 
 
 @api_router.post("/approval-items/{approval_item_id}/send-back")

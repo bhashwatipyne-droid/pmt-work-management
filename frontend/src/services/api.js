@@ -511,6 +511,15 @@ export const approveApprovalItem = (
     )
     .then((r) => r.data);
 
+export const bulkApproveApprovalItems = (userId, ids, note = "") =>
+  axios
+    .post(
+      `${API}/approval-items/bulk-approve`,
+      { ids, note },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
 export const sendBackApprovalItem = (
   userId,
   approvalItemId,

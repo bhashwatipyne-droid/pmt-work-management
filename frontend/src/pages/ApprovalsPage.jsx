@@ -17,6 +17,7 @@ import { refreshCounts } from "@/lib/countsBus";
 import {
   getApprovalBoard,
   approveApprovalItem,
+  bulkApproveApprovalItems,
   sendBackApprovalItem,
   moveApprovalItem,
 } from "@/services/api";
@@ -386,12 +387,19 @@ export default function ApprovalsPage() {
     setBulkLoading(true);
 
     try {
-      const results = await Promise.allSettled(
-        ids.map((id) => approveApprovalItem(currentUserId, id, ""))
-      );
-      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      // One request for the whole selection (the server groups by
+      // deliverable and limits concurrency) instead of N parallel calls.
+      const result = await bulkApproveApprovalItems(currentUserId, ids, "");
+      const succeeded = (result?.approved || []).length;
+      const failedCount = (result?.failed || []).length;
       toast.success(`${succeeded} of ${ids.length} approval${ids.length === 1 ? "" : "s"} approved`);
+      if (failedCount) {
+        toast.error(`${failedCount} could not be approved (already handled or not allowed)`);
+      }
+      clearSelection();
       await fetchBoard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Bulk approve failed");
     } finally {
       setBulkLoading(false);
     }

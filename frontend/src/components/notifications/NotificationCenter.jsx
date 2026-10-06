@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Bell,
-  CheckCheck,
-  CheckSquare,
-  CircleAlert,
-  ClipboardList,
-  Clock,
-  FolderPlus,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Bell, History, Hourglass } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -74,29 +65,35 @@ const playNotificationSound = () => {
   }
 };
 
-const NOTIFICATION_STYLES = {
-  new_project: { icon: FolderPlus, tone: "bg-indigo-50 text-indigo-600" },
-  worksheet_inactivity: {
-    icon: ClipboardList,
-    tone: "bg-sky-50 text-sky-600",
-  },
-  approval_stuck: { icon: Clock, tone: "bg-rose-50 text-rose-600" },
-  stage_handoff: { icon: CheckSquare, tone: "bg-emerald-50 text-emerald-600" },
-  deliverable_missing: { icon: CircleAlert, tone: "bg-amber-50 text-amber-600" },
+// The panel groups what the server sends into four kinds, as in the redesign:
+// New, Delay, No activity and Warning. Order here is the order of the groups
+// under "All".
+const CATEGORIES = {
+  delay: { label: "Delay", icon: History, tone: "bg-red-50 text-red-500" },
+  warning: { label: "Warning", icon: AlertTriangle, tone: "bg-amber-100 text-amber-800" },
+  inactive: { label: "No activity", icon: Hourglass, tone: "bg-slate-100 text-slate-700" },
+  new: { label: "New", icon: Bell, tone: "bg-[#f0f0fd] text-[#2b2bb5]" },
+};
+const CATEGORY_ORDER = ["delay", "warning", "inactive", "new"];
+const TABS = [
+  ["all", "All"],
+  ["new", "New"],
+  ["delay", "Delay"],
+  ["inactive", "No activity"],
+  ["warning", "Warning"],
+];
+
+const TYPE_CATEGORY = {
+  new_project: "new",
+  stage_handoff: "new",
+  summary: "new",
+  delayed_deadline: "delay",
+  approval_stuck: "delay",
+  worksheet_inactivity: "inactive",
+  deliverable_missing: "warning",
 };
 
-const DEFAULT_NOTIFICATION_STYLE = {
-  icon: CircleAlert,
-  tone: "bg-amber-50 text-amber-600",
-};
-
-const notificationStyle = (type) =>
-  NOTIFICATION_STYLES[type] || DEFAULT_NOTIFICATION_STYLE;
-
-const notificationIcon = (type) => {
-  const Icon = notificationStyle(type).icon;
-  return <Icon className="h-4 w-4" />;
-};
+const categoryOf = (type) => TYPE_CATEGORY[type] || "warning";
 
 // placement: "header" (default) opens the panel under the bell and aligns it
 // to the right edge; "sidebar" is for the bell in the left-hand sidebar, where
@@ -109,6 +106,7 @@ export default function NotificationCenter({ placement = "header" }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionId, setActionId] = useState(null);
+  const [tab, setTab] = useState("all");
   const previousIdsRef = useRef(new Set());
   const initializedRef = useRef(false);
   const soundedIdsRef = useRef(new Set());
@@ -200,8 +198,16 @@ export default function NotificationCenter({ placement = "header" }) {
       }
     };
 
+    const handleEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
     document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, [open]);
 
   const unreadCount = notifications.filter((item) => !item.read_at).length;
@@ -321,12 +327,30 @@ export default function NotificationCenter({ placement = "header" }) {
     }
   };
 
+  // On a single tab only that kind is marked; "All" marks everything in one call.
   const handleMarkAllRead = async () => {
     try {
-      await markAllNotificationsRead(currentUserId);
       const now = new Date().toISOString();
+
+      if (tab === "all") {
+        await markAllNotificationsRead(currentUserId);
+        setNotifications((current) =>
+          current.map((item) => ({ ...item, read_at: item.read_at || now }))
+        );
+        return;
+      }
+
+      const targets = notifications.filter(
+        (item) => !item.read_at && categoryOf(item.type) === tab
+      );
+      await Promise.all(
+        targets.map((item) => markNotificationRead(currentUserId, item.id))
+      );
+      const done = new Set(targets.map((item) => item.id));
       setNotifications((current) =>
-        current.map((item) => ({ ...item, read_at: item.read_at || now }))
+        current.map((item) =>
+          done.has(item.id) ? { ...item, read_at: now } : item
+        )
       );
     } catch (err) {
       toast.error(
@@ -334,6 +358,26 @@ export default function NotificationCenter({ placement = "header" }) {
       );
     }
   };
+
+  const unreadIn = (key) =>
+    notifications.filter(
+      (item) =>
+        !item.read_at && (key === "all" || categoryOf(item.type) === key)
+    ).length;
+
+  const shown = notifications.filter(
+    (item) => tab === "all" || categoryOf(item.type) === tab
+  );
+  const groups = (tab === "all" ? CATEGORY_ORDER : [tab])
+    .map((key) => {
+      const rows = shown.filter((item) => categoryOf(item.type) === key);
+      return {
+        key,
+        rows,
+        unread: rows.filter((item) => !item.read_at).length,
+      };
+    })
+    .filter((group) => group.rows.length > 0);
 
   if (!currentUser) return null;
 
@@ -363,140 +407,185 @@ export default function NotificationCenter({ placement = "header" }) {
 
       {open && (
         <div
+          role="dialog"
+          aria-label="Notifications"
+          data-testid="notification-panel"
           className={[
-            "absolute top-11 z-50 w-[390px] max-w-[calc(100vw-16px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl",
+            "absolute top-11 z-50 flex h-[min(720px,calc(100vh-72px))] w-[520px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_6px_25px_rgba(13,28,61,0.1)]",
             placement === "sidebar" ? "left-0" : "right-0",
           ].join(" ")}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">
-                Notifications
-              </div>
-              <div className="text-[11px] text-slate-500">
-                {unreadCount ? `${unreadCount} unread` : "You're all caught up"}
-              </div>
-            </div>
-
+          <div className="flex items-center gap-2 px-5 pb-2 pt-4">
+            <span className="text-base font-semibold text-slate-900">
+              Notifications
+            </span>
             {unreadCount > 0 && (
+              <span className="h-5 min-w-5 rounded-full bg-[#2b2bb5] px-1.5 text-center text-[11px] font-semibold leading-5 text-white">
+                {unreadCount}
+              </span>
+            )}
+            <span className="flex-1" />
+            {unreadIn(tab) > 0 && (
               <button
                 type="button"
                 onClick={handleMarkAllRead}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#2b2bb5] hover:underline"
+                className="h-7 rounded-md px-2 text-xs font-semibold text-[#2b2bb5] hover:bg-[#f0f0fd]"
               >
-                <CheckCheck className="h-3.5 w-3.5" />
                 Mark all read
               </button>
             )}
           </div>
 
-          <div className="max-h-[480px] overflow-y-auto">
-            {loading && notifications.length === 0 ? (
-              <div className="px-4 py-10 text-center text-xs text-slate-500">
-                Loading notifications…
-              </div>
-            ) : notifications.length === 0 ? (
-              <div className="px-4 py-10 text-center text-xs text-slate-500">
-                No notifications yet.
-              </div>
-            ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleNotificationClick(notification)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      handleNotificationClick(notification);
-                    }
-                  }}
+          <div
+            role="tablist"
+            aria-label="Notification type"
+            className="flex gap-1 overflow-x-auto px-4 shadow-[inset_0_-1px_0_rgb(234,238,244)] [scrollbar-width:none]"
+          >
+            {TABS.map(([key, label]) => {
+              const count = unreadIn(key);
+              const active = tab === key;
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTab(key)}
                   className={[
-                    "border-b border-slate-100 px-4 py-3 text-left transition-colors last:border-0",
-                    "cursor-pointer hover:bg-slate-50",
-                    !notification.read_at ? "bg-[#fafaff]" : "bg-white",
+                    "flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-[13px] font-semibold",
+                    active
+                      ? "text-slate-900 shadow-[inset_0_-2px_0_#2b2bb5]"
+                      : "text-slate-500 hover:text-slate-700",
                   ].join(" ")}
                 >
-                  <div className="flex gap-3">
-                    <div
-                      className={[
-                        "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                        notificationStyle(notification.type).tone,
-                      ].join(" ")}
-                    >
-                      {notificationIcon(notification.type)}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-xs font-semibold text-slate-900">
-                          {notification.title}
-                        </p>
-                        {!notification.read_at && (
-                          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#2b2bb5]" />
-                        )}
-                      </div>
-
-                      <p className="mt-1 text-xs leading-5 text-slate-600">
-                        {notification.message}
-                      </p>
-
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-slate-400">
-                          {relativeTime(notification.created_at)}
-                        </span>
-
-                        {notification.action_type === "add_deliverable" &&
-                          !notification.actioned_at &&
-                          notification.project_id &&
-                          currentUser?.role === "admin" && (
-                            <button
-                              type="button"
-                              onClick={(event) =>
-                                handleAddDeliverable(event, notification)
-                              }
-                              className="rounded-md bg-[#2b2bb5] px-2.5 py-1.5 text-[10px] font-semibold text-white transition-colors hover:bg-[#23239b]"
-                            >
-                              Add deliverable
-                            </button>
-                          )}
-
-                        {notification.action_type === "add_work_row" &&
-                          !notification.actioned_at && (
-                            <button
-                              type="button"
-                              onClick={(event) =>
-                                handleAddRow(event, notification)
-                              }
-                              disabled={actionId === notification.id}
-                              className="rounded-md bg-[#2b2bb5] px-2.5 py-1.5 text-[10px] font-semibold text-white transition-colors hover:bg-[#23239b] disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {actionId === notification.id
-                                ? "Adding…"
-                                : "Add row"}
-                            </button>
-                          )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+                  {label}
+                  {count > 0 && (
+                    <span className="h-4 min-w-4 rounded-full bg-slate-100 px-1 text-center text-[10px] font-semibold leading-4 text-slate-700">
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {notifications.length > 0 && (
-            <div className="border-t border-slate-200 px-4 py-2.5">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600"
-              >
-                <X className="h-3 w-3" />
-                Close
-              </button>
-            </div>
-          )}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {loading && notifications.length === 0 ? (
+              <div className="px-4 py-10 text-center text-[13px] text-slate-500">
+                Loading notifications…
+              </div>
+            ) : groups.length === 0 ? (
+              <div className="px-4 py-8 text-center text-[13px] text-slate-500">
+                {notifications.length === 0
+                  ? "No notifications yet."
+                  : "No notifications of this type."}
+              </div>
+            ) : (
+              groups.map((group) => {
+                const category = CATEGORIES[group.key];
+                const Icon = category.icon;
+
+                return (
+                  <div key={group.key}>
+                    <div className="flex items-center gap-1.5 px-5 pb-1.5 pt-4 text-[11px] font-bold uppercase leading-[14px] tracking-wider text-slate-500">
+                      {category.label}
+                      {group.unread > 0 && (
+                        <span className="font-semibold normal-case tracking-normal text-slate-400">
+                          · {group.unread} new
+                        </span>
+                      )}
+                    </div>
+
+                    {group.rows.map((notification) => {
+                      const unread = !notification.read_at;
+
+                      return (
+                        <div
+                          key={notification.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleNotificationClick(notification)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleNotificationClick(notification);
+                            }
+                          }}
+                          className="flex cursor-pointer items-start gap-3.5 bg-white px-5 py-3.5 text-left hover:bg-slate-50"
+                        >
+                          <span
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${category.tone}`}
+                          >
+                            <Icon className="h-5 w-5" />
+                          </span>
+
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span
+                              className={`text-[15px] leading-5 text-slate-900 ${
+                                unread ? "font-semibold" : "font-normal"
+                              }`}
+                            >
+                              {notification.title}
+                            </span>
+                            <span className="text-[13px] leading-[18px] text-slate-500">
+                              {notification.message}
+                            </span>
+
+                            {notification.action_type === "add_deliverable" &&
+                              !notification.actioned_at &&
+                              notification.project_id &&
+                              currentUser?.role === "admin" && (
+                                <span className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={(event) =>
+                                      handleAddDeliverable(event, notification)
+                                    }
+                                    className="h-7 rounded-md bg-[#2b2bb5] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#23239b]"
+                                  >
+                                    Add deliverable
+                                  </button>
+                                </span>
+                              )}
+
+                            {notification.action_type === "add_work_row" &&
+                              !notification.actioned_at && (
+                                <span className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={(event) =>
+                                      handleAddRow(event, notification)
+                                    }
+                                    disabled={actionId === notification.id}
+                                    className="h-7 rounded-md bg-[#2b2bb5] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#23239b] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {actionId === notification.id
+                                      ? "Adding…"
+                                      : "Add row"}
+                                  </button>
+                                </span>
+                              )}
+                          </span>
+
+                          <span className="flex shrink-0 flex-col items-end gap-1.5">
+                            <span className="text-xs text-slate-500">
+                              {relativeTime(notification.created_at)}
+                            </span>
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                unread ? "bg-[#2b2bb5]" : "bg-transparent"
+                              }`}
+                            />
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>

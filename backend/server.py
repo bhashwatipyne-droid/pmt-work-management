@@ -4023,10 +4023,23 @@ async def list_notifications(request: Request, limit: int = 50):
     await _ensure_reminder_notifications()
 
     limit = max(1, min(limit, 100))
-    return await db.notifications.find(
+    rows = await db.notifications.find(
         {"user_id": user.id},
         {"_id": 0},
     ).sort("created_at", -1).to_list(limit)
+
+    # Every open tab asks for this list every few seconds, and almost every
+    # time nothing has changed. Tag the response with a hash of its content:
+    # the browser sends it back as If-None-Match and gets an empty 304 when
+    # the list is identical, instead of downloading the same list again.
+    # `no-cache` makes the browser revalidate every time, so a new
+    # notification still shows up on the very next poll.
+    body = json.dumps(rows, separators=(",", ":"), default=str)
+    etag = '"' + hashlib.md5(body.encode("utf-8")).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 @api_router.post("/notifications/{notification_id}/read")

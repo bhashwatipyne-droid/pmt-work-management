@@ -23,7 +23,9 @@ import {
   markNotificationRead,
 } from "@/services/api";
 
-const POLL_MS = 10000;
+// Push delivers new notifications instantly; this poll is only a safety net,
+// so it does not need to hit the server every 10 seconds from every open tab.
+const POLL_MS = 30000;
 
 const relativeTime = (iso) => {
   if (!iso) return "";

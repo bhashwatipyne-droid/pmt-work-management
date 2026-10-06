@@ -56,17 +56,20 @@ export const WorksheetColumnMenu = ({
       left = window.innerWidth - menuWidth - padding;
     }
 
-    // If there isn't enough room below, open upward
-    const estimatedMenuHeight = 360;
+    // Keep the menu on screen by sliding it up, never by flipping it above
+    // the header: flipping depended on where the header was at that moment,
+    // so any table re-render made the menu jump between the two spots.
+    const estimatedMenuHeight = 520;
 
-    if (top + estimatedMenuHeight > window.innerHeight - padding) {
-      top = Math.max(
-        padding,
-        rect.top - estimatedMenuHeight - gap
-      );
-    }
+    top = Math.max(
+      padding,
+      Math.min(top, window.innerHeight - estimatedMenuHeight - padding)
+    );
 
-    setMenuPosition({ top, left });
+    // Same values -> same state object is not guaranteed, so skip no-op sets.
+    setMenuPosition((current) =>
+      current.top === top && current.left === left ? current : { top, left }
+    );
   };
 
   useEffect(() => {
@@ -92,16 +95,18 @@ export const WorksheetColumnMenu = ({
 
     updateMenuPosition();
 
+    // Position is set when the menu opens and only recomputed on a window
+    // resize. It used to follow every scroll event on the page, including the
+    // ones fired when applying a filter re-laid out the table, which made the
+    // open menu slide around under the cursor while someone was ticking boxes.
     const handleReposition = () => {
       updateMenuPosition();
     };
 
     window.addEventListener("resize", handleReposition);
-    window.addEventListener("scroll", handleReposition, true);
 
     return () => {
       window.removeEventListener("resize", handleReposition);
-      window.removeEventListener("scroll", handleReposition, true);
     };
   }, [open]);
 

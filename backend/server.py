@@ -6090,6 +6090,12 @@ async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
             "required_stages": d.get(
                 "required_stages", [d.get("current_stage", "Content")]
             ),
+            # Deadline of the stage currently under review (falls back to the
+            # deliverable's overall end date for old-style deliverables).
+            "due_date": (
+                ((d.get("stage_schedule") or {}).get(d.get("current_stage")) or {}).get("end_dt")
+                or d.get("end_dt")
+            ),
             "assigned_to_name": assigned.get("name", "Unassigned"),
             "project_name": p.get("name", ""),
             "project_code": p.get("code", ""),

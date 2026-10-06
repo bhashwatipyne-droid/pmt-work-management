@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { format, formatDistanceToNowStrict, parseISO } from "date-fns";
+import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
   Check,
   Undo2,
@@ -60,6 +60,44 @@ const ageLabel = (isoDate) => {
   if (!isoDate) return "—";
   try {
     return `${formatDistanceToNowStrict(parseISO(isoDate))} ago`;
+  } catch {
+    return "—";
+  }
+};
+
+// Due-date chip: replaces the plain "Pending" label with how close the
+// current stage's deadline is. Falls back to "Pending" when there is none.
+const dueChip = (isoDate) => {
+  const fallback = {
+    label: "Pending",
+    cls: "bg-amber-50 text-amber-700",
+    dot: "bg-amber-500",
+  };
+  if (!isoDate) return fallback;
+  try {
+    const due = parseISO(String(isoDate).slice(0, 10));
+    const days = differenceInCalendarDays(due, new Date());
+    if (Number.isNaN(days)) return fallback;
+    if (days < 0) {
+      return { label: `Overdue · ${Math.abs(days)}d`, cls: "bg-red-50 text-red-700", dot: "bg-red-500" };
+    }
+    if (days === 0) return { label: "Due today", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" };
+    if (days === 1) return { label: "Due tomorrow", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" };
+    return { label: `Due ${format(due, "EEE d MMM")}`, cls: "bg-slate-100 text-slate-600", dot: "bg-slate-400" };
+  } catch {
+    return fallback;
+  }
+};
+
+const deadlineText = (isoDate) => {
+  if (!isoDate) return "—";
+  try {
+    const due = parseISO(String(isoDate).slice(0, 10));
+    const days = differenceInCalendarDays(due, new Date());
+    const text = format(due, "EEE, d MMM");
+    if (days === 0) return `Today · ${text}`;
+    if (days === 1) return `Tomorrow · ${text}`;
+    return text;
   } catch {
     return "—";
   }
@@ -692,7 +730,14 @@ export default function ApprovalsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="flex-1" />
-                        <span className="text-xs text-slate-500">{ageLabel(item.requested_at)}</span>
+                        {(() => {
+                          const chip = dueChip(item.due_date);
+                          return (
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>
+                              {chip.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div className="mt-1 truncate text-sm font-semibold leading-5 text-slate-900">
                         {item.deliverable_name}
@@ -715,10 +760,15 @@ export default function ApprovalsPage() {
               <div className="flex flex-wrap items-start gap-4">
                 <div className="flex min-w-[240px] flex-1 flex-col gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      Pending
-                    </span>
+                    {(() => {
+                      const chip = dueChip(aSel.due_date);
+                      return (
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium ${chip.cls}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                          {chip.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <h2 className="text-lg font-semibold text-foreground">
                     {aSel.deliverable_name}
@@ -748,6 +798,8 @@ export default function ApprovalsPage() {
                 <span className="text-foreground">{aSel.project_name}</span>
                 <span className="text-slate-500">Client</span>
                 <span className="text-foreground">{aSel.client_name || "—"}</span>
+                <span className="text-slate-500">Deadline</span>
+                <span className="text-foreground">{deadlineText(aSel.due_date)}</span>
                 <span className="text-slate-500">Workflow</span>
                 <span className="flex flex-wrap items-center gap-1.5">
                   {(aSel.required_stages || [aSel.current_stage]).map((stage, i, arr) => (
@@ -757,6 +809,8 @@ export default function ApprovalsPage() {
                           "inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium",
                           stage === aSel.current_stage
                             ? "bg-[#2b2bb5] text-white"
+                            : arr.indexOf(aSel.current_stage) > i
+                            ? "bg-emerald-100 text-emerald-700"
                             : "bg-slate-100 text-slate-500",
                         ].join(" ")}
                       >

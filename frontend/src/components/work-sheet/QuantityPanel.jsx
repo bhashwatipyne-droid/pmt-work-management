@@ -28,6 +28,9 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
   const total = itemsTotal(items);
   const logged = loggedCount(item);
   const rowMinutes = Number(item.time_taken_minutes) || 0;
+  // The person's efficiency benchmark for one unit of this type (the row's
+  // benchmark covers every unit). A unit with nothing typed counts as this.
+  const perUnit = (Number(item.time_benchmark_minutes) || 0) / quantity;
   const unitOne = unitName(item, options, 1);
   const unitMany = unitName(item, options, 2);
   const Unit = capitalize(unitOne);
@@ -94,7 +97,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
     });
   };
 
-  const canSplit = canEdit && logged === 0 && rowMinutes > 0;
+  const canSplit = canEdit && logged === 0 && rowMinutes > 0 && !perUnit;
   const splitEvenly = async () => {
     const whole = Math.round(rowMinutes);
     const each = Math.floor(whole / quantity);
@@ -206,14 +209,16 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
           <div className="flex flex-col gap-0.5 rounded-lg bg-slate-50 px-3 py-2.5">
             <span className="text-xs text-slate-500">Total time</span>
             <span className="text-base font-semibold tabular-nums text-slate-900">
-              {formatMinutes(total || rowMinutes)}
+              {formatMinutes(rowMinutes)}
             </span>
             <span className="text-[11px] text-slate-500">
-              {logged
-                ? `${formatMinutes(total / logged)} avg per ${unitOne}`
-                : rowMinutes
-                  ? "Row time, not split yet"
-                  : "No time logged yet"}
+              {perUnit
+                ? `${formatMinutes(perUnit)} per ${unitOne} from your benchmark`
+                : logged
+                  ? `${formatMinutes(total / logged)} avg per ${unitOne}`
+                  : rowMinutes
+                    ? "Row time, not split yet"
+                    : "No time logged yet"}
             </span>
           </div>
           <div className="flex flex-col gap-1.5 rounded-lg bg-slate-50 px-3 py-2.5">
@@ -226,7 +231,8 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
               />
             </span>
             <span className="text-[11px] text-slate-500">
-              {logged} of {quantity} logged
+              {logged} of {quantity} entered
+              {perUnit && logged < quantity ? ", rest use benchmark" : ""}
             </span>
           </div>
         </div>
@@ -273,7 +279,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
                 data-qty-item={index}
                 aria-label={`Time taken for ${label}`}
                 disabled={!canEdit}
-                placeholder="e.g. 20m"
+                placeholder={perUnit ? formatMinutes(perUnit) : "e.g. 20m"}
                 value={drafts[index] ?? (has ? formatMinutes(minutes) : "")}
                 onChange={(event) =>
                   setDrafts((current) => ({ ...current, [index]: event.target.value }))
@@ -304,7 +310,9 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
 
       <div className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
         <span className="flex-1 text-[11px] leading-[14px] text-slate-500">
-          Type 20m or 1h 10m. Enter moves down. The row’s Time updates to the total.
+          {perUnit
+            ? "Empty boxes use your benchmark. Type 20m or 1h 10m to override. The row’s Time is the total."
+            : "Type 20m or 1h 10m. Enter moves down. The row’s Time updates to the total."}
         </span>
         {canEdit && logged > 0 && (
           <button

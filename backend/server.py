@@ -127,6 +127,7 @@ DELIVERABLE_TYPE_UNITS = {
     "Long Video": "Video",
     "Poster": "Post",
     "Minimalist": "Post",
+    "GIF": "GIF",
 }
 MAX_UNIT_ROWS = 100
 # Only this department gets the per-unit editor (members and managers).
@@ -854,7 +855,8 @@ def _valid_minutes(value) -> Optional[float]:
 # A Design or Animate row can cover several units (a 23-slide deck is one row
 # with quantity 23, not 23 rows). The row's time is the total for all of them,
 # and the per-unit minutes can be logged in a breakdown (quantity_items) -
-# when any are logged, the row's time is simply their total.
+# when any are logged, the row's time is their total, and a unit with nothing
+# typed counts as the worker's own benchmark for the type (see apply_time_rules).
 QUANTITY_STAGES = {"Design", "Animate"}
 MAX_QUANTITY = 200
 
@@ -939,10 +941,6 @@ def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
         # Keep one slot per unit so the panel and the total always agree.
         cleaned += [None] * (units - len(cleaned))
         update_fields["quantity_items"] = cleaned
-        total = round(sum(v for v in cleaned if v), 2)
-        if total > 0:
-            # The row's time is the total of what was logged per unit.
-            update_fields["time_taken_minutes"] = total
 
 
 # A bulk update applies the same patch to many rows, so the same benchmark /
@@ -1001,6 +999,31 @@ async def apply_time_rules(user, existing: dict, update_fields: dict, creator_id
     time_in_patch = "time_taken_minutes" in update_fields
     units = units_of({**existing, **update_fields})
     old_units = units_of(existing)
+
+    # Per-unit times typed in the Qty panel decide the row's time: each typed
+    # unit counts as typed, every other unit as the worker's benchmark for the
+    # type (when there is one). Nothing typed at all hands the time back to the
+    # benchmark (units x benchmark) like clearing the Time box does.
+    items_in_patch = "quantity_items" in update_fields
+    unit_benchmark = None
+    if items_in_patch or "quantity" in update_fields:
+        unit_type = update_fields.get("deliverable_type", existing.get("deliverable_type")) or ""
+        if unit_type:
+            unit_benchmark = await get_time_benchmark(
+                _time_worker_ids(user, existing, creator_id), unit_type
+            )
+    if items_in_patch:
+        typed = [v for v in (update_fields["quantity_items"] or []) if v]
+        if typed:
+            filler = unit_benchmark or 0.0
+            update_fields["time_taken_minutes"] = round(
+                sum(v if v else filler for v in update_fields["quantity_items"]), 2
+            )
+            time_in_patch = True
+        elif unit_benchmark and any(existing.get("quantity_items") or []):
+            # Every typed unit was just cleared: back to the benchmark.
+            update_fields["time_taken_minutes"] = 0
+            time_in_patch = True
 
     if time_in_patch:
         raw = update_fields["time_taken_minutes"]
@@ -6319,6 +6342,21 @@ async def list_bulk_review(request: Request):
         ).to_list(500)
     }
 
+    # Deadline of the stage each row is in (falls back to the deliverable's
+    # overall end date), so the review list can show who is overdue.
+    deliverable_ids = list({
+        item["deliverable_id"]
+        for item in items
+        if item.get("deliverable_id")
+    })
+    deliverables = {
+        d["id"]: d
+        for d in await db.deliverables.find(
+            {"id": {"$in": deliverable_ids}},
+            {"_id": 0, "id": 1, "stage_schedule": 1, "end_dt": 1},
+        ).to_list(len(deliverable_ids) or 1)
+    }
+
     result = []
 
     for item in items:
@@ -6326,9 +6364,12 @@ async def list_bulk_review(request: Request):
         creator = users.get(item.get("creator_id") or "") or {}
         reviewer = users.get(item.get("reviewer_id") or "") or {}
         client = clients.get(project.get("client_id") or "") or {}
+        deliverable = deliverables.get(item.get("deliverable_id") or "") or {}
+        stage_window = (deliverable.get("stage_schedule") or {}).get(item.get("stage")) or {}
 
         result.append({
             **item,
+            "due_date": stage_window.get("end_dt") or deliverable.get("end_dt"),
             "project_name": project.get("name", ""),
             "project_code": project.get("code", ""),
             "client_name": client.get("name", ""),

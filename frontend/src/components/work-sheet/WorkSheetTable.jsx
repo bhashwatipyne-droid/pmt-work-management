@@ -1084,9 +1084,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     setFillState(null);
     setSelection(null);
 
-    if (!current || current.targetRow <= current.sourceRow) return;
+    if (!current || current.targetRow === current.sourceRow) return;
 
-    const sourceColumn = columnOrder[current.sourceCol];
+    // sourceCol is a position among the VISIBLE columns.
+    const sourceColumn = columnOrder.filter((column) => !hiddenColumns.includes(column))[
+      current.sourceCol
+    ];
     const field = COLUMN_FIELDS[sourceColumn];
     const currentItems = sortedItemsRef.current;
     const sourceItem = currentItems[current.sourceRow - 1];
@@ -1094,11 +1097,21 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     if (!field || !sourceItem) return;
 
     const value = sourceItem[field];
+    // Up or down from the source row: every row the drag passed over.
+    const from = Math.min(current.sourceRow, current.targetRow);
+    const to = Math.max(current.sourceRow, current.targetRow);
     const targetIds = currentItems
-      .slice(current.sourceRow, current.targetRow)
+      .slice(from - 1, to)
+      .filter((item) => item.id !== sourceItem.id)
       .map((item) => item.id);
 
     if (!targetIds.length) return;
+
+    const shown = String(getSortValue(sourceItem, sourceColumn) ?? "");
+    const announce = () =>
+      toast.success(
+        `Filled ${targetIds.length} ${targetIds.length === 1 ? "cell" : "cells"} with “${shown || "empty"}”`
+      );
 
     try {
       // A "Not available" source has no deliverable_id to copy, so copy the
@@ -1106,25 +1119,26 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       // have no project).
       if (field === "deliverable_id" && sourceItem.deliverable_not_available) {
         await onFillRef.current(targetIds, "deliverable_not_available", true);
+        announce();
         return;
       }
 
       await onFillRef.current(targetIds, field, value);
+      announce();
     } catch {
       // onFill is responsible for displaying the persistence error.
     }
-  }, [columnOrder]);
+  }, [columnOrder, hiddenColumns, getSortValue]);
 
   // Global pointer tracking while a fill drag is active.
   useEffect(() => {
     if (!isFilling) return undefined;
 
-    const handlePointerMove = (event) => {
-      const element = document.elementFromPoint(
-        event.clientX,
-        event.clientY
-      );
+    const pointer = { x: 0, y: 0 };
+    let frame = null;
 
+    const hoverUnderPointer = () => {
+      const element = document.elementFromPoint(pointer.x, pointer.y);
       const cell = element?.closest("[data-sheet-cell]");
       if (!cell) return;
 
@@ -1132,6 +1146,30 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       if (Number.isNaN(row)) return;
 
       handleFillHover(row);
+    };
+
+    // The sheet only mounts the rows on screen, so dragging towards an edge
+    // scrolls it (up as well as down) to reach rows beyond the window.
+    const autoScroll = () => {
+      frame = null;
+      const scroller = scrollRef.current;
+      if (!scroller) return;
+      const rect = scroller.getBoundingClientRect();
+      const edge = 48;
+      let dy = 0;
+      if (pointer.y > rect.bottom - edge) dy = Math.min(28, (pointer.y - (rect.bottom - edge)) / 2 + 4);
+      else if (pointer.y < rect.top + headerHeight + edge / 2) dy = -Math.min(28, (rect.top + headerHeight + edge / 2 - pointer.y) / 2 + 4);
+      if (!dy) return;
+      scroller.scrollBy(0, dy);
+      hoverUnderPointer();
+      frame = requestAnimationFrame(autoScroll);
+    };
+
+    const handlePointerMove = (event) => {
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      hoverUnderPointer();
+      if (frame == null) frame = requestAnimationFrame(autoScroll);
     };
 
     const handlePointerUp = () => {
@@ -1142,10 +1180,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     window.addEventListener("pointerup", handlePointerUp);
 
     return () => {
+      if (frame != null) cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [isFilling, handleFillHover, handleFillEnd]);
+  }, [isFilling, handleFillHover, handleFillEnd, headerHeight]);
 
   // Measure the scroll viewport so the number of mounted rows stays small.
   useEffect(() => {

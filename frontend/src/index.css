@@ -139,6 +139,7 @@
 
   .sheet-cell-fill-range {
     background: #f0f0fd;
+    box-shadow: inset 0 0 0 1px #2b2bb5;
   }
 
   .sheet-cell-fill-range.sheet-cell-active {

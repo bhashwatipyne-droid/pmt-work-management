@@ -3,6 +3,11 @@ import { X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { FilterMultiSelect } from "./FilterMultiSelect";
+import {
+  DELIVERABLE_SPECIAL_OPTIONS,
+  PROJECT_SPECIAL_OPTIONS,
+  REVIEWER_SPECIAL_OPTIONS,
+} from "@/lib/worksheetFilterOptions";
 
 const EMPTY = {
   search: "",
@@ -49,11 +54,17 @@ export const WorksheetFilterPanel = ({
   // that changed. That's what caused the multi-second lag on a single
   // tick.
   const projectValues = useMemo(
-    () => projects.map((p) => ({ value: p.id, label: p.name })),
+    () => [
+      ...PROJECT_SPECIAL_OPTIONS,
+      ...projects.map((p) => ({ value: p.id, label: p.name })),
+    ],
     [projects]
   );
   const deliverableValues = useMemo(
-    () => deliverables.map((d) => ({ value: d.id, label: d.name })),
+    () => [
+      ...DELIVERABLE_SPECIAL_OPTIONS,
+      ...deliverables.map((d) => ({ value: d.id, label: d.name })),
+    ],
     [deliverables]
   );
   const stageValues = useMemo(
@@ -76,10 +87,12 @@ export const WorksheetFilterPanel = ({
     [users]
   );
   const reviewerValues = useMemo(
-    () =>
-      users
+    () => [
+      ...REVIEWER_SPECIAL_OPTIONS,
+      ...users
         .filter((u) => u.role !== "member")
         .map((u) => ({ value: u.id, label: u.name })),
+    ],
     [users]
   );
   const statusValues = useMemo(

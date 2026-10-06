@@ -17,6 +17,11 @@ import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
+import {
+  DELIVERABLE_SPECIAL_OPTIONS,
+  PROJECT_SPECIAL_OPTIONS,
+  REVIEWER_SPECIAL_OPTIONS,
+} from "@/lib/worksheetFilterOptions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { parseTimeInput } from "@/lib/timeRules";
 import { Checkbox } from "../ui/checkbox";
@@ -490,11 +495,17 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   // opening/using one column's filter never recomputes or re-renders the
   // others — same reasoning as the big filter panel's fix.
   const projectFilterValues = useMemo(
-    () => (projects || []).map((p) => ({ value: p.id, label: p.name })),
+    () => [
+      ...PROJECT_SPECIAL_OPTIONS,
+      ...(projects || []).map((p) => ({ value: p.id, label: p.name })),
+    ],
     [projects]
   );
   const deliverableFilterValues = useMemo(
-    () => (deliverables || []).map((d) => ({ value: d.id, label: d.name })),
+    () => [
+      ...DELIVERABLE_SPECIAL_OPTIONS,
+      ...(deliverables || []).map((d) => ({ value: d.id, label: d.name })),
+    ],
     [deliverables]
   );
   const stageFilterValues = useMemo(
@@ -518,7 +529,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     [nonAdminUsers]
   );
   const reviewerFilterValues = useMemo(
-    () => reviewerUsers.map((u) => ({ value: u.id, label: u.name })),
+    () => [
+      ...REVIEWER_SPECIAL_OPTIONS,
+      ...reviewerUsers.map((u) => ({ value: u.id, label: u.name })),
+    ],
     [reviewerUsers]
   );
 

@@ -44,6 +44,11 @@ import {
   isDeliverableMissing,
 } from "@/lib/deliverableRules";
 import {
+  matchesDeliverableFilter,
+  matchesProjectFilter,
+  matchesReviewerFilter,
+} from "@/lib/worksheetFilterOptions";
+import {
   TIME_GATED_STATUSES,
   TIME_REQUIRED_MESSAGE,
   hasTime,
@@ -714,12 +719,12 @@ export default function WorkSheetPage() {
       if (filters.month && item.month !== filters.month) return false;
       if (month && (item.month || (item.work_date || "").slice(0, 7)) !== month) return false;
 
-      if (projectIds && !projectIds.has(item.project_id)) return false;
-      if (deliverableIds && !deliverableIds.has(item.deliverable_id)) return false;
+      if (projectIds && !matchesProjectFilter(item, projectIds)) return false;
+      if (deliverableIds && !matchesDeliverableFilter(item, deliverableIds)) return false;
       if (deliverableTypes && !deliverableTypes.has(item.deliverable_type)) return false;
       if (workCategories && !workCategories.has(item.work_category)) return false;
       if (creatorIds && !creatorIds.has(item.creator_id)) return false;
-      if (reviewerIds && !reviewerIds.has(item.reviewer_id)) return false;
+      if (reviewerIds && !matchesReviewerFilter(item, reviewerIds)) return false;
       if (statuses && !statuses.has(item.status)) return false;
 
       return true;

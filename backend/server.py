@@ -1165,9 +1165,22 @@ async def require_manager(request: Request) -> User:
 
 
 def _approvals_view_all(user: User) -> bool:
-    """Admins and members see every pending approval, read-only. Managers see
-    the queue they can actually act on (see _approval_item_can_act)."""
+    """Admins and members see every pending approval. Admins can also act on
+    them; members are read-only. Managers see the queue they can actually act
+    on (see _approval_item_can_act)."""
     return user.role in ("admin", "member")
+
+
+async def require_approver(request: Request) -> User:
+    """Approvals actions (approve, send back, move, hide). Managers and admins
+    may act; members stay read-only."""
+    user = await get_acting_user(request)
+    if user.role not in {"manager", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only managers and admins can take this action"
+        )
+    return user
 
 
 async def require_manager_or_admin(request: Request) -> User:
@@ -5945,7 +5958,10 @@ ANY_MANAGER_APPROVAL_TYPES = ["LEADERSHIP", "CLIENT_SPOC", "COMPLIANCE"]
 
 
 async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> bool:
-    # Only managers act on approvals; admins and members are view-only.
+    # Admins can act on any approval item. Members are view-only, and
+    # managers are scoped by the rules below.
+    if user.role == "admin":
+        return True
     if user.role != "manager":
         return False
 
@@ -6621,7 +6637,7 @@ async def advance_deliverable_stage(
 
 @api_router.post("/approval-items/{approval_item_id}/approve")
 async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
     item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
     if not item and approval_item_id.startswith("implicit-manager-"):
         deliverable_id = approval_item_id.removeprefix("implicit-manager-")
@@ -6658,7 +6674,7 @@ async def approve_approval_item(approval_item_id: str, payload: ApprovalDecision
 
 @api_router.post("/approval-items/{approval_item_id}/send-back")
 async def send_back_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
     item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
     if not item and approval_item_id.startswith("implicit-manager-"):
         deliverable_id = approval_item_id.removeprefix("implicit-manager-")
@@ -6700,7 +6716,7 @@ async def send_back_approval_item(approval_item_id: str, payload: ApprovalDecisi
 
 @api_router.patch("/approval-items/{approval_item_id}/move")
 async def move_approval_item(approval_item_id: str, payload: ApprovalMove, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
     target = payload.approval_type.upper().strip()
     if target not in APPROVAL_TYPES:
         raise HTTPException(status_code=400, detail="Invalid approval type")
@@ -6799,7 +6815,7 @@ async def _resolve_real_approval_item(approval_item_id: str, user: User):
 
 @api_router.post("/approval-items/{approval_item_id}/hide")
 async def hide_approval_item(approval_item_id: str, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
 
     item = await _resolve_real_approval_item(approval_item_id, user)
 
@@ -6823,7 +6839,7 @@ async def hide_approval_item(approval_item_id: str, request: Request):
 
 @api_router.post("/approval-items/{approval_item_id}/unhide")
 async def unhide_approval_item(approval_item_id: str, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
 
     item = await _resolve_real_approval_item(approval_item_id, user)
 
@@ -6847,7 +6863,7 @@ async def unhide_approval_item(approval_item_id: str, request: Request):
 
 @api_router.post("/approval-items/bulk-hide")
 async def bulk_hide_approval_items(payload: BulkApprovalItemIdsPayload, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
 
     ids = payload.approval_item_ids
 
@@ -6879,7 +6895,7 @@ async def bulk_hide_approval_items(payload: BulkApprovalItemIdsPayload, request:
 
 @api_router.post("/approval-items/bulk-unhide")
 async def bulk_unhide_approval_items(payload: BulkApprovalItemIdsPayload, request: Request):
-    user = await require_manager(request)
+    user = await require_approver(request)
 
     ids = payload.approval_item_ids
 
@@ -6905,8 +6921,8 @@ async def bulk_unhide_approval_items(payload: BulkApprovalItemIdsPayload, reques
 @api_router.post("/deliverables/{deliverable_id}/approve")
 async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
-    if user.role != "manager":
-        raise HTTPException(status_code=403, detail="Only managers can approve")
+    if user.role not in ("manager", "admin"):
+        raise HTTPException(status_code=403, detail="Only managers and admins can approve")
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")
@@ -6918,8 +6934,8 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
 @api_router.post("/deliverables/{deliverable_id}/reject")
 async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
     user = await get_acting_user(request)
-    if user.role != "manager":
-        raise HTTPException(status_code=403, detail="Only managers can reject")
+    if user.role not in ("manager", "admin"):
+        raise HTTPException(status_code=403, detail="Only managers and admins can reject")
     existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Deliverable not found")

@@ -8,7 +8,7 @@
 //   Home (dashboard)   view         -            -
 //   Work sheet         view only    edit         edit (own rows)
 //   Projects           view + edit  view only    view only
-//   Approvals          view only    view + act   view only
+//   Approvals          view + act   view + act   view only
 //   Efficiency         view only    view + edit  view only
 //   Clients            view + edit  -            -
 //   Team               view + edit  -            -
@@ -43,7 +43,7 @@ export const getAccess = (user) => {
 
     // ---- What each role can change ----
     canManageProjects: admin, // create, edit, hide, delete, import, reorder
-    canActOnApprovals: manager, // approve, send back, move between queues
+    canActOnApprovals: manager || admin, // approve, send back, move between queues
     canConfigureEfficiency: manager, // monthly capacity, team potential
     canManageClients: admin,
     canManageTeam: admin,

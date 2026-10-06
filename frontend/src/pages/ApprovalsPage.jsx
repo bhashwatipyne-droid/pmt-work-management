@@ -515,7 +515,7 @@ export default function ApprovalsPage() {
             {!canAct && (
               <span
                 data-testid="approvals-view-only"
-                title="Only managers can approve or send items back"
+                title="Only managers and admins can approve or send items back"
                 className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600"
               >
                 View only

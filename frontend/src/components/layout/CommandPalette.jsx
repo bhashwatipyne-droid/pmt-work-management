@@ -139,7 +139,7 @@ export const CommandPalette = ({ open, onClose, actions }) => {
       },
       access.canViewApprovals && {
         id: "approvals",
-        // Only managers can act on approvals; everyone else just looks.
+        // Managers and admins can act on approvals; members just look.
         label: access.canActOnApprovals
           ? "Review pending approvals"
           : "View pending approvals",
@@ -341,4 +341,3 @@ export const CommandPalette = ({ open, onClose, actions }) => {
     </div>
   );
 };
-

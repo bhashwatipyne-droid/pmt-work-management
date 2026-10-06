@@ -7,6 +7,7 @@ import {
   itemsOf,
   itemsTotal,
   loggedCount,
+  typedCount,
   parseDuration,
   quantityOf,
   unitName,
@@ -27,10 +28,12 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
   const items = itemsOf(item);
   const total = itemsTotal(items);
   const logged = loggedCount(item);
+  const typed = typedCount(item);
   const rowMinutes = Number(item.time_taken_minutes) || 0;
   // The person's efficiency benchmark for one unit of this type (the row's
   // benchmark covers every unit). A unit with nothing typed counts as this.
   const perUnit = (Number(item.time_benchmark_minutes) || 0) / quantity;
+  const autoText = perUnit > 0 ? formatMinutes(perUnit) : "";
   const unitOne = unitName(item, options, 1);
   const unitMany = unitName(item, options, 2);
   const Unit = capitalize(unitOne);
@@ -84,6 +87,11 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
 
   const commitItem = async (index, text) => {
     const minutes = parseDuration(text);
+    // Left as the benchmark shown in the box: nothing was typed.
+    if (minutes !== null && perUnit > 0 && items[index] == null && Math.abs(minutes - perUnit) < 0.5) {
+      clearDraft(index);
+      return;
+    }
     if (minutes === null) {
       toast.error("Type a time like 20m, 1h 10m or just minutes.");
       clearDraft(index);
@@ -97,7 +105,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
     });
   };
 
-  const canSplit = canEdit && logged === 0 && rowMinutes > 0 && !perUnit;
+  const canSplit = canEdit && typed === 0 && rowMinutes > 0 && !perUnit;
   const splitEvenly = async () => {
     const whole = Math.round(rowMinutes);
     const each = Math.floor(whole / quantity);
@@ -122,6 +130,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
   };
 
   const percent = Math.round((logged / quantity) * 100);
+  const customised = perUnit > 0 ? typed : 0;
   let firstEmptyAssigned = false;
 
   return (
@@ -214,8 +223,8 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
             <span className="text-[11px] text-slate-500">
               {perUnit
                 ? `${formatMinutes(perUnit)} per ${unitOne} from your benchmark`
-                : logged
-                  ? `${formatMinutes(total / logged)} avg per ${unitOne}`
+                : typed
+                  ? `${formatMinutes(total / typed)} avg per ${unitOne}`
                   : rowMinutes
                     ? "Row time, not split yet"
                     : "No time logged yet"}
@@ -231,8 +240,8 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
               />
             </span>
             <span className="text-[11px] text-slate-500">
-              {logged} of {quantity} entered
-              {perUnit && logged < quantity ? ", rest use benchmark" : ""}
+              {logged} of {quantity} have time
+              {customised > 0 ? `, ${customised} edited` : perUnit ? ", all from your benchmark" : ""}
             </span>
           </div>
         </div>
@@ -280,7 +289,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
                 aria-label={`Time taken for ${label}`}
                 disabled={!canEdit}
                 placeholder={perUnit ? formatMinutes(perUnit) : "e.g. 20m"}
-                value={drafts[index] ?? (has ? formatMinutes(minutes) : "")}
+                value={drafts[index] ?? (has ? formatMinutes(minutes) : autoText)}
                 onChange={(event) =>
                   setDrafts((current) => ({ ...current, [index]: event.target.value }))
                 }
@@ -301,7 +310,9 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
                     event.currentTarget.blur();
                   }
                 }}
-                className="h-[30px] w-full rounded-md border-0 bg-white px-2.5 text-[13px] font-medium tabular-nums text-slate-900 outline-none ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-[#2b2bb5] disabled:bg-slate-50 disabled:text-slate-500"
+                className={`h-[30px] w-full rounded-md border-0 bg-white px-2.5 text-[13px] font-medium tabular-nums outline-none ${
+                  !has && autoText && drafts[index] === undefined ? "text-[#2b2bb5]" : "text-slate-900"
+                } ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-[#2b2bb5] disabled:bg-slate-50 disabled:text-slate-500`}
               />
             </div>
           );
@@ -311,10 +322,10 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
       <div className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
         <span className="flex-1 text-[11px] leading-[14px] text-slate-500">
           {perUnit
-            ? "Empty boxes use your benchmark. Type 20m or 1h 10m to override. The row’s Time is the total."
+            ? "Filled from your benchmark (blue). Type 20m or 1h 10m to override one. Clear a box to go back. The row’s Time is the total."
             : "Type 20m or 1h 10m. Enter moves down. The row’s Time updates to the total."}
         </span>
-        {canEdit && logged > 0 && (
+        {canEdit && typed > 0 && (
           <button
             type="button"
             onClick={clearAll}

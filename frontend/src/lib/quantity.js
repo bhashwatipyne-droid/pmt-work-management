@@ -30,8 +30,14 @@ export const itemsOf = (item) => {
   return items;
 };
 
-export const loggedCount = (item) =>
+// Units typed by hand.
+export const typedCount = (item) =>
   itemsOf(item).filter((minutes) => Number(minutes) > 0).length;
+
+// Units that have a time: every one when the person has an efficiency
+// benchmark for the type (untyped units use it), else just the typed ones.
+export const loggedCount = (item) =>
+  Number(item?.time_benchmark_minutes) > 0 ? quantityOf(item) : typedCount(item);
 
 export const itemsTotal = (items) =>
   items.reduce((sum, minutes) => sum + (Number(minutes) > 0 ? Number(minutes) : 0), 0);

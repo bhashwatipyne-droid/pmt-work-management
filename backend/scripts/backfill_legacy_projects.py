@@ -12,8 +12,8 @@ What it changes, on legacy projects only (ids starting "PROJECT - "):
 It does NOT invent project codes and does NOT touch the app-created projects.
 
 Usage (from the backend folder, with MONGO_URL and DB_NAME set, e.g. from .env):
-    python scripts/backfill_legacy_projects.py            # dry run: counts only
-    python scripts/backfill_legacy_projects.py --apply    # write the changes
+    python scripts/backfill_legacy_projects.py              # write the changes
+    python scripts/backfill_legacy_projects.py --dry-run    # counts only, writes nothing
 
 Safe to run more than once: a second run finds nothing left to change.
 """
@@ -35,7 +35,7 @@ def date_only(value):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--apply", action="store_true", help="write the changes (default: dry run)")
+    parser.add_argument("--dry-run", action="store_true", help="only print what would change")
     args = parser.parse_args()
 
     try:
@@ -72,8 +72,8 @@ def main() -> int:
 
     if not ops:
         return 0
-    if not args.apply:
-        print("Dry run - nothing written. Re-run with --apply to write these changes.")
+    if args.dry_run:
+        print("Dry run - nothing written.")
         return 0
 
     result = db.projects.bulk_write(ops, ordered=False)

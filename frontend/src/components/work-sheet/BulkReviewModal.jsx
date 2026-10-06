@@ -444,10 +444,7 @@ export default function BulkReviewModal({ open, onClose, currentUser }) {
                       </span>
 
                       <span className="flex min-w-0 flex-col gap-0.5">
-                        <span
-                          className="truncate text-[13px] font-medium leading-[18px] text-slate-900"
-                          title={`${received.day}, ${received.time}`}
-                        >
+                        <span className="break-words text-[13px] font-medium leading-[18px] text-slate-900">
                           {received.time ? `${received.day}, ${received.time}` : received.day}
                         </span>
                         <span className="text-xs leading-4 text-slate-500">{received.ago}</span>

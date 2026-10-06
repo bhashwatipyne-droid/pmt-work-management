@@ -339,6 +339,8 @@ def create_efficiency_router(
                 "_id": 0, "id": 1, "creator_id": 1, "work_category": 1, "deliverable_type": 1,
                 "deliverable_name": 1, "status": 1, "time_taken_minutes": 1, "work_date": 1,
                 "project_id": 1, "client_id": 1,
+                # A Design/Animate row can stand for many units (23 slides).
+                "quantity": 1,
             },
         ).to_list(20000)
 
@@ -501,7 +503,7 @@ def create_efficiency_router(
                     "_id": 0, "id": 1, "creator_id": 1, "month": 1, "work_category": 1,
                     "deliverable_type": 1, "deliverable_name": 1, "status": 1,
                     "time_taken_minutes": 1, "work_date": 1, "project_id": 1,
-                    "client_id": 1,
+                    "client_id": 1, "quantity": 1,
                 },
             ).batch_size(5000).to_list(None)
 
@@ -878,7 +880,8 @@ def create_efficiency_router(
         closed_items = await db.work_items.find(
             {"month": month, "creator_id": user_id, "status": {"$in": list(DONE_STATUSES)}},
             {"_id": 0, "id": 1, "deliverable_name": 1, "deliverable_type": 1,
-             "work_category": 1, "work_date": 1, "time_taken_minutes": 1, "project_id": 1},
+             "work_category": 1, "work_date": 1, "time_taken_minutes": 1, "project_id": 1,
+             "quantity": 1},
         ).sort("work_date", 1).to_list(5000)
 
         return {

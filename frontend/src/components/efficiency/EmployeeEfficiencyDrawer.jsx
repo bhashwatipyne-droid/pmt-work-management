@@ -212,7 +212,12 @@ export const EmployeeEfficiencyDrawer = ({ employeeId, month, open, onOpenChange
 
             <section>
               <h4 className="mb-2 text-sm font-semibold text-slate-800">
-                Closed core deliverables ({data.deliverables?.length || 0})
+                Closed core deliverables (
+                {(data.deliverables || []).reduce(
+                  (sum, d) => sum + (Number(d.quantity) || 1),
+                  0
+                )}
+                )
               </h4>
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <Table>
@@ -238,6 +243,11 @@ export const EmployeeEfficiencyDrawer = ({ employeeId, month, open, onOpenChange
                         </TableCell>
                         <TableCell className="text-slate-800">
                           {d.deliverable_name || "Untitled"}
+                          {Number(d.quantity) > 1 && (
+                            <span className="ml-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                              × {Number(d.quantity)}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-slate-500">{d.deliverable_type}</TableCell>
                       </TableRow>

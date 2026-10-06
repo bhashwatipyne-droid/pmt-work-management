@@ -193,12 +193,12 @@ export default function WorkSheetPage() {
   // into the other. Session-only (not persisted), since this is a brand
   // new control with no prior behavior to preserve across reloads.
   const [groupByBySheet, setGroupByBySheet] = useState({
-    Master: "Stage",
-    Content: "Stage",
-    Design: "Stage",
-    Animation: "Stage",
+    Master: "Member",
+    Content: "Member",
+    Design: "Member",
+    Animation: "Member",
   });
-  const groupBy = groupByBySheet[activeSheet] || "Stage";
+  const groupBy = groupByBySheet[activeSheet] || "Member";
   const handleGroupByChange = useCallback(
     (value) => {
       setGroupByBySheet((current) => ({ ...current, [activeSheet]: value }));

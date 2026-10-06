@@ -18,7 +18,7 @@ import {
   getProjectMetrics,
   getClients,
   getOptions,
-  getWorksheetLookups,
+  getDeliverableNamesByProject,
   hideProject,
   unhideProject,
   deleteProject,
@@ -214,28 +214,28 @@ export default function ProjectsPage() {
   // Typing stays instant; the (heavier) re-filtering of the board follows it.
   const deferredSearch = useDeferredValue(search);
 
+  // Depends on "has the user typed anything", not the text itself, so a
+  // request in flight is not thrown away on every keystroke.
+  const hasSearch = Boolean(search.trim());
+
   useEffect(() => {
-    if (!search.trim() || deliverableNamesByProject) return;
+    if (!hasSearch || deliverableNamesByProject) return;
     let cancelled = false;
 
-    getWorksheetLookups()
-      .then((data) => {
+    getDeliverableNamesByProject()
+      .then((byProject) => {
         if (cancelled) return;
-        const byProject = {};
-        (data?.deliverables || []).forEach((d) => {
-          if (!d.project_id || !d.name) return;
-          (byProject[d.project_id] ||= []).push(d.name.toLowerCase());
-        });
-        setDeliverableNamesByProject(byProject);
+        setDeliverableNamesByProject(byProject || {});
       })
       .catch(() => {
-        // Search still works on project fields; try again on the next keystroke.
+        // Search still works on project fields; try again when the search
+        // box is next emptied and typed into.
       });
 
     return () => {
       cancelled = true;
     };
-  }, [search, deliverableNamesByProject]);
+  }, [hasSearch, deliverableNamesByProject]);
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();

@@ -3617,6 +3617,24 @@ async def list_clients(request: Request):
     return await db.clients.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
 
 
+@api_router.get("/worksheet/deliverable-names")
+async def worksheet_deliverable_names(request: Request):
+    """project_id -> lowercase deliverable names, for the Projects page search.
+
+    /worksheet/lookups returns at most 5000 deliverables, oldest first, so once
+    the database grew past that the newest deliverables were cut off and could
+    never be found by search. This groups in the database instead: one entry
+    per project, no cap on deliverables, and only the name strings travel."""
+    await get_acting_user(request)
+
+    rows = await db.deliverables.aggregate([
+        {"$match": {"project_id": {"$ne": None}, "name": {"$type": "string"}}},
+        {"$group": {"_id": "$project_id", "names": {"$push": {"$toLower": "$name"}}}},
+    ]).to_list(None)
+
+    return {row["_id"]: row["names"] for row in rows}
+
+
 @api_router.get("/worksheet/lookups")
 async def worksheet_lookups(request: Request):
     """Everything the Work Sheet needs to fill its Client / Project /
@@ -5835,6 +5853,21 @@ async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: L
     normalized = _normalize_approval_types(approval_types)
     workflow = await _get_approval_workflow(deliverable["id"])
     ts = now_iso()
+    # Manager approval is added for new workflows, but a manager may have
+    # deliberately MOVED it to another queue (Leadership, Client SPOC...). The
+    # move drops MANAGER from the workflow's required_types. Saving the
+    # deliverable afterwards must not silently bring it back, or the card ends
+    # up needing both approvals. Only respected when the caller did not ask for
+    # MANAGER explicitly; if nothing else would remain, fall back to MANAGER.
+    if workflow:
+        explicitly_requested = {
+            str(t).upper().strip() for t in (approval_types or [])
+        }
+        if (
+            "MANAGER" not in (workflow.get("required_types") or [])
+            and "MANAGER" not in explicitly_requested
+        ):
+            normalized = [t for t in normalized if t != "MANAGER"] or ["MANAGER"]
     if not normalized:
         if workflow:
             await db.approval_items.delete_many({"approval_workflow_id": workflow["id"]})

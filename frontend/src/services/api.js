@@ -196,6 +196,11 @@ export const getClients = () =>
 export const getWorksheetLookups = () =>
   axios.get(`${API}/worksheet/lookups`).then((r) => r.data);
 
+// { [project_id]: ["lowercase deliverable name", ...] } - uncapped, used by the
+// Projects page search to find a project by one of its deliverables.
+export const getDeliverableNamesByProject = () =>
+  axios.get(`${API}/worksheet/deliverable-names`).then((r) => r.data);
+
 export const createClient = (userId, payload) =>
   axios
     .post(`${API}/clients`, payload, {

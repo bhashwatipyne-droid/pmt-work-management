@@ -4178,16 +4178,36 @@ async def delete_contact_person(
 
 
 # ---------------- Notifications routes ----------------
-@api_router.get("/notifications")
-async def list_notifications(request: Request, limit: int = 50):
-    user = await get_acting_user(request)
+_notification_scan_task: Optional["asyncio.Task"] = None
+
+
+async def _run_notification_scans():
     try:
         await _ensure_overdue_notifications()
     except Exception:
-        # Creating overdue notices is best-effort; the user's own list must
-        # still load even if that scan trips over bad data.
+        # Creating overdue notices is best-effort; it must never take the
+        # notifications endpoint down.
         logger.exception("Overdue notification scan failed")
     await _ensure_reminder_notifications()
+
+
+def _start_notification_scans():
+    """Kick off the scans without making the caller wait for them (a scan
+    that is already running is left alone; each scan also throttles itself)."""
+    global _notification_scan_task
+    if _notification_scan_task is not None and not _notification_scan_task.done():
+        return
+    _notification_scan_task = asyncio.create_task(_run_notification_scans())
+
+
+@api_router.get("/notifications")
+async def list_notifications(request: Request, limit: int = 50):
+    user = await get_acting_user(request)
+    # The periodic scans (overdue deadlines, reminders) used to run inside
+    # whichever request happened to land outside their throttle window, which
+    # made that one bell poll take 3-4 seconds. They now run in the
+    # background; anything they create shows up on the next poll.
+    _start_notification_scans()
 
     limit = max(1, min(limit, 100))
     rows = await db.notifications.find(
@@ -4489,27 +4509,40 @@ async def _hydrate_projects(
     deliverable_counts = {}
     stage_counts_by_project: dict = {}
 
+    # The clients read doesn't depend on the deliverables read, so the two
+    # run together instead of one after the other.
+    clients_read = db.clients.find(
+        {"id": {"$in": client_ids}},
+        {"_id": 0},
+    ).to_list(None)
+
     if include_deliverables:
         # Fetch all deliverables for all projects in ONE query
-        deliverables = await db.deliverables.find(
-            {"project_id": {"$in": project_ids}},
-            {"_id": 0},
-        ).to_list(None)
+        deliverables, clients = await asyncio.gather(
+            db.deliverables.find(
+                {"project_id": {"$in": project_ids}},
+                {"_id": 0},
+            ).to_list(None),
+            clients_read,
+        )
     else:
         # List pages only need the counts (in total and per stage), not the
         # full nested documents - which for a few hundred projects is
         # thousands of deliverables and over a megabyte of JSON. The database
         # does the counting and only the totals cross the wire.
-        count_rows = await db.deliverables.aggregate([
-            {"$match": {"project_id": {"$in": project_ids}}},
-            {"$group": {
-                "_id": {
-                    "project_id": "$project_id",
-                    "stage": {"$ifNull": ["$current_stage", "Content"]},
-                },
-                "count": {"$sum": 1},
-            }},
-        ]).to_list(None)
+        count_rows, clients = await asyncio.gather(
+            db.deliverables.aggregate([
+                {"$match": {"project_id": {"$in": project_ids}}},
+                {"$group": {
+                    "_id": {
+                        "project_id": "$project_id",
+                        "stage": {"$ifNull": ["$current_stage", "Content"]},
+                    },
+                    "count": {"$sum": 1},
+                }},
+            ]).to_list(None),
+            clients_read,
+        )
         for row in count_rows:
             key = row.get("_id") or {}
             pid = key.get("project_id")
@@ -4519,12 +4552,6 @@ async def _hydrate_projects(
             deliverable_counts[pid] = deliverable_counts.get(pid, 0) + count
             per_stage = stage_counts_by_project.setdefault(pid, {})
             per_stage[key.get("stage")] = per_stage.get(key.get("stage"), 0) + count
-
-    # Fetch all clients in ONE query
-    clients = await db.clients.find(
-        {"id": {"$in": client_ids}},
-        {"_id": 0},
-    ).to_list(None)
 
     # Attach approval configuration without storing it on the deliverable document.
     if deliverables:
@@ -6380,8 +6407,13 @@ async def list_bulk_review(request: Request):
     return result
 
 
-async def _build_implicit_manager_items(user: User):
-    """Build manager approvals for ready deliverables without workflows."""
+async def _build_implicit_manager_items(user: User, count_only: bool = False):
+    """Build manager approvals for ready deliverables without workflows.
+
+    ``count_only=True`` is for the sidebar badge: it needs how many items
+    there are, not their contents, so only the two fields the filtering looks
+    at are read (whole deliverable documents were being pulled on every poll).
+    """
 
     if user.role not in ("admin", "manager", "member"):
         return []
@@ -6389,7 +6421,7 @@ async def _build_implicit_manager_items(user: User):
     # Fetch ready deliverables once.
     ready = await db.deliverables.find(
         {"stage_status": "Ready for Review"},
-        {"_id": 0},
+        {"_id": 0, "id": 1, "current_stage": 1} if count_only else {"_id": 0},
     ).sort(
         "updated_at",
         -1,
@@ -6566,14 +6598,20 @@ async def approval_pending_count(request: Request):
     one batched deliverable lookup instead of full board hydration."""
     user = await get_acting_user(request)
 
-    items = await db.approval_items.find(
-        _approval_visibility_query(user, "visible"),
-        {"_id": 0},
-    ).to_list(500)
+    query = _approval_visibility_query(user, "visible")
 
-    if _approvals_view_all(user):
-        count = len(items)
-    else:
+    async def explicit_count() -> int:
+        if _approvals_view_all(user):
+            # Nothing to check per item, so the database can just count (still
+            # capped at the 500 the board itself loads).
+            return await db.approval_items.count_documents(query, limit=500)
+
+        # Only the fields the per-item check reads, not whole documents.
+        items = await db.approval_items.find(
+            query,
+            {"_id": 0, "deliverable_id": 1, "assigned_to": 1, "approval_type": 1},
+        ).to_list(500)
+
         deliverable_ids = list({
             item.get("deliverable_id")
             for item in items
@@ -6592,14 +6630,19 @@ async def approval_pending_count(request: Request):
             deliverable = deliverables.get(item.get("deliverable_id"))
             if deliverable and await _approval_item_can_act(user, item, deliverable):
                 count += 1
+        return count
 
     # Implicit manager approvals (ready deliverables with no workflow yet)
     # aren't real documents, so they can't be counted with the query above -
     # _build_implicit_manager_items already scopes them to the user (and to
-    # the manager's own stage) in batched queries, same as the board.
-    count += len(await _build_implicit_manager_items(user))
+    # the manager's own stage) in batched queries, same as the board. The two
+    # parts don't depend on each other, so they run together.
+    explicit, implicit = await asyncio.gather(
+        explicit_count(),
+        _build_implicit_manager_items(user, count_only=True),
+    )
 
-    return {"count": count}
+    return {"count": explicit + len(implicit)}
 
 
 @api_router.get("/approvals/board")
@@ -7402,6 +7445,11 @@ async def run_startup_migrations():
     await db.projects.create_index([("end_date", 1)])
     await db.deliverables.create_index([("end_dt", 1)])
     await db.deliverables.create_index([("project_id", 1)])
+    # The sidebar's Approvals badge looks up "Ready for Review" deliverables
+    # (newest first) on every poll.
+    await db.deliverables.create_index([("stage_status", 1), ("updated_at", -1)])
+    # GET /projects sorts on this.
+    await db.projects.create_index([("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.notifications.create_index(
         [("user_id", 1), ("dedupe_key", 1)],

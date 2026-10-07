@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 import asyncio
+import contextlib
 import hashlib
 import secrets
 import smtplib
@@ -16,6 +17,7 @@ import json
 import time
 import math
 import threading
+import weakref
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
 import re
@@ -37,12 +39,14 @@ try:
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
     import deliverable_import  # noqa: F401
+    import project_duplicates  # noqa: F401
 except ImportError:
     # Works when uvicorn imports this as a package member from the repo root
     # (e.g. Render's `uvicorn backend.server:app`)
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
     from backend import deliverable_import  # noqa: F401
+    from backend import project_duplicates  # noqa: F401
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1427,6 +1431,22 @@ def _fire_and_forget(coro):
     task = asyncio.create_task(coro)
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+# One lock per key, kept only while somebody holds or waits on it. Used to make
+# "check whether it already exists, then insert" atomic for requests that land
+# on this server at the same moment (a double click on Create, a retried upload).
+# It cannot see a second server instance; the checks it guards also read the
+# database, so a request that arrives after the first one finished still sees it.
+_keyed_locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = weakref.WeakValueDictionary()
+
+
+def _keyed_lock(key: str) -> asyncio.Lock:
+    lock = _keyed_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _keyed_locks[key] = lock
+    return lock
 
 
 def _get_firebase_app():
@@ -4840,6 +4860,26 @@ async def project_metrics(request: Request):
     }
 
 
+def _date_prefix(moment: datetime) -> str:
+    """YYYY-MM-DD of `moment`, for a coarse string comparison against the ISO
+    timestamps stored on projects (whose formats differ after the date)."""
+    return moment.astimezone(timezone.utc).date().isoformat()
+
+
+async def _projects_touched_since(client_id: Optional[str], since: datetime) -> list:
+    """Projects of one client that were created or changed on or after the day of
+    `since`. A coarse first cut by day; project_duplicates does the exact test."""
+    day = _date_prefix(since)
+    return await db.projects.find(
+        {
+            "client_id": client_id or None,
+            "$or": [{"created_at": {"$gte": day}}, {"updated_at": {"$gte": day}}],
+        },
+        {"_id": 0, "id": 1, "code": 1, "name": 1, "client_id": 1, "status": 1,
+         "start_date": 1, "end_date": 1, "created_at": 1, "updated_at": 1, "hidden": 1},
+    ).to_list(1000)
+
+
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str, request: Request):
     # Project detail is read-only for everyone; every write endpoint below
@@ -5014,6 +5054,36 @@ async def _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs,
     await db.deliverable_activity_log.insert_many(activity_docs)
 
 
+async def _rollback_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs):
+    """Delete whatever part of a deliverable batch _persist_deliverable_batch got
+    written before failing, so a retry starts from nothing. Every delete runs on
+    its own: one failing must not stop the rest."""
+    steps = [
+        db.approval_items.delete_many({"id": {"$in": [d["id"] for d in item_docs]}}),
+        db.approval_workflows.delete_many({"id": {"$in": [d["id"] for d in workflow_docs]}}),
+        db.deliverable_activity_log.delete_many({"id": {"$in": [d["id"] for d in activity_docs]}}),
+        db.deliverables.delete_many({"id": {"$in": [d["id"] for d in deliverable_docs]}}),
+    ]
+    for step in steps:
+        try:
+            await step
+        except Exception:
+            logger.exception("Rollback of a deliverable batch failed at one step")
+
+
+async def _rollback_new_project(project_id, deliverable_docs, workflow_docs, item_docs, activity_docs):
+    """Remove a project that create_project only half saved, with its batch."""
+    await _rollback_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+    for step in (
+        db.project_activity_log.delete_many({"project_id": project_id}),
+        db.projects.delete_one({"id": project_id}),
+    ):
+        try:
+            await step
+        except Exception:
+            logger.exception("Rollback of project %s failed at one step", project_id)
+
+
 @api_router.post("/projects")
 async def create_project(payload: ProjectCreate, request: Request):
     user = await require_admin(request)
@@ -5070,28 +5140,56 @@ async def create_project(payload: ProjectCreate, request: Request):
         project.id, specs, user.id, ts
     )
 
-    await db.projects.insert_one(project.model_dump())
+    # Pressing Create twice, or a client retrying a request that was slow to
+    # answer, must not make two projects. The lock lines such requests up so the
+    # second one finds the first and gets that project back instead.
+    lock_key = f"create-project:{payload.client_id}:{project_duplicates.normalize_project_name(payload.name)}"
+    async with _keyed_lock(lock_key):
+        moment = datetime.now(timezone.utc)
+        just_made = project_duplicates.find_double_submit(
+            await _projects_touched_since(
+                payload.client_id,
+                moment - timedelta(seconds=project_duplicates.DOUBLE_SUBMIT_SECONDS),
+            ),
+            payload.client_id,
+            payload.name,
+            moment,
+        )
+        if just_made:
+            already = await db.projects.find_one({"id": just_made["id"]}, {"_id": 0})
+            if already:
+                return await _hydrate_project(already)
 
-    # New projects always enter the top of their status column.
-    await _place_new_project_at_top(project.id, project.status)
-    await log_activity(
-        collection_name="project_activity_log",
-        entity_id=project.id,
-        entity_field="project_id",
-        action="PROJECT_CREATED",
-        changed_by=user.id,
-        new_value={
-            "code": project.code,
-            "name": project.name,
-            "client_id": project.client_id,
-            "poc_id": project.poc_id,
-            "start_date": project.start_date,
-            "end_date": project.end_date,
-            "status": project.status,
-        },
-    )
-
-    await _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+        await db.projects.insert_one(project.model_dump())
+        try:
+            # New projects always enter the top of their status column.
+            await _place_new_project_at_top(project.id, project.status)
+            await log_activity(
+                collection_name="project_activity_log",
+                entity_id=project.id,
+                entity_field="project_id",
+                action="PROJECT_CREATED",
+                changed_by=user.id,
+                new_value={
+                    "code": project.code,
+                    "name": project.name,
+                    "client_id": project.client_id,
+                    "poc_id": project.poc_id,
+                    "start_date": project.start_date,
+                    "end_date": project.end_date,
+                    "status": project.status,
+                },
+            )
+            await _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+        except Exception:
+            # The project row is already saved. Leaving it behind would make the
+            # person's retry create a second copy, so take it back out.
+            logger.exception("Creating project %s failed part-way; rolling it back", project.id)
+            await _rollback_new_project(project.id, deliverable_docs, workflow_docs, item_docs, activity_docs)
+            raise HTTPException(
+                status_code=500,
+                detail="The project could not be saved. Nothing was created, please try again.",
+            )
 
     # Notifying production staff needs one upsert per deliverable per person
     # and nothing in the response depends on it, so it runs after the response
@@ -5720,43 +5818,65 @@ async def import_deliverables(
     content = await file.read(deliverable_import.MAX_FILE_BYTES + 1)
     try:
         table = deliverable_import.read_table(file.filename or "", content)
-        existing_docs = await db.deliverables.find(
-            {"project_id": project_id}, {"_id": 0, "name": 1, "type": 1}
-        ).to_list(5000)
-        existing = {
-            ((d.get("name") or "").strip().lower(), (d.get("type") or "").strip().lower())
-            for d in existing_docs
-        }
-        report = deliverable_import.validate_table(
-            table, DELIVERABLE_TYPES, STAGES, APPROVAL_TYPES, existing
-        )
     except deliverable_import.ImportFileError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    if dry_run:
-        return {**report, "dry_run": True, "created": 0}
+    # Uploading the same sheet twice is meant to skip every row the second time,
+    # because validate_table drops rows already in the project. That only works if
+    # the second upload reads the project AFTER the first has finished writing, so
+    # a real import holds this project's lock from reading what exists until the
+    # rows are saved (two clicks on Import, or a retry, would otherwise both see
+    # an empty project and each create every row). A dry run writes nothing.
+    guard = contextlib.nullcontext() if dry_run else _keyed_lock(f"import-deliverables:{project_id}")
+    async with guard:
+        try:
+            existing_docs = await db.deliverables.find(
+                {"project_id": project_id}, {"_id": 0, "name": 1, "type": 1}
+            ).to_list(None)
+            existing = {
+                ((d.get("name") or "").strip().lower(), (d.get("type") or "").strip().lower())
+                for d in existing_docs
+            }
+            report = deliverable_import.validate_table(
+                table, DELIVERABLE_TYPES, STAGES, APPROVAL_TYPES, existing
+            )
+        except deliverable_import.ImportFileError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
-    ready = [row for row in report["rows"] if row["status"] == "ok"]
-    if not ready:
-        raise HTTPException(status_code=400, detail="There are no valid rows to import.")
+        if dry_run:
+            return {**report, "dry_run": True, "created": 0}
 
-    ts = now_iso()
-    specs = [
-        {
-            "name": row["name"],
-            "type": row["type"],
-            "stage_schedule": row["stage_schedule"],
-            "current_stage": row["current_stage"],
-            "finished": row["finished"],
-            "required_stages": normalize_stages(row["required_stages"]),
-            "approval_types": row["approval_types"],
-        }
-        for row in ready
-    ]
-    deliverable_docs, workflow_docs, item_docs, activity_docs = _build_deliverable_batch(
-        project_id, specs, user.id, ts
-    )
-    await _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+        ready = [row for row in report["rows"] if row["status"] == "ok"]
+        if not ready:
+            raise HTTPException(status_code=400, detail="There are no valid rows to import.")
+
+        ts = now_iso()
+        specs = [
+            {
+                "name": row["name"],
+                "type": row["type"],
+                "stage_schedule": row["stage_schedule"],
+                "current_stage": row["current_stage"],
+                "finished": row["finished"],
+                "required_stages": normalize_stages(row["required_stages"]),
+                "approval_types": row["approval_types"],
+            }
+            for row in ready
+        ]
+        deliverable_docs, workflow_docs, item_docs, activity_docs = _build_deliverable_batch(
+            project_id, specs, user.id, ts
+        )
+        try:
+            await _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+        except Exception:
+            # insert_many can stop part-way. Clear what it wrote so the retry
+            # imports the whole file instead of skipping the rows that got in.
+            logger.exception("Importing deliverables into %s failed part-way; rolling back", project_id)
+            await _rollback_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
+            raise HTTPException(
+                status_code=500,
+                detail="The deliverables could not be saved. Nothing was imported, please try again.",
+            )
 
     # Alerting production staff needs one upsert per deliverable per person and
     # nothing in the response depends on it, so it runs after the response.
@@ -7540,6 +7660,8 @@ async def run_startup_migrations():
     await db.clients.create_index("id")
     await db.projects.create_index("id")
     await db.projects.create_index("code")
+    # The duplicate-name check on project creation reads one client's projects.
+    await db.projects.create_index("client_id")
     await db.deliverables.create_index("id")
     await db.projects.create_index([("status", 1), ("kanban_order", 1)])
     # Speeds up the overdue-deadline scan in _ensure_overdue_notifications,

@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAccess } from "@/hooks/useAccess";
 import {
   Settings2,
-  CalendarRange,
-  Target,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
@@ -23,12 +21,6 @@ import {
 } from "@/components/efficiency/EfficiencyFilters";
 import { TeamEfficiencyTable, downloadCsv } from "@/components/efficiency/TeamEfficiencyTable";
 import { EmployeeEfficiencyDrawer } from "@/components/efficiency/EmployeeEfficiencyDrawer";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { EfficiencyContentSkeleton } from "@/components/skeletons/Skeletons";
 
 export default function EfficiencyPage() {
@@ -161,35 +153,14 @@ export default function EfficiencyPage() {
         )}
 
         {canConfigure && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#f0f0fd] px-3 text-xs font-semibold text-[#2b2bb5] hover:bg-[#e4e4fb]"
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-                Capacity settings
-              </button>
-            </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => navigate("/efficiency/settings/monthly-capacity")}
-              >
-                <CalendarRange className="mr-2 h-4 w-4" />
-                Monthly capacity
-              </DropdownMenuItem>
-
-              {isManager && (
-                <DropdownMenuItem
-                  onClick={() => navigate("/efficiency/settings/activity-targets")}
-                >
-                  <Target className="mr-2 h-4 w-4" />
-                  Team potential
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <button
+            type="button"
+            onClick={() => navigate("/efficiency/settings/monthly-capacity")}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#f0f0fd] px-3 text-xs font-semibold text-[#2b2bb5] hover:bg-[#e4e4fb]"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Capacity settings
+          </button>
         )}
       </div>
 

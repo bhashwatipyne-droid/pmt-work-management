@@ -88,6 +88,7 @@ export const CreateProjectModal = ({
   const [status, setStatus] = useState(PROJECT_STATUSES[0]);
   const [deliverables, setDeliverables] = useState([]);
   const [draftDeliverable, setDraftDeliverable] = useState(null);
+  const [showDateErrors, setShowDateErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // A client added from here, until the page's refreshed list includes it.
   const [addedClient, setAddedClient] = useState(null);
@@ -187,10 +188,12 @@ export const CreateProjectModal = ({
   };
 
   const openAddDeliverable = () => {
+    setShowDateErrors(false);
     setDraftDeliverable(emptyDraftDeliverable());
   };
 
   const openEditDeliverable = (d) => {
+    setShowDateErrors(false);
     setDraftDeliverable({ ...d });
   };
 
@@ -228,6 +231,7 @@ export const CreateProjectModal = ({
       draftDeliverable.stage_schedule
     );
     if (scheduleError) {
+      setShowDateErrors(true);
       return toast.error(scheduleError);
     }
 
@@ -769,6 +773,7 @@ export const CreateProjectModal = ({
                   deliverableTypes={deliverableTypes}
                   autoFocusName
                   compact
+                  showErrors={showDateErrors}
                 />
 
                 <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">

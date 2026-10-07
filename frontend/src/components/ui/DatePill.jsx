@@ -17,6 +17,7 @@ export const DatePill = ({
   onChange,
   placeholder = "Select date",
   triggerTestId,
+  invalid = false,
 }) => {
   const [open, setOpen] = useState(false);
 
@@ -28,7 +29,10 @@ export const DatePill = ({
         <button
           type="button"
           data-testid={triggerTestId}
-          className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20"
+          aria-invalid={invalid || undefined}
+          className={`inline-flex items-center gap-2 rounded-full border bg-white px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#2b2bb5]/20 ${
+            invalid ? "border-red-400 ring-1 ring-red-200" : "border-border"
+          }`}
         >
           {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
 

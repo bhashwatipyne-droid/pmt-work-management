@@ -320,6 +320,7 @@ def format_stage_window(window: Optional[dict]) -> str:
 def normalize_stage_schedule(
     required_stages: List[str],
     stage_schedule: Optional[dict],
+    require_complete: bool = False,
 ) -> Dict[str, Dict[str, Optional[str]]]:
     """Clean a stage_schedule payload down to one validated entry per stage
     that has at least an end date (a deadline). Raises HTTPException(400) on
@@ -330,8 +331,18 @@ def normalize_stage_schedule(
     A start with no end isn't very useful for tracking a deadline, so that
     combination is rejected rather than silently accepted. A stage not in
     `required_stages` is silently dropped (e.g. the stage was deselected in
-    the same edit). A stage with no dates at all simply has no entry:
-    deadline tracking is opt-in per stage, not mandatory."""
+    the same edit). A stage with no dates at all simply has no entry, unless
+    `require_complete` is set (deliverables created or edited in the app),
+    in which case every required stage must have both a start and an end
+    date."""
+    if require_complete:
+        for stage in required_stages:
+            window = (stage_schedule or {}).get(stage) or {}
+            if not window.get("start_dt") or not window.get("end_dt"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Set a start date and an end date for the {stage} stage.",
+                )
     cleaned: Dict[str, Dict[str, Optional[str]]] = {}
     for stage, window in (stage_schedule or {}).items():
         if stage not in required_stages:
@@ -1459,6 +1470,8 @@ def _push_link(notification: dict, is_admin: bool) -> str:
     """Where clicking the push should take this recipient."""
     action_type = notification.get("action_type")
     if action_type == "open_approvals":
+        if notification.get("deliverable_id"):
+            return f"/approvals?deliverable={notification['deliverable_id']}"
         return "/approvals"
     if action_type in ("open_worksheet", "add_work_row"):
         return "/"
@@ -4215,6 +4228,26 @@ async def list_notifications(request: Request, limit: int = 50):
         {"_id": 0},
     ).sort("created_at", -1).to_list(limit)
 
+    # The bell opens the exact item a notification is about (the deliverable
+    # in Approvals, its rows in the work sheet), and the work sheet finds it
+    # by name. Notifications saved before names were stored get theirs here,
+    # with one lookup for the whole list.
+    missing = {
+        row["deliverable_id"]
+        for row in rows
+        if row.get("deliverable_id") and not row.get("deliverable_name")
+    }
+    if missing:
+        names = {
+            d["id"]: d.get("name") or ""
+            for d in await db.deliverables.find(
+                {"id": {"$in": list(missing)}}, {"_id": 0, "id": 1, "name": 1}
+            ).to_list(len(missing))
+        }
+        for row in rows:
+            if row.get("deliverable_id") and not row.get("deliverable_name"):
+                row["deliverable_name"] = names.get(row["deliverable_id"], "")
+
     # Every open tab asks for this list every few seconds, and almost every
     # time nothing has changed. Tag the response with a hash of its content:
     # the browser sends it back as If-None-Match and gets an empty 304 when
@@ -4841,7 +4874,14 @@ def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: 
         normalized_types = _normalize_approval_types(approval_types)
         stages = spec["required_stages"]
 
-        stage_schedule = normalize_stage_schedule(stages, spec.get("stage_schedule"))
+        # Deliverables made in the app must have a start and end date for each
+        # stage (the caller sets require_schedule). Bulk imports don't, and a
+        # deliverable created already finished has nothing left to schedule.
+        stage_schedule = normalize_stage_schedule(
+            stages,
+            spec.get("stage_schedule"),
+            require_complete=bool(spec.get("require_schedule")) and not spec.get("finished"),
+        )
         if stage_schedule:
             start_dt, end_dt = derive_deliverable_dates(stages, stage_schedule)
         else:
@@ -4978,6 +5018,7 @@ async def create_project(payload: ProjectCreate, request: Request):
             "current_stage": d.current_stage,
             "required_stages": normalize_stages(d.required_stages),
             "approval_types": d.approval_types or [],
+            "require_schedule": True,
         }
         for d in payload.deliverables or []
     ]
@@ -5552,7 +5593,9 @@ async def create_deliverable(payload: DeliverableCreate, request: Request):
     ts = now_iso()
     stages = normalize_stages(payload.required_stages)
     approval_types = payload.approval_types or []
-    stage_schedule = normalize_stage_schedule(stages, payload.stage_schedule)
+    stage_schedule = normalize_stage_schedule(
+        stages, payload.stage_schedule, require_complete=True
+    )
     if stage_schedule:
         start_dt, end_dt = derive_deliverable_dates(stages, stage_schedule)
     else:
@@ -5706,7 +5749,7 @@ async def update_deliverable(deliverable_id: str, payload: DeliverableUpdate, re
         # overall dates from it (start_dt/end_dt are never accepted directly
         # once a schedule exists - see the Deliverable model).
         update_fields["stage_schedule"] = normalize_stage_schedule(
-            effective_stages, update_fields["stage_schedule"]
+            effective_stages, update_fields["stage_schedule"], require_complete=True
         )
         update_fields["start_dt"], update_fields["end_dt"] = derive_deliverable_dates(
             effective_stages, update_fields["stage_schedule"]

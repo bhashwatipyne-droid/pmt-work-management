@@ -12,26 +12,23 @@ const STAGE_ICONS = {
 
 // A deliverable's overall start/end date is always DERIVED from these
 // per-stage windows (earliest stage start, latest stage end) - it is never
-// entered directly, here or anywhere else. A stage with no window simply
-// isn't tracked for deadlines yet; that's fine, dates are optional per stage.
+// entered directly, here or anywhere else. Every selected stage must have
+// both a start and an end date.
 //
 // Validates a stage_schedule object the same way the backend does
-// (normalize_stage_schedule in backend/server.py), so a bad range is caught
-// before the request round-trip. Returns an error message, or null when
-// everything is fine.
+// (normalize_stage_schedule in backend/server.py), so a missing date or bad
+// range is caught before the request round-trip. Returns an error message,
+// or null when everything is fine.
 export const validateStageSchedule = (requiredStages, stageSchedule = {}) => {
   for (const stage of requiredStages || []) {
-    const window = stageSchedule[stage];
-    if (!window) continue;
+    const window = stageSchedule[stage] || {};
     const { start_dt: start, end_dt: end } = window;
-    if (!start && !end) continue;
-    // An end date (deadline) with no fixed start is fine - e.g. "due the
-    // 24th, starts whenever the previous stage finishes". A start with no
-    // deadline isn't a useful window, so that's still not allowed.
-    if (start && !end) {
-      return `The ${stage} stage has a start date but no end date (deadline) — add one, or remove the start date.`;
+    if (!start && !end) {
+      return `Set a start date and an end date for the ${stage} stage.`;
     }
-    if (start && end && end < start) {
+    if (!start) return `Set a start date for the ${stage} stage.`;
+    if (!end) return `Set an end date for the ${stage} stage.`;
+    if (end < start) {
       return `The ${stage} stage's end date must be on or after its start date.`;
     }
   }
@@ -48,7 +45,7 @@ const setStageDate = (stageSchedule, stage, edge, value) => {
 
 // One stage's start/end pair. `size` swaps between the compact inline layout
 // (CreateProjectModal's small card) and the larger standalone layout.
-const StageDateRow = ({ stage, window, onChange, disabled, size }) => {
+const StageDateRow = ({ stage, window, onChange, disabled, size, showErrors }) => {
   const small = size === "sm";
   return (
     <div
@@ -64,8 +61,9 @@ const StageDateRow = ({ stage, window, onChange, disabled, size }) => {
         icon={CalendarDays}
         value={window?.start_dt || ""}
         onChange={(next) => onChange(stage, "start_dt", next)}
-        placeholder={small ? `${stage} start` : "Start"}
+        placeholder={small ? `${stage} start` : "Start date"}
         triggerTestId={`deliverable-stage-start-${stage}`}
+        invalid={showErrors && !window?.start_dt}
       />
 
       <span className="text-xs text-muted-foreground">→</span>
@@ -74,8 +72,9 @@ const StageDateRow = ({ stage, window, onChange, disabled, size }) => {
         icon={CalendarDays}
         value={window?.end_dt || ""}
         onChange={(next) => onChange(stage, "end_dt", next)}
-        placeholder={small ? `${stage} end` : "End"}
+        placeholder={small ? `${stage} end` : "End date"}
         triggerTestId={`deliverable-stage-end-${stage}`}
+        invalid={showErrors && !window?.end_dt}
       />
     </div>
   );
@@ -101,6 +100,8 @@ export const DeliverableFields = ({
   disabled = false,
   autoFocusName = true,
   compact = false,
+  // Outline the dates that are still missing (after a failed save).
+  showErrors = false,
 }) => {
   const selectedStages = STAGES.filter((stage) =>
     (deliverable.required_stages || []).includes(stage)
@@ -153,7 +154,7 @@ export const DeliverableFields = ({
         {selectedStages.length > 0 && (
           <div className="mt-3 space-y-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Deadline per stage (optional)
+              Start and end date per stage (required)
             </p>
             {selectedStages.map((stage) => (
               <StageDateRow
@@ -163,6 +164,7 @@ export const DeliverableFields = ({
                 onChange={changeStageDate}
                 disabled={disabled}
                 size="sm"
+                showErrors={showErrors}
               />
             ))}
           </div>
@@ -200,7 +202,7 @@ export const DeliverableFields = ({
 
       <div className="my-6 border-t border-border" />
 
-      {/* Production stages, each with its own optional deadline window */}
+      {/* Production stages, each with its own required start and end date */}
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-muted-foreground">
           <Users className="h-4 w-4" />
@@ -212,8 +214,8 @@ export const DeliverableFields = ({
           </h3>
 
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Select the teams that need to work on this deliverable, and
-            optionally set each stage's own deadline window. The
+            Select the teams that need to work on this deliverable, and set
+            each stage's start and end date (both are required). The
             deliverable's overall dates are worked out automatically from
             these.
           </p>
@@ -277,6 +279,7 @@ export const DeliverableFields = ({
                   window={stageSchedule[stage]}
                   onChange={changeStageDate}
                   disabled={disabled}
+                  showErrors={showErrors}
                 />
               ))}
             </div>

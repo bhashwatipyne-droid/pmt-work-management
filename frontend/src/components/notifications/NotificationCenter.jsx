@@ -239,24 +239,50 @@ export default function NotificationCenter({ placement = "header" }) {
       was_unread: wasUnread,
     });
 
-    if (notification.action_type === "open_worksheet") {
+    // Every notification opens the exact thing it is about, not just the page
+    // it lives on.
+    const hasDeliverable = Boolean(notification.deliverable_id);
+
+    // "Ready for approval" / "approval waiting": the Approvals page, with
+    // that deliverable's card selected so it can be approved or sent back.
+    if (notification.action_type === "open_approvals") {
       setOpen(false);
-      navigate("/");
+      if (hasDeliverable) {
+        const params = new URLSearchParams({ deliverable: notification.deliverable_id });
+        if (notification.approval_item_id) params.set("item", notification.approval_item_id);
+        navigate(`/approvals?${params.toString()}`);
+      } else {
+        navigate("/approvals");
+      }
       return;
     }
 
-    if (notification.action_type === "open_approvals") {
+    // Work for the team to start: the work sheet, searched down to that
+    // deliverable's rows.
+    if (notification.action_type === "open_worksheet") {
       setOpen(false);
-      navigate("/approvals");
+      navigate(
+        "/",
+        notification.deliverable_name
+          ? { state: { search: notification.deliverable_name } }
+          : undefined
+      );
       return;
     }
 
     // The project detail page is admin-only. Non-admins can't open it, so
-    // don't bounce them into a blocked page — just mark the notification
-    // read and leave them where they are.
-    if (notification.project_id && currentUser?.role === "admin") {
+    // they are taken to the deliverable's rows in the work sheet instead
+    // (e.g. a delayed deadline), or left where they are when there is no
+    // deliverable to show.
+    if (currentUser?.role === "admin" && notification.project_id) {
       setOpen(false);
       navigate(`/projects/${notification.project_id}`);
+      return;
+    }
+
+    if (hasDeliverable && notification.deliverable_name) {
+      setOpen(false);
+      navigate("/", { state: { search: notification.deliverable_name } });
     }
   };
 

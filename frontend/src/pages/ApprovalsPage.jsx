@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
@@ -162,6 +163,8 @@ export default function ApprovalsPage() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
+  const lastFetchRef = useRef(0);
+
   const fetchBoard = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
 
@@ -169,6 +172,7 @@ export default function ApprovalsPage() {
       const data = await getApprovalBoard(currentUserId, {
         visibility: "visible",
       });
+      lastFetchRef.current = Date.now();
       setBoard(data);
 
       if (!silent) {
@@ -317,6 +321,65 @@ export default function ApprovalsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQueue, aList.map((i) => i.id).join(",")]);
+
+  // ---------- Opened from a notification ----------
+  // /approvals?deliverable=<id>[&item=<approval item id>] opens straight on
+  // that deliverable: its queue is selected, any filters that would hide it
+  // are cleared, and its card is highlighted with the detail pane open, ready
+  // to approve or send back.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetDeliverable = searchParams.get("deliverable");
+  const targetItem = searchParams.get("item");
+  const [retriedTarget, setRetriedTarget] = useState(null);
+  const [scrollToId, setScrollToId] = useState(null);
+
+  useEffect(() => {
+    if (!targetDeliverable || loading || !currentUser) return;
+
+    const key = `${targetDeliverable}|${targetItem || ""}`;
+    const all = COLUMNS.flatMap((column) =>
+      (board[column.key] || []).map((item) => ({ column: column.key, item }))
+    );
+    const hit =
+      (targetItem && all.find((entry) => entry.item.id === targetItem)) ||
+      all.find((entry) => entry.item.deliverable_id === targetDeliverable);
+
+    if (hit) {
+      setSearch("");
+      setStageFilter("");
+      setProjectFilter("");
+      setDateFrom("");
+      setDateTo("");
+      setActiveQueue(hit.column);
+      setSelectedId(hit.item.id);
+      setScrollToId(hit.item.id);
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    // Not on the board we have. It may have only just been sent for
+    // approval, so look once more before giving up (unless the board was
+    // fetched a moment ago).
+    if (retriedTarget !== key && Date.now() - lastFetchRef.current > 3000) {
+      fetchBoard({ silent: true }).finally(() => setRetriedTarget(key));
+      return;
+    }
+
+    toast.info(
+      "That deliverable is no longer waiting in Approvals - it may already have been approved or sent back."
+    );
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetDeliverable, targetItem, loading, board, retriedTarget, currentUser?.id]);
+
+  useEffect(() => {
+    if (!scrollToId) return;
+    const el = document.querySelector(
+      `[data-testid="${APPROVALS.listRowPrefix}-${scrollToId}"]`
+    );
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setScrollToId(null);
+  }, [scrollToId, activeQueue, board]);
 
   // ---------- Selection (bulk) ----------
   const toggleSelect = (id) => {

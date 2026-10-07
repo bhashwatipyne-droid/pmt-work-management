@@ -271,6 +271,16 @@ export const createProject = (userId, payload) =>
     })
     .then((r) => r.data);
 
+// Projects for this client with the same name, created or changed in the last
+// 30 days. Only informs; creating a project never waits on it.
+export const checkProjectDuplicates = (userId, clientId, name) =>
+  axios
+    .get(`${API}/projects/duplicate-check`, {
+      headers: authHeaders(userId),
+      params: { client_id: clientId, name },
+    })
+    .then((r) => r.data);
+
 export const updateProject = (userId, id, payload) =>
   axios
     .patch(`${API}/projects/${id}`, payload, {

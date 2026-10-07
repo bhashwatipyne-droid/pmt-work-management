@@ -4880,6 +4880,22 @@ async def _projects_touched_since(client_id: Optional[str], since: datetime) -> 
     ).to_list(1000)
 
 
+@api_router.get("/projects/duplicate-check")
+async def check_project_duplicates(client_id: str, name: str, request: Request):
+    """Projects for this client with the same name that were created or changed
+    in the last 30 days. Only informs: creating a project never waits on it, since
+    a same-named project can be a genuine repeat (a monthly brochure) as easily as
+    a double entry. Declared before /projects/{project_id} so it is not read as one."""
+    await require_admin(request)
+    now = datetime.now(timezone.utc)
+    window = project_duplicates.DUPLICATE_WINDOW_DAYS
+    candidates = await _projects_touched_since(client_id, now - timedelta(days=window))
+    return {
+        "window_days": window,
+        "duplicates": project_duplicates.find_recent_duplicates(candidates, client_id, name, now, window),
+    }
+
+
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str, request: Request):
     # Project detail is read-only for everyone; every write endpoint below

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
@@ -21,7 +21,7 @@ import {
   PROJECT_STATUS_STYLE,
   STAGE_COLORS,
 } from "@/constants/projectPalette";
-import { createProject } from "@/services/api";
+import { checkProjectDuplicates, createProject } from "@/services/api";
 import { useUser } from "@/context/UserContext";
 import { trackEvent } from "../../analytics";
 import {
@@ -112,6 +112,28 @@ export const CreateProjectModal = ({
     return counts;
   }, [projects]);
 
+  // Same client + same name made in the last 30 days, asked of the server because
+  // it sees every project, not just the ones this page has loaded. It only
+  // informs: it never changes whether the project can be created.
+  // The answer is kept with the client and name it was asked for, so a result
+  // for an earlier spelling is never shown against the current one.
+  const [recentCheck, setRecentCheck] = useState({ key: "", list: [] });
+  const checkedName = name.trim();
+  const checkKey = `${clientId}|${checkedName}`;
+  useEffect(() => {
+    if (!open || !clientId || checkedName.length < 3) return undefined;
+    let stale = false;
+    const timer = setTimeout(() => {
+      checkProjectDuplicates(currentUserId, clientId, checkedName)
+        .then((data) => !stale && setRecentCheck({ key: checkKey, list: data?.duplicates || [] }))
+        .catch(() => !stale && setRecentCheck({ key: checkKey, list: [] }));
+    }, 400);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [open, clientId, checkedName, checkKey, currentUserId]);
+
   if (!open) return null;
 
   const selectedClient = clients.find((client) => client.id === clientId);
@@ -162,6 +184,11 @@ export const CreateProjectModal = ({
   const exact = matches.find((m) => m.exact);
   const sameClientMatches = matches.filter((m) => m.same);
   const otherClientMatches = matches.filter((m) => !m.same);
+  // Recent same-name projects the name check above has not already listed.
+  const listedIds = new Set(matches.map((m) => m.project.id));
+  const recentOnly = (recentCheck.key === checkKey ? recentCheck.list : []).filter(
+    (d) => !listedIds.has(d.id)
+  );
   const nameState = !trimmed
     ? "empty"
     : exact
@@ -331,7 +358,7 @@ export const CreateProjectModal = ({
   const nameUnderline =
     nameState === "exact"
       ? "shadow-[inset_0_-2px_0_#ef4444]"
-      : nameState === "similar"
+      : nameState === "similar" || (nameState === "clear" && recentOnly.length > 0)
         ? "shadow-[inset_0_-2px_0_#f59e0b]"
         : nameState === "clear" && selectedClient
           ? "shadow-[inset_0_-2px_0_#10b981]"
@@ -582,7 +609,7 @@ export const CreateProjectModal = ({
             )}
           </label>
 
-          {nameState === "clear" && selectedClient && (
+          {nameState === "clear" && selectedClient && recentOnly.length === 0 && (
             <div className="-mt-2 flex items-center gap-2 text-[13px] text-emerald-800">
               <Check className="h-3.5 w-3.5" />
               No similar project for {selectedClient.name} or other clients.
@@ -642,6 +669,51 @@ export const CreateProjectModal = ({
                   None of these. This is a new project.
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Same name, same client, last 30 days: a warning only. It can be a
+              genuine repeat (a monthly edition), so nothing here blocks Create. */}
+          {recentOnly.length > 0 && selectedClient && (
+            <div
+              data-testid="create-project-recent-duplicate-warning"
+              className="-mt-1.5 flex flex-col overflow-hidden rounded-xl border border-border"
+            >
+              <div className="flex items-start gap-2.5 bg-amber-100 px-3.5 py-3 text-[13px] leading-[18px]">
+                <AlertCircle className="mt-px h-4 w-4 shrink-0 text-amber-800" />
+                <span className="text-foreground">
+                  <strong className="font-semibold">
+                    {recentOnly.length === 1
+                      ? "A project with this name was added for this client recently."
+                      : `${recentOnly.length} projects with this name were added for this client recently.`}
+                  </strong>{" "}
+                  If this is a repeat job, carry on. If it is the same work, open it instead.
+                </span>
+              </div>
+              {recentOnly.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-3.5 py-2.5"
+                >
+                  <span className="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                    <span className="text-sm font-semibold text-foreground">{d.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {[
+                        d.code,
+                        d.status,
+                        d.days_ago === 0
+                          ? "added today"
+                          : `added ${d.days_ago} ${d.days_ago === 1 ? "day" : "days"} ago`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </span>
+                  <button type="button" className={smallButton} onClick={() => openProject(d)}>
+                    Open project
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 

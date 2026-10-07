@@ -313,10 +313,8 @@ export default function ProjectsPage() {
     // the two views never disagree about the order.
   }, [projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
 
-  const sortedFiltered = useMemo(
-    () => sortProjects(filtered, sortBy),
-    [filtered, sortBy]
-  );
+  // The sort itself is applied below, once sortContext (which needs the
+  // look-alike index) exists, and shared by the list rows and the board.
 
   // Export the projects currently on screen (search, status, filters and
   // sort all applied) as a CSV.
@@ -354,18 +352,40 @@ export default function ProjectsPage() {
 
   // "Looks like …" on cards and list rows: names people confuse when they
   // log time. A hint to rename one, or at least add a description.
-  const lookalikeTextById = useMemo(() => {
+  const lookalikeIndex = useMemo(() => {
     const clientNames = new Map(projects.map((p) => [p.client_id, p.client_name || ""]));
-    const index = buildLookalikeIndex(projects, (id) => clientNames.get(id) || "");
+    return buildLookalikeIndex(projects, (id) => clientNames.get(id) || "");
+  }, [projects]);
+
+  const lookalikeTextById = useMemo(() => {
     const texts = new Map();
-    index.forEach((twins, id) => {
+    lookalikeIndex.forEach((twins, id) => {
       texts.set(
         id,
         `Looks like ${twins[0].name}${twins.length > 1 ? ` +${twins.length - 1}` : ""}`
       );
     });
     return texts;
-  }, [projects]);
+  }, [lookalikeIndex]);
+
+  // For the "Look-alikes first" sort: projects that look alike share a key
+  // (the alphabetically first name in the group), so they land side by side.
+  const sortContext = useMemo(() => {
+    const lookalikeKeyById = new Map();
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    lookalikeIndex.forEach((twins, id) => {
+      const names = [byId.get(id)?.name, ...twins.map((t) => t.name)]
+        .map((n) => String(n || "").trim().toLowerCase())
+        .sort();
+      lookalikeKeyById.set(id, names[0]);
+    });
+    return { lookalikeKeyById };
+  }, [projects, lookalikeIndex]);
+
+  const sortedFiltered = useMemo(
+    () => sortProjects(filtered, sortBy, sortContext),
+    [filtered, sortBy, sortContext]
+  );
 
   const byStatus = useMemo(() => {
     const map = Object.fromEntries(
@@ -386,7 +406,7 @@ export default function ProjectsPage() {
       // visible effect while a sort is active, since the column re-sorts
       // by the chosen criterion on every render.
       Object.keys(map).forEach((status) => {
-        map[status] = sortProjects(map[status], sortBy);
+        map[status] = sortProjects(map[status], sortBy, sortContext);
       });
     } else {
       // "No sorting": the manual drag order (kanban_order) — restores
@@ -408,7 +428,7 @@ export default function ProjectsPage() {
     }
 
     return map;
-  }, [filtered, sortBy]);
+  }, [filtered, sortBy, sortContext]);
 
   useEffect(() => {
     setListPage(1);

@@ -7,6 +7,9 @@ export const SORT_OPTIONS = [
   { value: "added", label: "Latest added" },
   { value: "updated", label: "Last updated" },
   { value: "deadline", label: "Deadline" },
+  { value: "no_deliverables", label: "No deliverables first" },
+  { value: "has_deliverables", label: "Has deliverables first" },
+  { value: "lookalikes", label: "Look-alikes first" },
 ];
 
 // "" ("No sorting") is the default - the card view keeps its manual drag
@@ -35,7 +38,13 @@ const compareDate = (a, b, direction = 1) => {
 // manual drag order should pass the list in that order already (see
 // ProjectsPage.jsx's byStatus, which falls back to kanban_order itself
 // rather than calling this function at all when sortBy is empty).
-export const sortProjects = (projects, sortBy) => {
+//
+// `context.lookalikeKeyById` (project id -> a key shared by names that look
+// alike) is what the "Look-alikes first" sort needs; the page builds it from
+// the same look-alike check that puts "Looks like ..." on the cards.
+// Every sort here is stable: projects the criterion can't tell apart keep the
+// order they came in.
+export const sortProjects = (projects, sortBy, context = {}) => {
   const list = [...projects];
 
   if (sortBy === "deadline") {
@@ -48,6 +57,25 @@ export const sortProjects = (projects, sortBy) => {
     list.sort((a, b) => (time(b.created_at) || 0) - (time(a.created_at) || 0));
   } else if (sortBy === "updated") {
     list.sort((a, b) => (time(b.updated_at) || 0) - (time(a.updated_at) || 0));
+  } else if (sortBy === "no_deliverables" || sortBy === "has_deliverables") {
+    // Projects with nothing in them (an empty project, or one whose
+    // deliverables ended up somewhere else) against the ones that have some.
+    const has = (project) => (Number(project.deliverables_count) > 0 ? 1 : 0);
+    const direction = sortBy === "has_deliverables" ? -1 : 1;
+    list.sort((a, b) => (has(a) - has(b)) * direction);
+  } else if (sortBy === "lookalikes") {
+    // Projects flagged "Looks like ..." first, grouped so the ones that look
+    // like each other sit next to each other; unflagged projects follow.
+    const keys = context.lookalikeKeyById;
+    const keyOf = (project) => keys?.get(project.id) ?? null;
+    list.sort((a, b) => {
+      const ka = keyOf(a);
+      const kb = keyOf(b);
+      if (ka === null && kb === null) return 0;
+      if (ka === null) return 1;
+      if (kb === null) return -1;
+      return ka.localeCompare(kb);
+    });
   }
 
   return list;

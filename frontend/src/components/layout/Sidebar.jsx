@@ -36,7 +36,9 @@ import {
 // user does themselves refreshes instantly via the countsBus event. It
 // pauses while the tab is hidden and refreshes when visible again
 // (see startPolling).
-const COUNT_POLL_MS = 15000;
+// 45s: the Approvals count is the heaviest call the app polls (it was
+// 2-3s on the free backend instance), so it runs less often.
+const COUNT_POLL_MS = 45000;
 const FIRST_COUNT_DELAY_MS = 1200;
 
 const SECTION_TITLE =

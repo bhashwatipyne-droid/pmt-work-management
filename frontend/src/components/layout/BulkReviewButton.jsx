@@ -6,6 +6,9 @@ import { getBulkReviewCount } from "@/services/api";
 import { onCountsRefresh, refreshCounts } from "@/lib/countsBus";
 import { startPolling } from "@/lib/polling";
 
+// Not 15s like before: every poll is a request the backend has to answer.
+const BULK_POLL_MS = 60000;
+
 const BulkReviewModal = lazy(() => import("../work-sheet/BulkReviewModal"));
 
 // "Bulk review" in the top bar, on every page: a solid brand button with the
@@ -31,14 +34,17 @@ export function BulkReviewButton() {
       .catch(() => {});
   }, [currentUser?.id, canReview]);
 
-  // 15s poll (paused while the tab is hidden) is a safety net for changes made
-  // elsewhere; this user's own actions refresh it instantly via countsBus.
+  // A slow poll (paused while the tab is hidden) is only a safety net for
+  // changes made elsewhere; this user's own actions refresh it instantly via
+  // countsBus. It is deliberately slow and offset from the sidebar's polls:
+  // the backend is a small instance, and requests that all fire on the same
+  // tick queue behind each other.
   useEffect(() => {
     if (!canReview) return undefined;
-    // First count a moment after the page paints, so it never competes with
-    // the page's own requests.
-    const first = setTimeout(fetchCount, 1200);
-    const stopPolling = startPolling(fetchCount, 15000);
+    // First count a few seconds after the page paints, after the page's own
+    // requests and the sidebar's badge counts.
+    const first = setTimeout(fetchCount, 4000);
+    const stopPolling = startPolling(fetchCount, BULK_POLL_MS);
     const unsubscribe = onCountsRefresh(fetchCount);
     return () => {
       clearTimeout(first);

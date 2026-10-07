@@ -31,13 +31,22 @@ def connect():
             "terminal first (see the commands in the instructions)."
         )
 
+    # A pasted value often carries spaces or quotes around it.
+    url = os.environ["MONGO_URL"].strip().strip("'\"").strip()
+    if not url.startswith(("mongodb://", "mongodb+srv://")):
+        sys.exit(
+            "MONGO_URL must start with mongodb+srv:// (or mongodb://) but yours starts with "
+            f"{url[:4]!r}. Copy the whole connection string from Atlas (Connect > Drivers), "
+            "put your password in, and set it again."
+        )
+
     options = {}
     try:
         import certifi
         options["tlsCAFile"] = certifi.where()  # same as the server, needed for Atlas on Windows
     except ImportError:
         pass
-    client = MongoClient(os.environ["MONGO_URL"], serverSelectionTimeoutMS=15000, **options)
+    client = MongoClient(url, serverSelectionTimeoutMS=15000, **options)
     return client[os.environ["DB_NAME"]]
 
 

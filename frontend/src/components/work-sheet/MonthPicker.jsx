@@ -55,13 +55,13 @@ export function MonthPicker({ value, onChange, currentMonth }) {
       role="group"
       aria-label="Month"
       data-testid="worksheet-month-picker"
-      className="inline-flex h-[34px] items-center rounded-lg border border-border bg-card"
+      className="inline-flex h-8 items-center rounded-[7px] bg-white shadow-[inset_0_0_0_1px_#eff0f2]"
     >
       <button
         type="button"
         aria-label="Previous month"
         onClick={() => step(-1)}
-        className="flex h-full w-8 items-center justify-center rounded-l-lg text-slate-600 transition-colors hover:bg-slate-50"
+        className="flex h-full w-8 items-center justify-center rounded-l-[7px] text-[#4a5878] transition-colors hover:bg-[#f9fafb]"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
@@ -78,7 +78,7 @@ export function MonthPicker({ value, onChange, currentMonth }) {
             type="button"
             aria-label={`Month: ${monthLabel(value)}. Choose a month`}
             data-testid="worksheet-month-label"
-            className="flex h-full min-w-[132px] items-center justify-center gap-1.5 px-2 text-[13px] font-medium text-foreground transition-colors hover:bg-slate-50"
+            className="flex h-full min-w-[132px] items-center justify-center gap-1.5 px-2 text-[13px] font-medium text-[#0d1b3e] transition-colors hover:bg-[#f9fafb]"
           >
             <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
             {monthLabel(value)}
@@ -158,7 +158,7 @@ export function MonthPicker({ value, onChange, currentMonth }) {
         type="button"
         aria-label="Next month"
         onClick={() => step(1)}
-        className="flex h-full w-8 items-center justify-center rounded-r-lg text-slate-600 transition-colors hover:bg-slate-50"
+        className="flex h-full w-8 items-center justify-center rounded-r-[7px] text-[#4a5878] transition-colors hover:bg-[#f9fafb]"
       >
         <ChevronRight className="h-4 w-4" />
       </button>

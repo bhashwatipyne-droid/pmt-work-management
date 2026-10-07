@@ -10,7 +10,6 @@ import {
 import {
   Plus,
   ChevronDown,
-  ClipboardCheck,
   History,
   SlidersHorizontal,
   Search,
@@ -20,14 +19,24 @@ import {
   X,
 } from "lucide-react";
 import { WORKSHEET } from "@/constants/testIds";
-import { CountBadge } from "@/components/ui/CountBadge";
 import { MonthPicker } from "./MonthPicker";
+import { ExportIconButton } from "../ui/ExportIconButton";
 
 // Group-by options for the table. "None" turns grouping off and falls
 // back to the existing flat, sorted row list.
 const GROUP_OPTIONS = ["Stage", "Member", "None"];
 
 const SEARCH_DEBOUNCE_MS = 160;
+
+// Control styles from the redesign (Mint): 32px, 7px radius, a 1px neutral ring
+// instead of a coloured outline. Primary actions are solid brand blue and the
+// quieter ones (History) are "secondary gray".
+const CONTROL =
+  "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-white px-2.5 text-[13px] font-medium text-[#4a5878] shadow-[inset_0_0_0_1px_#eff0f2] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20";
+const SECONDARY_GRAY =
+  "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-[#f5f6f8] px-3.5 text-[13px] font-semibold text-[#4a5878] shadow-[inset_0_0_0_1px_#eff0f2] outline-none transition-colors hover:bg-[#eef0f3] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20";
+const PRIMARY =
+  "h-8 rounded-[7px] px-3.5 text-[13px] font-semibold bg-[#2b2bb5] text-white hover:bg-[#3d3dcc] active:bg-[#3d3dcc]";
 
 const isEditableTarget = (el) => {
   if (!el) return false;
@@ -112,7 +121,7 @@ const SearchBox = ({ value, onChange }) => {
             else inputRef.current?.blur();
           }
         }}
-        className="h-9 w-full pl-9 pr-9"
+        className="h-8 w-full rounded-[7px] border-[#eff0f2] pl-9 pr-9 text-[13px] shadow-none"
       />
 
       {text ? (
@@ -150,8 +159,6 @@ export const WorkSheetToolbar = ({
   totalCount,
   onBulkAdd,
   bulkAdding,
-  onOpenBulkReview,
-  bulkReviewCount = 0,
   onOpenHistory,
   // Month stepper in the header. Omit `onMonthChange` and it is not shown.
   // `month` is "YYYY-MM", or "" for every month.
@@ -178,6 +185,12 @@ export const WorkSheetToolbar = ({
   onGroupByChange,
   allCollapsed = false,
   onToggleCollapseAll,
+  // The sheet tabs (All / Content / Design / Animation). The redesign puts them
+  // between the title row and the filter row, so they are drawn from here.
+  tabs,
+  // Icon-only Export next to the row count. Omit `onExport` and it is not
+  // shown, so dropping this file in does not require the page change first.
+  onExport,
 }) => {
   const showGroupControl = Boolean(groupBy && onGroupByChange);
   const showCollapseControl = Boolean(
@@ -185,83 +198,76 @@ export const WorkSheetToolbar = ({
   );
 
   return (
-    <div className="border-b border-border bg-card">
-      {/* TITLE + PRIMARY ACTIONS ROW */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+    <div className="border-b border-[#eaeef4] bg-white">
+      {/* TITLE + PRIMARY ACTIONS ROW
+          (Bulk review is no longer here - it lives in the top bar.) */}
+      <div className="flex flex-wrap items-center gap-3 px-5 pb-3 pt-5">
+        <h1 className="min-w-[160px] flex-1 text-2xl font-semibold tracking-tight text-[#0d1b3e]">
           {title}
         </h1>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {onMonthChange && (
-            <MonthPicker
-              value={month}
-              onChange={onMonthChange}
-              currentMonth={currentMonth}
-            />
-          )}
+        {onMonthChange && (
+          <MonthPicker
+            value={month}
+            onChange={onMonthChange}
+            currentMonth={currentMonth}
+          />
+        )}
 
-          {onOpenBulkReview && (
-            <Button onClick={onOpenBulkReview} size="sm" variant="outline">
-              <ClipboardCheck className="h-4 w-4" />
-              Bulk Review
-              <CountBadge count={bulkReviewCount} />
+        {onOpenHistory && (
+          <button type="button" onClick={onOpenHistory} className={SECONDARY_GRAY}>
+            <History className="h-3.5 w-3.5" />
+            History
+          </button>
+        )}
+
+        {canAdd && (
+          <div className="inline-flex h-8">
+            <Button
+              data-testid={WORKSHEET.addRowBtn}
+              onClick={onAddRow}
+              size="sm"
+              disabled={bulkAdding}
+              className={`${PRIMARY} ${onBulkAdd ? "rounded-r-none" : ""}`}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {bulkAdding ? "Adding rows..." : "Add row"}
             </Button>
-          )}
 
-          {onOpenHistory && (
-            <Button onClick={onOpenHistory} size="sm" variant="outline">
-              <History className="h-4 w-4" />
-              History
-            </Button>
-          )}
-
-          {canAdd && (
-            <div className="inline-flex h-[34px]">
-              <Button
-                data-testid={WORKSHEET.addRowBtn}
-                onClick={onAddRow}
-                size="sm"
-                disabled={bulkAdding}
-                className={onBulkAdd ? "rounded-r-none" : ""}
-              >
-                <Plus className="h-4 w-4" />
-                {bulkAdding ? "Adding rows..." : "Add row"}
-              </Button>
-
-              {onBulkAdd && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="sm"
-                      disabled={bulkAdding}
-                      aria-label="Add multiple rows"
-                      className="rounded-l-none border-l border-white/20 px-2"
+            {onBulkAdd && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    disabled={bulkAdding}
+                    aria-label="Add multiple rows"
+                    className={`${PRIMARY} rounded-l-none border-l border-white/20 px-2`}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {[1, 5, 10, 20].map((count) => (
+                    <DropdownMenuItem
+                      key={count}
+                      onClick={() =>
+                        count === 1 ? onAddRow() : onBulkAdd(count)
+                      }
                     >
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {[1, 5, 10, 20].map((count) => (
-                      <DropdownMenuItem
-                        key={count}
-                        onClick={() =>
-                          count === 1 ? onAddRow() : onBulkAdd(count)
-                        }
-                      >
-                        Add {count} row{count === 1 ? "" : "s"}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          )}
-        </div>
+                      Add {count} row{count === 1 ? "" : "s"}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
       </div>
 
+      {tabs}
+
       {/* SEARCH / FILTER / GROUP ROW */}
-      <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
+      <div className="flex flex-wrap items-center gap-2 px-5 py-2.5">
         <SearchBox
           value={filters.search}
           onChange={(next) =>
@@ -282,44 +288,48 @@ export const WorkSheetToolbar = ({
                   : "Show only rows missing a deliverable"
               }
               className={[
-                "inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors",
+                CONTROL,
                 onlyMissing
-                  ? "border-amber-400 bg-amber-100 text-amber-900 ring-1 ring-amber-300"
-                  : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100",
+                  ? "!bg-[#fff5f5] !text-[#991b1b] !shadow-[inset_0_0_0_1px_#ef4444]"
+                  : "",
               ].join(" ")}
             >
               <AlertCircle className="h-3.5 w-3.5" />
               {missingDeliverableCount} missing a deliverable
             </button>
           ) : (
-            <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-800">
+            <span className={CONTROL}>
               <AlertCircle className="h-3.5 w-3.5" />
               {missingDeliverableCount} missing a deliverable
             </span>
           ))}
 
-        <Button
+        <button
           type="button"
-          variant={activeFilterCount > 0 ? "default" : "outline"}
-          size="sm"
           onClick={onOpenFilters}
+          className={[
+            CONTROL,
+            activeFilterCount > 0
+              ? "!bg-[#f0f0fd] !text-[#1a1a8a] !shadow-[inset_0_0_0_1px_#9090ec]"
+              : "",
+          ].join(" ")}
         >
-          <SlidersHorizontal className="h-4 w-4" />
+          <SlidersHorizontal className="h-3.5 w-3.5" />
           Filter
           {activeFilterCount > 0 && (
-            <span className="ml-0.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold">
+            <span className="ml-0.5 rounded-full bg-[#2b2bb5] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
               {activeFilterCount}
             </span>
           )}
-        </Button>
+        </button>
 
         {showGroupControl && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                <ArrowUpDown className="h-4 w-4" />
+              <button type="button" className={CONTROL}>
+                <ArrowUpDown className="h-3.5 w-3.5" />
                 Group: {groupBy}
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               {GROUP_OPTIONS.map((option) => (
@@ -337,27 +347,37 @@ export const WorkSheetToolbar = ({
         )}
 
         {showCollapseControl && (
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
             onClick={onToggleCollapseAll}
+            className="inline-flex h-8 items-center rounded-[7px] px-2.5 text-[13px] font-medium text-[#4a5878] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20"
           >
             {allCollapsed ? "Expand all" : "Collapse all"}
-          </Button>
+          </button>
         )}
 
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-          {loadingFullList && (
-            <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#2b2bb5]" />
-              Loading full list…
-            </span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs text-[#546490]">
+            {loadingFullList && (
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#2b2bb5]" />
+                Loading full list…
+              </span>
+            )}
+            {totalCount != null
+              ? `${resultCount.toLocaleString("en-IN")} of ${totalCount.toLocaleString("en-IN")} rows`
+              : `${resultCount} row${resultCount === 1 ? "" : "s"}`}
+          </span>
+
+          {onExport && (
+            <ExportIconButton
+              data-testid={WORKSHEET.exportBtn}
+              onClick={onExport}
+              disabled={resultCount === 0}
+              className="h-8 w-8 rounded-[7px] border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
+            />
           )}
-          {totalCount != null
-            ? `${resultCount} of ${totalCount} rows`
-            : `${resultCount} row${resultCount === 1 ? "" : "s"}`}
-        </span>
+        </div>
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Check, ChevronDown, Eye, Search, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, Eye, LayoutGrid, List, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
@@ -37,7 +37,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PROJECTS } from "@/constants/testIds";
-import { ProjectStatTile } from "@/components/projects/projectVisuals";
 import { COLUMN_WIDTH, KanbanColumn } from "@/components/projects/KanbanColumn";
 import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { DEFAULT_SORT, SORT_OPTIONS, sortProjects } from "@/lib/projectSort";
@@ -47,6 +46,8 @@ import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { trackEvent } from "../analytics";
 import { ProjectFilterPanel } from "@/components/projects/ProjectFilterPanel";
+import { ExportIconButton } from "@/components/ui/ExportIconButton";
+import { downloadCsv, todayStamp } from "@/lib/exportCsv";
 import {
   Popover,
   PopoverContent,
@@ -277,6 +278,40 @@ export default function ProjectsPage() {
     () => sortProjects(filtered, sortBy),
     [filtered, sortBy]
   );
+
+  // Export the projects currently on screen (search, status, filters and
+  // sort all applied) as a CSV.
+  const handleExport = () => {
+    if (sortedFiltered.length === 0) {
+      toast.info("No projects to export");
+      return;
+    }
+    const header = [
+      "Code", "Project", "Client", "Contact", "Status", "Deliverables",
+      "Content", "Design", "Animate", "Start date", "Deadline", "Visibility",
+    ];
+    const rows = sortedFiltered.map((p) => {
+      const stages = p.stage_counts || {};
+      return [
+        p.code || "",
+        p.name || "",
+        p.client_name || "",
+        p.client_poc || "",
+        p.status || "",
+        p.deliverables_count ?? 0,
+        stages.Content ?? 0,
+        stages.Design ?? 0,
+        stages.Animate ?? 0,
+        (p.start_date || "").slice(0, 10),
+        (p.end_date || "").slice(0, 10),
+        p.hidden ? "Hidden" : "Visible",
+      ];
+    });
+    downloadCsv(`projects-${todayStamp()}.csv`, header, rows);
+    toast.success(
+      `Exported ${rows.length} project${rows.length === 1 ? "" : "s"}`
+    );
+  };
 
   // "Looks like …" on cards and list rows: names people confuse when they
   // log time. A hint to rename one, or at least add a description.
@@ -794,20 +829,67 @@ export default function ProjectsPage() {
   return (
     <div
       data-testid={PROJECTS.page}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-6 pb-6 pt-[21px]"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-5 pb-6 pt-[21px]"
     >
-      {/* Title + toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <h1 className="flex items-baseline text-[22px] font-bold leading-[27px] text-[#11151c]">
-          Projects
-          <span className="ml-[9px] text-[13px] font-normal text-[#98a1af]">
-            {projects.length}
-          </span>
-        </h1>
+      {/* Title + toolbar - a white band under the top bar, as in the redesign:
+          title and counts on the left, Board / List and the solid-blue
+          "New project" on the right, then the search and filters. */}
+      <div className="-mx-5 -mt-[21px] shrink-0 border-b border-[#eaeef4] bg-white px-5 pb-3 pt-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-[200px] flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-semibold leading-8 tracking-tight text-[#0d1b3e]">
+              Projects
+            </h1>
+            <span className="text-[13px] text-[#546490]">
+              <span data-testid="projects-total-count">{projects.length}</span> total
+              {" · "}
+              <span data-testid={PROJECTS.metricDueWeek}>{metrics?.due_this_week ?? 0}</span> due this week
+              {" · "}
+              <span data-testid={PROJECTS.metricRework}>{metrics?.in_rework ?? 0}</span> in rework
+            </span>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+          {/* Board / List */}
+          <div role="radiogroup" aria-label="Layout" className="flex rounded-lg bg-[#f5f6f8] p-0.5">
+            {[
+              ["chart", "Board", LayoutGrid, PROJECTS.chartViewBtn],
+              ["list", "List", List, PROJECTS.listViewBtn],
+            ].map(([key, label, Icon, testId]) => (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={view === key}
+                data-testid={testId}
+                onClick={() => setView(key)}
+                className={`flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-xs font-semibold outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20 ${
+                  view === key
+                    ? "bg-white text-[#0d1b3e] shadow-[0_1px_2px_rgba(13,28,61,0.05)]"
+                    : "text-[#546490] hover:text-[#0d1b3e]"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {canManage && (
+            <button
+              type="button"
+              data-testid={PROJECTS.newProjectBtn}
+              onClick={() => setModalOpen(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-[7px] bg-[#2b2bb5] px-3.5 text-[13px] font-semibold text-white outline-none transition-colors hover:bg-[#3d3dcc] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/30"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New project
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {/* Search */}
-          <label className="flex h-[34px] w-[242px] items-center gap-2 rounded-[8px] border border-[#e1e4ea] bg-white pl-3 pr-2 focus-within:border-[#3b6ef6] focus-within:ring-[3px] focus-within:ring-[#3b6ef6]/15">
+          <label className="flex h-8 w-[320px] max-w-full items-center gap-2 rounded-[7px] border border-[#eff0f2] bg-white pl-3 pr-2 focus-within:border-[#2b2bb5] focus-within:ring-[3px] focus-within:ring-[#2b2bb5]/20">
             <Search className="h-3 w-3 shrink-0 text-[#a2aab6]" strokeWidth={2.5} />
             <input
               data-testid={PROJECTS.searchInput}
@@ -815,14 +897,14 @@ export default function ProjectsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search projects or deliverables…"
-              className="min-w-0 flex-1 border-none bg-transparent text-[12.5px] text-[#11151c] outline-none placeholder:text-[#a2aab6]"
+              className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-[#11151c] outline-none placeholder:text-[#a2aab6]"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch("")}
                 aria-label="Clear search"
-                className="text-[#a2aab6] hover:text-[#4b5563]"
+                className="text-[#a2aab6] hover:text-[#4a5878]"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -837,7 +919,7 @@ export default function ProjectsPage() {
                 type="button"
                 data-testid={PROJECTS.statusFilter}
                 aria-label="Filter by status"
-                className="flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-[#e1e4ea] bg-white pl-3 pr-[10px] text-[12.5px] text-[#4b5563] outline-none hover:bg-[#fafbfc] focus-visible:ring-[3px] focus-visible:ring-[#3b6ef6]/15"
+                className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[#eff0f2] bg-white pl-3 pr-[10px] text-[13px] text-[#4a5878] outline-none hover:bg-[#f9fafb] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20"
               >
                 {statusFilter && (
                   <span
@@ -858,14 +940,14 @@ export default function ProjectsPage() {
                 <DropdownMenuItem
                   key={s || "all"}
                   onSelect={() => setStatusFilter(s)}
-                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]"
+                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-[#11151c] focus:bg-[#f4f5f7]"
                 >
                   <span
                     className="h-2 w-2 rounded-full"
                     style={{ background: s ? PROJECT_STATUS_STYLE[s]?.dot : "#c3c8d2" }}
                   />
                   <span className="flex-1">{s || "All status"}</span>
-                  {statusFilter === s && <Check className="!h-3.5 !w-3.5 text-[#3b6ef6]" />}
+                  {statusFilter === s && <Check className="!h-3.5 !w-3.5 text-[#2b2bb5]" />}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -879,15 +961,15 @@ export default function ProjectsPage() {
                 data-testid={PROJECTS.filtersButton}
                 aria-label="More filters and sorting"
                 title="More filters and sorting"
-                className={`relative flex h-[34px] w-[34px] items-center justify-center rounded-[8px] border bg-white outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#3b6ef6]/15 ${
+                className={`relative flex h-8 w-8 items-center justify-center rounded-[7px] border bg-white outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20 ${
                   activeFilterCount > 0
-                    ? "border-[#3b6ef6] text-[#3b6ef6]"
-                    : "border-[#e1e4ea] text-[#4b5563] hover:bg-[#fafbfc]"
+                    ? "border-[#2b2bb5] text-[#2b2bb5] bg-[#f0f0fd]"
+                    : "border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
                 }`}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
                 {activeFilterCount > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#3b6ef6] px-1 text-[9.5px] font-bold text-white">
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2b2bb5] px-1 text-[9.5px] font-bold text-white">
                     {activeFilterCount}
                   </span>
                 )}
@@ -921,39 +1003,13 @@ export default function ProjectsPage() {
             </PopoverContent>
           </Popover>
 
-          {/* Kanban / List */}
-          <div className="flex h-[30px] items-center rounded-[8px] bg-[#edeff3] p-[2px]">
-            {[
-              ["chart", "Kanban", PROJECTS.chartViewBtn],
-              ["list", "List", PROJECTS.listViewBtn],
-            ].map(([key, label, testId]) => (
-              <button
-                key={key}
-                type="button"
-                data-testid={testId}
-                onClick={() => setView(key)}
-                aria-pressed={view === key}
-                className={`h-[26px] rounded-[6px] px-3 text-[12.5px] transition-colors ${
-                  view === key
-                    ? "bg-white font-semibold text-[#11151c] shadow-[0_1px_2px_rgba(17,21,28,0.12)]"
-                    : "font-medium text-[#6b7280] hover:text-[#11151c]"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {canManage && (
-            <button
-              type="button"
-              data-testid={PROJECTS.newProjectBtn}
-              onClick={() => setModalOpen(true)}
-              className="h-8 rounded-[8px] bg-[#11151c] px-3 text-[12.5px] font-semibold text-white transition-colors hover:bg-[#2a303b]"
-            >
-              + New project
-            </button>
-          )}
+          {/* Export (icon only) - exports exactly what is listed */}
+          <ExportIconButton
+            data-testid={PROJECTS.exportBtn}
+            onClick={handleExport}
+            disabled={loading || sortedFiltered.length === 0}
+            className="h-8 w-8 rounded-[7px] border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
+          />
         </div>
       </div>
 
@@ -1010,30 +1066,6 @@ export default function ProjectsPage() {
           </button>
         </div>
       )}
-
-      {/* Metrics */}
-      <div className="mt-4 grid shrink-0 grid-cols-2 gap-[10px] lg:grid-cols-4">
-        <ProjectStatTile
-          testId={PROJECTS.metricActive}
-          label="Active projects"
-          value={metrics?.active_projects ?? 0}
-        />
-        <ProjectStatTile
-          testId={PROJECTS.metricRework}
-          label="In rework"
-          value={metrics?.in_rework ?? 0}
-        />
-        <ProjectStatTile
-          testId={PROJECTS.metricDueWeek}
-          label="Due this week"
-          value={metrics?.due_this_week ?? 0}
-        />
-        <ProjectStatTile
-          testId={PROJECTS.metricDeliverables}
-          label="Deliverables"
-          value={metrics?.total_deliverables ?? 0}
-        />
-      </div>
 
       {/* Bulk actions (appear once something is selected) */}
       {canManage && selectionMode && (

@@ -9,6 +9,7 @@ export const WORKSHEET = {
   monthFilter: 'worksheet-month-filter',
   clearFiltersBtn: 'worksheet-clear-filters-btn',
   addRowBtn: 'worksheet-add-row-btn',
+  exportBtn: 'worksheet-export-btn',
   table: 'worksheet-table',
   emptyState: 'worksheet-empty-state',
   loadingState: 'worksheet-loading-state',

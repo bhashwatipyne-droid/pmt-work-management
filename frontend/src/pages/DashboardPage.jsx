@@ -19,12 +19,14 @@ import {
 import { useUser } from "@/context/UserContext";
 import { getDashboardHome, getEfficiencyOverview, getEfficiencyTrend } from "@/services/api";
 import { DashboardSkeleton } from "@/components/skeletons/Skeletons";
+import TeamActivityTab from "@/components/dashboard/TeamActivityTab";
 import {
   NEXT_STATUSES,
   TEAMS,
   TEAM_DEPARTMENT,
   addDays,
   buildHome,
+  buildTeamActivity,
   currentMonth,
   fmtDay,
   fmtWeekday,
@@ -222,6 +224,11 @@ export default function DashboardPage() {
     [data, team, filters, userName]
   );
 
+  const teamAct = useMemo(
+    () => (data ? buildTeamActivity({ data, team, filters, userName }) : null),
+    [data, team, filters, userName]
+  );
+
   if (userLoading || !currentUser) return null;
 
   if (!isAdmin) {
@@ -373,6 +380,15 @@ export default function DashboardPage() {
 
   const tabs = [
     { key: "overview", label: "Overview" },
+    {
+      key: "team",
+      label: "Team activity",
+      badge: teamAct
+        ? teamAct.everyone.filter((p) => p.delays > 0 || p.state === "blocked").length
+        : 0,
+      badgeBg: C.error50,
+      badgeFg: C.error500,
+    },
     { key: "actions", label: "Actions", badge: h.actions.length, badgeBg: C.brand500, badgeFg: "#fff" },
     { key: "risk", label: "Delivery & risk", badge: h.delay.length, badgeBg: C.error50, badgeFg: C.error500 },
     { key: "trends", label: "Trends & capacity" },
@@ -543,6 +559,14 @@ export default function DashboardPage() {
           </div>
           <span className="shrink-0 text-[12px] text-[rgb(84,100,144)]">{h.total} deliverables in view</span>
         </div>
+
+        {/* ================= TEAM ACTIVITY ================= */}
+        {tab === "team" && teamAct && (
+          <TeamActivityTab
+            activity={teamAct}
+            onOpenSheet={(name) => navigate("/", { state: { search: name } })}
+          />
+        )}
 
         {/* ================= OVERVIEW ================= */}
         {tab === "overview" && (

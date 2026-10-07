@@ -34,6 +34,11 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                logged it, reviewer = who it is assigned to, since = when it was
                marked ready (dropped once older than MAX_OVERDUE_DAYS)
 
+team_activity  live, per member (not tied to the month being viewed): minutes logged
+               today and this week, the latest work-sheet entry of today ("now") and
+               their last few entries. The page combines it with the deliverable rows
+               to show who is working, in review, blocked, delayed or not logged.
+
 Scrapped and hidden projects are left out entirely. Deliverables with no
 deadline at all can't be placed in a month and are left out of month scope.
 """
@@ -50,6 +55,13 @@ CRITICAL_LATE_DAYS = 3
 STALE_WORKING_DAYS = 3
 NEXT_DAYS = 7
 MAX_OVERDUE_DAYS = 45
+
+# Team activity. A working day is 8.5h - the same default the Efficiency module
+# uses (efficiency.DEFAULT_WORKING_HOURS_PER_DAY) - so "load this week" reads as
+# minutes logged so far against the minutes expected so far (Mon..today).
+WORKDAY_MINUTES = int(8.5 * 60)
+ACTIVITY_DAYS = 14
+ACTIVITY_RECENT = 4
 
 BILLED_PROJECT_STATUSES = {"Raised Invoice", "Completed"}
 EXCLUDED_PROJECT_STATUSES = {"Scrapped"}
@@ -129,6 +141,7 @@ def create_home_dashboard_router(
             members,
             last_log_rows,
             review_items,
+            activity_items,
         ) = await asyncio.gather(
             db.projects.find(
                 {}, {"_id": 0, "id": 1, "name": 1, "client_id": 1, "status": 1, "hidden": 1}
@@ -187,6 +200,17 @@ def create_home_dashboard_router(
                 {
                     "_id": 0, "id": 1, "deliverable_name": 1, "project_id": 1, "deliverable_id": 1,
                     "stage": 1, "creator_id": 1, "reviewer_id": 1, "updated_at": 1, "created_at": 1,
+                },
+            ).to_list(None),
+            db.work_items.find(
+                {
+                    "work_date": {"$gte": (today - timedelta(days=ACTIVITY_DAYS)).isoformat()},
+                    "creator_id": {"$nin": [None, ""]},
+                },
+                {
+                    "_id": 0, "creator_id": 1, "deliverable_name": 1, "project_id": 1, "stage": 1,
+                    "status": 1, "time_taken_minutes": 1, "work_date": 1,
+                    "created_at": 1, "updated_at": 1,
                 },
             ).to_list(None),
         )
@@ -402,6 +426,58 @@ def create_home_dashboard_router(
             if not last_log.get(u["id"]) or last_log[u["id"]] < stale_before
         ]
 
+        # ---- team activity (live: today / this week) -----------------------
+        def minutes_of(w) -> float:
+            try:
+                return max(float(w.get("time_taken_minutes") or 0), 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def touched(w) -> str:
+            return w.get("updated_at") or w.get("created_at") or ""
+
+        project_name_any = {p["id"]: p.get("name", "") for p in projects if p.get("id")}
+        week_start_s = (today - timedelta(days=today.weekday())).isoformat()
+        working_days_so_far = min(today.weekday(), 4) + 1
+        items_by_user: Dict[str, List[dict]] = {}
+        for w in activity_items:
+            items_by_user.setdefault(w["creator_id"], []).append(w)
+
+        activity_members = []
+        for u in members:
+            mine = items_by_user.get(u["id"], [])
+            todays = sorted(
+                (w for w in mine if w.get("work_date") == today_s), key=touched, reverse=True
+            )
+            latest = todays[0] if todays else None
+            recent = sorted(
+                mine, key=lambda w: (w.get("work_date") or "", touched(w)), reverse=True
+            )[:ACTIVITY_RECENT]
+            activity_members.append({
+                "user_id": u["id"],
+                "today_minutes": round(sum(minutes_of(w) for w in todays)),
+                "week_minutes": round(sum(
+                    minutes_of(w) for w in mine if (w.get("work_date") or "") >= week_start_s
+                )),
+                "now": None if not latest else {
+                    "name": latest.get("deliverable_name") or "Untitled work item",
+                    "project": project_name_any.get(latest.get("project_id"), ""),
+                    "stage": latest.get("stage"),
+                    "status": latest.get("status"),
+                    "minutes": round(minutes_of(latest)),
+                },
+                "recent": [
+                    {
+                        "name": w.get("deliverable_name") or "Untitled work item",
+                        "project": project_name_any.get(w.get("project_id"), ""),
+                        "status": w.get("status"),
+                        "minutes": round(minutes_of(w)),
+                        "date": w.get("work_date"),
+                    }
+                    for w in recent
+                ],
+            })
+
         used_projects = {r["project_id"] for r in rows_out}
         return {
             "month": month,
@@ -415,6 +491,11 @@ def create_home_dashboard_router(
             },
             "deliverables": rows_out,
             "reviews": reviews_out,
+            "team_activity": {
+                "working_day": today.weekday() < 5,
+                "week_expected_minutes": working_days_so_far * WORKDAY_MINUTES,
+                "members": activity_members,
+            },
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,
             "members": {

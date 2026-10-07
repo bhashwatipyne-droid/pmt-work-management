@@ -4,12 +4,14 @@ import { ChevronRight } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { CommandCenterProvider } from "./CommandCenter";
 import { getBreadcrumb, IS_MAC } from "./navItems";
+import { BulkReviewButton } from "./BulkReviewButton";
 
 const KBD =
   "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
 
 // The bell, "Report a bug", help and the profile menu now live in the
-// sidebar (see Sidebar.jsx); the top bar is just where you are.
+// sidebar (see Sidebar.jsx); the top bar is where you are, the ⌘K hint, and
+// the Bulk review button (reviewers only).
 export const AppLayout = ({ children }) => {
   const { pathname } = useLocation();
   const { section, title } = getBreadcrumb(pathname);
@@ -36,6 +38,8 @@ export const AppLayout = ({ children }) => {
             <span className="hidden items-center gap-1.5 text-xs text-[#546490] sm:flex">
               Press <span className={KBD}>{IS_MAC ? "⌘K" : "Ctrl K"}</span> to find anything
             </span>
+
+            <BulkReviewButton />
           </header>
 
           <main className="flex flex-1 flex-col overflow-hidden">{children}</main>

@@ -9,41 +9,43 @@ const SHEETS = [
 
 // counts is optional — { [sheetKey]: number }. Omit it and the tabs
 // render exactly as before, just without the trailing count.
+//
+// Styled like the redesign: sits right under the title, a brand-blue underline
+// marks the open sheet, and the counts are small and muted.
 export const WorkSheetTabs = ({ activeSheet, onChange, counts }) => {
   return (
-    <div className="border-b border-border bg-card px-6">
-      <div className="flex items-end gap-1">
-        {SHEETS.map((sheet) => {
-          const count = counts?.[sheet.key];
-          const isActive = activeSheet === sheet.key;
+    <div
+      role="tablist"
+      aria-label="Sheets"
+      className="flex items-center gap-1 bg-white px-5 shadow-[inset_0_-1px_0_#eaeef4]"
+    >
+      {SHEETS.map((sheet) => {
+        const count = counts?.[sheet.key];
+        const isActive = activeSheet === sheet.key;
 
-          return (
-            <button
-              key={sheet.key}
-              type="button"
-              onClick={() => onChange(sheet.key)}
-              className={cn(
-                "flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-              )}
-            >
-              {sheet.label}
-              {count != null && (
-                <span
-                  className={cn(
-                    "text-xs",
-                    isActive ? "text-muted-foreground" : "text-muted-foreground/70"
-                  )}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={sheet.key}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(sheet.key)}
+            className={cn(
+              "flex h-[38px] items-center gap-1.5 px-2.5 text-[13px] font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20",
+              isActive
+                ? "text-[#0d1b3e] shadow-[inset_0_-2px_0_#2b2bb5]"
+                : "text-[#546490] hover:text-[#0d1b3e]"
+            )}
+          >
+            {sheet.label}
+            {count != null && (
+              <span className="text-[11px] font-semibold leading-4 text-[#546490]">
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 };

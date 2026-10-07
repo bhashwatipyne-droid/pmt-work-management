@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } fro
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import { APP_ACTIONS, registerAppAction } from "@/lib/appActions";
-import { refreshCounts, onCountsRefresh } from "@/lib/countsBus";
-import { startPolling } from "@/lib/polling";
+import { refreshCounts } from "@/lib/countsBus";
+import { downloadCsv, slugify, todayStamp } from "@/lib/exportCsv";
 import { consumePrefetch, WORKSHEET_INITIAL_ROW_LIMIT } from "@/services/prefetch";
 import {
   bulkDeleteWorkItems,
@@ -13,7 +13,6 @@ import {
   deleteWorkItem,
   getOptions,
   getWorkItems,
-  getBulkReviewCount,
   updateWorkItem,
   getWorksheetLookups,
   getClients,
@@ -30,7 +29,6 @@ import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 // code only needs to download once someone actually opens one, instead
 // of padding out the Work Sheet page's own initial chunk.
 const QuickLoggerModal = lazy(() => import("../components/work-sheet/QuickLoggerModal"));
-const BulkReviewModal = lazy(() => import("../components/work-sheet/BulkReviewModal"));
 import { QuickLogTrigger } from "../components/work-sheet/QuickLogTrigger";
 import { AlertCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -54,6 +52,12 @@ import {
   parseTimeInput,
 } from "@/lib/timeRules";
 import { WorkSheetSkeleton, WorkSheetTableSkeleton } from "@/components/skeletons/Skeletons";
+
+// Any dialog on screen (Bulk review now lives in the top bar, outside this
+// page, so the page can't track it with its own state any more). Used to keep
+// Delete / "L" from acting on the sheet underneath an open dialog.
+const anyDialogOpen = () =>
+  Boolean(document.querySelector('[role="dialog"], [role="alertdialog"]'));
 
 const emptyFilters = {
   search: "",
@@ -279,7 +283,6 @@ export default function WorkSheetPage() {
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   // Toolbar chip / ⌘K action: show only rows that still need a deliverable.
   const [onlyMissing, setOnlyMissing] = useState(false);
-  const [bulkReviewOpen, setBulkReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
@@ -291,9 +294,6 @@ export default function WorkSheetPage() {
   const tableRef = useRef(null);
   const isAdmin = currentUser?.role === "admin";
   const isManager = currentUser?.role === "manager";
-  // Managers review the work assigned to them; so do admins (members often
-  // name an admin as the reviewer).
-  const canBulkReview = isManager || isAdmin;
   const isMember = currentUser?.role === "member";
 
   // Admins are view-only on the Work Sheet. Managers/members can only add
@@ -303,41 +303,6 @@ export default function WorkSheetPage() {
     currentUser?.role !== "admin" &&
     (activeSheet === "Master" ||
       activeSheet === DEPARTMENT_TO_STAGE[currentUser?.department]);
-
-  const [bulkReviewCount, setBulkReviewCount] = useState(0);
-
-  // Extracted (rather than kept inline in the effect below) so the Bulk
-  // Review modal's onClose can also call it directly for an immediate
-  // refresh — otherwise the badge would lag up to 15s behind an action
-  // that just changed it, which is exactly the moment it's most likely
-  // to be stale.
-  const fetchBulkReviewCount = useCallback(() => {
-    if (!currentUser?.id || !canBulkReview) return;
-
-    getBulkReviewCount(currentUser.id)
-      .then((data) => setBulkReviewCount(data?.count || 0))
-      .catch(() => {});
-  }, [currentUser?.id, canBulkReview]);
-
-  // Same audience as the Bulk Review button itself (isManager ? ... :
-  // undefined, below) — admins can technically call the endpoint too, but
-  // the button is manager-only, so there's no point polling for a count
-  // admins would never see a badge for. The 15s interval (paused while the
-  // tab is hidden) is a safety net for changes made elsewhere (another
-  // manager, another tab); this user's own actions refresh it instantly via
-  // the countsBus event.
-  useEffect(() => {
-    if (!currentUser?.id || !canBulkReview) return undefined;
-
-    fetchBulkReviewCount();
-    const stopPolling = startPolling(fetchBulkReviewCount, 15000);
-    const unsubscribe = onCountsRefresh(fetchBulkReviewCount);
-
-    return () => {
-      stopPolling();
-      unsubscribe();
-    };
-  }, [currentUser?.id, canBulkReview, fetchBulkReviewCount]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -797,6 +762,50 @@ export default function WorkSheetPage() {
       return createdB.localeCompare(createdA);
     });
   }, [filteredItems, sortDirection]);
+
+  // Export the rows currently shown on this sheet (tab, month, search and
+  // every filter applied, newest first) as a CSV.
+  const handleExport = () => {
+    if (sortedItems.length === 0) {
+      toast.info("No rows to export");
+      return;
+    }
+    const header = [
+      "Date", "Client", "Project", "Stage", "Deliverable", "Type", "Qty",
+      "Duration (min)", "Category", "Version", "Time (min)", "Creator",
+      "Reviewer", "Status", "Remarks", "Link",
+    ];
+    const rows = sortedItems.map((item) => {
+      const project = projectById.get(item.project_id);
+      const clientId = item.client_id || project?.client_id;
+      return [
+        item.work_date || "",
+        (clientId && clientNameById.get(clientId)) || "",
+        project?.name || "",
+        item.stage || "",
+        item.deliverable_name || "",
+        item.deliverable_type || "",
+        item.quantity > 1 ? item.quantity : "",
+        item.video_duration_minutes ?? "",
+        item.work_category || "",
+        item.version || "",
+        item.time_taken_minutes ?? "",
+        userNameById.get(item.creator_id) || "",
+        userNameById.get(item.reviewer_id) || "",
+        item.status || "",
+        item.remarks || "",
+        item.deliverable_link || "",
+      ];
+    });
+    const name = [
+      "worksheet",
+      slugify(activeSheet),
+      month || "all-months",
+      todayStamp(),
+    ].join("-");
+    downloadCsv(`${name}.csv`, header, rows);
+    toast.success(`Exported ${rows.length} row${rows.length === 1 ? "" : "s"}`);
+  };
 
   const activeFilterCount =
     Number(Boolean(filters.date_from || filters.date_to)) +
@@ -1590,7 +1599,7 @@ export default function WorkSheetPage() {
       if (isEditableTarget(event.target)) return;
       if (
         quickLoggerOpen ||
-        bulkReviewOpen ||
+        anyDialogOpen() ||
         historyOpen ||
         deleteTarget ||
         bulkDeleteConfirmOpen
@@ -1607,7 +1616,6 @@ export default function WorkSheetPage() {
   }, [
     selectedIds,
     quickLoggerOpen,
-    bulkReviewOpen,
     historyOpen,
     deleteTarget,
     bulkDeleteConfirmOpen,
@@ -1694,7 +1702,7 @@ export default function WorkSheetPage() {
       if (isEditableTarget(event.target)) return;
       if (
         quickLoggerOpen ||
-        bulkReviewOpen ||
+        anyDialogOpen() ||
         historyOpen ||
         deleteTarget ||
         bulkDeleteConfirmOpen
@@ -1713,7 +1721,6 @@ export default function WorkSheetPage() {
     isManager,
     isMember,
     quickLoggerOpen,
-    bulkReviewOpen,
     historyOpen,
     deleteTarget,
     bulkDeleteConfirmOpen,
@@ -1743,12 +1750,16 @@ export default function WorkSheetPage() {
         onGroupByChange={handleGroupByChange}
         allCollapsed={allGroupsCollapsed}
         onToggleCollapseAll={handleToggleCollapseAll}
+        onExport={handleExport}
+        tabs={
+          <WorkSheetTabs
+            activeSheet={activeSheet}
+            onChange={setActiveSheet}
+            counts={tabCounts}
+          />
+        }
         onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
         bulkAdding={bulkAdding}
-        onOpenBulkReview={
-          canBulkReview ? () => setBulkReviewOpen(true) : undefined
-        }
-        bulkReviewCount={bulkReviewCount}
         onOpenHistory={() => setHistoryOpen(true)}
         month={month}
         onMonthChange={setMonth}
@@ -1766,12 +1777,6 @@ export default function WorkSheetPage() {
         users={users}
       />
 
-      <WorkSheetTabs
-        activeSheet={activeSheet}
-        onChange={setActiveSheet}
-        counts={tabCounts}
-      />
-
       {(isManager || isMember) && (
         <QuickLogTrigger onOpen={() => setQuickLoggerOpen(true)} />
       )}
@@ -1786,18 +1791,6 @@ export default function WorkSheetPage() {
           clients={clients}
           options={options}
           onSave={handleQuickLoggerSave}
-        />
-      </Suspense>
-
-      <Suspense fallback={null}>
-        <BulkReviewModal
-          open={bulkReviewOpen}
-          onClose={() => {
-            setBulkReviewOpen(false);
-            fetchBulkReviewCount();
-            refreshCounts();
-          }}
-          currentUser={currentUser}
         />
       </Suspense>
 

@@ -9,6 +9,7 @@ export const PROJECTS = {
   listViewBtn: 'projects-list-view-btn',
   sortSelect: 'projects-sort-select',
   newProjectBtn: 'projects-new-project-btn',
+  exportBtn: 'projects-export-btn',
   metricActive: 'projects-metric-active',
   metricRework: 'projects-metric-rework',
   metricDueWeek: 'projects-metric-due-week',

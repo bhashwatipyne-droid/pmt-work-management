@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from "react";
-import { ChevronsUpDown, ListChecks, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
+import { ChevronsUpDown, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -37,6 +37,22 @@ import {
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
+
+// The two glyphs of the Qty cell, drawn from the redesign's icon set
+// (fi-rr-list and fi-rr-plus-small) so they match it exactly.
+const QtyListIcon = ({ className }) => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+    <path d="M 1 2 L 17 2 C 17.265 2 17.52 1.895 17.707 1.707 C 17.895 1.52 18 1.265 18 1 C 18 0.735 17.895 0.48 17.707 0.293 C 17.52 0.105 17.265 0 17 0 L 1 0 C 0.735 0 0.48 0.105 0.293 0.293 C 0.105 0.48 0 0.735 0 1 C 0 1.265 0.105 1.52 0.293 1.707 C 0.48 1.895 0.735 2 1 2 Z" transform="translate(6 4.000)" fill="currentColor" fillRule="evenodd" />
+    <path d="M 17 0 L 1 0 C 0.735 0 0.48 0.105 0.293 0.293 C 0.105 0.48 0 0.735 0 1 C 0 1.265 0.105 1.52 0.293 1.707 C 0.48 1.895 0.735 2 1 2 L 17 2 C 17.265 2 17.52 1.895 17.707 1.707 C 17.895 1.52 18 1.265 18 1 C 18 0.735 17.895 0.48 17.707 0.293 C 17.52 0.105 17.265 0 17 0 Z" transform="translate(6 11.000)" fill="currentColor" fillRule="evenodd" />
+    <path d="M 17 0 L 1 0 C 0.735 0 0.48 0.105 0.293 0.293 C 0.105 0.48 0 0.735 0 1 C 0 1.265 0.105 1.52 0.293 1.707 C 0.48 1.895 0.735 2 1 2 L 17 2 C 17.265 2 17.52 1.895 17.707 1.707 C 17.895 1.52 18 1.265 18 1 C 18 0.735 17.895 0.48 17.707 0.293 C 17.52 0.105 17.265 0 17 0 Z" transform="translate(6 18)" fill="currentColor" fillRule="evenodd" />
+  </svg>
+);
+
+const QtyPlusIcon = ({ className }) => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+    <path d="M 11 5 L 7 5 L 7 1 C 7 0.735 6.895 0.48 6.707 0.293 C 6.52 0.105 6.265 0 6 0 C 5.735 0 5.48 0.105 5.293 0.293 C 5.105 0.48 5 0.735 5 1 L 5 5 L 1 5 C 0.735 5 0.48 5.105 0.293 5.293 C 0.105 5.48 0 5.735 0 6 C 0 6.265 0.105 6.52 0.293 6.707 C 0.48 6.895 0.735 7 1 7 L 5 7 L 5 11 C 5 11.265 5.105 11.52 5.293 11.707 C 5.48 11.895 5.735 12 6 12 C 6.265 12 6.52 11.895 6.707 11.707 C 6.895 11.52 7 11.265 7 11 L 7 7 L 11 7 C 11.265 7 11.52 6.895 11.707 6.707 C 11.895 6.52 12 6.265 12 6 C 12 5.735 11.895 5.48 11.707 5.293 C 11.52 5.105 11.265 5 11 5 Z" transform="translate(6 6)" fill="currentColor" fillRule="evenodd" />
+  </svg>
+);
 
 export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const {
@@ -902,7 +918,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 <TableCell {...cellProps(15)}>
         {!applies ? (
           <span
-            className="cell-plain block text-center text-slate-300"
+            className="cell-plain block text-center text-[#d1d5db]"
             title="Qty applies to Design and Animate rows only"
           >
             —
@@ -918,13 +934,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             data-testid={`worksheet-qty-chip-${item.id}`}
             title={`${count} ${unitName(item, options, count)} - click to log time for each`}
             onClick={() => onOpenQty?.(item.id)}
-            className="qty-chip flex h-[26px] w-full items-center gap-1.5 rounded-[7px] pl-2 pr-1.5 tabular-nums transition-colors"
+            className="qty-chip group/qty flex h-[26px] w-full items-center gap-1.5 rounded-[7px] pl-2 pr-1.5 tabular-nums transition-colors"
           >
             <span className="text-[13px] font-bold">{count}</span>
-            <span className="flex-1 text-left text-[11px] opacity-80">
+            <span className="flex-1 text-left text-[11px] text-[#2b2bb5] group-aria-expanded/qty:text-[#c8d5f0]">
               {loggedCount(item)}/{count}
             </span>
-            <ListChecks className="h-3 w-3 shrink-0" />
+            <QtyListIcon className="shrink-0" />
           </button>
         ) : (
           <Input
@@ -932,7 +948,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             data-testid={`worksheet-qty-input-${item.id}`}
             type="text"
             inputMode="numeric"
-            placeholder="+ Qty"
+            placeholder="Qty"
             title="Type a number, then click it to log time for each one"
             aria-label="Quantity"
             value={qtyText}
@@ -949,8 +965,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               }
               onUpdate(item.id, { quantity: n, quantity_items: Array(n).fill(null) });
             }}
-            className="h-7 w-full min-w-0 border-dashed px-2 text-center placeholder:text-slate-400"
+            className="peer qty-add h-[26px] w-full min-w-0 rounded-[7px] border border-[#eff0f2] bg-transparent py-0 pl-4 pr-2 text-center text-[12px] text-[#546490] shadow-none placeholder:text-[#546490] focus:pl-2 [&:not(:placeholder-shown)]:pl-2"
           />
+        )}
+        {applies && !isSet && (
+          // Plus sign in front of the "Qty" placeholder; gone once typing starts.
+          <QtyPlusIcon className="pointer-events-none absolute left-[calc(50%-17.5px)] top-1/2 -translate-y-1/2 text-[#546490] peer-focus:hidden peer-[:not(:placeholder-shown)]:hidden" />
         )}
         {renderFillHandle(15)}
       </TableCell>
@@ -963,7 +983,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 <TableCell {...cellProps(16)}>
         {!applies ? (
           <span
-            className="cell-plain block text-center text-slate-300"
+            className="cell-plain block text-center text-[#d1d5db]"
             title="Duration applies to Animate rows only"
           >
             —

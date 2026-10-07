@@ -292,7 +292,7 @@
   .sheet-mode .sheet-cell > button.qty-chip {
     background: #f0f0fd;
     color: #1a1a8a;
-    box-shadow: inset 0 0 0 1px #dcdcf8;
+    box-shadow: inset 0 0 0 1px #9090ec;
   }
 
   .sheet-mode .sheet-cell > button.qty-chip:hover {
@@ -383,6 +383,21 @@
   .sheet-mode .sheet-cell > input,
   .sheet-mode .sheet-cell > textarea {
     width: 100%;
+  }
+
+  /* The Qty chip and its empty box are 26px controls centred in the cell, as
+     in the redesign - not stretched to fill a tall (wrapped) row like the
+     dropdown buttons above. */
+  .sheet-mode .sheet-cell > button.qty-chip,
+  .sheet-mode .sheet-cell > input.qty-add {
+    flex: 0 0 auto;
+    height: 26px;
+    margin-block: auto;
+  }
+
+  /* The empty Qty box has a faint outline (neutral-200) in the redesign. */
+  .sheet-mode .sheet-cell > input.qty-add:not(:hover):not(:focus) {
+    border-color: #eff0f2;
   }
 }
 /* Always-visible horizontal scrollbar for wide, side-scrolling content (the

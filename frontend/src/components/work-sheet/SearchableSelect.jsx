@@ -93,16 +93,16 @@ export function SearchableSelect({
           {...triggerProps}
           disabled={disabled}
           onKeyDown={handleTriggerKeyDown}
-          className={`flex min-h-8 w-full items-start justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none ${className}`}
+          className={`flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none ${className}`}
         >
-          {/* Long values wrap onto more lines (the cell grows) rather than
-              being cut off with an ellipsis. */}
-          <span className="min-w-0 flex-1 whitespace-normal break-words">
+          {/* Long values are clipped with an ellipsis; the formula bar above
+              the sheet shows the whole value. */}
+          <span className="min-w-0 flex-1 truncate">
             {renderValue
               ? renderValue(selectedOption, value)
               : selectedOption?.label || (value ? String(value) : placeholder)}
           </span>
-          <ChevronsUpDown className="mt-[3px] h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
       </PopoverTrigger>
 

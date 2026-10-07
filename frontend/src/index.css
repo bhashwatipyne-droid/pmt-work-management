@@ -198,13 +198,14 @@
     bottom: -4px;
   }
 
-  /* Read-only cell text wraps onto as many lines as it needs (the row grows
-     with it) instead of being clipped with an ellipsis. */
+  /* Read-only cell text is clipped on one line with an ellipsis (the formula
+     bar above the sheet shows the whole value). */
   .cell-plain {
     display: block;
     max-width: 100%;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: #334155;
     font-size: 13px;
     line-height: 20px;

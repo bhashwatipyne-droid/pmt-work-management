@@ -865,11 +865,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               setLocal((l) => ({ ...l, deliverable_link: e.target.value.replace(/[\r\n]+/g, "") }))
             }
             onBlur={() => commit("deliverable_link", local.deliverable_link)}
-            className="break-all"
             placeholder="Paste drive link"
           />
         ) : item.deliverable_link ? (
-          <a href={item.deliverable_link} target="_blank" rel="noreferrer" className="cell-plain block break-all text-indigo-600 underline">
+          <a href={item.deliverable_link} target="_blank" rel="noreferrer" className="cell-plain block text-indigo-600 underline">
             {item.deliverable_link}
           </a>
         ) : (
@@ -1149,7 +1148,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                     >
                       {initials}
                     </span>
-                    <span className="min-w-0 break-words text-[13px] leading-5 text-slate-700">{name}</span>
+                    <span className="min-w-0 truncate text-[13px] leading-5 text-slate-700">{name}</span>
                   </span>
                 );
               }}

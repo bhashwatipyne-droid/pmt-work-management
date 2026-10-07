@@ -255,12 +255,12 @@ export function ProjectPicker({
           disabled={disabled}
           onKeyDown={handleTriggerKeyDown}
           title={current?.name}
-          className="flex min-h-8 w-full items-start justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none"
+          className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none"
         >
-          <span className={`min-w-0 flex-1 whitespace-normal break-words ${current ? "" : "text-muted-foreground"}`}>
+          <span className={`min-w-0 flex-1 truncate ${current ? "" : "text-muted-foreground"}`}>
             {current?.name || "Project"}
           </span>
-          <ChevronsUpDown className="mt-[3px] h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
       </PopoverTrigger>
 

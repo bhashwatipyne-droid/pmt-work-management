@@ -27,6 +27,7 @@ import { parseTimeInput } from "@/lib/timeRules";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
 import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
+import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { QuantityPanel } from "./QuantityPanel";
 import { RangeSelectionBar } from "./RangeSelectionBar";
 import { isQtySet, qtyApplies, quantityOf, MAX_QUANTITY } from "@/lib/quantity";
@@ -94,6 +95,25 @@ const COLUMN_FIELDS = {
 };
 
 const STAGES = ["Content", "Design", "Animate"];
+
+// The text cells the formula bar can edit, and the field each one saves to.
+const FORMULA_EDITABLE_FIELDS = {
+  "Deliverable Name": "deliverable_name",
+  "Deliverable Link": "deliverable_link",
+  Version: "version",
+  Remarks: "remarks",
+};
+// Cells that are picked from a list rather than typed.
+const FORMULA_PICKER_COLUMNS = new Set([
+  "Client",
+  "Project",
+  "Deliverable",
+  "Stage",
+  "Deliverable Type",
+  "Category",
+  "Reviewer",
+  "Status",
+]);
 const NO_COLUMNS = [];
 
 // Columns a department's own sheet doesn't use. They are left out of that
@@ -148,11 +168,12 @@ const getGroupInitials = (name) => {
 // The worksheet is intentionally virtualized without adding a new dependency.
 // Only the visible rows + a small overscan buffer are mounted in the DOM.
 //
-// Cells wrap long text, so rows are not all the same height. Every mounted row
-// is measured (see rowObserver below); rows that have not been on screen yet
-// are positioned with an estimate (ESTIMATED_ROW_HEIGHT until some rows have
-// been measured, then their average) until they are.
-const ESTIMATED_ROW_HEIGHT = 56;
+// Cells clip long text on one line (the full value is in the formula bar), so
+// rows are all about the same height. Every mounted row is still measured (see
+// rowObserver below), because a few cells can make a row taller; rows that have
+// not been on screen yet are positioned with an estimate (ESTIMATED_ROW_HEIGHT
+// until some rows have been measured, then their average) until they are.
+const ESTIMATED_ROW_HEIGHT = 42;
 const GROUP_HEADER_HEIGHT = 40;
 const MIN_HEADER_HEIGHT = 40;
 const OVERSCAN = 20;
@@ -1982,6 +2003,53 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     if (qtyPanel && (!qtyPanelItem || !isQtySet(qtyPanelItem))) setQtyPanel(null);
   }, [qtyPanel, qtyPanelItem]);
 
+  // ----- Formula bar ------------------------------------------------------
+  const formulaItem = activeCell ? sortedTableItems[activeCell.row - 1] : null;
+  const formulaColumn = activeCell ? visibleColumns[activeCell.col] : null;
+  const formulaField = formulaColumn ? FORMULA_EDITABLE_FIELDS[formulaColumn] : null;
+  const formulaEditable = Boolean(formulaItem && formulaField && canEditItem(formulaItem));
+  const formulaValue =
+    formulaItem && formulaColumn ? String(getSortValue(formulaItem, formulaColumn) ?? "") : "";
+  const formulaLabel =
+    formulaItem && formulaColumn
+      ? `Row ${displayRowNumberById[formulaItem.id] ?? activeCell.row} \u00b7 ${formulaColumn}`
+      : null;
+  const formulaPlaceholder = !formulaColumn
+    ? "Select a cell to see its value"
+    : formulaEditable
+      ? "Empty"
+      : FORMULA_PICKER_COLUMNS.has(formulaColumn)
+        ? "Press Enter to pick from the list"
+        : "";
+
+  const handleFormulaCommit = (text) => {
+    if (!formulaItem || !formulaField) return;
+    const next = formulaField === "deliverable_name" ? text.replace(/\s*[\r\n]+\s*/g, " ") : text;
+    if (String(formulaItem[formulaField] ?? "") === next) return;
+    onUpdate(formulaItem.id, { [formulaField]: next });
+  };
+
+  // Hand focus back to the sheet after the bar is done, moving like Excel:
+  // Enter goes down, Tab goes right (Shift reverses), Esc stays put.
+  const handleFormulaFinish = (move) => {
+    if (!activeCell) return;
+    const { row, col } = activeCell;
+    const attempts =
+      move === "down"
+        ? [[row + 1, col]]
+        : move === "up"
+          ? [[row - 1, col]]
+          : move === "right"
+            ? [[row, col + 1]]
+            : move === "left"
+              ? [[row, col - 1]]
+              : [];
+    for (const [r, c] of attempts) {
+      if (focusCellShell(r, c)) return;
+    }
+    focusCellShell(row, col);
+  };
+
   const gridTemplateColumns = buildGridTemplateColumns(
     visibleColumns,
     columnWidths
@@ -2317,6 +2385,16 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   return (
     <>
+    <WorksheetFormulaBar
+      label={formulaLabel}
+      value={formulaValue}
+      activeRow={activeCell?.row ?? null}
+      activeCol={activeCell?.col ?? null}
+      editable={formulaEditable}
+      placeholder={formulaPlaceholder}
+      onCommit={handleFormulaCommit}
+      onFinish={handleFormulaFinish}
+    />
     <div
       ref={scrollRef}
       onScroll={handleScroll}

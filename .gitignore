@@ -94,3 +94,5 @@ deliverables_repaired.json
 
 # Backups the cleanup scripts write before changing data (backend/scripts)
 backend/script_backups/
+backend/lookalikes_*.csv
+backend/shifted_review.csv

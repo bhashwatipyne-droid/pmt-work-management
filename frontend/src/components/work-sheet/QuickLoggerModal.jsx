@@ -650,13 +650,56 @@ export default function QuickLoggerModal({
   };
 
   const handleKeyDown = (event) => {
-    // Ignore OS/browser key auto-repeat entirely. Without this, holding
-    // Enter even slightly longer than a tap can fire multiple keydown
-    // events before React finishes clearing the input, which was
+    // Ignore OS/browser key auto-repeat for Enter (and Tab / Escape). Without
+    // this, holding Enter even slightly longer than a tap can fire multiple
+    // keydown events before React finishes clearing the input, which was
     // committing the same entry twice.
-    if (event.repeat) {
+    //
+    // Only the keys that act once per press are guarded. Backspace and the
+    // arrow keys must keep auto-repeating: with every repeat swallowed,
+    // holding Backspace deleted a single letter and stopped, so clearing a
+    // long entry meant tapping it letter by letter.
+    if (event.repeat && ["Enter", "Tab", "Escape"].includes(event.key)) {
       event.preventDefault();
       return;
+    }
+
+    // Backspace right after a field was picked ("Client / Project / ") removes
+    // that whole field in one press and reopens its list, instead of eating
+    // the separator and then the name one letter at a time. Holding the key,
+    // or having a half-typed field, deletes letters as usual.
+    if (
+      event.key === "Backspace" &&
+      !event.repeat &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey
+    ) {
+      const input = event.currentTarget;
+      const atEnd =
+        input.selectionStart === input.value.length &&
+        input.selectionEnd === input.value.length;
+      const currentFieldEmpty = /\/\s*$/.test(draft.text);
+
+      if (atEnd && currentFieldEmpty) {
+        event.preventDefault();
+        const withoutSeparator = draft.text.replace(/\s*\/\s*$/, "");
+        const lastSeparator = withoutSeparator.lastIndexOf("/");
+        updateDraft({
+          text:
+            lastSeparator === -1
+              ? ""
+              : `${withoutSeparator.slice(0, lastSeparator + 1)} `,
+          client_id: "",
+          project_id: "",
+          deliverable_id: "",
+          deliverable_type: "",
+          time_taken_minutes: "",
+        });
+        setSuggestionsNonce((n) => n + 1);
+        return;
+      }
     }
 
     if (event.key === "Escape") {

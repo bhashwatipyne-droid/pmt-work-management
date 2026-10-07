@@ -21,7 +21,7 @@ import {
 } from "@/services/api";
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
-import { WorkSheetTable } from "@/components/work-sheet/WorkSheetTable";
+import { WorkSheetTable, SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/WorkSheetTable";
 import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
@@ -165,7 +165,21 @@ export default function WorkSheetPage() {
     );
   }, [rawItems, users]);
 
-  const [activeSheet, setActiveSheet] = useState("Master");
+  // Admins open on "All"; everyone else opens on their own department's sheet
+  // (Content -> Content, Design -> Design, Animation -> Animation). They can
+  // still switch tabs.
+  const defaultSheetFor = (user) =>
+    (user && user.role !== "admin" && DEPARTMENT_TO_STAGE[user.department]) ||
+    "Master";
+  const [activeSheet, setActiveSheet] = useState(() => defaultSheetFor(currentUser));
+  const defaultSheetApplied = useRef(Boolean(currentUser));
+  useEffect(() => {
+    // The user can arrive a moment after the page does.
+    if (defaultSheetApplied.current || !currentUser) return;
+    defaultSheetApplied.current = true;
+    setActiveSheet(defaultSheetFor(currentUser));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
   const [options, setOptions] = useState({});
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -770,11 +784,16 @@ export default function WorkSheetPage() {
       toast.info("No rows to export");
       return;
     }
-    const header = [
+    const allColumns = [
       "Date", "Client", "Project", "Stage", "Deliverable", "Type", "Qty",
       "Duration (min)", "Category", "Version", "Time (min)", "Creator",
       "Reviewer", "Status", "Remarks", "Link",
     ];
+    // Same columns as the tab on screen (Qty / Duration are left out of the
+    // sheets that don't use them).
+    const excluded = SHEET_EXCLUDED_COLUMNS[activeSheet] || [];
+    const keep = allColumns.map((name) => !excluded.includes(name));
+    const header = allColumns.filter((_, i) => keep[i]);
     const rows = sortedItems.map((item) => {
       const project = projectById.get(item.project_id);
       const clientId = item.client_id || project?.client_id;
@@ -795,7 +814,7 @@ export default function WorkSheetPage() {
         item.status || "",
         item.remarks || "",
         item.deliverable_link || "",
-      ];
+      ].filter((_, i) => keep[i]);
     });
     const name = [
       "worksheet",

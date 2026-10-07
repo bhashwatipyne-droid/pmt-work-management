@@ -126,7 +126,15 @@ export default function ProfilePage() {
             <div>
               <div className="text-base font-semibold text-foreground">{currentUser.name}</div>
               <div className="mt-0.5 text-sm text-muted-foreground">{currentUser.email || "No email available"}</div>
-              <div className="mt-1 text-xs capitalize text-muted-foreground">{currentUser.role}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                <span className="capitalize">{currentUser.role}</span>
+                {currentUser.department && (
+                  <>
+                    <span className="mx-1.5">·</span>
+                    <span data-testid="profile-department">{currentUser.department}</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

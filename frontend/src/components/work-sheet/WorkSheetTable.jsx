@@ -94,6 +94,16 @@ const COLUMN_FIELDS = {
 };
 
 const STAGES = ["Content", "Design", "Animate"];
+const NO_COLUMNS = [];
+
+// Columns a department's own sheet doesn't use. They are left out of that
+// tab entirely (the "All" tab keeps every column): Duration only matters for
+// video work, and Qty is not used by Content.
+export const SHEET_EXCLUDED_COLUMNS = {
+  Content: ["Qty", "Duration (min)"],
+  Design: ["Duration (min)"],
+};
+
 const MEMBER_STAGE_BY_DEPARTMENT = {
   Content: "Content",
   Design: "Design",
@@ -209,6 +219,16 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       return [];
     }
   });
+  const excludedColumns = SHEET_EXCLUDED_COLUMNS[sheetKey] || NO_COLUMNS;
+  // What is actually hidden on this tab: the person's own hidden columns plus
+  // the ones this tab doesn't use.
+  const effectiveHiddenColumns = useMemo(
+    () =>
+      excludedColumns.length
+        ? [...hiddenColumns, ...excludedColumns]
+        : hiddenColumns,
+    [hiddenColumns, excludedColumns]
+  );
   const columnOrderKey = `worksheet_column_order_${currentUser.id}`;
   const rowOrderKey = `worksheet_row_order_${currentUser.id}_${sheetKey}`;
 
@@ -1087,7 +1107,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     if (!current || current.targetRow === current.sourceRow) return;
 
     // sourceCol is a position among the VISIBLE columns.
-    const sourceColumn = columnOrder.filter((column) => !hiddenColumns.includes(column))[
+    const sourceColumn = columnOrder.filter((column) => !effectiveHiddenColumns.includes(column))[
       current.sourceCol
     ];
     const field = COLUMN_FIELDS[sourceColumn];
@@ -1128,7 +1148,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     } catch {
       // onFill is responsible for displaying the persistence error.
     }
-  }, [columnOrder, hiddenColumns, getSortValue]);
+  }, [columnOrder, effectiveHiddenColumns, getSortValue]);
 
   // Global pointer tracking while a fill drag is active.
   useEffect(() => {
@@ -1295,7 +1315,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     allVisibleIds.length > 0 &&
     allVisibleIds.every((id) => selectedSet.has(id));
 
-  const visibleColumns = columnOrder.filter((column) => !hiddenColumns.includes(column));
+  const visibleColumns = columnOrder.filter((column) => !effectiveHiddenColumns.includes(column));
 
   const isMember = currentUser.role === "member";
   const memberStage = MEMBER_STAGE_BY_DEPARTMENT[currentUser.department];
@@ -2227,6 +2247,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     const hidden = [];
 
     for (let i = columnIndex + 1; i < columnOrder.length; i += 1) {
+      // A column this tab doesn't use is not "hidden by the person": step over it.
+      if (excludedColumns.includes(columnOrder[i])) continue;
       if (!hiddenColumns.includes(columnOrder[i])) {
         break;
       }
@@ -2241,6 +2263,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     const hidden = [];
 
     for (const column of columnOrder) {
+      if (excludedColumns.includes(column)) continue;
       if (!hiddenColumns.includes(column)) {
         break;
       }
@@ -2347,7 +2370,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             </TableHead>
 
             {columnOrder.map((column, columnIndex) => {
-              const isHidden = hiddenColumns.includes(column);
+              const isHidden = effectiveHiddenColumns.includes(column);
 
               if (isHidden) {
                 return null;
@@ -2590,7 +2613,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     qtyPanelOpen={qtyPanel?.id === item.id}
                     onDelete={onDelete}
                     onDuplicate={onDuplicateRow}
-                    hiddenColumns={hiddenColumns}
+                    hiddenColumns={effectiveHiddenColumns}
                     columnOrder={columnOrder}
                     columnWidths={columnWidths}
                     onRowDragStart={handleRowDragStart}

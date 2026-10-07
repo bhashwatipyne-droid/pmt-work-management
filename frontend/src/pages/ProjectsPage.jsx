@@ -65,6 +65,10 @@ function useStableCallback(fn) {
   return useCallback((...args) => ref.current(...args), []);
 }
 
+// How many projects (the newest) the page asks for first, so it can show the
+// board right away while the rest loads.
+const FIRST_PAGE = 30;
+
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -122,8 +126,18 @@ export default function ProjectsPage() {
   const [dragOverProjectId, setDragOverProjectId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState(null);
 
+  // Bumped by every load, so a slow earlier request that finishes after a
+  // newer one can't overwrite it.
+  const loadSeqRef = useRef(0);
+  // True while the rest of the projects are still arriving after the first
+  // page has been shown.
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const fetchAll = async (showLoading = true) => {
     if (!currentUserId) return;
+
+    const seq = ++loadSeqRef.current;
+    const isCurrent = () => seq === loadSeqRef.current;
 
     if (showLoading) {
       setLoading(true);
@@ -143,27 +157,52 @@ export default function ProjectsPage() {
       // project" form, which only admins have. Everyone else gets their
       // client filter from the projects themselves (see clientOptions), so
       // two requests fewer on every open of this page.
-      const [p, m, c, opts] = await Promise.all([
-        getProjects(currentUserId, {
-          visibility,
-          include_deliverables: false,
-        }),
-        getProjectMetrics(currentUserId),
-        showLoading && canManage ? getClients() : Promise.resolve(null),
-        showLoading && canManage ? getOptions() : Promise.resolve(null),
-      ]);
+      const params = { visibility, include_deliverables: false };
 
-      setProjects(p);
-      setMetrics(m);
-      if (c) setClients(c);
-      if (opts) setDeliverableTypes(opts.deliverable_types || []);
+      if (showLoading) {
+        // Opening the page: ask for the newest FIRST_PAGE projects only, so
+        // the board is on screen as soon as that small answer arrives, then
+        // fetch the complete list and swap it in.
+        const [first, m, c, opts] = await Promise.all([
+          getProjects(currentUserId, { ...params, limit: FIRST_PAGE }),
+          getProjectMetrics(currentUserId),
+          canManage ? getClients() : Promise.resolve(null),
+          canManage ? getOptions() : Promise.resolve(null),
+        ]);
+        if (!isCurrent()) return;
+
+        setProjects(first);
+        setMetrics(m);
+        if (c) setClients(c);
+        if (opts) setDeliverableTypes(opts.deliverable_types || []);
+        setLoading(false);
+
+        if (first.length >= FIRST_PAGE) {
+          setLoadingMore(true);
+          const all = await getProjects(currentUserId, params);
+          if (!isCurrent()) return;
+          setProjects(all);
+        }
+      } else {
+        const [p, m] = await Promise.all([
+          getProjects(currentUserId, params),
+          getProjectMetrics(currentUserId),
+        ]);
+        if (!isCurrent()) return;
+
+        setProjects(p);
+        setMetrics(m);
+        setLoading(false);
+      }
     } catch (err) {
+      if (!isCurrent()) return;
       toast.error(
         err?.response?.data?.detail || "Failed to load projects"
       );
     } finally {
-      if (showLoading) {
-        setLoading(false);
+      if (isCurrent()) {
+        setLoadingMore(false);
+        if (showLoading) setLoading(false);
       }
     }
   };
@@ -841,11 +880,12 @@ export default function ProjectsPage() {
               Projects
             </h1>
             <span className="text-[13px] text-[#546490]">
-              <span data-testid="projects-total-count">{projects.length}</span> total
+              <span data-testid="projects-total-count">{projects.length}{loadingMore ? "+" : ""}</span> total
               {" · "}
               <span data-testid={PROJECTS.metricDueWeek}>{metrics?.due_this_week ?? 0}</span> due this week
               {" · "}
               <span data-testid={PROJECTS.metricRework}>{metrics?.in_rework ?? 0}</span> in rework
+              {loadingMore && " · loading the rest…"}
             </span>
           </div>
 
@@ -1168,7 +1208,7 @@ export default function ProjectsPage() {
                       onDropColumn={stableColumnDrop}
                       dragOverProjectId={dragOverProjectId}
                       isDropTarget={dragOverStatus === status}
-                      readOnly={!canManage}
+                      readOnly={!canManage || loadingMore}
                     />
                   );
                 })}
@@ -1190,7 +1230,7 @@ export default function ProjectsPage() {
             onNewProject={() => setModalOpen(true)}
             page={listPage}
             setPage={setListPage}
-            readOnly={!canManage}
+            readOnly={!canManage || loadingMore}
           />
         )}
       </div>

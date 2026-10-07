@@ -106,7 +106,12 @@ function AppShell() {
             if (isAuthenticated) await logout();
             setResetInProgress(false);
           }}
-          onResetCancel={() => setResetInProgress(false)}
+          onResetCancel={async () => {
+            // Leaving the reset screen (e.g. an expired link) must land on a
+            // real sign-in page, not silently resume an old session.
+            if (isAuthenticated) await logout();
+            setResetInProgress(false);
+          }}
         />
       ) : (
         <AppLayout>

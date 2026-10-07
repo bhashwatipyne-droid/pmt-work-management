@@ -1341,6 +1341,26 @@ def _approvals_view_all(user: User) -> bool:
     return user.role in ("admin", "member")
 
 
+# Members of these departments only see approvals for deliverables currently
+# in their own production stage (e.g. the Content team sees Content approvals
+# only). Department -> stage.
+MEMBER_APPROVAL_STAGE_SCOPE = {"Content": "Content"}
+
+
+def _member_approval_stage(user: User) -> Optional[str]:
+    """The only stage a member may see approvals for, or None if unscoped."""
+    if user.role != "member":
+        return None
+    return MEMBER_APPROVAL_STAGE_SCOPE.get(user.department or "")
+
+
+def _member_can_view_approval(user: User, deliverable: Optional[dict]) -> bool:
+    stage = _member_approval_stage(user)
+    if stage is None:
+        return True
+    return bool(deliverable) and deliverable.get("current_stage", "Content") == stage
+
+
 async def require_approver(request: Request) -> User:
     """Approvals actions (approve, send back, move, hide). Managers and admins
     may act; members stay read-only."""
@@ -2412,6 +2432,7 @@ async def login(payload: LoginPayload, response: Response):
 #   HTTPS instead. With neither, nothing is sent: the link is logged.
 RESET_TOKEN_MINUTES = 30
 RESET_REQUEST_COOLDOWN_SECONDS = 60
+PASSWORD_RESETS_PER_DAY = 2
 FORGOT_PASSWORD_MESSAGE = (
     "If an account matches, a password reset link has been sent to its email address."
 )
@@ -2580,9 +2601,34 @@ async def reset_password(payload: ResetPasswordPayload):
             detail="This reset link is invalid or has expired. Request a new one.",
         )
 
+    user = await db.users.find_one(
+        {"id": record["user_id"]},
+        {"_id": 0, "password_hash": 1, "password_changes": 1},
+    ) or {}
+
+    # The new password must differ from the current one.
+    if user.get("password_hash") and verify_password(payload.new_password, user["password_hash"]):
+        raise HTTPException(
+            status_code=400,
+            detail="Your new password must be different from your previous password.",
+        )
+
+    # At most PASSWORD_RESETS_PER_DAY resets in any rolling 24 hours.
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=24)).isoformat()
+    recent_changes = [t for t in (user.get("password_changes") or []) if t > cutoff]
+    if len(recent_changes) >= PASSWORD_RESETS_PER_DAY:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You can reset your password at most {PASSWORD_RESETS_PER_DAY} times a day. Try again later.",
+        )
+
     await db.users.update_one(
         {"id": record["user_id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+        {"$set": {
+            "password_hash": hash_password(payload.new_password),
+            "password_changes": recent_changes + [now.isoformat()],
+        }},
     )
     # One use only - and any other pending link for the account goes with it.
     await db.password_resets.delete_many({"user_id": record["user_id"]})
@@ -4652,7 +4698,7 @@ async def _hydrate_projects(
         # selected contact person -> client's default contact_person.
         client_poc = ""
 
-        if client_doc:
+        if client_doc and not p.get("poc_none"):
             client_poc = next(
                 (
                     c.get("name", "")
@@ -5087,6 +5133,11 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
     new_status = update_fields.get("status")
     status_changed = "status" in update_fields and new_status != old_status
 
+    # An explicit "No POC" must stick: without this flag the project would
+    # fall back to the client's default contact and look unchanged.
+    if "poc_id" in update_fields:
+        update_fields["poc_none"] = not update_fields["poc_id"]
+
     # Validate POC against the project's client
     if "poc_id" in update_fields and update_fields["poc_id"]:
         client_id = update_fields.get("client_id", existing.get("client_id"))
@@ -5120,6 +5171,7 @@ async def update_project(project_id: str, payload: ProjectUpdate, request: Reque
         and update_fields["client_id"] != existing.get("client_id")
     ):
         update_fields["poc_id"] = None
+        update_fields["poc_none"] = False
 
     update_fields["updated_at"] = now_iso()
 
@@ -6503,6 +6555,8 @@ async def _build_implicit_manager_items(user: User, count_only: bool = False):
             if stage_to_department.get(d.get("current_stage")) == user.department
         ]
 
+    candidates = [d for d in candidates if _member_can_view_approval(user, d)]
+
     return [
         {
             "id": f"implicit-manager-{d['id']}",
@@ -6563,9 +6617,13 @@ async def list_approvals(request: Request):
     # Admins and members can see all approval items (read-only).
     # No permission query is required for every item.
     if _approvals_view_all(user):
-        for item in hydrated:
+        visible = [
+            item for item in hydrated
+            if _member_can_view_approval(user, item.get("_deliverable"))
+        ]
+        for item in visible:
             item.pop("_deliverable", None)
-        return hydrated
+        return visible
 
     # For managers, permission checks are still required,
     # but deliverables are already available from hydration.
@@ -6640,7 +6698,7 @@ async def approval_pending_count(request: Request):
     query = _approval_visibility_query(user, "visible")
 
     async def explicit_count() -> int:
-        if _approvals_view_all(user):
+        if _approvals_view_all(user) and _member_approval_stage(user) is None:
             # Nothing to check per item, so the database can just count (still
             # capped at the 500 the board itself loads).
             return await db.approval_items.count_documents(query, limit=500)
@@ -6667,7 +6725,12 @@ async def approval_pending_count(request: Request):
         count = 0
         for item in items:
             deliverable = deliverables.get(item.get("deliverable_id"))
-            if deliverable and await _approval_item_can_act(user, item, deliverable):
+            if not deliverable:
+                continue
+            if _approvals_view_all(user):
+                if _member_can_view_approval(user, deliverable):
+                    count += 1
+            elif await _approval_item_can_act(user, item, deliverable):
                 count += 1
         return count
 
@@ -6719,7 +6782,7 @@ async def approval_board(request: Request, visibility: Optional[str] = "visible"
         deliverable = item.get("_deliverable")
 
         if _approvals_view_all(user):
-            allowed = True
+            allowed = _member_can_view_approval(user, deliverable)
         else:
             allowed = (
                 deliverable

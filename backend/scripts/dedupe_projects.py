@@ -2,8 +2,10 @@
 
 A "copy" is very strict: same client, same name (ignoring case and punctuation),
 same start and end date, the same list of deliverables (name + type), and NO work
-logged against any of them. Anything that fails that test is only listed, with the
-reason, for a person to decide (for example a monthly job that really did repeat).
+logged against any of them. Inside a set of same-named projects it finds the groups
+of identical copies and hides all but one of each group. A project that differs from
+the rest (other dates, other deliverables, or work logged) is never touched, only
+listed with what is different so a person can decide.
 
 Within a group of copies it keeps the most advanced one (Raised Invoice, then Ready
 for Invoice, then Completed ... and the oldest on a tie) and hides the rest. Hiding
@@ -13,8 +15,14 @@ approval cards, which would otherwise keep showing in the Approvals queue (the
 project Hide button does not do that), and notes `duplicate_of` on the project.
 
 Usage (backend folder; MONGO_URL and DB_NAME in backend/.env or the terminal):
-    python scripts/dedupe_projects.py            # report only - changes nothing
-    python scripts/dedupe_projects.py --apply    # saves a backup JSON, then hides the copies
+    python scripts/dedupe_projects.py                  # report only - changes nothing
+    python scripts/dedupe_projects.py --apply          # saves a backup JSON, then hides the copies
+
+    --treat-as-copies "Project name"   (repeatable)
+        Treat EVERY project with this name as copies of one another even though a
+        deliverable differs (say one was renamed). Still refuses if their dates
+        differ or work is logged against any of them. Use it only after reading
+        what differs in the report.
 
 Safe to run again: hidden projects are skipped, so a second run finds nothing new.
 """
@@ -42,10 +50,32 @@ def keep_rank(project):
     return (KEEP_ORDER.index(status) if status in KEEP_ORDER else len(KEEP_ORDER), created, str(project.get("id")))
 
 
+def describe_difference(project, other, deliverables):
+    """What sets `project` apart from `other`, in a few words."""
+    parts = []
+    if (project.get("start_date"), project.get("end_date")) != (other.get("start_date"), other.get("end_date")):
+        parts.append(f"dates {project.get('start_date') or '-'} to {project.get('end_date') or '-'}")
+    mine = {(d.get("name") or "").strip() for d in deliverables[project["id"]]}
+    theirs = {(d.get("name") or "").strip() for d in deliverables[other["id"]]}
+    only_here = sorted(mine - theirs)
+    if only_here:
+        shown = "; ".join(repr(n) for n in only_here[:3]) + (f" (+{len(only_here) - 3} more)" if len(only_here) > 3 else "")
+        parts.append(f"only here: {shown}")
+    only_there = len(theirs - mine)
+    if only_there:
+        parts.append(f"missing {only_there} that the others have")
+    if not parts and len(deliverables[project["id"]]) != len(deliverables[other["id"]]):
+        parts.append("a different number of deliverables")
+    return ", ".join(parts) or "differs in type or repeats"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--apply", action="store_true", help="really hide the copies (default: report only)")
+    parser.add_argument("--treat-as-copies", action="append", default=[], metavar="NAME",
+                        help="treat every project with this name as copies (see above); repeatable")
     args = parser.parse_args()
+    force_names = {normalize_project_name(n) for n in args.treat_as_copies}
     db = connect()
 
     visible = list(db.projects.find({"hidden": {"$ne": True}}, {"_id": 0}))
@@ -56,6 +86,8 @@ def main() -> int:
             groups[key].append(project)
     groups = {key: members for key, members in groups.items() if len(members) > 1}
     print(f"{len(visible)} visible projects, {len(groups)} sets with the same client and name.\n")
+    for name in sorted(force_names - {name for _, name in groups}):
+        print(f"NOTE: --treat-as-copies {name!r} matches no set of same-named projects.\n")
 
     ids = [p["id"] for members in groups.values() for p in members]
     deliverables = defaultdict(list)
@@ -69,38 +101,55 @@ def main() -> int:
         ])
     }
 
-    def deliverable_signature(project_id):
-        return sorted(
-            (normalize_project_name(d.get("name")), (d.get("type") or "").strip().lower())
-            for d in deliverables[project_id]
-        )
+    def signature(project, with_deliverables=True):
+        sig = [project.get("start_date"), project.get("end_date")]
+        if with_deliverables:
+            sig.append(tuple(sorted(
+                (normalize_project_name(d.get("name")), (d.get("type") or "").strip().lower())
+                for d in deliverables[project["id"]]
+            )))
+        return tuple(sig)
+
+    def line(p):
+        return (f"{p['id']:<16} {p.get('status', ''):<17} {p.get('start_date') or '-'} to {p.get('end_date') or '-'}"
+                f"  {len(deliverables[p['id']])} deliverables, {worked.get(p['id'], 0)} work items")
 
     to_hide = []  # (copy, keeper)
-    for (client_id, _), members in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+    for (client_id, name_key), members in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         members.sort(key=keep_rank)
-        keeper, others = members[0], members[1:]
-        label = f"{keeper['name']!r}  client={client_id}  x{len(members)}"
+        forced = name_key in force_names
+        # Identical projects form a cluster. With --treat-as-copies the deliverables
+        # may differ, but the dates must still agree.
+        clusters = defaultdict(list)
+        for p in members:
+            clusters[signature(p, with_deliverables=not forced)].append(p)
 
-        reasons = []
-        if len({(p.get("start_date"), p.get("end_date")) for p in members}) > 1:
-            reasons.append("their dates differ")
-        if len({tuple(deliverable_signature(p["id"])) for p in members}) > 1:
-            reasons.append("their deliverables differ")
-        busy = [p["id"] for p in members if worked.get(p["id"])]
-        if busy:
-            reasons.append(f"work is logged against {len(busy)} of them")
+        print(f"{members[0]['name']!r}  client={client_id}  x{len(members)}")
+        left_alone = []
+        for cluster in clusters.values():
+            if len(cluster) == 1:
+                left_alone.append(cluster[0])
+                continue
+            busy = [p for p in cluster if worked.get(p["id"])]
+            if busy:
+                print(f"   LEFT ALONE  {len(cluster)} identical projects, but work is logged against {len(busy)} of them:")
+                for p in cluster:
+                    print(f"      - {line(p)}")
+                continue
+            keeper, others = cluster[0], cluster[1:]
+            print(f"   {'TREATED AS COPIES' if forced else 'EXACT COPIES'}  keep {keeper['id']} ({keeper.get('status')}); "
+                  f"hide {len(others)}: " + ", ".join(p["id"] for p in others))
+            if forced:
+                for p in others:
+                    if signature(p) != signature(keeper):
+                        print(f"      note {p['id']} differs from the kept one: {describe_difference(p, keeper, deliverables)}")
+            to_hide.extend((p, keeper) for p in others)
 
-        if reasons:
-            print(f"LEFT ALONE  {label}\n            because {', and '.join(reasons)}")
-            for p in members:
-                print(f"            - {p['id']:<16} {p.get('status', ''):<17} {p.get('start_date') or '-'} to {p.get('end_date') or '-'}"
-                      f"  {len(deliverables[p['id']])} deliverables, {worked.get(p['id'], 0)} work items")
-            print()
-            continue
-
-        print(f"EXACT COPIES  {label}\n              keep {keeper['id']} ({keeper.get('status')}); hide {len(others)}: "
-              + ", ".join(f"{p['id']} ({p.get('status')})" for p in others) + "\n")
-        to_hide.extend((p, keeper) for p in others)
+        for p in left_alone:
+            others = [m for m in members if m is not p]
+            print(f"   LEFT ALONE  {line(p)}")
+            print(f"               differs: {describe_difference(p, others[0], deliverables)}")
+        print()
 
     if not to_hide:
         print("Nothing to hide.")

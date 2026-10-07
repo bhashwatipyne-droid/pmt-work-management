@@ -31,15 +31,12 @@ export const DeliverableModal = ({
     useState(emptyDeliverable);
 
   const [saving, setSaving] = useState(false);
-  const [showDateErrors, setShowDateErrors] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [approvalTypes, setApprovalTypes] = useState([]);
 
   useEffect(() => {
     if (!open) return;
-
-    setShowDateErrors(false);
 
     if (mode === "edit" && initial) {
       setDeliverable({
@@ -99,7 +96,6 @@ export const DeliverableModal = ({
       deliverable.stage_schedule
     );
     if (scheduleError) {
-      setShowDateErrors(true);
       return toast.error(scheduleError);
     }
 
@@ -234,7 +230,6 @@ export const DeliverableModal = ({
             onToggleStage={toggleStage}
             deliverableTypes={deliverableTypes}
             disabled={saving}
-            showErrors={showDateErrors}
           />
         </div>
 

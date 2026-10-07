@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
@@ -328,6 +328,7 @@ export default function ApprovalsPage() {
   // are cleared, and its card is highlighted with the detail pane open, ready
   // to approve or send back.
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const targetDeliverable = searchParams.get("deliverable");
   const targetItem = searchParams.get("item");
   const [retriedTarget, setRetriedTarget] = useState(null);
@@ -362,6 +363,15 @@ export default function ApprovalsPage() {
     // fetched a moment ago).
     if (retriedTarget !== key && Date.now() - lastFetchRef.current > 3000) {
       fetchBoard({ silent: true }).finally(() => setRetriedTarget(key));
+      return;
+    }
+
+    // A delay notice can be for a deliverable still with its team, which is
+    // not on this board: show its rows in the work sheet instead.
+    if (searchParams.get("fallback") === "worksheet") {
+      const name = searchParams.get("name");
+      toast.info("This deliverable is not waiting for approval yet - showing it in the work sheet.");
+      navigate("/", name ? { replace: true, state: { search: name } } : { replace: true });
       return;
     }
 

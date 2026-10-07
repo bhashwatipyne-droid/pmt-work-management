@@ -257,6 +257,24 @@ export default function NotificationCenter({ placement = "header" }) {
       return;
     }
 
+    // A missed deadline: for admins and managers, the deliverable's card in
+    // Approvals. A deliverable that is not waiting for review yet is not on
+    // that board, so Approvals then falls back to showing it in the work sheet.
+    if (
+      notification.type === "delayed_deadline" &&
+      hasDeliverable &&
+      (currentUser?.role === "admin" || currentUser?.role === "manager")
+    ) {
+      setOpen(false);
+      const params = new URLSearchParams({
+        deliverable: notification.deliverable_id,
+        fallback: "worksheet",
+      });
+      if (notification.deliverable_name) params.set("name", notification.deliverable_name);
+      navigate(`/approvals?${params.toString()}`);
+      return;
+    }
+
     // Work for the team to start: the work sheet, searched down to that
     // deliverable's rows.
     if (notification.action_type === "open_worksheet") {

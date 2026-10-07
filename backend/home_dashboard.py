@@ -34,7 +34,9 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                logged it, reviewer = who it is assigned to, since = when it was
                marked ready (dropped once older than MAX_OVERDUE_DAYS)
 
-team_activity  live, per member (not tied to the month being viewed): minutes logged
+team activity  GET /api/dashboard/team-activity - fetched only when the Home page's
+               "Team activity" tab is opened, so the other tabs don't pay for it.
+               Live, per member (not tied to the month being viewed): minutes logged
                today and this week, the latest work-sheet entry of today ("now") and
                their last few entries. The page combines it with the deliverable rows
                to show who is working, in review, blocked, delayed or not logged.
@@ -141,7 +143,6 @@ def create_home_dashboard_router(
             members,
             last_log_rows,
             review_items,
-            activity_items,
         ) = await asyncio.gather(
             db.projects.find(
                 {}, {"_id": 0, "id": 1, "name": 1, "client_id": 1, "status": 1, "hidden": 1}
@@ -200,17 +201,6 @@ def create_home_dashboard_router(
                 {
                     "_id": 0, "id": 1, "deliverable_name": 1, "project_id": 1, "deliverable_id": 1,
                     "stage": 1, "creator_id": 1, "reviewer_id": 1, "updated_at": 1, "created_at": 1,
-                },
-            ).to_list(None),
-            db.work_items.find(
-                {
-                    "work_date": {"$gte": (today - timedelta(days=ACTIVITY_DAYS)).isoformat()},
-                    "creator_id": {"$nin": [None, ""]},
-                },
-                {
-                    "_id": 0, "creator_id": 1, "deliverable_name": 1, "project_id": 1, "stage": 1,
-                    "status": 1, "time_taken_minutes": 1, "work_date": 1,
-                    "created_at": 1, "updated_at": 1,
                 },
             ).to_list(None),
         )
@@ -426,7 +416,57 @@ def create_home_dashboard_router(
             if not last_log.get(u["id"]) or last_log[u["id"]] < stale_before
         ]
 
-        # ---- team activity (live: today / this week) -----------------------
+        used_projects = {r["project_id"] for r in rows_out}
+        return {
+            "month": month,
+            "today": today_s,
+            "definitions": {
+                "at_risk_days": AT_RISK_DAYS,
+                "critical_late_days": CRITICAL_LATE_DAYS,
+                "stale_working_days": STALE_WORKING_DAYS,
+                "next_days": NEXT_DAYS,
+                "max_overdue_days": MAX_OVERDUE_DAYS,
+            },
+            "deliverables": rows_out,
+            "reviews": reviews_out,
+            "projects": {pid: project_by_id[pid] for pid in used_projects},
+            "trend": trend,
+            "members": {
+                "tracked": [
+                    {"id": u["id"], "name": u.get("name", ""), "department": u.get("department", "")}
+                    for u in members
+                ],
+                "stale": stale,
+            },
+        }
+
+    @router.get("/dashboard/team-activity")
+    async def dashboard_team_activity(request: Request):
+        await require_admin(request)
+
+        today = datetime.now(timezone.utc).date()
+        today_s = today.isoformat()
+
+        members, projects = await asyncio.gather(
+            db.users.find(
+                {"role": {"$in": ["member", "manager"]}, "active": {"$ne": False}},
+                {"_id": 0, "id": 1},
+            ).to_list(None),
+            db.projects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(None),
+        )
+        member_ids = [u["id"] for u in members if u.get("id")]
+        activity_items = await db.work_items.find(
+            {
+                "creator_id": {"$in": member_ids},
+                "work_date": {"$gte": (today - timedelta(days=ACTIVITY_DAYS)).isoformat()},
+            },
+            {
+                "_id": 0, "creator_id": 1, "deliverable_name": 1, "project_id": 1, "stage": 1,
+                "status": 1, "time_taken_minutes": 1, "work_date": 1,
+                "created_at": 1, "updated_at": 1,
+            },
+        ).to_list(None)
+
         def minutes_of(w) -> float:
             try:
                 return max(float(w.get("time_taken_minutes") or 0), 0.0)
@@ -443,9 +483,9 @@ def create_home_dashboard_router(
         for w in activity_items:
             items_by_user.setdefault(w["creator_id"], []).append(w)
 
-        activity_members = []
-        for u in members:
-            mine = items_by_user.get(u["id"], [])
+        out = []
+        for uid in member_ids:
+            mine = items_by_user.get(uid, [])
             todays = sorted(
                 (w for w in mine if w.get("work_date") == today_s), key=touched, reverse=True
             )
@@ -453,8 +493,8 @@ def create_home_dashboard_router(
             recent = sorted(
                 mine, key=lambda w: (w.get("work_date") or "", touched(w)), reverse=True
             )[:ACTIVITY_RECENT]
-            activity_members.append({
-                "user_id": u["id"],
+            out.append({
+                "user_id": uid,
                 "today_minutes": round(sum(minutes_of(w) for w in todays)),
                 "week_minutes": round(sum(
                     minutes_of(w) for w in mine if (w.get("work_date") or "") >= week_start_s
@@ -478,33 +518,10 @@ def create_home_dashboard_router(
                 ],
             })
 
-        used_projects = {r["project_id"] for r in rows_out}
         return {
-            "month": month,
-            "today": today_s,
-            "definitions": {
-                "at_risk_days": AT_RISK_DAYS,
-                "critical_late_days": CRITICAL_LATE_DAYS,
-                "stale_working_days": STALE_WORKING_DAYS,
-                "next_days": NEXT_DAYS,
-                "max_overdue_days": MAX_OVERDUE_DAYS,
-            },
-            "deliverables": rows_out,
-            "reviews": reviews_out,
-            "team_activity": {
-                "working_day": today.weekday() < 5,
-                "week_expected_minutes": working_days_so_far * WORKDAY_MINUTES,
-                "members": activity_members,
-            },
-            "projects": {pid: project_by_id[pid] for pid in used_projects},
-            "trend": trend,
-            "members": {
-                "tracked": [
-                    {"id": u["id"], "name": u.get("name", ""), "department": u.get("department", "")}
-                    for u in members
-                ],
-                "stale": stale,
-            },
+            "working_day": today.weekday() < 5,
+            "week_expected_minutes": working_days_so_far * WORKDAY_MINUTES,
+            "members": out,
         }
 
     return router

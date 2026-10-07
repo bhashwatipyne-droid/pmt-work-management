@@ -262,7 +262,7 @@ export function buildHome({ data, team, filters, userName }) {
 // One row per tracked member. Live data, so it follows today's date rather
 // than the month being viewed; the team view and the client / project / member
 // filters still apply. Sources:
-//   data.team_activity  minutes logged today / this week, the latest work-sheet
+//   activity            (GET /dashboard/team-activity) minutes logged today / this week, the latest work-sheet
 //                       entry of today, the last few entries
 //   data.deliverables   what each person owns, what is late, what is waiting
 //
@@ -295,8 +295,7 @@ export const formatMins = (minutes) => {
   return h ? `${h}h` : `${m}m`;
 };
 
-export function buildTeamActivity({ data, team, filters = {}, userName = {} }) {
-  const activity = data.team_activity || {};
+export function buildTeamActivity({ data, activity = {}, team, filters = {}, userName = {} }) {
   const projects = data.projects || {};
   const expected = activity.week_expected_minutes || 0;
   const byUser = new Map((activity.members || []).map((m) => [m.user_id, m]));

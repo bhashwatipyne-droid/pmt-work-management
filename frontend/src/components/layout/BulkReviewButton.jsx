@@ -17,6 +17,9 @@ const BulkReviewModal = lazy(() => import("../work-sheet/BulkReviewModal"));
 export function BulkReviewButton() {
   const { currentUser } = useUser();
   const [open, setOpen] = useState(false);
+  // The dialog (and its code) is only loaded the first time it is opened, so
+  // the top bar adds nothing to every page's initial load.
+  const [everOpened, setEverOpened] = useState(false);
   const [count, setCount] = useState(0);
 
   const canReview = currentUser?.role === "manager" || currentUser?.role === "admin";
@@ -32,10 +35,13 @@ export function BulkReviewButton() {
   // elsewhere; this user's own actions refresh it instantly via countsBus.
   useEffect(() => {
     if (!canReview) return undefined;
-    fetchCount();
+    // First count a moment after the page paints, so it never competes with
+    // the page's own requests.
+    const first = setTimeout(fetchCount, 1200);
     const stopPolling = startPolling(fetchCount, 15000);
     const unsubscribe = onCountsRefresh(fetchCount);
     return () => {
+      clearTimeout(first);
       stopPolling();
       unsubscribe();
     };
@@ -48,7 +54,10 @@ export function BulkReviewButton() {
       <button
         type="button"
         data-testid="bulk-review-btn"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setEverOpened(true);
+          setOpen(true);
+        }}
         title="Review all pending approvals at once"
         className="ml-1 flex h-8 items-center gap-2 whitespace-nowrap rounded-[7px] bg-[#2b2bb5] pl-3 pr-2.5 text-[13px] font-semibold text-white outline-none transition-colors hover:bg-[#3d3dcc] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/30"
       >
@@ -61,17 +70,19 @@ export function BulkReviewButton() {
         )}
       </button>
 
-      <Suspense fallback={null}>
-        <BulkReviewModal
-          open={open}
-          onClose={() => {
-            setOpen(false);
-            fetchCount();
-            refreshCounts();
-          }}
-          currentUser={currentUser}
-        />
-      </Suspense>
+      {everOpened && (
+        <Suspense fallback={null}>
+          <BulkReviewModal
+            open={open}
+            onClose={() => {
+              setOpen(false);
+              fetchCount();
+              refreshCounts();
+            }}
+            currentUser={currentUser}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

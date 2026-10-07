@@ -637,6 +637,11 @@ export const getDashboardOverview = (userId) =>
 export const getDashboardHome = (month) =>
   axios.get(`${API}/dashboard/home`, { params: { month } }).then((r) => r.data);
 
+// Home > Team activity tab: who logged what today / this week. Fetched only when
+// that tab is opened (see backend/home_dashboard.py).
+export const getTeamActivity = () =>
+  axios.get(`${API}/dashboard/team-activity`).then((r) => r.data);
+
 // -------- Efficiency --------
 export const getEfficiencyOverview = (month) =>
   axios.get(`${API}/efficiency/overview`, { params: { month } }).then((r) => r.data);

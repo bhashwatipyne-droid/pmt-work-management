@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronRight, List, Search } from "lucide-react";
 
 import { ACTIVITY_FILTERS, formatMins, fmtWeekday } from "@/lib/homeDashboard";
+import { avatarColorClasses } from "@/lib/avatarColors";
 
 // "Team activity" tab of the Home page: who is doing what right now.
 // Calculations live in lib/homeDashboard.js (buildTeamActivity); this file
@@ -56,7 +57,7 @@ const ITEM_BADGE = {
 
 const HAIRLINE = "shadow-[inset_0_0_0_1px_rgb(234,238,244)]";
 const GRID =
-  "grid grid-cols-[28px_minmax(200px,1.1fr)_minmax(240px,1.6fr)_minmax(200px,1.2fr)_minmax(180px,1fr)_110px_120px] gap-x-4";
+  "grid grid-cols-[28px_minmax(240px,1.2fr)_minmax(210px,1.5fr)_minmax(180px,1.1fr)_minmax(170px,1fr)_96px_110px] gap-x-3";
 
 const Badge = ({ color = "Neutral", children }) => {
   const c = BADGE[color] || BADGE.Neutral;
@@ -213,7 +214,7 @@ export default function TeamActivityTab({ activity, onOpenSheet }) {
         </div>
 
         <div className="overflow-x-auto">
-          <div className="min-w-[1080px]">
+          <div className="min-w-[1140px]">
             <div
               className={`${GRID} h-9 items-center bg-[rgb(249,250,251)] px-4 text-[12px] font-semibold text-[rgb(74,88,120)] shadow-[inset_0_1px_0_rgb(234,238,244),inset_0_-1px_0_rgb(226,232,240)]`}
             >
@@ -237,17 +238,17 @@ export default function TeamActivityTab({ activity, onOpenSheet }) {
                     type="button"
                     aria-expanded={isOpen}
                     onClick={() => setOpen((o) => ({ ...o, [p.id]: !o[p.id] }))}
-                    className={`${GRID} min-h-[60px] items-center bg-white px-4 py-2 text-left text-[13px] hover:bg-[rgb(249,250,251)]`}
+                    className={`${GRID} min-h-[60px] w-full items-center bg-white px-4 py-2 text-left text-[13px] hover:bg-[rgb(249,250,251)]`}
                   >
                     <Chevron className="h-4 w-4 text-[rgb(84,100,144)]" />
 
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <span className="h-8 w-8 shrink-0 rounded-full bg-[rgb(240,240,253)] text-center font-['Manrope','Inter',sans-serif] text-[11px] font-semibold leading-8 text-[rgb(26,26,138)]">
+                    <span className="flex min-w-0 items-center gap-2.5 overflow-hidden">
+                      <span className={`h-8 w-8 shrink-0 rounded-full text-center text-[11px] font-semibold leading-8 ${avatarColorClasses(p.id)}`}>
                         {initials(p.name)}
                       </span>
                       <span className="flex min-w-0 flex-col gap-[3px]">
-                        <span className="truncate text-[14px] font-semibold text-[rgb(13,27,62)]">{p.name}</span>
-                        <span className="flex items-center gap-1.5">
+                        <span className="truncate text-[14px] font-semibold text-[rgb(13,27,62)]" title={p.name}>{p.name}</span>
+                        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                           <Badge color={stateColor}>{stateLabel}</Badge>
                           {p.team && (
                             <span className="flex items-center gap-1 text-[11px] text-[rgb(84,100,144)]">
@@ -259,7 +260,7 @@ export default function TeamActivityTab({ activity, onOpenSheet }) {
                       </span>
                     </span>
 
-                    <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
                       {p.now ? (
                         <>
                           <span className="truncate text-[14px] font-medium text-[rgb(13,27,62)]" title={p.now.name}>{p.now.name}</span>
@@ -270,7 +271,7 @@ export default function TeamActivityTab({ activity, onOpenSheet }) {
                       )}
                     </span>
 
-                    <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
                       {p.next ? (
                         <>
                           <span className="truncate text-[rgb(13,27,62)]" title={p.next.name}>{p.next.name}</span>
@@ -281,7 +282,7 @@ export default function TeamActivityTab({ activity, onOpenSheet }) {
                       )}
                     </span>
 
-                    <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
                       {p.delayText ? (
                         <>
                           <span className="flex items-center gap-1.5 font-semibold text-[rgb(239,68,68)]">

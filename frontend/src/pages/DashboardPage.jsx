@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
-import { getDashboardHome, getEfficiencyOverview, getEfficiencyTrend } from "@/services/api";
+import { getDashboardHome, getEfficiencyOverview, getEfficiencyTrend, getTeamActivity } from "@/services/api";
 import { DashboardSkeleton } from "@/components/skeletons/Skeletons";
 import TeamActivityTab from "@/components/dashboard/TeamActivityTab";
 import {
@@ -176,6 +176,10 @@ export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [eff, setEff] = useState(null);
   const [effTrend, setEffTrend] = useState([]);
+  // Team activity is loaded the first time its tab is opened (not with Home),
+  // and refreshed whenever the tab is opened again.
+  const [activity, setActivity] = useState(null);
+  const [activityError, setActivityError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -214,6 +218,18 @@ export default function DashboardPage() {
     };
   }, [month, isAdmin]);
 
+  useEffect(() => {
+    if (!isAdmin || tab !== "team") return undefined;
+    let cancelled = false;
+    setActivityError(false);
+    getTeamActivity()
+      .then((d) => !cancelled && setActivity(d))
+      .catch(() => !cancelled && setActivityError(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, tab]);
+
   const userName = useMemo(
     () => Object.fromEntries((users || []).map((u) => [u.id, u.name])),
     [users]
@@ -225,8 +241,8 @@ export default function DashboardPage() {
   );
 
   const teamAct = useMemo(
-    () => (data ? buildTeamActivity({ data, team, filters, userName }) : null),
-    [data, team, filters, userName]
+    () => (data ? buildTeamActivity({ data, activity: activity || {}, team, filters, userName }) : null),
+    [data, activity, team, filters, userName]
   );
 
   if (userLoading || !currentUser) return null;
@@ -561,11 +577,14 @@ export default function DashboardPage() {
         </div>
 
         {/* ================= TEAM ACTIVITY ================= */}
-        {tab === "team" && teamAct && (
+        {tab === "team" && teamAct && activity && (
           <TeamActivityTab
             activity={teamAct}
             onOpenSheet={(name) => navigate("/", { state: { search: name } })}
           />
+        )}
+        {tab === "team" && !activity && (
+          <Empty>{activityError ? "Could not load team activity. Please try again." : "Loading team activity…"}</Empty>
         )}
 
         {/* ================= OVERVIEW ================= */}

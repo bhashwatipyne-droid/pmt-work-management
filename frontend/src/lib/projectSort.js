@@ -4,6 +4,7 @@
 
 export const SORT_OPTIONS = [
   { value: "", label: "No sorting" },
+  { value: "added", label: "Latest added" },
   { value: "updated", label: "Last updated" },
   { value: "deadline", label: "Deadline" },
 ];
@@ -41,6 +42,10 @@ export const sortProjects = (projects, sortBy) => {
     // Latest due date first (descending) - projects with no due date still
     // sort to the end either way.
     list.sort((a, b) => compareDate(a.end_date, b.end_date, -1));
+  } else if (sortBy === "added") {
+    // Newest created project first. created_at is set once, when the project
+    // is made, so this differs from "Last updated" (which moves on any edit).
+    list.sort((a, b) => (time(b.created_at) || 0) - (time(a.created_at) || 0));
   } else if (sortBy === "updated") {
     list.sort((a, b) => (time(b.updated_at) || 0) - (time(a.updated_at) || 0));
   }

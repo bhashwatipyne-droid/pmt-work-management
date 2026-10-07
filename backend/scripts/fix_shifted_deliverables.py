@@ -31,6 +31,11 @@ Usage (backend folder; MONGO_URL and DB_NAME in backend/.env or the terminal):
     python scripts/fix_shifted_deliverables.py --undo script_backups/<file>.json   # put a run's moves back
 
     --from / --to   the first and last PROJECT number to look at (default 781 to 872)
+    --skip ID       leave this deliverable where it is, whatever the verdict (repeatable)
+    --unlink-work-items
+                    work items the report lists as CHECK (linked to a deliverable that moves,
+                    but not about it) get their deliverable link cleared instead of being
+                    left pointing at another project's deliverable. Project is untouched.
 
 Choose the level once and apply it in ONE run. The "inferred" moves rest on the shifted
 projects around them, which stop looking shifted as soon as they are moved, so they
@@ -148,7 +153,9 @@ def undo(db, path):
         n += db.deliverables.update_one({"id": doc["id"]}, {"$set": {"project_id": doc["project_id"]}}).modified_count
     for doc in data.get("work_items", []):
         db.work_items.update_one({"id": doc["id"]}, {"$set": {"project_id": doc["project_id"], "client_id": doc.get("client_id")}})
-    print(f"Put {n} deliverables and {len(data.get('work_items', []))} work items back as the backup had them.")
+    for doc in data.get("work_items_unlinked", []):
+        db.work_items.update_one({"id": doc["id"]}, {"$set": {"deliverable_id": doc.get("deliverable_id", "")}})
+    print(f"Put {n} deliverables and {len(data.get('work_items', [])) + len(data.get('work_items_unlinked', []))} work items back as the backup had them.")
 
 
 def main() -> int:
@@ -159,6 +166,8 @@ def main() -> int:
     parser.add_argument("--to", dest="last", type=int, default=872)
     parser.add_argument("--csv", metavar="FILE", help="also write the full list as a CSV to review")
     parser.add_argument("--undo", metavar="BACKUP_JSON", help="reverse the moves recorded in a backup file")
+    parser.add_argument("--skip", action="append", default=[], metavar="ID", help="leave this deliverable where it is (repeatable)")
+    parser.add_argument("--unlink-work-items", action="store_true", help="clear the deliverable link of CHECK work items")
     args = parser.parse_args()
     db = connect()
 
@@ -176,6 +185,11 @@ def main() -> int:
     deliverables.sort(key=lambda d: (d["project_id"], d.get("name") or ""))
     verdicts = classify(deliverables, names)
     by_id = {d["id"]: d for d in deliverables}
+    for skipped in args.skip:
+        if skipped in verdicts:
+            verdicts[skipped] = dict(verdict="UNSURE", reason="skipped with --skip")
+        else:
+            print(f"NOTE: --skip {skipped!r} is not a deliverable in this range.")
 
     counts = Counter((v["verdict"], v.get("level")) for v in verdicts.values())
     print(f"{len(deliverables)} deliverables in PROJECT - {args.first:03d} to {args.last:03d}:")
@@ -215,7 +229,8 @@ def main() -> int:
             print(f"  FOLLOWS  {w['id'][:8]}  {w.get('deliverable_name')!r}: project {w.get('project_id')[10:]} -> {verdicts[w['deliverable_id']]['target']:03d}")
         for w in leave:
             d = by_id[w["deliverable_id"]]
-            print(f"  CHECK    {w['id'][:8]}  work item says {w.get('deliverable_name')!r}, linked to {d.get('name')!r}; left alone (project {w.get('project_id', '')[10:]})")
+            action = "link will be cleared" if args.unlink_work_items else "left alone (add --unlink-work-items to clear its link)"
+            print(f"  CHECK    {w['id'][:8]}  work item says {w.get('deliverable_name')!r}, linked to {d.get('name')!r}; {action} (project {w.get('project_id', '')[10:]})")
         print()
 
     if counts[("MOVE", "inferred")]:
@@ -241,7 +256,10 @@ def main() -> int:
         print("Report only - nothing changed. Add --apply to move them.")
         return 0
 
-    backup = save_backup("fix_shifted_deliverables", {"deliverables": [by_id[d["id"]] for d in moving], "work_items": follow})
+    unlink = leave if args.unlink_work_items else []
+    backup = save_backup("fix_shifted_deliverables", {
+        "deliverables": [by_id[d["id"]] for d in moving], "work_items": follow, "work_items_unlinked": unlink,
+    })
     print(f"Backup written: {backup}   (undo with --undo \"{backup}\")")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -260,8 +278,10 @@ def main() -> int:
     for w in follow:
         target = projects[verdicts[w["deliverable_id"]]["target"]]
         db.work_items.update_one({"id": w["id"]}, {"$set": {"project_id": target["id"], "client_id": target.get("client_id")}})
-    print(f"Moved {len(moving)} deliverables and {len(follow)} work items.")
-    if leave:
+    for w in unlink:
+        db.work_items.update_one({"id": w["id"]}, {"$set": {"deliverable_id": ""}})
+    print(f"Moved {len(moving)} deliverables and {len(follow)} work items; cleared the deliverable link on {len(unlink)} work items.")
+    if leave and not unlink:
         print(f"{len(leave)} work items still point at a deliverable now in a different project - fix those by hand.")
     return 0
 

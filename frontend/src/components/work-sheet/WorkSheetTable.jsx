@@ -2459,7 +2459,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               return (
                 <TableHead
                   key={column}
-                  className={`group relative flex min-h-10 min-w-0 items-center justify-center whitespace-normal border-r border-slate-200 bg-[#f7f9fc] px-2 py-1 text-[12px] font-bold leading-4 text-slate-900 ${
+                  className={`group relative flex min-h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 py-1 text-[12px] font-bold leading-4 text-slate-900 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
                   style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
@@ -2467,7 +2467,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   onDrop={() => handleColumnDrop(column)}
                 >
                   <div
-                    className="group/header flex w-full min-w-0 items-center justify-center gap-1"
+                    className="group/header flex w-full min-w-0 items-center overflow-hidden justify-center gap-1"
                     draggable
                     onDragStart={(event) => {
                       event.stopPropagation();
@@ -2486,10 +2486,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     <button
                       type="button"
                       onClick={(event) => event.stopPropagation()}
-                      className="flex max-w-full min-w-0 items-center rounded px-1 py-0.5 text-center hover:text-slate-900"
+                      className="flex max-w-full min-w-0 items-center overflow-hidden rounded px-1 py-0.5 text-center hover:text-slate-900"
                       title={column === "Time (min)" ? `${column} - required` : column}
                     >
-                      <span className="block min-w-0 whitespace-normal break-words">{column}</span>
+                      <span className="block min-w-0 truncate">{column}</span>
                       {/* Outside the truncating label so the marker stays visible in a narrow column. */}
                       {column === "Time (min)" && (
                         <span

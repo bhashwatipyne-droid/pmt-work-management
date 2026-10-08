@@ -6,6 +6,7 @@ import { refreshCounts } from "@/lib/countsBus";
 import { downloadCsv, slugify, todayStamp } from "@/lib/exportCsv";
 import { consumePrefetch, WORKSHEET_INITIAL_ROW_LIMIT } from "@/services/prefetch";
 import {
+  addWorkItemCollaborators,
   bulkDeleteWorkItems,
   bulkUpdateWorkItems,
   bulkCreateWorkItems,
@@ -45,6 +46,7 @@ import {
   matchesProjectFilter,
   matchesReviewerFilter,
 } from "@/lib/worksheetFilterOptions";
+import { durationSecondsOf } from "@/lib/quantity";
 import {
   TIME_GATED_STATUSES,
   TIME_REQUIRED_MESSAGE,
@@ -350,6 +352,7 @@ export default function WorkSheetPage() {
           time_taken_minutes: r.time_taken_minutes || 0,
           quantity: r.quantity ?? 1.0,
           quantity_items: r.quantity_items?.length ? r.quantity_items : null,
+          video_duration_seconds: r.video_duration_seconds ?? null,
           video_duration_minutes: r.video_duration_minutes ?? null,
           creator_id: r.creator_id || null,
           reviewer_id: r.reviewer_id || null,
@@ -786,14 +789,17 @@ export default function WorkSheetPage() {
     }
     const allColumns = [
       "Date", "Client", "Project", "Stage", "Deliverable", "Type", "Qty",
-      "Duration (min)", "Category", "Version", "Time (min)", "Creator",
+      "Duration", "Category", "Version", "Time (min)", "Creator",
       "Reviewer", "Status", "Remarks", "Link",
     ];
     // Same columns as the tab on screen (Qty / Duration are left out of the
     // sheets that don't use them).
     const excluded = SHEET_EXCLUDED_COLUMNS[activeSheet] || [];
     const keep = allColumns.map((name) => !excluded.includes(name));
-    const header = allColumns.filter((_, i) => keep[i]);
+    // Duration is exported as plain seconds.
+    const header = allColumns
+      .filter((_, i) => keep[i])
+      .map((name) => (name === "Duration" ? "Duration (sec)" : name));
     const rows = sortedItems.map((item) => {
       const project = projectById.get(item.project_id);
       const clientId = item.client_id || project?.client_id;
@@ -805,7 +811,7 @@ export default function WorkSheetPage() {
         item.deliverable_name || "",
         item.deliverable_type || "",
         item.quantity > 1 ? item.quantity : "",
-        item.video_duration_minutes ?? "",
+        durationSecondsOf(item) ?? "",
         item.work_category || "",
         item.version || "",
         item.time_taken_minutes ?? "",
@@ -1513,6 +1519,108 @@ export default function WorkSheetPage() {
     }
   };
 
+  // ---- Collaborators ---------------------------------------------------------
+  // Every creator on each shared entry, across ALL rows (not just the ones the
+  // filters show), so the picker can mark who is already on it.
+  const collabIndex = useMemo(() => {
+    const groups = new Map();
+    for (const row of items) {
+      if (!row.collab_group_id) continue;
+      const list = groups.get(row.collab_group_id);
+      if (list) list.push(row.creator_id);
+      else groups.set(row.collab_group_id, [row.creator_id]);
+    }
+    return groups;
+  }, [items]);
+
+  // Who can be tagged from the bulk bar: people whose team works the selected
+  // rows' stage(s). The server re-checks every pair and says why it skipped one.
+  const bulkCollabPeople = useMemo(() => {
+    if (!selectedIds.length) return [];
+    const picked = new Set(selectedIds);
+    const stages = new Set(
+      items.filter((row) => picked.has(row.id)).map((row) => row.stage || "")
+    );
+    return (users || [])
+      .filter(
+        (u) =>
+          u.role !== "admin" &&
+          u.active !== false &&
+          (stages.has("") || stages.has(DEPARTMENT_TO_STAGE[u.department]))
+      )
+      .map((u) => ({ id: u.id, name: u.name, department: u.department }));
+  }, [selectedIds, items, users]);
+
+  const COLLAB_REASONS = {
+    owner: "Owns this entry already",
+    already_has_entry: "Already has this entry",
+    different_stage: "Works in another team",
+    not_available: "Not available",
+  };
+
+  // Tag people on one or more entries. Each person gets their own row; anyone
+  // who already has the entry is skipped by the server, so repeating this adds
+  // nothing. Returns { problems } for the picker to show inline.
+  const handleAddCollaborators = useCallback(
+    async (rowIds, creatorIds) => {
+      let result;
+      try {
+        result = await addWorkItemCollaborators(currentUser.id, rowIds, creatorIds);
+      } catch (e) {
+        throw new Error(e.response?.data?.detail || "Could not add collaborators. Try again.");
+      }
+
+      const created = result.created || [];
+      const sourceById = Object.fromEntries((result.updated_sources || []).map((r) => [r.id, r]));
+      if (created.length || Object.keys(sourceById).length) {
+        setItems((prev) => {
+          const have = new Set(prev.map((r) => r.id));
+          return [
+            ...created.filter((r) => !have.has(r.id)),
+            ...prev.map((r) => sourceById[r.id] || r),
+          ];
+        });
+        refreshCounts();
+      }
+
+      const makers = new Set(created.map((r) => r.creator_id));
+      const problems = [];
+
+      // Whole-entry refusals (not yours, still blank, ...), once each.
+      const rowReasons = new Map();
+      (result.row_errors || []).forEach((e) =>
+        rowReasons.set(e.reason, (rowReasons.get(e.reason) || 0) + 1)
+      );
+      rowReasons.forEach((count, reason) =>
+        problems.push({
+          text: rowIds.length > 1 ? `${count} ${count === 1 ? "entry" : "entries"}: ${reason}` : reason,
+        })
+      );
+
+      // People who got nothing, with the reason.
+      const reasonsByPerson = new Map();
+      (result.skipped || []).forEach((sk) => {
+        if (makers.has(sk.creator_id)) return;
+        reasonsByPerson.set(sk.creator_id, COLLAB_REASONS[sk.reason] || sk.reason);
+      });
+      reasonsByPerson.forEach((text, id) => problems.push({ id, text }));
+
+      const people = makers.size;
+      if (created.length) {
+        const skippedCount = (result.skipped || []).length;
+        toast.success(
+          `Added ${people} ${people === 1 ? "person" : "people"} (${created.length} new ${created.length === 1 ? "row" : "rows"})` +
+            (skippedCount ? ` · ${skippedCount} skipped` : "")
+        );
+      }
+      // Keep the selection (and the picker's inline notes) while anything was refused.
+      if (rowIds.length > 1 && created.length && !problems.length) setSelectedIds([]);
+      return { problems };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentUser]
+  );
+
   const handleBulkAssign = async (patch) => {
     try {
       const assignBefore = snapshotFields(selectedIds, Object.keys(patch));
@@ -1828,6 +1936,10 @@ export default function WorkSheetPage() {
           deliverables={deliverables}
           onApplyStatus={handleBulkStatus}
           onApplyAssign={handleBulkAssign}
+          collabPeople={bulkCollabPeople}
+          onAddCollaborators={
+            isAdmin ? undefined : (creatorIds) => handleAddCollaborators(selectedIds, creatorIds)
+          }
           onHideRows={handleHideRows}
           onInsertAbove={() => handleInsertRow("above")}
           onInsertBelow={() => handleInsertRow("below")}
@@ -1850,6 +1962,8 @@ export default function WorkSheetPage() {
           projects={projects}
           deliverables={deliverables}
           onUpdate={handleUpdate}
+          collabIndex={collabIndex}
+          onAddCollaborators={isAdmin ? undefined : handleAddCollaborators}
           onDelete={setDeleteTarget}
           onDuplicateRow={handleDuplicateRow}
           onFill={handleFill}

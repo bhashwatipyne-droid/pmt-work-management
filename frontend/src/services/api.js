@@ -144,6 +144,19 @@ export const bulkUpdateWorkItems = (userId, ids, patch) =>
     )
     .then((r) => r.data);
 
+// Tag teammates on entries. Each tagged person gets their own row; anyone who
+// already has that entry is skipped, so repeating the call adds nothing.
+// -> { created: [rows], updated_sources: [rows], skipped: [{id, creator_id, reason}],
+//      row_errors: [{id, reason}] }
+export const addWorkItemCollaborators = (userId, ids, creatorIds) =>
+  axios
+    .post(
+      `${API}/work-items/collaborators`,
+      { ids, creator_ids: creatorIds },
+      { headers: authHeaders(userId) }
+    )
+    .then((r) => r.data);
+
 export const bulkDeleteWorkItems = (userId, ids) =>
   axios
     .post(

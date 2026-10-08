@@ -1,5 +1,5 @@
-import { Fragment, memo, useEffect, useRef, useState } from "react";
-import { ChevronsUpDown, Lock, Maximize2, RotateCcw, Sparkles } from "lucide-react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronsUpDown, Lock, Maximize2, RotateCcw, Sparkles, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
@@ -8,6 +8,7 @@ import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
 import { ProjectPicker } from "./ProjectPicker";
 import { RemarksEditor } from "./RemarksEditor";
+import { CollaboratorPicker } from "./CollaboratorPicker";
 import { StatusBadge } from "./StatusBadge";
 import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
@@ -26,10 +27,15 @@ import {
 import { isTimeMissing, lowTimeMessage, parseTimeInput, timeBadge } from "@/lib/timeRules";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import {
+  DURATION_HINT,
   MAX_QUANTITY,
   durationApplies,
+  durationPatch,
+  durationSecondsOf,
+  formatDurationSeconds,
   isQtySet,
   loggedCount,
+  parseDurationSeconds,
   qtyApplies,
   quantityOf,
   unitName,
@@ -37,6 +43,13 @@ import {
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
+// A person can only work on rows of their own department's stage, so that is
+// who can be tagged on an entry of a given stage.
+const STAGE_BY_DEPARTMENT = {
+  Content: "Content",
+  Design: "Design",
+  Animation: "Animate",
+};
 
 // The two glyphs of the Qty cell, drawn from the redesign's icon set
 // (fi-rr-list and fi-rr-plus-small) so they match it exactly.
@@ -71,6 +84,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     lookalikes,
     recentProjectsByCreator,
     onUpdate,
+    // Collaborators: `collabCount` is how many OTHER people share this entry
+    // (a number, so the memoized row only re-renders when it changes);
+    // getCollabMemberIds(groupId) reads the live list when the picker opens.
+    collabCount = 0,
+    getCollabMemberIds,
+    onAddCollaborators,
     onOpenQty,
     qtyPanelOpen = false,
     selected,
@@ -126,8 +145,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   // What is typed into the Qty / Duration boxes before it is saved.
   const [qtyText, setQtyText] = useState("");
   const [durationText, setDurationText] = useState(
-    item.video_duration_minutes ?? ""
+    formatDurationSeconds(durationSecondsOf(item))
   );
+  // Inline error under the Duration box.
+  const [durationError, setDurationError] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
   const nameRef = useRef(null);
   const rowRef = useRef(null);
@@ -164,8 +185,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   });
 
   useEffect(() => {
-    setDurationText(item.video_duration_minutes ?? "");
-  }, [item.video_duration_minutes]);
+    setDurationText(formatDurationSeconds(durationSecondsOf(item)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.video_duration_seconds, item.video_duration_minutes]);
 
   useEffect(() => {
     setLocal({
@@ -184,6 +206,30 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     item.time_taken_minutes,
     item.remarks,
   ]);
+
+  // Collaborators: who can be tagged on this entry, and whether this person
+  // may tag. The server enforces the same rules (and refuses duplicates).
+  const collabCandidates = useMemo(
+    () =>
+      nonAdminUsers
+        .filter(
+          (u) =>
+            u.id !== item.creator_id &&
+            u.active !== false &&
+            (!item.stage || STAGE_BY_DEPARTMENT[u.department] === item.stage)
+        )
+        .map((u) => ({ id: u.id, name: u.name, department: u.department })),
+    [nonAdminUsers, item.stage, item.creator_id]
+  );
+  const collabRowReady = Boolean(
+    item.work_date &&
+      (item.project_id ||
+        item.deliverable_id ||
+        (item.deliverable_name || "").trim() ||
+        item.deliverable_type)
+  );
+  const canTagCollaborators =
+    Boolean(onAddCollaborators) && canEditRow && currentUser.role !== "admin";
 
   const nameOf = (id) => usersById[id]?.name || "Unassigned";
 
@@ -241,7 +287,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     13: "Remarks",
     14: "Status",
     15: "Qty",
-    16: "Duration (min)",
+    16: "Duration",
   };
 
   const orderedColumns = columnOrder.length
@@ -355,8 +401,8 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     }
 
     if (field === "video_duration_minutes") {
-      if (item.video_duration_minutes != null) {
-        onUpdate(item.id, { video_duration_minutes: null });
+      if (durationSecondsOf(item) != null) {
+        onUpdate(item.id, durationPatch(null));
       }
       return;
     }
@@ -975,7 +1021,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       </TableCell>
         );
       }
-      case "Duration (min)": {
+      case "Duration": {
         const applies = durationApplies(item);
 
         return (
@@ -992,28 +1038,46 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             {...sheetCell(16)}
             data-testid={`worksheet-duration-input-${item.id}`}
             type="text"
-            inputMode="decimal"
-            placeholder="min"
-            title="Final video length in minutes"
-            aria-label="Video duration in minutes"
+            inputMode="text"
+            placeholder="sec"
+            title={`Final video length. ${DURATION_HINT}`}
+            aria-label="Video duration (seconds by default)"
             value={durationText}
             disabled={!canEditRow}
-            onChange={(e) => setDurationText(e.target.value)}
-            onBlur={() => {
-              const text = String(durationText ?? "").trim();
-              const current = item.video_duration_minutes ?? null;
-              const value = text === "" ? null : Number(text);
+            onChange={(e) => {
+              setDurationText(e.target.value);
+              if (durationError) setDurationError("");
+            }}
+            onBlur={async () => {
+              const current = durationSecondsOf(item);
+              const parsed = parseDurationSeconds(durationText);
 
-              if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1440)) {
-                toast.error("Duration must be a number of minutes (0 to 1440).");
-                setDurationText(current ?? "");
+              if (!parsed.ok) {
+                // Keep what was typed so it can be fixed; say why under the box.
+                setDurationError(`Not a valid duration. ${DURATION_HINT}`);
                 return;
               }
-              if (value === current) return;
-              onUpdate(item.id, { video_duration_minutes: value });
+              setDurationError("");
+              // 200 is shown as "3m 20s" whether or not it changed.
+              setDurationText(formatDurationSeconds(parsed.seconds));
+              if (parsed.seconds === current) return;
+              const result = await onUpdate(item.id, durationPatch(parsed.seconds));
+              if (result && result.success === false) {
+                setDurationError("Could not save the duration. Try again.");
+              }
             }}
-            className="h-7 w-[72px] px-2"
+            aria-invalid={Boolean(durationError)}
+            className={`h-7 w-[104px] px-2 ${durationError ? "border-rose-400" : ""}`}
           />
+        )}
+        {applies && durationError && (
+          <p
+            role="alert"
+            data-testid={`worksheet-duration-error-${item.id}`}
+            className="mt-1 text-[11px] leading-4 text-rose-600"
+          >
+            {durationError}
+          </p>
         )}
         {renderFillHandle(16)}
       </TableCell>
@@ -1117,10 +1181,53 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         {renderFillHandle(10)}
       </TableCell>
         );
-      case "Creator":
+      case "Creator": {
+        const collaboratorButton = canTagCollaborators ? (
+          <CollaboratorPicker
+            people={collabCandidates}
+            addedIds={getCollabMemberIds ? getCollabMemberIds(item.collab_group_id) : []}
+            onSubmit={(ids) => onAddCollaborators([item.id], ids)}
+            blockedReason={
+              collabRowReady
+                ? ""
+                : "Fill in the date and the project, deliverable or type on this entry first, so teammates get something meaningful."
+            }
+            testId={`worksheet-collaborator-picker-${item.id}`}
+          >
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid={`worksheet-collaborator-btn-${item.id}`}
+              aria-label="Add collaborators"
+              title={
+                collabRowReady
+                  ? collabCount > 0
+                    ? `${collabCount} collaborator${collabCount === 1 ? "" : "s"} - click to add more`
+                    : "Add collaborators"
+                  : "Add collaborators"
+              }
+              className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 rounded-md px-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#2b2bb5] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              {collabCount > 0 && (
+                <span className="text-[11px] font-semibold text-[#2b2bb5]">+{collabCount}</span>
+              )}
+            </button>
+          </CollaboratorPicker>
+        ) : collabCount > 0 ? (
+          <span
+            className="inline-flex h-6 shrink-0 items-center rounded-md px-1 text-[11px] font-semibold text-[#2b2bb5]"
+            title={`${collabCount} collaborator${collabCount === 1 ? "" : "s"} on this entry`}
+          >
+            +{collabCount}
+          </span>
+        ) : null;
+
         return (
 <TableCell {...cellProps(11)}>
         {canEditExtra ? (
+          <div className="flex min-w-0 items-center gap-1">
+          <div className="min-w-0 flex-1">
           <SearchableSelect
               open={openSelect === "creator"}
               onOpenChange={(open) => setOpenSelect(open ? "creator" : null)}
@@ -1153,6 +1260,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 );
               }}
             />
+          </div>
+          {collaboratorButton}
+          </div>
         ) : (
           <span className="flex min-w-0 items-center gap-2">
             <span
@@ -1168,11 +1278,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 title={`This row was created by ${nameOf(item.creator_id)}. Only they (or a manager) can edit it.`}
               />
             )}
+            {collaboratorButton && <span className="ml-auto shrink-0">{collaboratorButton}</span>}
           </span>
         )}
         {renderFillHandle(11)}
       </TableCell>
         );
+      }
       case "Reviewer":
         return (
 <TableCell {...cellProps(12)}>

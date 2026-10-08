@@ -16,7 +16,9 @@ import {
   ArrowDownToLine,
   Copy,
   ChevronDown,
+  UserPlus,
 } from "lucide-react";
+import { CollaboratorPicker } from "./CollaboratorPicker";
 
 const STAGES = ["Content", "Design", "Animate"];
 const NONE = "__none__";
@@ -93,6 +95,10 @@ export const BulkActionBar = ({
   deliverables = [],
   onApplyStatus,
   onApplyAssign,
+  // Tag people on every selected entry: onAddCollaborators(creatorIds) resolves
+  // with { problems } (see CollaboratorPicker). Omit it to hide the button.
+  collabPeople = [],
+  onAddCollaborators,
   onHideRows,
   onInsertAbove,
   onInsertBelow,
@@ -170,6 +176,27 @@ export const BulkActionBar = ({
             data-testid="worksheet-bulk-assign-btn"
             onClick={() => setShowAssign((v) => !v)}
           />
+
+          {onAddCollaborators && (
+            <CollaboratorPicker
+              people={collabPeople}
+              onSubmit={onAddCollaborators}
+              title={`Add collaborators to ${selectedCount} row${selectedCount === 1 ? "" : "s"}`}
+              hint="Each person gets their own row per entry. Anyone who already has an entry is skipped."
+              align="center"
+              side="top"
+              testId="worksheet-bulk-collaborator-picker"
+            >
+              <button
+                type="button"
+                data-testid="worksheet-bulk-collaborator-btn"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition-colors hover:bg-white/10"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                Add collaborators
+              </button>
+            </CollaboratorPicker>
+          )}
 
           <BarButton icon={EyeOff} label="Hide" onClick={onHideRows} />
           <BarButton icon={Trash2} label="Delete" danger onClick={onDelete} />

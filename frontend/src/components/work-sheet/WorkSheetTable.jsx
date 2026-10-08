@@ -30,7 +30,15 @@ import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigati
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { QuantityPanel } from "./QuantityPanel";
 import { RangeSelectionBar } from "./RangeSelectionBar";
-import { isQtySet, qtyApplies, quantityOf, MAX_QUANTITY } from "@/lib/quantity";
+import {
+  MAX_QUANTITY,
+  durationPatch,
+  durationSecondsOf,
+  isQtySet,
+  parseDurationSeconds,
+  qtyApplies,
+  quantityOf,
+} from "@/lib/quantity";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
@@ -48,7 +56,7 @@ const COLUMNS = [
   "Deliverable Link",
   "Deliverable Type",
   "Qty",
-  "Duration (min)",
+  "Duration",
   "Category",
   "Version",
   "Time (min)",
@@ -115,13 +123,14 @@ const FORMULA_PICKER_COLUMNS = new Set([
   "Status",
 ]);
 const NO_COLUMNS = [];
+const NO_COLLAB_IDS = [];
 
 // Columns a department's own sheet doesn't use. They are left out of that
 // tab entirely (the "All" tab keeps every column): Duration only matters for
 // video work, and Qty is not used by Content.
 export const SHEET_EXCLUDED_COLUMNS = {
-  Content: ["Qty", "Duration (min)"],
-  Design: ["Duration (min)"],
+  Content: ["Qty", "Duration"],
+  Design: ["Duration"],
 };
 
 const MEMBER_STAGE_BY_DEPARTMENT = {
@@ -190,6 +199,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   onDelete,
   onDuplicateRow,
   onFill,
+  // Collaborators. `collabIndex` maps a collab_group_id to the creator ids on
+  // that entry across EVERY row (not just the ones the filters show);
+  // onAddCollaborators(rowIds, creatorIds) tags people on entries.
+  collabIndex,
+  onAddCollaborators,
   // Lets the page's Ctrl/Cmd+Z undo a drag-reorder: (label, undoFn) => void.
   onUndoable,
   filters,
@@ -235,7 +249,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const [hiddenColumns, setHiddenColumns] = useState(() => {
     try {
       const saved = localStorage.getItem("worksheet_hidden_columns");
-      return saved ? JSON.parse(saved) : [];
+      // "Duration (min)" was renamed "Duration" when it moved to seconds.
+      return saved
+        ? JSON.parse(saved).map((c) => (c === "Duration (min)" ? "Duration" : c))
+        : [];
     } catch {
       return [];
     }
@@ -551,6 +568,15 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     [users]
   );
 
+  // Read when a collaborator picker opens (so it always sees the live list)
+  // through a stable function, so rows are not re-rendered for it.
+  const collabIndexRef = useRef(collabIndex);
+  collabIndexRef.current = collabIndex;
+  const getCollabMemberIds = useCallback(
+    (groupId) => (groupId && collabIndexRef.current?.get(groupId)) || NO_COLLAB_IDS,
+    []
+  );
+
   // Value lists for the per-column filter menus. Memoized on the
   // underlying data only (not on `filters` or any per-render state), so
   // opening/using one column's filter never recomputes or re-renders the
@@ -704,7 +730,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const getSortValue = useCallback(
     (item, column) => {
       if (column === "Qty") return isQtySet(item) ? quantityOf(item) : "";
-      if (column === "Duration (min)") return item.video_duration_minutes ?? "";
+      if (column === "Duration") return durationSecondsOf(item) ?? "";
 
       const field = COLUMN_FIELDS[column];
 
@@ -1460,12 +1486,13 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
           if (!Number.isInteger(n) || n < 1 || n > MAX_QUANTITY) return null;
           return { quantity: n, quantity_items: Array(n).fill(null) };
         }
-        case "Duration (min)": {
+        case "Duration": {
           if (targetItem.stage !== "Animate") return null;
-          if (clear) return { video_duration_minutes: null };
-          const n = Number(text.replace(/[^\d.]/g, ""));
-          if (!Number.isFinite(n) || n < 0 || n > 1440) return null;
-          return { video_duration_minutes: n };
+          if (clear) return durationPatch(null);
+          // A bare number is seconds; "3m 20s" and "3:20" work too.
+          const parsed = parseDurationSeconds(text);
+          if (!parsed.ok || parsed.seconds == null) return null;
+          return durationPatch(parsed.seconds);
         }
         case "Time (min)": {
           if (clear) return { time_taken_minutes: 0 };
@@ -2687,6 +2714,13 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     lookalikes={projectLookalikes}
                     recentProjectsByCreator={recentProjectsByCreator}
                     onUpdate={onUpdate}
+                    collabCount={
+                      item.collab_group_id
+                        ? Math.max(0, (collabIndex?.get(item.collab_group_id)?.length || 1) - 1)
+                        : 0
+                    }
+                    getCollabMemberIds={getCollabMemberIds}
+                    onAddCollaborators={onAddCollaborators}
                     onOpenQty={openQtyPanel}
                     qtyPanelOpen={qtyPanel?.id === item.id}
                     onDelete={onDelete}

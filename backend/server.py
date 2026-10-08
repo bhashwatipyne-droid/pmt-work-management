@@ -28,7 +28,7 @@ import random
 import bcrypt
 import jwt
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Dict, List, Optional
 import uuid
 from urllib.parse import quote
@@ -191,7 +191,7 @@ MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Revie
 # the Non-Core "needs time before it can be closed" check. Scrap is treated the
 # same as Closed - the time was spent either way.
 DONE_STATUSES = ("Closed", "Scrap")
-MEMBER_EDITABLE_FIELDS = {"quantity", "quantity_items", "video_duration_minutes", "work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
+MEMBER_EDITABLE_FIELDS = {"quantity", "quantity_items", "video_duration_seconds", "video_duration_minutes","work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
 PROJECT_STATUSES = [
     "Active",
@@ -455,7 +455,10 @@ class WorkItem(BaseModel):
     # has no per-unit breakdown. When any is logged, time_taken_minutes is
     # their total (see apply_quantity_rules).
     quantity_items: List[Optional[float]] = Field(default_factory=list)
-    # Animate rows only: length of the finished video, in minutes.
+    # Animate rows only: length of the finished video. SECONDS are the source
+    # of truth; the minutes field is kept in step (seconds / 60) for older
+    # readers and rows saved before seconds existed (see the validator below).
+    video_duration_seconds: Optional[int] = None
     video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
@@ -470,8 +473,21 @@ class WorkItem(BaseModel):
     stage: Optional[str] = None
     remarks: str = ""
     status: str = "Not Started"
+    # Collaborators: when one person tags teammates on an entry, each teammate
+    # gets their own row (own time, own status) and every row of that entry
+    # shares collab_group_id. Server-managed - clients cannot set these.
+    collab_group_id: Optional[str] = None
+    collab_source_id: Optional[str] = None  # the row this copy was made from
+    collab_added_by: Optional[str] = None  # user who tagged this person
     created_at: str
     updated_at: str
+
+    @model_validator(mode="after")
+    def _fill_video_duration_seconds(self):
+        # Rows saved before seconds existed only carry minutes.
+        if self.video_duration_seconds is None and self.video_duration_minutes is not None:
+            self.video_duration_seconds = int(round(self.video_duration_minutes * 60))
+        return self
 
 
 class WorkItemCreate(BaseModel):
@@ -484,6 +500,7 @@ class WorkItemCreate(BaseModel):
     time_taken_minutes: Optional[float] = 0
     quantity: Optional[float] = 1.0
     quantity_items: Optional[List[Optional[float]]] = None
+    video_duration_seconds: Optional[float] = None
     video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
@@ -507,6 +524,7 @@ class WorkItemUpdate(BaseModel):
     time_taken_minutes: Optional[float] = None
     quantity: Optional[float] = None
     quantity_items: Optional[List[Optional[float]]] = None
+    video_duration_seconds: Optional[float] = None
     video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
     reviewer_id: Optional[str] = None
@@ -877,8 +895,58 @@ def units_of(row: dict) -> int:
         return 1
 
 
+MAX_VIDEO_DURATION_SECONDS = int(MAX_WORK_ITEM_MINUTES * 60)  # 24 hours
+
+
+def normalize_video_duration(update_fields: dict) -> None:
+    """Video length is stored in SECONDS (video_duration_seconds, whole number)
+    and mirrored into video_duration_minutes (seconds / 60) so anything still
+    reading minutes keeps working. A request may send either field; seconds
+    win when both are present. Mutates update_fields; raises HTTPException(400)
+    for a value that is not a number between 0 seconds and 24 hours."""
+    has_seconds = "video_duration_seconds" in update_fields
+    has_minutes = "video_duration_minutes" in update_fields
+    if not (has_seconds or has_minutes):
+        return
+
+    # A create payload carries every field, so "seconds is None" there only
+    # means "not sent" - fall back to minutes from an older client.
+    seconds = None
+    raw = None
+    factor = 1
+    if update_fields.get("video_duration_seconds") is not None:
+        raw = update_fields["video_duration_seconds"]
+    elif update_fields.get("video_duration_minutes") is not None:
+        raw = update_fields["video_duration_minutes"]
+        factor = 60
+
+    if raw is not None:
+        value = _valid_minutes(raw)  # "a finite float or None", despite the name
+        if value is None or value < 0 or value * factor > MAX_VIDEO_DURATION_SECONDS:
+            raise HTTPException(
+                status_code=400,
+                detail="Duration must be between 0 seconds and 24 hours.",
+            )
+        seconds = int(round(value * factor))
+
+    update_fields["video_duration_seconds"] = seconds
+    update_fields["video_duration_minutes"] = None if seconds is None else round(seconds / 60, 2)
+
+
+def _has_video_duration(row: dict) -> bool:
+    return (
+        row.get("video_duration_seconds") is not None
+        or row.get("video_duration_minutes") is not None
+    )
+
+
+def _clear_video_duration(update_fields: dict) -> None:
+    update_fields["video_duration_seconds"] = None
+    update_fields["video_duration_minutes"] = None
+
+
 def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
-    """Validate quantity / quantity_items / video_duration_minutes and keep
+    """Validate quantity / quantity_items / video duration and keep
     them consistent with the stage and with each other. Mutates update_fields;
     raises HTTPException(400) on a violation. `existing` is {} when creating."""
     # Creating from a payload that leaves the optional fields out.
@@ -886,6 +954,8 @@ def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
         update_fields.pop("quantity_items")
     if "quantity" in update_fields and update_fields["quantity"] is None:
         update_fields["quantity"] = 1.0
+
+    normalize_video_duration(update_fields)
 
     merged = {**existing, **update_fields}
     stage = merged.get("stage")
@@ -896,28 +966,23 @@ def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
             or update_fields.get("quantity_items")
         ):
             raise HTTPException(status_code=400, detail="Quantity applies to Design and Animate rows only.")
-        if update_fields.get("video_duration_minutes") is not None:
+        if update_fields.get("video_duration_seconds") is not None:
             raise HTTPException(status_code=400, detail="Duration applies to Animate rows only.")
         # Stage moved away from Design/Animate: the old quantity no longer means anything.
         if "stage" in update_fields and (
             float(existing.get("quantity") or 1) != 1.0
             or existing.get("quantity_items")
-            or existing.get("video_duration_minutes") is not None
+            or _has_video_duration(existing)
         ):
-            update_fields.update({"quantity": 1.0, "quantity_items": [], "video_duration_minutes": None})
+            update_fields.update({"quantity": 1.0, "quantity_items": []})
+            _clear_video_duration(update_fields)
         return
 
     if stage != "Animate":
-        if update_fields.get("video_duration_minutes") is not None:
+        if update_fields.get("video_duration_seconds") is not None:
             raise HTTPException(status_code=400, detail="Duration applies to Animate rows only.")
-        if "stage" in update_fields and existing.get("video_duration_minutes") is not None:
-            update_fields["video_duration_minutes"] = None
-
-    if update_fields.get("video_duration_minutes") is not None:
-        duration = _valid_minutes(update_fields["video_duration_minutes"])
-        if duration is None or duration < 0 or duration > MAX_WORK_ITEM_MINUTES:
-            raise HTTPException(status_code=400, detail="Duration must be a number of minutes (0 to 1440).")
-        update_fields["video_duration_minutes"] = round(duration, 2)
+        if "stage" in update_fields and _has_video_duration(existing):
+            _clear_video_duration(update_fields)
 
     if "quantity" in update_fields:
         raw = _valid_minutes(update_fields["quantity"])
@@ -3293,6 +3358,317 @@ async def expand_work_item_units(item_id: str, payload: ExpandUnitsPayload, requ
         await db.work_items.insert_many(docs)
 
     return {"updated": updated, "created": [{k: v for k, v in d.items() if k != "_id"} for d in docs]}
+
+
+# ---------------- Collaborators: tag teammates on an entry ----------------
+#
+# One person logs an entry and tags teammates. Each tagged person gets their OWN
+# row (their own time, status and efficiency) and every row of that entry shares
+# a collab_group_id. The same call can tag several people on several entries.
+#
+# Guardrail - adding is idempotent. "The same entry" is decided by what was done,
+# not by who typed it (date, stage, project, deliverable, type, version), so:
+#   * pressing the button twice, or two people tagging the same person on the
+#     same entry, never creates a second row for that person;
+#   * a person who already logged that entry themselves is left alone;
+#   * a unique index on collab_key backs this up when two requests race.
+# Anything not created comes back in `skipped` with the reason.
+COLLAB_MAX_ROWS = 200
+COLLAB_MAX_PEOPLE = 50
+COLLAB_NO_IDENTITY_MESSAGE = (
+    "Fill in the date and the project, deliverable or type before adding collaborators."
+)
+
+
+def _collab_text(value) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+
+
+def collab_fingerprint(row: dict) -> str:
+    """What makes two entries 'the same piece of work', whoever logged them."""
+    return "|".join([
+        str(row.get("work_date") or ""),
+        str(row.get("stage") or ""),
+        str(row.get("project_id") or ""),
+        str(row.get("deliverable_id") or ""),
+        "na" if row.get("deliverable_not_available") else "",
+        _collab_text(row.get("deliverable_name")),
+        _collab_text(row.get("deliverable_type")),
+        _collab_text(row.get("version")),
+    ])
+
+
+def collab_key(person_id: str, row: dict) -> str:
+    digest = hashlib.sha1(collab_fingerprint(row).encode("utf-8")).hexdigest()
+    return f"{person_id}:{digest}"
+
+
+def collab_row_has_identity(row: dict) -> bool:
+    """A blank row would be copied to everyone as junk."""
+    return bool(row.get("work_date")) and bool(
+        row.get("project_id")
+        or row.get("deliverable_id")
+        or _collab_text(row.get("deliverable_name"))
+        or _collab_text(row.get("deliverable_type"))
+    )
+
+
+class CollaboratorsPayload(BaseModel):
+    ids: List[str]
+    creator_ids: List[str]
+
+
+async def _build_collab_copy(
+    source: dict, person_id: str, group_id: str, added_by: str, ts: str
+) -> dict:
+    """The collaborator's own row for `source`. What was done is copied; what
+    the person spent (time, quantity), their status and remarks start fresh.
+    Time is pre-filled from THEIR benchmark for the type, like adding a row."""
+    deliverable_type = source.get("deliverable_type") or ""
+    benchmark = (
+        await get_time_benchmark([person_id], deliverable_type)
+        if deliverable_type
+        else None
+    )
+    is_animate = source.get("stage") == "Animate"
+    item = WorkItem(
+        work_date=source["work_date"],
+        month=source.get("month") or source["work_date"][:7],
+        deliverable_name=source.get("deliverable_name") or "",
+        deliverable_type=deliverable_type,
+        deliverable_link=source.get("deliverable_link") or "",
+        work_category=source.get("work_category") or "Core",
+        version=source.get("version") or "",
+        time_taken_minutes=benchmark or 0,
+        time_source="auto" if benchmark else "manual",
+        time_benchmark_minutes=benchmark,
+        video_duration_seconds=source.get("video_duration_seconds") if is_animate else None,
+        video_duration_minutes=source.get("video_duration_minutes") if is_animate else None,
+        creator_id=person_id,
+        reviewer_id=source.get("reviewer_id"),
+        manager_id=source.get("manager_id"),
+        client_id=source.get("client_id"),
+        project_id=source.get("project_id"),
+        deliverable_id=source.get("deliverable_id"),
+        deliverable_not_available=bool(source.get("deliverable_not_available")),
+        stage=source.get("stage"),
+        remarks="",
+        status="Not Started",
+        collab_group_id=group_id,
+        collab_source_id=source["id"],
+        collab_added_by=added_by,
+        created_at=ts,
+        updated_at=ts,
+    )
+    doc = item.model_dump()
+    doc["collab_key"] = collab_key(person_id, source)
+    return doc
+
+
+async def _notify_collaborators(actor_name: str, created_by_person: Dict[str, list]):
+    """One notice per tagged person per request. Never raises: the rows are
+    already saved, so a notification problem must not fail the request."""
+    try:
+        ts = now_iso()
+        notifications = []
+        for person_id, rows in created_by_person.items():
+            first = rows[0]
+            count = len(rows)
+            what = (first.get("deliverable_name") or first.get("deliverable_type") or "an entry")
+            message = (
+                f"{actor_name} added you as a collaborator on {what}. "
+                "It is in your Work Sheet - add your time."
+                if count == 1
+                else f"{actor_name} added you as a collaborator on {count} entries. "
+                "They are in your Work Sheet - add your time."
+            )
+            notifications.append({
+                "id": str(uuid.uuid4()),
+                "user_id": person_id,
+                "type": "collaborator_added",
+                "title": "You were added to an entry",
+                "message": message,
+                "project_id": first.get("project_id"),
+                "deliverable_id": first.get("deliverable_id"),
+                "deliverable_name": first.get("deliverable_name") or "",
+                "client_id": first.get("client_id"),
+                "stage": first.get("stage"),
+                "action_type": "open_worksheet",
+                "created_at": ts,
+                "read_at": None,
+                "actioned_at": None,
+                "dedupe_key": f"collaborator-added:{uuid.uuid4()}",
+            })
+        await _upsert_notifications_batch(notifications)
+    except Exception:
+        logger.exception("Could not create the collaborator notifications")
+
+
+@api_router.post("/work-items/collaborators")
+async def add_work_item_collaborators(payload: CollaboratorsPayload, request: Request):
+    user = await get_acting_user(request)
+    if user.role == "admin":
+        raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
+
+    ids = list(dict.fromkeys(i for i in payload.ids if i))
+    people = list(dict.fromkeys(i for i in payload.creator_ids if i))
+    if not ids or not people:
+        raise HTTPException(status_code=400, detail="Pick at least one entry and one person.")
+    if len(ids) > COLLAB_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"Pick at most {COLLAB_MAX_ROWS} entries at a time.")
+    if len(people) > COLLAB_MAX_PEOPLE:
+        raise HTTPException(status_code=400, detail=f"Pick at most {COLLAB_MAX_PEOPLE} people at a time.")
+
+    sources = await db.work_items.find({"id": {"$in": ids}}, {"_id": 0}).to_list(len(ids))
+    sources_by_id = {s["id"]: s for s in sources}
+
+    target_docs = await db.users.find(
+        {"id": {"$in": people}},
+        {"_id": 0, "id": 1, "name": 1, "role": 1, "department": 1, "active": 1},
+    ).to_list(len(people))
+    targets_by_id = {t["id"]: t for t in target_docs}
+
+    owner_ids = list({s.get("creator_id") for s in sources if s.get("creator_id")})
+    owners_by_id = {}
+    if owner_ids:
+        owner_docs = await db.users.find(
+            {"id": {"$in": owner_ids}}, {"_id": 0, "id": 1, "department": 1, "role": 1}
+        ).to_list(len(owner_ids))
+        owners_by_id = {d["id"]: d for d in owner_docs}
+
+    # What the tagged people already have on the days in play, in one query -
+    # checked in memory below so a big selection is not one lookup per pair.
+    dates = list({s.get("work_date") for s in sources if s.get("work_date")})
+    groups = list({s.get("collab_group_id") for s in sources if s.get("collab_group_id")})
+    clauses = [{"creator_id": {"$in": people}, "work_date": {"$in": dates}}]
+    if groups:
+        clauses.append({"creator_id": {"$in": people}, "collab_group_id": {"$in": groups}})
+    existing_rows = await db.work_items.find(
+        {"$or": clauses},
+        {
+            "_id": 0, "creator_id": 1, "collab_group_id": 1, "work_date": 1, "stage": 1,
+            "project_id": 1, "deliverable_id": 1, "deliverable_not_available": 1,
+            "deliverable_name": 1, "deliverable_type": 1, "version": 1,
+        },
+    ).to_list(None)
+    have_entry = {(r.get("creator_id"), collab_fingerprint(r)) for r in existing_rows}
+    have_group = {
+        (r.get("creator_id"), r["collab_group_id"])
+        for r in existing_rows
+        if r.get("collab_group_id")
+    }
+
+    _lookup_cache.set({})  # share benchmark lookups across this request
+
+    created: list = []
+    skipped: list = []
+    row_errors: list = []
+    touched_sources: list = []
+    created_by_person: Dict[str, list] = {}
+
+    for source_id in ids:
+        source = sources_by_id.get(source_id)
+        if not source:
+            row_errors.append({"id": source_id, "reason": "Entry not found."})
+            continue
+
+        # Same permission as editing the entry: its creator, or a manager of
+        # that creator's department. Admins and everyone else are refused.
+        owner = owners_by_id.get(source.get("creator_id")) or {}
+        try:
+            await scoped_update_fields(
+                user, source, {}, owner.get("department"), owner.get("role")
+            )
+        except HTTPException as exc:
+            row_errors.append({"id": source_id, "reason": exc.detail})
+            continue
+
+        if not collab_row_has_identity(source):
+            row_errors.append({"id": source_id, "reason": COLLAB_NO_IDENTITY_MESSAGE})
+            continue
+
+        fingerprint = collab_fingerprint(source)
+        group_id = source.get("collab_group_id")
+        made_any = False
+
+        for person_id in people:
+            person = targets_by_id.get(person_id)
+            reason = None
+            if person_id == source.get("creator_id"):
+                reason = "owner"
+            elif not person or person.get("active") is False or person.get("role") == "admin":
+                reason = "not_available"
+            elif source.get("stage") and DEPARTMENT_TO_STAGE.get(person.get("department")) != source.get("stage"):
+                # A member can only edit rows of their own department's stage.
+                reason = "different_stage"
+            elif (person_id, fingerprint) in have_entry or (
+                group_id and (person_id, group_id) in have_group
+            ):
+                reason = "already_has_entry"
+
+            if reason:
+                skipped.append({"id": source_id, "creator_id": person_id, "reason": reason})
+                continue
+
+            if not group_id:
+                # Claim the group on the entry first, atomically, so two
+                # requests tagging the same entry end up in ONE group.
+                candidate = str(uuid.uuid4())
+                await db.work_items.update_one(
+                    {"id": source_id, "collab_group_id": None},
+                    {"$set": {"collab_group_id": candidate, "updated_at": now_iso()}},
+                )
+                fresh = await db.work_items.find_one(
+                    {"id": source_id}, {"_id": 0, "collab_group_id": 1}
+                )
+                group_id = (fresh or {}).get("collab_group_id") or candidate
+
+            doc = await _build_collab_copy(source, person_id, group_id, user.id, now_iso())
+            try:
+                await db.work_items.insert_one(doc)
+            except DuplicateKeyError:
+                # Lost a race with an identical request: the row exists.
+                have_entry.add((person_id, fingerprint))
+                skipped.append({"id": source_id, "creator_id": person_id, "reason": "already_has_entry"})
+                continue
+
+            have_entry.add((person_id, fingerprint))
+            have_group.add((person_id, group_id))
+            made_any = True
+            row = {k: v for k, v in doc.items() if k not in ("_id", "collab_key")}
+            created.append(row)
+            created_by_person.setdefault(person_id, []).append(row)
+
+            try:
+                await log_activity(
+                    collection_name="work_item_activity_log",
+                    entity_id=row["id"],
+                    entity_field="work_item_id",
+                    action="WORK_ITEM_COLLABORATOR_ADDED",
+                    changed_by=user.id,
+                    metadata={"source_id": source_id, "group_id": group_id},
+                )
+            except Exception:
+                logger.exception("Could not log the collaborator activity")
+
+        if made_any:
+            touched_sources.append(source_id)
+
+    updated_sources = []
+    if touched_sources:
+        updated_sources = await db.work_items.find(
+            {"id": {"$in": touched_sources}}, {"_id": 0, "collab_key": 0}
+        ).to_list(len(touched_sources))
+
+    if created_by_person:
+        await _notify_collaborators(user.name, created_by_person)
+
+    return {
+        "created": created,
+        "updated_sources": updated_sources,
+        "skipped": skipped,
+        "row_errors": row_errors,
+    }
 
 
 @api_router.post("/work-items/bulk-update", response_model=List[WorkItem])
@@ -7729,6 +8105,22 @@ async def run_startup_migrations():
     await db.work_items.create_index([("project_id", 1)])
     await db.work_items.create_index([("deliverable_id", 1)])
     await db.work_items.create_index([("month", 1)])
+    # Collaborators: one row per (person, piece of work). The partial unique
+    # index is what makes tagging idempotent when two requests race - rows
+    # that are not collaborator copies have no collab_key and are not covered.
+    try:
+        await db.work_items.create_index(
+            "collab_key",
+            unique=True,
+            partialFilterExpression={"collab_key": {"$type": "string"}},
+        )
+        await db.work_items.create_index(
+            "collab_group_id",
+            partialFilterExpression={"collab_group_id": {"$type": "string"}},
+        )
+    except Exception:
+        # Never block start-up; the endpoint still de-duplicates in code.
+        logger.exception("Could not create the collaborator indexes")
 
 
 @app.on_event("shutdown")

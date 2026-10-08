@@ -75,3 +75,77 @@ export const parseDuration = (raw) => {
   const minutes = Number(match[1] || 0) * 60 + Number(match[2] || 0);
   return Math.round(minutes * 100) / 100;
 };
+
+// ---- Video duration (Animate rows) -----------------------------------------
+// Stored in SECONDS (video_duration_seconds). Rows saved before seconds existed
+// only carry video_duration_minutes, so every read goes through durationSecondsOf.
+// The server keeps both fields in step; a patch sends both so the sheet's
+// optimistic update never shows a stale one.
+export const MAX_DURATION_SECONDS = 24 * 60 * 60;
+export const DURATION_HINT =
+  "Type seconds (200), or 3m 20s, or 3:20. Up to 24 hours.";
+
+export const durationSecondsOf = (item) => {
+  if (item?.video_duration_seconds != null) {
+    return Math.round(Number(item.video_duration_seconds));
+  }
+  if (item?.video_duration_minutes != null) {
+    return Math.round(Number(item.video_duration_minutes) * 60);
+  }
+  return null;
+};
+
+// The fields to send for a duration (null clears it).
+export const durationPatch = (seconds) => ({
+  video_duration_seconds: seconds,
+  video_duration_minutes: seconds == null ? null : Math.round((seconds / 60) * 100) / 100,
+});
+
+// 200 -> "3m 20s", 45 -> "45s", 120 -> "2m", 3725 -> "1h 2m 5s", 0 -> "0s",
+// nothing -> "".
+export const formatDurationSeconds = (seconds) => {
+  if (seconds == null || seconds === "") return "";
+  const total = Math.round(Number(seconds));
+  if (!Number.isFinite(total) || total < 0) return "";
+  if (total === 0) return "0s";
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h && `${h}h`, m && `${m}m`, s && `${s}s`].filter(Boolean).join(" ");
+};
+
+// What the Duration box understands. A bare number is SECONDS:
+//   "200" "200s" "3m 20s" "3m20s" "3 min 20 sec" "3:20" "1:02:05" "1h" "1.5m"
+// -> { ok: true, seconds }. Blank -> { ok: true, seconds: null } (clears it).
+// Anything else, or more than 24 hours -> { ok: false }.
+export const parseDurationSeconds = (raw) => {
+  const text = String(raw ?? "").trim().toLowerCase();
+  if (text === "") return { ok: true, seconds: null };
+
+  const done = (value) => {
+    const seconds = Math.round(value);
+    return Number.isFinite(seconds) && seconds >= 0 && seconds <= MAX_DURATION_SECONDS
+      ? { ok: true, seconds }
+      : { ok: false };
+  };
+
+  if (/^\d+(\.\d+)?$/.test(text)) return done(Number(text));
+
+  const clock = /^(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(text);
+  if (clock) {
+    const [, a, b, c] = clock;
+    const hasHours = c !== undefined;
+    const minutes = hasHours ? Number(b) : Number(a);
+    const secs = hasHours ? Number(c) : Number(b);
+    if (secs >= 60 || (hasHours && minutes >= 60)) return { ok: false };
+    return done((hasHours ? Number(a) * 3600 : 0) + minutes * 60 + secs);
+  }
+
+  const parts = /^(?:(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?)?\s*(?:(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?)?$/.exec(text);
+  if (!parts || (parts[1] === undefined && parts[2] === undefined && parts[3] === undefined)) {
+    return { ok: false };
+  }
+  return done(
+    Number(parts[1] || 0) * 3600 + Number(parts[2] || 0) * 60 + Number(parts[3] || 0)
+  );
+};

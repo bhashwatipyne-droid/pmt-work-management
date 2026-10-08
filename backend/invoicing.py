@@ -17,6 +17,7 @@ and the worksheet stay exactly as the team logged them.
 
 HR and admin can read; HR (and admin) can raise / undo.
 """
+import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -30,6 +31,12 @@ RAISED = "Raised Invoice"
 STAGE_CATEGORY = {"Content": "Content", "Design": "Design", "Animate": "Animation"}
 CATEGORIES = ["Content", "Design", "Animation"]
 CATEGORY_ROLE = {"Content": "Writer", "Design": "Designer", "Animation": "Animator"}
+
+# Projects brought over from the old Google Sheet ("PROJECT - nnn") have no code,
+# contact, status date or project-linked work rows, so they would show up here as
+# empty lines. They were invoiced in the sheet; only projects handled in the app
+# belong on the HR dashboard.
+NOT_LEGACY = {"source": {"$ne": "legacy_sheet"}, "id": {"$not": re.compile(r"^PROJECT - ")}}
 
 
 class LineEdit(BaseModel):
@@ -131,15 +138,16 @@ def create_invoicing_router(
                     poc_name = c.get("name") or ""
                     break
         status = project.get("status")
+        changed = project.get("status_changed_at") or project.get("updated_at")
         return {
             "id": project["id"],
             "name": project.get("name", ""),
-            "code": project.get("code", ""),
+            "code": project.get("code") or "",
             "client": client.get("name", ""),
             "poc": poc_name,
             "status": status,
-            "status_changed_at": project.get("status_changed_at"),
-            "waiting_days": _days_since(project.get("status_changed_at")),
+            "status_changed_at": changed,
+            "waiting_days": _days_since(changed),
             "invoice_raised_at": project.get("invoice_raised_at"),
         }
 
@@ -156,15 +164,15 @@ def create_invoicing_router(
     async def list_invoice_projects(request: Request, tab: str = Query("ready")):
         await require_invoicing(request)
         status = RAISED if tab == "raised" else READY
-        projects = await db.projects.find({"status": status}, {"_id": 0}).sort(
+        projects = await db.projects.find({"status": status, **NOT_LEGACY}, {"_id": 0}).sort(
             "status_changed_at", 1
         ).to_list(2000)
         clients = await _clients_for(projects)
 
         # Ready and Raised counts for the two tabs, whichever one is open.
         counts = {
-            "ready": await db.projects.count_documents({"status": READY}),
-            "raised": await db.projects.count_documents({"status": RAISED}),
+            "ready": await db.projects.count_documents({"status": READY, **NOT_LEGACY}),
+            "raised": await db.projects.count_documents({"status": RAISED, **NOT_LEGACY}),
         }
 
         # One query for every project's work rows and one for the people who made

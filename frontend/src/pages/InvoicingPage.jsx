@@ -104,7 +104,7 @@ const rowOf = (p, raised) => {
   return {
     id: p.id,
     name: p.name,
-    sub: p.client + " · " + p.code,
+    sub: [p.client, p.code].filter(Boolean).join(" · "),
     client: p.client,
     code: p.code,
     done: shortDate(p.status_changed_at),

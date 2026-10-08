@@ -128,12 +128,20 @@ function InvoiceList({ onOpen, refreshKey }) {
   const [query, setQuery] = useState("");
   const [data, setData] = useState({ ready: null, raised: null });
   const [failed, setFailed] = useState(false);
+  const [counts, setCounts] = useState({ ready: 0, raised: 0 });
 
+  // The Ready list loads first (it is what finance opens the page for); the
+  // Raised list only when its tab is opened, so a long history never slows the
+  // first screen. Tab labels come from the counts the server sends with either.
   useEffect(() => {
     let cancelled = false;
     setFailed(false);
-    Promise.all([getInvoiceProjects("ready"), getInvoiceProjects("raised")])
-      .then(([ready, raised]) => !cancelled && setData({ ready: ready.projects, raised: raised.projects }))
+    getInvoiceProjects("ready")
+      .then((res) => {
+        if (cancelled) return;
+        setCounts(res.counts);
+        setData({ ready: res.projects, raised: null });
+      })
       .catch((err) => {
         if (cancelled) return;
         setFailed(true);
@@ -144,6 +152,21 @@ function InvoiceList({ onOpen, refreshKey }) {
     };
   }, [refreshKey]);
 
+  useEffect(() => {
+    if (tab !== "raised" || data.raised !== null) return undefined;
+    let cancelled = false;
+    getInvoiceProjects("raised")
+      .then((res) => !cancelled && setData((d) => ({ ...d, raised: res.projects })))
+      .catch((err) => {
+        if (cancelled) return;
+        setFailed(true);
+        toast.error(errText(err, "Could not load invoicing"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, data.raised, refreshKey]);
+
   const list = useMemo(() => {
     const ready = (data.ready || []).map((p) => rowOf(p, false));
     const raised = (data.raised || []).map((p) => rowOf(p, true));
@@ -153,8 +176,8 @@ function InvoiceList({ onOpen, refreshKey }) {
     );
     const sum = (k) => ready.reduce((a, r) => a + r[k], 0);
     return {
-      readyCount: ready.length,
-      raisedCount: raised.length,
+      readyCount: counts.ready,
+      raisedCount: counts.raised,
       stats: {
         projects: String(ready.length),
         pieces: String(sum("c") + sum("d") + sum("a")),
@@ -165,7 +188,7 @@ function InvoiceList({ onOpen, refreshKey }) {
       rows: shown,
       emptyText: failed
         ? "Could not load invoicing. Try again in a moment."
-        : data.ready === null
+        : (tab === "ready" ? data.ready : data.raised) === null
           ? "Loading…"
           : q
             ? "No projects match your search."
@@ -173,7 +196,7 @@ function InvoiceList({ onOpen, refreshKey }) {
               ? "Nothing waiting. Projects appear here when an admin moves them to Ready for Invoice."
               : "No invoices raised yet.",
     };
-  }, [data, tab, query, failed]);
+  }, [data, tab, query, failed, counts]);
 
   return (
     <div

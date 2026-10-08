@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Hourglass, MessageSquare, Shuffle, UserPlus, X, Check } from "lucide-react";
 import { toast } from "sonner";
 
+import { useUser } from "@/context/UserContext";
+
 import { DEPT_FILTERS, computePlan, initials } from "@/lib/planning/planningLogic";
 import {
   dismissInsight,
@@ -66,9 +68,18 @@ const LIST_COLS = "minmax(220px,2fr) 170px minmax(200px,1.5fr) 130px 70px 100px"
 
 export default function PlanningPage() {
   const { tasks, dismissed } = usePlanningStore();
+  const { currentUser } = useUser();
   const [period, setPeriod] = useState("today");
   const [cat, setCat] = useState("all");
-  const [dept, setDept] = useState("all");
+  const [pickedDept, setDept] = useState("all");
+
+  // A manager plans their own team: only their department's people appear, and
+  // the team switcher is replaced by the team name. Admins see every team.
+  const ownTeam =
+    currentUser?.role === "manager" && DEPT_FILTERS.includes(currentUser.department)
+      ? currentUser.department
+      : null;
+  const dept = ownTeam || pickedDept;
 
   const plan = useMemo(
     () => computePlan(tasks, { period, cat, dept, dismissed }),
@@ -131,7 +142,12 @@ export default function PlanningPage() {
           </div>
           <span style={{ fontSize: 14, fontWeight: 600, color: "var(--neutral-900)" }}>{plan.periodLabel}</span>
           <span style={{ flex: 1 }} />
-          <div style={{ ...segWrap, flexWrap: "wrap" }}>
+          {ownTeam && (
+            <span style={{ padding: "6px 12px", borderRadius: 8, background: "var(--neutral-100)", fontSize: 12, fontWeight: 600, color: "var(--neutral-900)" }}>
+              {ownTeam} team
+            </span>
+          )}
+          <div style={{ ...segWrap, flexWrap: "wrap", display: ownTeam ? "none" : "flex" }}>
             {DEPT_FILTERS.map((d) => (
               <button
                 key={d}

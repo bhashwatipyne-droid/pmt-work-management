@@ -167,10 +167,28 @@ def create_invoicing_router(
             "raised": await db.projects.count_documents({"status": RAISED}),
         }
 
+        # One query for every project's work rows and one for the people who made
+        # them (this used to be two queries per project, which made the page crawl).
+        project_ids = [p["id"] for p in projects]
+        by_project: Dict[str, List[dict]] = {pid: [] for pid in project_ids}
+        rows_all: List[dict] = []
+        if project_ids:
+            rows_all = await db.work_items.find(
+                {"project_id": {"$in": project_ids}, "status": {"$ne": "Scrap"}},
+                {
+                    "_id": 0, "id": 1, "project_id": 1, "stage": 1, "creator_id": 1,
+                    "collab_source_id": 1, "quantity": 1, "time_taken_minutes": 1,
+                    "deliverable_name": 1, "deliverable_type": 1, "deliverable_link": 1,
+                    "video_duration_seconds": 1,
+                },
+            ).to_list(50000)
+            for r in rows_all:
+                by_project.setdefault(r["project_id"], []).append(r)
+        people = await _people(rows_all)
+
         rows = []
         for p in projects:
-            work = await _work_rows(p["id"])
-            lines = _lines(work, p.get("invoice_line_edits") or {}, await _people(work))
+            lines = _lines(by_project.get(p["id"], []), p.get("invoice_line_edits") or {}, people)
             summary = _summary(lines)
             rows.append(
                 {

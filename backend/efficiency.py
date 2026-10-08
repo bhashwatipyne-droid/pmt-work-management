@@ -735,7 +735,7 @@ def create_efficiency_router(
             {"user_id": payload.user_id, "activity_name": name}, {"_id": 0}
         )
         doc = EmployeeActivityTarget(
-            id=existing["id"] if existing else str(uuid.uuid4()),
+            id=existing["id"] if existing and isinstance(existing.get("id"), str) else str(uuid.uuid4()),
             user_id=payload.user_id,
             activity_name=name,
             category="Core",
@@ -785,6 +785,28 @@ def create_efficiency_router(
             metadata={"time_per_unit_minutes_changed": old_time_per_unit != merged.get("time_per_unit_minutes")},
         )
         return EmployeeActivityTarget(**merged)
+
+    @router.delete("/employee-targets")
+    async def delete_employee_target_by_name(
+        request: Request, user_id: str = Query(...), activity_name: str = Query(...)
+    ):
+        """Delete by (user, activity) — works even when a row's stored id is unusable."""
+        manager = await require_manager(request)
+        await _assert_manages(manager, user_id)
+        existing = await db.efficiency_employee_targets.find_one(
+            {"user_id": user_id, "activity_name": activity_name}, {"_id": 0}
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Target not found")
+        await db.efficiency_employee_targets.delete_one(
+            {"user_id": user_id, "activity_name": activity_name}
+        )
+        _invalidate_month_cache()
+        await log_activity(
+            "efficiency_activity_log", str(existing.get("id")), "employee_target_deleted",
+            manager.id, old_value=existing,
+        )
+        return {"deleted": True}
 
     @router.delete("/employee-targets/{target_id}")
     async def delete_employee_target(target_id: str, request: Request):

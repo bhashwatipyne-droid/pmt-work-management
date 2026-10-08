@@ -709,8 +709,12 @@ export const upsertEmployeeTarget = (payload) =>
 export const updateEmployeeTarget = (id, payload) =>
   axios.put(`${API}/efficiency/employee-targets/${id}`, payload).then((r) => r.data);
 
-export const deleteEmployeeTarget = (id) =>
-  axios.delete(`${API}/efficiency/employee-targets/${id}`).then((r) => r.data);
+export const deleteEmployeeTarget = (userId, activityName) =>
+  axios
+    .delete(`${API}/efficiency/employee-targets`, {
+      params: { user_id: userId, activity_name: activityName },
+    })
+    .then((r) => r.data);
 
 // -------- Work Sheet time defaults --------
 // Minutes-per-unit the employee has set for each Core activity: what the

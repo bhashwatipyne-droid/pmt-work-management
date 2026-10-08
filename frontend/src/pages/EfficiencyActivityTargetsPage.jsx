@@ -22,7 +22,6 @@ import {
   getEmployeeTargets,
   getMonthlyCapacityList,
   upsertEmployeeTarget,
-  updateEmployeeTarget,
   deleteEmployeeTarget,
 } from "@/services/api";
 
@@ -212,9 +211,14 @@ export default function EfficiencyActivityTargetsPage() {
     setBusy(r.act);
     try {
       if (!raw || val <= 0) {
-        if (r.t) await deleteEmployeeTarget(r.t.id);
+        if (r.t) await deleteEmployeeTarget(employeeId, r.act);
       } else if (r.t) {
-        await updateEmployeeTarget(r.t.id, { time_per_unit_minutes: val });
+        await upsertEmployeeTarget({
+          user_id: employeeId,
+          activity_name: r.act,
+          time_per_unit_minutes: val,
+          active: r.t.active !== false,
+        });
       } else {
         await upsertEmployeeTarget({
           user_id: employeeId,
@@ -235,7 +239,12 @@ export default function EfficiencyActivityTargetsPage() {
     if (!r.set) return toast.message("Enter minutes first");
     setBusy(r.act);
     try {
-      await updateEmployeeTarget(r.t.id, { active: !r.t.active });
+      await upsertEmployeeTarget({
+        user_id: employeeId,
+        activity_name: r.act,
+        time_per_unit_minutes: Number(r.t.time_per_unit_minutes),
+        active: !r.t.active,
+      });
       loadTargets();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Could not update target");
@@ -251,7 +260,7 @@ export default function EfficiencyActivityTargetsPage() {
     }
     setBusy(r.act);
     try {
-      await deleteEmployeeTarget(r.t.id);
+      await deleteEmployeeTarget(employeeId, r.act);
       toast.success(`${r.act} cleared`);
       loadTargets();
     } catch (err) {

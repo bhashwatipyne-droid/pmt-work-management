@@ -1,0 +1,48 @@
+/* Design-system tokens used by the Planning, Task card and Invoicing screens
+   (values from the PMT redesign prototype). Kept under their prototype names so
+   the screens can be compared with it line by line. */
+:root {
+  --brand-50: rgb(240, 240, 253);
+  --brand-100: rgb(220, 220, 248);
+  --brand-200: rgb(144, 144, 236);
+  --brand-400: rgb(61, 61, 204);
+  --brand-500: rgb(43, 43, 181);
+  --brand-700: rgb(26, 26, 138);
+  --neutral-50: rgb(249, 250, 251);
+  --neutral-100: rgb(245, 246, 248);
+  --neutral-150: rgb(243, 244, 246);
+  --neutral-200: rgb(239, 240, 242);
+  --neutral-300: rgb(209, 213, 219);
+  --neutral-400: rgb(138, 151, 181);
+  --neutral-500: rgb(84, 100, 144);
+  --neutral-700: rgb(74, 88, 120);
+  --neutral-900: rgb(13, 27, 62);
+  --success-100: rgb(209, 250, 229);
+  --success-500: rgb(16, 185, 129);
+  --warning-100: rgb(254, 243, 199);
+  --warning-500: rgb(245, 158, 11);
+  --error-50: rgb(255, 245, 245);
+  --error-500: rgb(239, 68, 68);
+  --info-100: rgb(219, 234, 254);
+  --info-500: rgb(59, 130, 246);
+  --font-core: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-ui: "Manrope", "Inter", -apple-system, sans-serif;
+  --type-heading-lg: 700 28px/36px var(--font-core);
+  --type-heading-md: 600 24px/32px var(--font-core);
+  --type-heading-sm: 600 20px/24px var(--font-core);
+}
+
+/* Hover / focus states the prototype writes as style-hover / style-focus. */
+.pp-hv-n50:hover { background: var(--neutral-50) !important; }
+.pp-hv-n150:hover { background: var(--neutral-150) !important; }
+.pp-hv-b50:hover { background: var(--brand-50) !important; }
+.pp-hv-b400:hover { background: var(--brand-400) !important; }
+.pp-hv-amber:hover { background: rgb(253, 230, 138) !important; }
+.pp-hv-ring-brand:hover { box-shadow: inset 0 0 0 2px var(--brand-500) !important; }
+.pp-focus:focus,
+.pp-focus:focus-visible {
+  outline: none;
+  background: #fff !important;
+  box-shadow: inset 0 0 0 1px var(--brand-500), 0 0 0 3px var(--brand-100) !important;
+}
+.pp-edit:hover { box-shadow: inset 0 0 0 1px var(--neutral-200); background: #fff; }

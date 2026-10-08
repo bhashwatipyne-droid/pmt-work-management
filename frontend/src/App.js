@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "@/App.css";
 import {
   BrowserRouter,
+  Navigate,
   Routes,
   Route,
   useLocation,
@@ -30,6 +31,8 @@ const TeamPage = lazy(() => import("@/pages/TeamPage"));
 const ApprovalsPage = lazy(() => import("@/pages/ApprovalsPage"));
 const ClientsPage = lazy(() => import("@/pages/ClientsPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
+const PlanningPage = lazy(() => import("@/pages/PlanningPage"));
+const InvoicingPage = lazy(() => import("@/pages/InvoicingPage"));
 const EfficiencyPage = lazy(() => import("@/pages/EfficiencyPage"));
 const EfficiencyMonthlyCapacityPage = lazy(() =>
   import("@/pages/EfficiencyMonthlyCapacityPage")
@@ -49,6 +52,8 @@ const PAGE_NAMES = {
   "/approvals": "Approvals",
   "/clients": "Clients",
   "/profile": "Profile",
+  "/planning": "Planning",
+  "/invoicing": "Ready to invoice",
 };
 
 function AppShell() {
@@ -116,7 +121,24 @@ function AppShell() {
       ) : (
         <AppLayout>
           <Routes>
-            <Route path="/" element={<WorkSheetPage />} />
+            <Route
+              path="/"
+              element={
+                currentUser?.role === "hr" ? (
+                  <Navigate to="/invoicing" replace />
+                ) : (
+                  <WorkSheetPage />
+                )
+              }
+            />
+            <Route
+              path="/planning"
+              element={<RequireAccess><PlanningPage /></RequireAccess>}
+            />
+            <Route
+              path="/invoicing"
+              element={<RequireAccess><InvoicingPage /></RequireAccess>}
+            />
             <Route
               path="/dashboard"
               element={<RequireAccess><DashboardPage /></RequireAccess>}

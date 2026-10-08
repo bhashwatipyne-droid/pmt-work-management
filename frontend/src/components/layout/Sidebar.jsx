@@ -89,6 +89,8 @@ export const Sidebar = () => {
     let cancelled = false;
 
     const fetchCounts = () => {
+      if (!access.canViewWorksheet) return;
+
       getWorkItemsPendingCount(currentUser.id)
         .then((data) => !cancelled && setWorksheetCount(data?.count || 0))
         .catch(() => {});
@@ -114,7 +116,7 @@ export const Sidebar = () => {
       stopPolling();
       unsubscribe();
     };
-  }, [currentUser?.id, canSeeApprovals]);
+  }, [currentUser?.id, canSeeApprovals, access.canViewWorksheet]);
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {

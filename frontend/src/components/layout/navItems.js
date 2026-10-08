@@ -1,10 +1,12 @@
 import {
   Building2,
+  CalendarDays,
   CheckSquare,
   Folder,
   Gauge,
   Home,
   List,
+  Receipt,
   User,
 } from "lucide-react";
 
@@ -22,6 +24,16 @@ export const NAV_ITEMS = [
     chord: "H",
     testId: LAYOUT.sidebarNavDashboard,
     allow: (a) => a.canViewHome,
+  },
+  {
+    key: "planning",
+    label: "Planning",
+    to: "/planning",
+    section: "Workspace",
+    icon: CalendarDays,
+    chord: "L",
+    testId: "sidebar-nav-planning",
+    allow: (a) => a.canViewPlanning,
   },
   {
     key: "worksheet",
@@ -83,9 +95,19 @@ export const NAV_ITEMS = [
     testId: "sidebar-nav-efficiency",
     allow: (a) => a.canViewEfficiency,
   },
+  {
+    key: "invoicing",
+    label: "Ready to invoice",
+    to: "/invoicing",
+    section: "Finance",
+    icon: Receipt,
+    chord: "I",
+    testId: "sidebar-nav-invoicing",
+    allow: (a) => a.canViewInvoicing,
+  },
 ];
 
-const SECTION_ORDER = ["Workspace", "Production", "Organization"];
+const SECTION_ORDER = ["Workspace", "Production", "Organization", "Finance"];
 
 export const getNavItems = (access) => NAV_ITEMS.filter((i) => i.allow(access));
 
@@ -107,6 +129,12 @@ export const getBreadcrumb = (pathname) => {
   }
   if (pathname === "/efficiency/settings/activity-targets") {
     return { section: "Efficiency", title: "Core activity targets" };
+  }
+  if (pathname === "/planning") {
+    return { section: "Workspace", title: "Planning" };
+  }
+  if (pathname === "/invoicing") {
+    return { section: "Finance", title: "Ready to invoice" };
   }
   if (pathname === "/profile") {
     return { section: "Account", title: "Profile & account" };

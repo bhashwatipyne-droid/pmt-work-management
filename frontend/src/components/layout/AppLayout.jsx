@@ -5,6 +5,9 @@ import { Sidebar } from "./Sidebar";
 import { CommandCenterProvider } from "./CommandCenter";
 import { getBreadcrumb, IS_MAC } from "./navItems";
 import { BulkReviewButton } from "./BulkReviewButton";
+import TaskCardHost from "@/components/tasks/TaskCardHost";
+import { useUser } from "@/context/UserContext";
+import { showTaskCards } from "@/lib/planning/featureFlags";
 
 const KBD =
   "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
@@ -15,6 +18,7 @@ const KBD =
 export const AppLayout = ({ children }) => {
   const { pathname } = useLocation();
   const { section, title } = getBreadcrumb(pathname);
+  const { currentUser } = useUser();
 
   return (
     <CommandCenterProvider>
@@ -43,6 +47,7 @@ export const AppLayout = ({ children }) => {
           </header>
 
           <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
+          {showTaskCards(currentUser) && <TaskCardHost />}
         </div>
       </div>
     </CommandCenterProvider>

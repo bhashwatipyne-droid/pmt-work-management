@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Search, X } from "lucide-react";
+import { STAGE_COLORS } from "@/constants/projectPalette";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { distinguishingParts, isProjectClosed } from "@/lib/lookalikes";
 import { focusAdjacentCell } from "./useWorksheetKeyboardNavigation";
@@ -69,6 +70,7 @@ export function ProjectPicker({
   const [highlight, setHighlight] = useState(0);
   const [preview, setPreview] = useState(null); // { id, top }
   const [previewSide, setPreviewSide] = useState("right");
+  const [previewQuery, setPreviewQuery] = useState("");
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const contentRef = useRef(null);
@@ -83,6 +85,7 @@ export function ProjectPicker({
     if (!open) {
       setSearch("");
       setPreview(null);
+      setPreviewQuery("");
       return;
     }
     setHighlight(0);
@@ -103,9 +106,10 @@ export function ProjectPicker({
 
       let group;
       if (clientId) {
-        if (project.client_id === clientId) group = isRecent(project.id) ? 0 : 1;
-        else if (q) group = 2;
-        else return; // other clients' projects only when searching
+        // A client is already chosen on the row, so only its projects are
+        // offered (clear the client to search across all of them).
+        if (project.client_id !== clientId) return;
+        group = isRecent(project.id) ? 0 : 1;
       } else {
         group = isRecent(project.id) ? 0 : 1;
       }
@@ -118,7 +122,6 @@ export function ProjectPicker({
       ? [
           `Recently used for ${clientName}`,
           `Other projects for ${clientName}`,
-          "Other clients",
         ]
       : ["Recently used", "All projects", ""];
 
@@ -163,6 +166,8 @@ export function ProjectPicker({
     clearTimeout(previewTimerRef.current);
     const contentTop = contentRef.current?.getBoundingClientRect().top || 0;
     const top = target ? target.getBoundingClientRect().top - contentTop - 8 : 0;
+    // A different project starts with an empty deliverable search.
+    setPreviewQuery((q) => (preview?.id === project.id ? q : ""));
     setPreview({ id: project.id, top: Math.max(0, top) });
   };
 
@@ -242,7 +247,17 @@ export function ProjectPicker({
   };
 
   const previewProject = preview ? projects.find((p) => p.id === preview.id) : null;
-  const previewDeliverables = previewProject ? deliverablesByProject[previewProject.id] || [] : [];
+  const allPreviewDeliverables = previewProject ? deliverablesByProject[previewProject.id] || [] : [];
+  const pq = previewQuery.trim().toLowerCase();
+  const previewDeliverables = pq
+    ? allPreviewDeliverables.filter((d) =>
+        [d.name, d.type, d.current_stage, d.stage_status]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(pq)
+      )
+    : allPreviewDeliverables;
 
   return (
     <Popover open={open} onOpenChange={(next) => !disabled && onOpenChange?.(next)}>
@@ -359,9 +374,11 @@ export function ProjectPicker({
           {shown.length === 0 && (
             <span className="p-2 text-xs text-muted-foreground">
               {search.trim()
-                ? "No active project matches. Delivered and scrapped projects aren't listed."
+                ? clientId
+                  ? `No active project for ${clientName} matches. Delivered and scrapped projects aren't listed.`
+                  : "No active project matches. Delivered and scrapped projects aren't listed."
                 : clientId
-                  ? `No active projects for ${clientName}. Type to search other clients.`
+                  ? `No active projects for ${clientName}. Clear the client to search all projects.`
                   : "No active projects."}
             </span>
           )}
@@ -400,30 +417,80 @@ export function ProjectPicker({
               <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                 Deliverables
               </span>
-              <span className="text-[11px] text-muted-foreground">{previewDeliverables.length}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {pq
+                  ? `${previewDeliverables.length} of ${allPreviewDeliverables.length}`
+                  : allPreviewDeliverables.length}
+              </span>
             </div>
+            {allPreviewDeliverables.length > 3 && (
+              <span className="relative flex shrink-0 items-center">
+                <Search className="pointer-events-none absolute left-[9px] h-3 w-3 text-slate-400" />
+                <input
+                  value={previewQuery}
+                  onChange={(e) => {
+                    keepPreview();
+                    setPreviewQuery(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Escape") setPreviewQuery("");
+                  }}
+                  placeholder="Search deliverables, owner, type"
+                  aria-label={`Search deliverables in ${previewProject.name}`}
+                  className="h-[30px] w-full rounded-[7px] border-0 bg-[#f7f9fc] pl-7 pr-7 text-xs leading-4 text-foreground shadow-[inset_0_0_0_1px_#e2e8f0] outline-none transition-shadow focus:bg-white focus:shadow-[inset_0_0_0_1px_#2b2bb5,0_0_0_3px_#dcdcf8]"
+                />
+                {previewQuery && (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setPreviewQuery("");
+                    }}
+                    className="absolute right-1 flex h-[22px] w-[22px] items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </span>
+            )}
+            {pq && previewDeliverables.length === 0 && (
+              <span className="py-2 text-center text-xs text-muted-foreground">
+                No deliverables match “{previewQuery.trim()}”
+              </span>
+            )}
             {previewDeliverables.length > 0 ? (
               <>
                 <span className="-mt-1 text-[11px] leading-[14px] text-muted-foreground">
                   Click a deliverable to fill project and deliverable.
                 </span>
-                <div className="-mx-1.5 flex max-h-[240px] min-h-[60px] flex-col gap-px overflow-y-auto overscroll-contain px-1.5">
-                  {previewDeliverables.map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => pick(previewProject, d)}
-                      title={`Use ${d.name}`}
-                      className="-mx-1.5 flex min-h-[30px] shrink-0 items-center rounded-md px-1.5 py-1 text-left text-[13px] leading-[18px] text-foreground hover:bg-[#f0f0fd]"
-                    >
-                      <span className="min-w-0 whitespace-normal break-words">{d.name}</span>
-                    </button>
-                  ))}
+                <div className="-mx-1.5 flex max-h-[240px] min-h-[60px] flex-col gap-0.5 overflow-y-auto overscroll-contain px-1.5">
+                  {previewDeliverables.map((d) => {
+                    const dot = STAGE_COLORS[d.current_stage]?.dot || "bg-slate-300";
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pick(previewProject, d)}
+                        title={`Use ${d.name}`}
+                        className="-mx-1.5 flex min-h-8 shrink-0 items-center gap-2 rounded-[7px] px-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-[#f0f0fd]"
+                      >
+                        <span title={d.current_stage} className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+                        <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                        {d.stage_status && (
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-px text-[11px] font-medium leading-4 text-slate-600">
+                            {d.stage_status}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             ) : (
-              <span className="text-xs text-muted-foreground">No deliverables yet.</span>
+              !pq && <span className="text-xs text-muted-foreground">No deliverables yet.</span>
             )}
             <button
               type="button"

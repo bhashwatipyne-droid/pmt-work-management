@@ -1,4 +1,4 @@
-// Sample data for the Planning, Task card and Invoicing screens, copied from the
+// Sample data for the Planning and Task card screens, copied from the
 // design prototype. It stands in for the backend until those endpoints exist:
 // see services/planningApi.js, which is the only file that reads it.
 
@@ -7,32 +7,6 @@ export const NOTES = [
   { id: 2, from: 'Sakshi Agrawal', role: 'Content manager', ago: '22 min ago', pri: 'P1', task: 'Compliance copy check – 6 posts', proj: 'ICICI Prudential Contra Fund', client: 'ICICI Prudential AMC', due: 'Today · 5:00 PM', dueIn: 'in 3h', dueTone: 'urgent', est: 1, qty: '6 posts', note: 'Check disclaimers and fund names against the latest factsheet before these go to the client.', load: 5.5 },
   { id: 3, from: 'Kaushal Shah', role: 'Animation lead', ago: '1h ago', pri: 'P2', task: 'Teaser cut-down – 15s', proj: 'FT_Senior Citizen Campaign', client: 'Franklin Templeton', due: 'Mon 12 Oct · 1:00 PM', dueIn: 'in 4 days', dueTone: 'ok', est: 2.5, qty: '1 video', note: 'Cut a 15s teaser from the approved animatic. Use the end card from v3.', load: 5.5 },
 ];
-
-export const INV = [
-  { id: 'i1', name: 'ICICI Prudential Contra Fund – Anniversary', client: 'ICICI Prudential MF', code: 'ICI-0226', poc: 'Jui', done: '15 Sep', wait: 23, items: [
-    ['Content', 'Anniversary film script', 'Script', 1, 180], ['Content', 'Social captions pack', 'Copy', 12, 90], ['Content', 'Gujarati translation', 'Translation', 1, 40], ['Content', 'Blog – 10 years of contra', 'Article', 1, 210],
-    ['Design', 'Anniversary carousel', 'Carousel', 2, 260], ['Design', 'Static posts', 'Social post', 6, 300], ['Design', 'Email banner', 'Banner', 1, 45], ['Design', 'Leaflet A5', 'Leaflet', 1, 120],
-    ['Animation', 'Anniversary film 60s', 'Explainer', 1, 720, 60] ] },
-  { id: 'i2', name: 'test 0.4', client: '360 ONE Asset', code: '360-0925', poc: 'Arpit Malode', done: '25 Sep', wait: 13, items: [
-    ['Content', 'Product note', 'Document', 1, 95], ['Content', 'FAQ sheet', 'Document', 1, 60], ['Design', 'Factsheet layout', 'Document', 1, 140] ] },
-  { id: 'i3', name: 'Nuvama SIF360 Bharat Summit 2026', client: 'Nuvama Asset Management', code: 'NUV-0912', poc: 'Ajinkya Patil', done: '12 Sep', wait: 26, items: [
-    ['Content', 'Summit speech draft', 'Script', 1, 240], ['Content', 'Event invite copy', 'Copy', 1, 35] ] },
-  { id: 'i4', name: 'Invesco Diwali SIP Carousels', client: 'Invesco', code: 'INV-1001', poc: 'Rhea Kapoor', done: '1 Oct', wait: 7, items: [
-    ['Content', 'Carousel copy', 'Copy', 4, 120], ['Design', 'Diwali carousels', 'Carousel', 4, 480], ['Design', 'Story adaptations', 'Story', 4, 160], ['Animation', 'Diwali reel 15s', 'Reel', 2, 360, 15] ] },
-  { id: 'i5', name: 'ITI Small Cap Social Posts', client: 'ITI MF', code: 'ITI-0927', poc: 'Nikhil Rao', done: '27 Sep', wait: 11, items: [
-    ['Content', 'Post captions', 'Copy', 8, 80], ['Design', 'Static posts', 'Social post', 8, 360] ] },
-];
-
-export const RATE_TYPES = [
-  ['Content', 'Script', 'Per piece', 1500], ['Content', 'Copy', 'Per piece', 400], ['Content', 'Translation', 'Per piece', 600], ['Content', 'Article', 'Per piece', 2500],
-  ['Content', 'Document', 'Per piece', 1800], ['Content', 'Newsletter', 'Per piece', 2000], ['Content', 'Video script', 'Per piece', 2000],
-  ['Design', 'Social post', 'Per piece', 1200], ['Design', 'Carousel', 'Per piece', 3000], ['Design', 'Story', 'Per piece', 800], ['Design', 'Banner', 'Per piece', 1000],
-  ['Design', 'Leaflet', 'Per piece', 3500], ['Design', 'Document', 'Per piece', 4000], ['Design', 'Presentation deck', 'Per slide', 700],
-  ['Animation', 'Reel', 'Up to 15s', 6000, 0, 15], ['Animation', 'Reel', '16 – 30s', 9000, 16, 30], ['Animation', 'Reel', '31 – 60s', 14000, 31, 60],
-  ['Animation', 'Explainer', 'Per minute', 18000, 0, 9999, true], ['Animation', 'Motion post', 'Per piece', 3500], ['Animation', 'GIF', 'Per piece', 2000],
-].map(([cat, type, unit, rate, lo, hi, perMin]) => ({ id: cat + '|' + type + '|' + unit, cat, type, unit, rate, lo, hi, perMin: !!perMin }));
-
-export const INV_MAKERS = { Content: ['Ratnesh Bor', 'Krupali Gharge', 'Sakshi Agrawal'], Design: ['Milind Tandi', 'Krishna Saraswat', 'Vanshika Shah'], Animation: ['Tejas Pawar'] };
 
 export const P_PEOPLE = [
   ['Ratnesh Bor', 'Content', 91, 4.5, 1.4, []], ['Sakshi Agrawal', 'Content', 74, 4.2, 1.9, []], ['Krupali Garge', 'Content', 88, 4.6, 1.2, [4]], ['Milind Tandi', 'Content', 94, 4.6, 1.1, []], ['Vanshika Shah', 'Content', 86, 4.4, 1.5, []],

@@ -559,12 +559,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   }, [users]);
 
   const nonAdminUsers = useMemo(
-    () => (users || []).filter((user) => user.role !== "admin"),
+    () => (users || []).filter((user) => user.role !== "admin" && user.role !== "hr"),
     [users]
   );
 
   const reviewerUsers = useMemo(
-    () => (users || []).filter((user) => user.role !== "member"),
+    () => (users || []).filter((user) => user.role !== "member" && user.role !== "hr"),
     [users]
   );
 

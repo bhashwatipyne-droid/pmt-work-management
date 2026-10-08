@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronRight,
@@ -17,27 +17,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { INV } from "@/lib/planning/seed";
 import { initials } from "@/lib/planning/planningLogic";
-import {
-  buildInvoiceList,
-  categoriesOf,
-  findInvoiceProject,
-  hm,
-  makerOf,
-  typesFor,
-} from "@/lib/planning/invoiceLogic";
+import { INV_CATS, hm, shortDate, waitText, waitTone } from "@/lib/planning/invoiceLogic";
 import {
   editInvoiceLine,
-  markInvoiceRaised,
-  undoInvoiceRaised,
-  usePlanningStore,
-} from "@/services/planningApi";
+  getInvoiceProject,
+  getInvoiceProjects,
+  getOptions,
+  raiseInvoice,
+  undoRaiseInvoice,
+} from "@/services/api";
 
-// Finance's "Ready to invoice": completed projects waiting to be billed, and a
-// per-project costing view listing every piece, who made it and its link.
-// Markup follows the design prototype. Data comes from services/planningApi.js
-// (sample data until the backend exists).
+// Finance's "Ready to invoice": projects an admin has moved to "Ready for
+// Invoice", and a per-project costing view listing every piece, who made it and
+// its link. Markup follows the design prototype; data is live from /invoicing.
 
 const CAT_ICONS = { document: FileText, palette: Palette, film: Film };
 
@@ -104,18 +97,83 @@ const FIELD = {
   transition: "box-shadow 120ms ease, background 120ms ease",
 };
 
-const today = () => new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const errText = (err, fallback) => err?.response?.data?.detail || fallback;
 
-function InvoiceList({ onOpen }) {
-  const { invRaised, invEdit } = usePlanningStore();
+const rowOf = (p, raised) => {
+  const tone = waitTone(p.waiting_days, raised);
+  return {
+    id: p.id,
+    name: p.name,
+    sub: p.client + " · " + p.code,
+    client: p.client,
+    code: p.code,
+    done: shortDate(p.status_changed_at),
+    c: p.counts.Content,
+    d: p.counts.Design,
+    a: p.counts.Animation,
+    pocName: p.poc || "–",
+    pocIni: initials(p.poc) || "–",
+    wait: raised ? "Raised " + shortDate(p.invoice_raised_at || p.status_changed_at) : waitText(p.waiting_days),
+    waitBg: tone.bg,
+    waitFg: tone.fg,
+    logged: hm(p.minutes) + " logged",
+    minutes: p.minutes,
+    waiting: p.waiting_days,
+  };
+};
+
+function InvoiceList({ onOpen, refreshKey }) {
   const [tab, setTab] = useState("ready");
   const [view, setView] = useState("table");
   const [query, setQuery] = useState("");
+  const [data, setData] = useState({ ready: null, raised: null });
+  const [failed, setFailed] = useState(false);
 
-  const list = useMemo(
-    () => buildInvoiceList(INV, { raised: invRaised, edits: invEdit, tab, query }),
-    [invRaised, invEdit, tab, query]
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    Promise.all([getInvoiceProjects("ready"), getInvoiceProjects("raised")])
+      .then(([ready, raised]) => !cancelled && setData({ ready: ready.projects, raised: raised.projects }))
+      .catch((err) => {
+        if (cancelled) return;
+        setFailed(true);
+        toast.error(errText(err, "Could not load invoicing"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  const list = useMemo(() => {
+    const ready = (data.ready || []).map((p) => rowOf(p, false));
+    const raised = (data.raised || []).map((p) => rowOf(p, true));
+    const q = query.trim().toLowerCase();
+    const shown = (tab === "ready" ? ready : raised).filter(
+      (r) => !q || (r.name + " " + r.client + " " + r.code).toLowerCase().includes(q)
+    );
+    const sum = (k) => ready.reduce((a, r) => a + r[k], 0);
+    return {
+      readyCount: ready.length,
+      raisedCount: raised.length,
+      stats: {
+        projects: String(ready.length),
+        pieces: String(sum("c") + sum("d") + sum("a")),
+        piecesSub: sum("c") + " content · " + sum("d") + " design · " + sum("a") + " animation",
+        logged: hm(sum("minutes")),
+        oldest: ready.length ? Math.max(...ready.map((r) => r.waiting)) + " days" : "–",
+      },
+      rows: shown,
+      emptyText: failed
+        ? "Could not load invoicing. Try again in a moment."
+        : data.ready === null
+          ? "Loading…"
+          : q
+            ? "No projects match your search."
+            : tab === "ready"
+              ? "Nothing waiting. Projects appear here when an admin moves them to Ready for Invoice."
+              : "No invoices raised yet.",
+    };
+  }, [data, tab, query, failed]);
 
   return (
     <div
@@ -341,29 +399,110 @@ function InvoiceList({ onOpen }) {
   );
 }
 
-function InvoiceDetail({ projectId, onBack }) {
-  const { invRaised, invEdit } = usePlanningStore();
+const toCats = (lines) =>
+  INV_CATS.map((c) => {
+    const its = lines
+      .filter((l) => l.category === c.key)
+      .map((l) => [c.key, l.name, l.type, l.qty, l.minutes, l.duration_seconds, l.link, l.id, l.made_by, l.made_by_role]);
+    return {
+      ...c,
+      its,
+      qty: its.reduce((a, i) => a + (Number(i[3]) || 0), 0),
+      mins: its.reduce((a, i) => a + i[4], 0),
+    };
+  });
+
+function InvoiceDetail({ projectId, onBack, onChanged }) {
+  const [detail, setDetail] = useState(null);
+  const [lines, setLines] = useState([]);
+  const [typeOptions, setTypeOptions] = useState([]);
   const [linkEditing, setLinkEditing] = useState(null);
-  const project = findInvoiceProject(projectId);
+  const pending = useRef({});
+  const timers = useRef({});
 
-  const cats = useMemo(() => (project ? categoriesOf(project, invEdit) : []), [project, invEdit]);
-  if (!project) return null;
+  useEffect(() => {
+    let cancelled = false;
+    getInvoiceProject(projectId)
+      .then((d) => {
+        if (cancelled) return;
+        setDetail(d);
+        setLines(d.lines);
+      })
+      .catch((err) => {
+        toast.error(errText(err, "Could not load this project"));
+        onBack();
+      });
+    getOptions()
+      .then((o) => !cancelled && setTypeOptions(o.deliverable_types || []))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
-  const raised = invRaised[project.id];
-  const isRaised = Boolean(raised);
+  const flush = useCallback(
+    (id) => {
+      const patch = pending.current[id];
+      delete pending.current[id];
+      if (!patch) return;
+      editInvoiceLine(projectId, id, patch).catch((err) =>
+        toast.error(errText(err, "Could not save that change"))
+      );
+    },
+    [projectId]
+  );
+
+  const flushAll = useCallback(() => {
+    Object.keys(timers.current).forEach((id) => {
+      clearTimeout(timers.current[id]);
+      flush(id);
+    });
+    timers.current = {};
+  }, [flush]);
+
+  // Edits save a moment after you stop typing; leaving the page saves what is left.
+  useEffect(() => flushAll, [flushAll]);
+
+  const cats = useMemo(() => toCats(lines), [lines]);
+  if (!detail) {
+    return <div style={{ padding: 48, textAlign: "center", fontSize: 14, color: "var(--neutral-500)" }}>Loading…</div>;
+  }
+
+  const project = { ...detail, done: shortDate(detail.status_changed_at), wait: detail.waiting_days };
+  const isRaised = detail.status === "Raised Invoice";
+  const raised = shortDate(detail.invoice_raised_at || detail.status_changed_at);
   const pieces = cats.reduce((a, k) => a + k.qty, 0);
   const logged = hm(cats.reduce((a, k) => a + k.mins, 0));
-  const set = (index, patch) => editInvoiceLine(project.id, index, patch);
   const num = (v) => Math.max(0, parseInt(String(v).replace(/[^0-9]/g, ""), 10) || 0);
 
-  const raise = () => {
-    markInvoiceRaised(project.id, today());
-    toast.success("Invoice raised for " + project.name);
-    onBack();
+  const set = (id, patch) => {
+    setLines((cur) => cur.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    pending.current[id] = { ...(pending.current[id] || {}), ...patch };
+    clearTimeout(timers.current[id]);
+    timers.current[id] = setTimeout(() => flush(id), 700);
   };
-  const undo = () => {
-    undoInvoiceRaised(project.id);
-    toast.success("Moved back to Ready");
+
+  const raise = async () => {
+    try {
+      flushAll();
+      await raiseInvoice(project.id);
+      toast.success("Invoice raised for " + project.name);
+      onChanged();
+      onBack();
+    } catch (err) {
+      toast.error(errText(err, "Could not mark the invoice raised"));
+    }
+  };
+  const undo = async () => {
+    try {
+      await undoRaiseInvoice(project.id);
+      toast.success("Moved back to Ready");
+      onChanged();
+      onBack();
+    } catch (err) {
+      toast.error(errText(err, "Could not move it back"));
+    }
   };
   const download = () => {
     const q = (x) => '"' + String(x ?? "").replace(/"/g, '""') + '"';
@@ -376,7 +515,7 @@ function InvoiceDetail({ projectId, onBack }) {
     ];
     cats.forEach((k) =>
       k.its.forEach((i) =>
-        rows.push([k.key, i[1], i[2], i[3], i[5] || "", hm(i[4]), makerOf(k.key, i[7]), i[6]])
+        rows.push([k.key, i[1], i[2], i[3], i[5] || "", hm(i[4]), i[8], i[6]])
       )
     );
     const url = URL.createObjectURL(
@@ -417,7 +556,7 @@ function InvoiceDetail({ projectId, onBack }) {
               font: "600 12px/16px var(--font-ui)",
             }}
           >
-            {isRaised ? "Invoice raised " + raised : "Ready to invoice · waiting " + project.wait + " days"}
+            {isRaised ? "Invoice raised " + raised : "Ready to invoice · waiting " + waitText(project.wait)}
           </span>
           <h1 style={{ margin: 0, font: "var(--type-heading-lg)", color: "var(--neutral-900)", textWrap: "pretty" }}>{project.name}</h1>
           <span style={{ fontSize: 14, color: "var(--neutral-500)" }}>
@@ -461,7 +600,7 @@ function InvoiceDetail({ projectId, onBack }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
         {cats.map((k) => {
           const Icon = CAT_ICONS[k.icon];
-          const makers = [...new Set(k.its.map((i) => makerOf(k.key, i[7])))].join(", ") || "No pieces";
+          const makers = [...new Set(k.its.map((i) => i[8]))].join(", ") || "No pieces";
           return (
             <div
               key={k.key}
@@ -531,10 +670,9 @@ function InvoiceDetail({ projectId, onBack }) {
                     {k.its.map((i) => {
                       const ix = i[7];
                       const isAnim = k.key === "Animation";
-                      const by = makerOf(k.key, ix);
+                      const by = i[8];
                       const editing = linkEditing === project.id + "|" + ix;
-                      const types = typesFor(k.key);
-                      if (!types.includes(i[2])) types.push(i[2]);
+                      const types = typeOptions.includes(i[2]) || !i[2] ? typeOptions : [...typeOptions, i[2]];
                       return (
                         <div
                           key={ix}
@@ -574,7 +712,7 @@ function InvoiceDetail({ projectId, onBack }) {
                                 aria-label="Duration in seconds"
                                 inputMode="numeric"
                                 value={i[5] ? String(i[5]) : ""}
-                                onChange={(e) => set(ix, { dur: num(e.target.value) })}
+                                onChange={(e) => set(ix, { duration_seconds: num(e.target.value) })}
                                 className="pp-focus"
                                 style={{ ...FIELD, padding: "0 22px 0 8px", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", boxShadow: "inset 0 0 0 1px var(--neutral-200)", background: "#fff" }}
                               />
@@ -588,7 +726,7 @@ function InvoiceDetail({ projectId, onBack }) {
                             <Avatar text={initials(by)} size={24} fontSize={10} />
                             <span style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
                               <span style={{ fontSize: 13, lineHeight: "16px", color: "var(--neutral-900)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{by}</span>
-                              <span style={{ fontSize: 11, lineHeight: "14px", color: "var(--neutral-500)" }}>{k.role}</span>
+                              <span style={{ fontSize: 11, lineHeight: "14px", color: "var(--neutral-500)" }}>{i[9]}</span>
                             </span>
                           </span>
                           {!editing ? (
@@ -648,13 +786,14 @@ function InvoiceDetail({ projectId, onBack }) {
 
 export default function InvoicingPage() {
   const [openId, setOpenId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <div data-testid="invoicing-page" style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative", background: "#fff" }}>
       {openId ? (
-        <InvoiceDetail projectId={openId} onBack={() => setOpenId(null)} />
+        <InvoiceDetail projectId={openId} onBack={() => setOpenId(null)} onChanged={() => setRefreshKey((k) => k + 1)} />
       ) : (
-        <InvoiceList onOpen={setOpenId} />
+        <InvoiceList onOpen={setOpenId} refreshKey={refreshKey} />
       )}
     </div>
   );

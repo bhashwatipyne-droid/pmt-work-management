@@ -1545,6 +1545,7 @@ export default function WorkSheetPage() {
       .filter(
         (u) =>
           u.role !== "admin" &&
+          u.role !== "hr" &&
           u.active !== false &&
           (stages.has("") || stages.has(DEPARTMENT_TO_STAGE[u.department]))
       )

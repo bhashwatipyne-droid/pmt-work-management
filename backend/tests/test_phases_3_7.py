@@ -27,7 +27,7 @@ class TestConfigOptions:
         assert r.status_code == 200
         d = r.json()
         assert d["departments"] == ["Content", "Design", "Animation", "Finish", "Administration"]
-        assert set(d["roles"]) == {"admin", "manager", "member"}
+        assert set(d["roles"]) == {"admin", "manager", "member", "hr"}
         assert "Changes Requested" in d["stage_statuses"]
 
 

@@ -38,6 +38,7 @@ try:
     # Works when the working directory is backend/ (e.g. `uvicorn server:app`)
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
+    from invoicing import create_invoicing_router  # noqa: F401
     import deliverable_import  # noqa: F401
     import project_duplicates  # noqa: F401
 except ImportError:
@@ -45,6 +46,7 @@ except ImportError:
     # (e.g. Render's `uvicorn backend.server:app`)
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
+    from backend.invoicing import create_invoicing_router  # noqa: F401
     from backend import deliverable_import  # noqa: F401
     from backend import project_duplicates  # noqa: F401
 
@@ -392,7 +394,18 @@ def derive_deliverable_dates(
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
 CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Administration"]
-ROLES = ["admin", "manager", "member"]
+# "hr" (Finance) is its own role, separate from admin, manager and member: it only
+# sees the invoicing screens (see HR_ALLOWED_PREFIXES) and is not part of the
+# production team, so it is left out of team, efficiency and workload lists.
+ROLES = ["admin", "manager", "member", "hr"]
+NON_TEAM_ROLES = ["admin", "hr"]
+HR_ALLOWED_PREFIXES = (
+    "/api/auth/",
+    "/api/invoicing/",
+    "/api/notifications",
+    "/api/push/",
+    "/api/config/",
+)
 APPROVAL_TYPES = ["MANAGER", "LEADERSHIP", "CLIENT_SPOC", "COMPLIANCE"]
 APPROVAL_STATUSES = ["NOT_STARTED", "PENDING", "APPROVED", "CHANGES_REQUESTED"]
 
@@ -745,6 +758,9 @@ async def get_acting_user(request: Request) -> User:
         raise HTTPException(status_code=401, detail="User not found")
     if not doc.get("active", True):
         raise HTTPException(status_code=401, detail="Account deactivated")
+    if doc.get("role") == "hr" and not request.url.path.startswith(HR_ALLOWED_PREFIXES):
+        # HR works only in invoicing; keep every production endpoint closed to it.
+        raise HTTPException(status_code=403, detail="HR accounts can only use invoicing")
     return User(**doc)
 
 
@@ -2273,7 +2289,7 @@ async def _worksheet_inactivity_notifications(local_now: datetime):
     window = _local_day_window_utc(target_day)
 
     users = await db.users.find(
-        {"active": {"$ne": False}, "role": {"$ne": "admin"}},
+        {"active": {"$ne": False}, "role": {"$nin": NON_TEAM_ROLES}},
         {"_id": 0, "id": 1},
     ).to_list(5000)
 
@@ -4071,7 +4087,7 @@ async def dashboard_summary(request: Request):
 @api_router.get("/dashboard/team-summary")
 async def dashboard_team_summary(request: Request):
     await require_admin(request)
-    users = await db.users.find({"role": {"$ne": "admin"}}, {"_id": 0}).to_list(1000)
+    users = await db.users.find({"role": {"$nin": NON_TEAM_ROLES}}, {"_id": 0}).to_list(1000)
     all_items = await db.work_items.find({}, {"_id": 0}).to_list(10000)
     result = []
     for u in users:
@@ -7902,6 +7918,16 @@ api_router.include_router(
 )
 
 api_router.include_router(
+    create_invoicing_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        move_project_to_status=_move_project_to_status,
+        now_iso=now_iso,
+        log_activity=log_activity,
+    )
+)
+
+api_router.include_router(
     create_home_dashboard_router(
         db=db,
         require_admin=require_admin,
@@ -7999,7 +8025,7 @@ async def migrate_admin_only_notifications():
     non_admin_ids = [
         u["id"]
         for u in await db.users.find(
-            {"role": {"$ne": "admin"}}, {"_id": 0, "id": 1}
+            {"role": {"$nin": NON_TEAM_ROLES}}, {"_id": 0, "id": 1}
         ).to_list(5000)
     ]
     if not non_admin_ids:

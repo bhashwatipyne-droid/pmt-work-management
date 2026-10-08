@@ -1,3 +1,4 @@
+import { ROLE_LABELS } from "@/lib/permissions";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -218,7 +219,7 @@ const AddMemberModal = ({
                   "member",
                 ]).map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {ROLE_LABELS[r] || r}
                   </option>
                 ))}
               </select>
@@ -487,7 +488,7 @@ const EditMemberModal = ({
                   "member",
                 ]).map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {ROLE_LABELS[r] || r}
                   </option>
                 ))}
               </select>
@@ -730,7 +731,7 @@ export default function TeamPage() {
                     </td>
 
                     <td className="py-3 pr-4 text-sm capitalize text-slate-600">
-                      {m.role}
+                      {ROLE_LABELS[m.role] || m.role}
                     </td>
 
                     <td className="py-3 pr-4">

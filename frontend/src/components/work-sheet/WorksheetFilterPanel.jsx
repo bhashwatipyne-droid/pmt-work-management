@@ -82,7 +82,7 @@ export const WorksheetFilterPanel = ({
   const creatorValues = useMemo(
     () =>
       users
-        .filter((u) => u.role !== "admin")
+        .filter((u) => u.role !== "admin" && u.role !== "hr")
         .map((u) => ({ value: u.id, label: u.name })),
     [users]
   );
@@ -90,7 +90,7 @@ export const WorksheetFilterPanel = ({
     () => [
       ...REVIEWER_SPECIAL_OPTIONS,
       ...users
-        .filter((u) => u.role !== "member")
+        .filter((u) => u.role !== "member" && u.role !== "hr")
         .map((u) => ({ value: u.id, label: u.name })),
     ],
     [users]

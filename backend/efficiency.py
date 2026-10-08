@@ -296,7 +296,7 @@ def create_efficiency_router(
         manager can only write for their own department (_assert_manages).
         """
         return await db.users.find(
-            {"role": {"$ne": "admin"}, "active": {"$ne": False}}, {"_id": 0}
+            {"role": {"$nin": ["admin", "hr"]}, "active": {"$ne": False}}, {"_id": 0}
         ).to_list(1000)
 
     async def _assert_can_view(user, target_user_id: str):
@@ -478,7 +478,7 @@ def create_efficiency_router(
             return result
 
         users = await db.users.find(
-            {"role": {"$ne": "admin"}, "active": {"$ne": False}}, {"_id": 0}
+            {"role": {"$nin": ["admin", "hr"]}, "active": {"$ne": False}}, {"_id": 0}
         ).to_list(1000)
         if not users:
             for m in missing:

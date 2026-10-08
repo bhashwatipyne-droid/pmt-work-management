@@ -1,4 +1,4 @@
-// Data layer for Planning, Task cards and Invoicing.
+// Data layer for Planning and Task cards. (Invoicing is real: services/api.js.)
 //
 // There is no backend for these yet, so everything here runs against sample data
 // held in memory (lib/planning/seed.js) and resets on reload. When the endpoints
@@ -8,10 +8,9 @@
 //
 //   Planning   getPlanTasks, reassignTask
 //   Task cards listAssignedTasks, acceptTask, declineTask, askAboutTask
-//   Invoicing  listInvoiceProjects, editInvoiceLine, markInvoiceRaised, undoInvoiceRaised
 import { useSyncExternalStore } from "react";
 
-import { INV, NOTES, P_TASKS } from "@/lib/planning/seed";
+import { NOTES, P_TASKS } from "@/lib/planning/seed";
 import { taskFromRow } from "@/lib/planning/planningLogic";
 
 const listeners = new Set();
@@ -20,8 +19,6 @@ let state = {
   tasks: P_TASKS.map(taskFromRow),
   notes: NOTES,
   dismissed: {},
-  invRaised: {}, // projectId -> "8 Oct"
-  invEdit: {}, // projectId -> { lineIndex: { name, type, qty, dur, link } }
 };
 
 const setState = (patch) => {
@@ -73,30 +70,3 @@ export const declineTask = (id) => {
 
 // The task stays in the person's queue after a question.
 export const askAboutTask = () => resolve(true);
-
-// ---------------- Invoicing ----------------
-
-export const listInvoiceProjects = () => resolve(INV);
-
-export const editInvoiceLine = (projectId, index, patch) => {
-  const byProject = state.invEdit[projectId] || {};
-  setState({
-    invEdit: {
-      ...state.invEdit,
-      [projectId]: { ...byProject, [index]: { ...(byProject[index] || {}), ...patch } },
-    },
-  });
-  return resolve(true);
-};
-
-export const markInvoiceRaised = (projectId, on) => {
-  setState({ invRaised: { ...state.invRaised, [projectId]: on } });
-  return resolve(true);
-};
-
-export const undoInvoiceRaised = (projectId) => {
-  const next = { ...state.invRaised };
-  delete next[projectId];
-  setState({ invRaised: next });
-  return resolve(true);
-};

@@ -736,3 +736,21 @@ export const importDeliverables = (projectId, file, dryRun = true) => {
     .post(`${API}/projects/${projectId}/deliverables/import`, form)
     .then((r) => r.data);
 };
+
+// -------- Invoicing (HR / Finance) --------
+export const getInvoiceProjects = (tab = "ready") =>
+  axios.get(`${API}/invoicing/projects`, { params: { tab } }).then((r) => r.data);
+
+export const getInvoiceProject = (id) =>
+  axios.get(`${API}/invoicing/projects/${id}`).then((r) => r.data);
+
+export const editInvoiceLine = (projectId, workItemId, patch) =>
+  axios
+    .put(`${API}/invoicing/projects/${projectId}/lines/${workItemId}`, patch)
+    .then((r) => r.data);
+
+export const raiseInvoice = (id) =>
+  axios.post(`${API}/invoicing/projects/${id}/raise`).then((r) => r.data);
+
+export const undoRaiseInvoice = (id) =>
+  axios.post(`${API}/invoicing/projects/${id}/undo`).then((r) => r.data);

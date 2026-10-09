@@ -1,6 +1,8 @@
-// Sample data for the Planning and Task card screens, copied from the
-// design prototype. It stands in for the backend until those endpoints exist:
-// see services/planningApi.js, which is the only file that reads it.
+// Reference data for the Planning and Task card screens, copied from the design
+// prototype. Task, card and people lists now come from the API (services/planningApi.js);
+// what is left here is the display metadata (categories, decline reasons) and the
+// per-person efficiency stats that have no data source yet (on-time %, feedback,
+// revisions), which planningApi merges onto real people by name.
 
 export const NOTES = [
   { id: 1, from: 'Vanshika Shah', role: 'Content lead', ago: '5 min ago', pri: 'P1', task: 'Invesco tagline options', proj: 'Invesco Concept Presentations', client: 'Invesco Mutual Fund', due: 'Fri 9 Oct · 6:00 PM', dueIn: 'in 1 day', dueTone: 'soon', est: 3, qty: '10 options', note: 'Need 10 tagline options for the concept deck. Keep each under 8 words; the client prefers a calm, expert tone.', load: 5.5 },

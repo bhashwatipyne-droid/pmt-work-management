@@ -2,7 +2,15 @@
 // takes the task list plus the current filters and returns everything the
 // screen draws, so it can be tested without React and so the screen does not
 // care whether the tasks came from the sample data or from the backend.
-import { P_CATS, P_DAYS, P_HPD, P_NOW, P_ORDER, P_PEOPLE, P_TODAY } from "./seed";
+import {
+  P_CATS,
+  P_DAYS as SEED_DAYS,
+  P_HPD as SEED_HPD,
+  P_NOW as SEED_NOW,
+  P_ORDER,
+  P_PEOPLE as SEED_PEOPLE,
+  P_TODAY as SEED_TODAY,
+} from "./seed";
 
 export const initials = (name) =>
   String(name || "")
@@ -37,7 +45,18 @@ export const taskFromRow = (t, i) => ({
   status: t[9],
 });
 
-export function computePlan(tasks, { period = "today", cat = "all", dept = "all", dismissed = {} } = {}) {
+// `people` ([name, dept, onTime%, feedback, revisions, leaveDays][]) and `ctx`
+// (the week/today description from /api/planning/overview) default to the sample
+// data, so the maths can still be exercised without a backend.
+export function computePlan(
+  tasks,
+  { period = "today", cat = "all", dept = "all", dismissed = {}, people: peopleRows, ctx } = {}
+) {
+  const P_PEOPLE = peopleRows || SEED_PEOPLE;
+  const P_DAYS = ctx?.days || SEED_DAYS;
+  const P_TODAY = ctx ? ctx.today : SEED_TODAY;
+  const P_NOW = ctx ? ctx.now : SEED_NOW;
+  const P_HPD = ctx ? ctx.hours_per_day : SEED_HPD;
   const week = period === "week";
   const span = (t) => t.d1 - t.d0 + 1;
   const todayH = (t) => (t.d0 <= P_TODAY && t.d1 >= P_TODAY ? t.est / span(t) : 0);
@@ -344,6 +363,12 @@ export function computePlan(tasks, { period = "today", cat = "all", dept = "all"
     list,
     listTitle:
       (cat === "all" ? "All tasks" : cat === "new" ? tileLbl.new : P_CATS[cat][0]) + " · " + list.length,
-    periodLabel: week ? "Mon 5 – Fri 9 Oct" : "Thursday, 8 Oct",
+    periodLabel: ctx
+      ? week
+        ? ctx.week_label
+        : ctx.today_label
+      : week
+        ? "Mon 5 – Fri 9 Oct"
+        : "Thursday, 8 Oct",
   };
 }

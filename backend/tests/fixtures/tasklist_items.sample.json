@@ -1,0 +1,549 @@
+{
+  "items": [
+    {
+      "work_date": "2026-10-09",
+      "assignee_name": "Harshal",
+      "dedupe_key": "75b3c1be3f4e5adb0c86",
+      "id": "b7abb530-6450-497c-818d-5be73fc9d13d",
+      "message_id": "FIXTURE1",
+      "seq": 1,
+      "team": "content",
+      "assignee_user_id": "manager-hp",
+      "assignee_pmt_name": "Harshal Pawar",
+      "assigned_by_user_id": "manager-vs",
+      "assigned_by_name": "Vanshika Shah",
+      "assigned_by_role": "Content manager",
+      "client_id": "CLIENT - 006",
+      "client_name": "ICICI Prudential Mutual Fund",
+      "project_id": "79dac8f2-5c2b-44de-a246-40177d4ef9cf",
+      "project_name": "IPru Pharma ETF Campaign",
+      "project_text": "Pharma",
+      "deliverable_name": "From Lab to Life",
+      "db_deliverable": "From Lab To Life - Product Explainer",
+      "deliverable_id": "e50514ec-a1ee-4296-9536-ad2388b43c50",
+      "action": null,
+      "notes": "Review & Changes",
+      "slot": null,
+      "priority": "High",
+      "due_at": "2026-10-09T18:00:00+05:30",
+      "est_minutes": null,
+      "confidence": {
+        "client": 0.95,
+        "project": 0.59,
+        "deliverable": 0.81
+      },
+      "client_source": "name in text",
+      "alternatives": [
+        {
+          "project": "IPru Pharma ETF Campaign",
+          "client": "ICICI Prudential Mutual Fund",
+          "score": 0.59
+        }
+      ],
+      "nlp_ids": {
+        "client_id": "CLIENT - 006",
+        "project_id": "79dac8f2-5c2b-44de-a246-40177d4ef9cf",
+        "deliverable_id": "e50514ec-a1ee-4296-9536-ad2388b43c50"
+      },
+      "needs_review": false,
+      "review_reasons": [],
+      "status": "pending",
+      "work_item_id": null,
+      "accepted_at": null,
+      "declined_at": null,
+      "decline_reason": null,
+      "questions": [],
+      "history": [
+        {
+          "at": "2026-10-09T09:50:56.110Z",
+          "by": "system",
+          "action": "queued",
+          "detail": ""
+        }
+      ],
+      "raw_line": "- ICICI Prudential Pharma - From Lab to Life (Review & Changes) - High Priority",
+      "source": "whatsapp",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "updated_at": "2026-10-09T09:50:56.110Z"
+    },
+    {
+      "work_date": "2026-10-09",
+      "assignee_name": "Ratnesh",
+      "dedupe_key": "bc66541ffba59fc7ac4c",
+      "id": "334876ab-a1a5-421a-9a5d-f9f8add84b36",
+      "message_id": "FIXTURE1",
+      "seq": 2,
+      "team": "content",
+      "assignee_user_id": "member-rb",
+      "assignee_pmt_name": "Ratnesh Bor",
+      "assigned_by_user_id": "manager-vs",
+      "assigned_by_name": "Vanshika Shah",
+      "assigned_by_role": "Content manager",
+      "client_id": "CLIENT - 006",
+      "client_name": "ICICI Prudential Mutual Fund",
+      "project_id": "8b14c6c1-1cc0-4d67-b952-8270c21599bc",
+      "project_name": "ICICI Prudential Contra Fund",
+      "project_text": "Contra investing blog",
+      "deliverable_name": "investing blog",
+      "db_deliverable": null,
+      "deliverable_id": null,
+      "action": null,
+      "notes": null,
+      "slot": null,
+      "priority": null,
+      "due_at": "2026-10-09T18:00:00+05:30",
+      "est_minutes": null,
+      "confidence": {
+        "client": 0.95,
+        "project": 0.6,
+        "deliverable": 0
+      },
+      "client_source": "name in text",
+      "alternatives": [
+        {
+          "project": "ICICI Prudential Contra Fund",
+          "client": "ICICI Prudential Mutual Fund",
+          "score": 0.6
+        }
+      ],
+      "nlp_ids": {
+        "client_id": "CLIENT - 006",
+        "project_id": "8b14c6c1-1cc0-4d67-b952-8270c21599bc",
+        "deliverable_id": null
+      },
+      "needs_review": false,
+      "review_reasons": [],
+      "status": "pending",
+      "work_item_id": null,
+      "accepted_at": null,
+      "declined_at": null,
+      "decline_reason": null,
+      "questions": [],
+      "history": [
+        {
+          "at": "2026-10-09T09:50:56.110Z",
+          "by": "system",
+          "action": "queued",
+          "detail": ""
+        }
+      ],
+      "raw_line": "- ICICI Contra investing blog",
+      "source": "whatsapp",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "updated_at": "2026-10-09T09:50:56.110Z"
+    },
+    {
+      "work_date": "2026-10-09",
+      "assignee_name": "Vanshika",
+      "dedupe_key": "9b0f3005ebd0c0d0f18a",
+      "id": "ff3dc817-6b46-4cda-b309-78570a0e54d8",
+      "message_id": "FIXTURE1",
+      "seq": 3,
+      "team": "content",
+      "assignee_user_id": "manager-vs",
+      "assignee_pmt_name": "Vanshika Shah",
+      "assigned_by_user_id": "manager-vs",
+      "assigned_by_name": "Vanshika Shah",
+      "assigned_by_role": "Content manager",
+      "client_id": "CLIENT - 039",
+      "client_name": "Invesco",
+      "project_id": "PROJECT - 756",
+      "project_name": "Invesco Concept Presentations (IEP) - Contra",
+      "project_text": "Concept Presentations",
+      "deliverable_name": "Pitch narrative",
+      "db_deliverable": null,
+      "deliverable_id": null,
+      "action": null,
+      "notes": null,
+      "slot": null,
+      "priority": null,
+      "due_at": "2026-10-09T18:00:00+05:30",
+      "est_minutes": null,
+      "confidence": {
+        "client": 0.95,
+        "project": 0.63,
+        "deliverable": 0
+      },
+      "client_source": "name in text",
+      "alternatives": [
+        {
+          "project": "Invesco Concept Presentations (IEP) - Contra",
+          "client": "Invesco",
+          "score": 0.63
+        },
+        {
+          "project": "Invesco Concept Presentations (IEP) - Flexi Cap",
+          "client": "Invesco",
+          "score": 0.61
+        },
+        {
+          "project": "Invesco Concept Presentations (IEP) - Mid Cap",
+          "client": "Invesco",
+          "score": 0.6
+        }
+      ],
+      "nlp_ids": {
+        "client_id": "CLIENT - 039",
+        "project_id": "PROJECT - 756",
+        "deliverable_id": null
+      },
+      "needs_review": true,
+      "review_reasons": [
+        "Ambiguous project: Invesco Concept Presentations (IEP) - Contra / Invesco Concept Presentations (IEP) - Flexi Cap"
+      ],
+      "status": "needs_review",
+      "work_item_id": null,
+      "accepted_at": null,
+      "declined_at": null,
+      "decline_reason": null,
+      "questions": [],
+      "history": [
+        {
+          "at": "2026-10-09T09:50:56.110Z",
+          "by": "system",
+          "action": "flagged",
+          "detail": "Ambiguous project: Invesco Concept Presentations (IEP) - Contra / Invesco Concept Presentations (IEP) - Flexi Cap"
+        }
+      ],
+      "raw_line": "- Invesco Concept Presentations - Pitch narrative",
+      "source": "whatsapp",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "updated_at": "2026-10-09T09:50:56.110Z"
+    },
+    {
+      "work_date": "2026-10-09",
+      "assignee_name": "Vanshika",
+      "dedupe_key": "e55e8e5b1ca7088ea99a",
+      "id": "c69ac477-2f0a-4d86-b53f-abc523534cf2",
+      "message_id": "FIXTURE1",
+      "seq": 4,
+      "team": "content",
+      "assignee_user_id": "manager-vs",
+      "assignee_pmt_name": "Vanshika Shah",
+      "assigned_by_user_id": "manager-vs",
+      "assigned_by_name": "Vanshika Shah",
+      "assigned_by_role": "Content manager",
+      "client_id": null,
+      "client_name": null,
+      "project_id": null,
+      "project_name": null,
+      "project_text": null,
+      "deliverable_name": "Totally unknown thing xyz",
+      "db_deliverable": null,
+      "deliverable_id": null,
+      "action": null,
+      "notes": null,
+      "slot": null,
+      "priority": null,
+      "due_at": "2026-10-09T18:00:00+05:30",
+      "est_minutes": null,
+      "confidence": {
+        "client": 0,
+        "project": 0,
+        "deliverable": 0
+      },
+      "client_source": null,
+      "alternatives": [
+        {
+          "project": "ABSL BSE Total Market Index Fund AV",
+          "client": "ABSL Apex SIF",
+          "score": 0.23
+        },
+        {
+          "project": "Index Fund & ETF on BSE Total Market Index - NFO",
+          "client": "Aditya Birla Sun Life Mutual Fund",
+          "score": 0.23
+        }
+      ],
+      "nlp_ids": {
+        "client_id": null,
+        "project_id": null,
+        "deliverable_id": null
+      },
+      "needs_review": true,
+      "review_reasons": [
+        "No client in the text and nothing in the database matches it",
+        "Client unresolved",
+        "Client or project is not confirmed"
+      ],
+      "status": "needs_review",
+      "work_item_id": null,
+      "accepted_at": null,
+      "declined_at": null,
+      "decline_reason": null,
+      "questions": [],
+      "history": [
+        {
+          "at": "2026-10-09T09:50:56.110Z",
+          "by": "system",
+          "action": "flagged",
+          "detail": "No client in the text and nothing in the database matches it; Client unresolved; Client or project is not confirmed"
+        }
+      ],
+      "raw_line": "- Totally unknown thing xyz",
+      "source": "whatsapp",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "updated_at": "2026-10-09T09:50:56.110Z"
+    }
+  ],
+  "logs": [
+    {
+      "message_id": "FIXTURE1",
+      "seq": 1,
+      "id": "00234a2e-10cf-479f-b771-be25bef8ddc4",
+      "work_date": "2026-10-09",
+      "team": "content",
+      "raw_line": "- ICICI Prudential Pharma - From Lab to Life (Review & Changes) - High Priority",
+      "assignee_name": "Harshal",
+      "dedupe_key": "75b3c1be3f4e5adb0c86",
+      "match_method": "database",
+      "lexicon_built_at": "2026-10-09T06:38:08.333Z",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "decision": "queued",
+      "client_name": "ICICI Prudential Mutual Fund",
+      "project_name": "IPru Pharma ETF Campaign",
+      "deliverable_name": "From Lab to Life",
+      "matched": {
+        "client_id": "CLIENT - 006",
+        "project_id": "79dac8f2-5c2b-44de-a246-40177d4ef9cf",
+        "deliverable_id": "e50514ec-a1ee-4296-9536-ad2388b43c50"
+      },
+      "scores": {
+        "client": 0.95,
+        "project": 0.59,
+        "deliverable": 0.81,
+        "project_detail": {
+          "raw": 0.592,
+          "mass": 5.607,
+          "recall": 0.417,
+          "precision": 1
+        },
+        "deliverable_detail": {
+          "raw": 0.806,
+          "mass": 13.273,
+          "recall": 0.613,
+          "precision": 1
+        }
+      },
+      "margin": {
+        "project": null,
+        "deliverable": null
+      },
+      "alternatives": {
+        "projects": [
+          {
+            "project": "IPru Pharma ETF Campaign",
+            "client": "ICICI Prudential Mutual Fund",
+            "score": 0.59
+          }
+        ],
+        "deliverables": [
+          {
+            "id": "e50514ec-a1ee-4296-9536-ad2388b43c50",
+            "deliverable": "From Lab To Life - Product Explainer",
+            "score": 0.81
+          }
+        ]
+      },
+      "client_source": "name in text",
+      "assignee_resolved": true,
+      "review_reasons": [],
+      "validation_checked": true,
+      "validation_problems": [],
+      "last_seen_at": "2026-10-09T09:50:56.116Z",
+      "seen_count": 1
+    },
+    {
+      "message_id": "FIXTURE1",
+      "seq": 2,
+      "id": "3385b6de-0d7f-4387-bf0c-73af904f42b2",
+      "work_date": "2026-10-09",
+      "team": "content",
+      "raw_line": "- ICICI Contra investing blog",
+      "assignee_name": "Ratnesh",
+      "dedupe_key": "bc66541ffba59fc7ac4c",
+      "match_method": "database",
+      "lexicon_built_at": "2026-10-09T06:38:08.333Z",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "decision": "queued",
+      "client_name": "ICICI Prudential Mutual Fund",
+      "project_name": "ICICI Prudential Contra Fund",
+      "deliverable_name": "investing blog",
+      "matched": {
+        "client_id": "CLIENT - 006",
+        "project_id": "8b14c6c1-1cc0-4d67-b952-8270c21599bc",
+        "deliverable_id": null
+      },
+      "scores": {
+        "client": 0.95,
+        "project": 0.6,
+        "deliverable": 0,
+        "project_detail": {
+          "raw": 0.598,
+          "mass": 5.474,
+          "recall": 0.715,
+          "precision": 0.324
+        },
+        "deliverable_detail": null
+      },
+      "margin": {
+        "project": null,
+        "deliverable": null
+      },
+      "alternatives": {
+        "projects": [
+          {
+            "project": "ICICI Prudential Contra Fund",
+            "client": "ICICI Prudential Mutual Fund",
+            "score": 0.6
+          }
+        ],
+        "deliverables": []
+      },
+      "client_source": "name in text",
+      "assignee_resolved": true,
+      "review_reasons": [],
+      "validation_checked": true,
+      "validation_problems": [],
+      "last_seen_at": "2026-10-09T09:50:56.116Z",
+      "seen_count": 1
+    },
+    {
+      "message_id": "FIXTURE1",
+      "seq": 3,
+      "id": "243c43f9-6948-46f2-b3ec-f660731553ea",
+      "work_date": "2026-10-09",
+      "team": "content",
+      "raw_line": "- Invesco Concept Presentations - Pitch narrative",
+      "assignee_name": "Vanshika",
+      "dedupe_key": "9b0f3005ebd0c0d0f18a",
+      "match_method": "database",
+      "lexicon_built_at": "2026-10-09T06:38:08.333Z",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "decision": "needs_review",
+      "client_name": "Invesco",
+      "project_name": "Invesco Concept Presentations (IEP) - Contra",
+      "deliverable_name": "Pitch narrative",
+      "matched": {
+        "client_id": "CLIENT - 039",
+        "project_id": "PROJECT - 756",
+        "deliverable_id": null
+      },
+      "scores": {
+        "client": 0.95,
+        "project": 0.63,
+        "deliverable": 0,
+        "project_detail": {
+          "raw": 0.63,
+          "mass": 9.792,
+          "recall": 0.472,
+          "precision": 1
+        },
+        "deliverable_detail": null
+      },
+      "margin": {
+        "project": 0.02,
+        "deliverable": null
+      },
+      "alternatives": {
+        "projects": [
+          {
+            "project": "Invesco Concept Presentations (IEP) - Contra",
+            "client": "Invesco",
+            "score": 0.63
+          },
+          {
+            "project": "Invesco Concept Presentations (IEP) - Flexi Cap",
+            "client": "Invesco",
+            "score": 0.61
+          },
+          {
+            "project": "Invesco Concept Presentations (IEP) - Mid Cap",
+            "client": "Invesco",
+            "score": 0.6
+          }
+        ],
+        "deliverables": []
+      },
+      "client_source": "name in text",
+      "assignee_resolved": true,
+      "review_reasons": [
+        "Ambiguous project: Invesco Concept Presentations (IEP) - Contra / Invesco Concept Presentations (IEP) - Flexi Cap"
+      ],
+      "validation_checked": true,
+      "validation_problems": [],
+      "last_seen_at": "2026-10-09T09:50:56.116Z",
+      "seen_count": 1
+    },
+    {
+      "message_id": "FIXTURE1",
+      "seq": 4,
+      "id": "578dc4f9-2c19-40d1-8afc-f8e33020e1cb",
+      "work_date": "2026-10-09",
+      "team": "content",
+      "raw_line": "- Totally unknown thing xyz",
+      "assignee_name": "Vanshika",
+      "dedupe_key": "e55e8e5b1ca7088ea99a",
+      "match_method": "database",
+      "lexicon_built_at": "2026-10-09T06:38:08.333Z",
+      "created_at": "2026-10-09T09:50:56.110Z",
+      "decision": "needs_review",
+      "client_name": null,
+      "project_name": null,
+      "deliverable_name": "Totally unknown thing xyz",
+      "matched": {
+        "client_id": null,
+        "project_id": null,
+        "deliverable_id": null
+      },
+      "scores": {
+        "client": 0,
+        "project": 0,
+        "deliverable": 0,
+        "project_detail": null,
+        "deliverable_detail": {
+          "raw": 0.305,
+          "mass": 5.943,
+          "recall": 0.419,
+          "precision": 0.191
+        }
+      },
+      "margin": {
+        "project": 0,
+        "deliverable": null
+      },
+      "alternatives": {
+        "projects": [
+          {
+            "project": "ABSL BSE Total Market Index Fund AV",
+            "client": "ABSL Apex SIF",
+            "score": 0.23
+          },
+          {
+            "project": "Index Fund & ETF on BSE Total Market Index - NFO",
+            "client": "Aditya Birla Sun Life Mutual Fund",
+            "score": 0.23
+          }
+        ],
+        "deliverables": [
+          {
+            "id": "DELIVERABLE - 1742",
+            "deliverable": "Think of the autopilot",
+            "score": 0.31
+          }
+        ]
+      },
+      "client_source": null,
+      "assignee_resolved": true,
+      "review_reasons": [
+        "No client in the text and nothing in the database matches it",
+        "Client unresolved",
+        "Client or project is not confirmed"
+      ],
+      "validation_checked": true,
+      "validation_problems": [],
+      "last_seen_at": "2026-10-09T09:50:56.116Z",
+      "seen_count": 1
+    }
+  ]
+}

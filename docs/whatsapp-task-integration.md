@@ -29,6 +29,13 @@ and show up in `GET /api/planning/review` until a manager resolves or rejects th
 Existing `clients`, `projects`, `deliverables`, `work_items`, `users` are only read (or, for `work_items`, written
 through the existing `create_work_item`). Nothing is migrated or rewritten.
 
+## Assignee resolution
+
+- A full name or username in the tasklist (e.g. `Bhashwati Testing`) is an exact match and is accepted for **every** PMT account, test accounts included.
+- A bare first name (`Ratnesh`) prefers real accounts over test accounts, and falls back to a test account only if no real one shares the name.
+- A name that exists only in another department goes to review rather than being guessed. Content, Design and Animation tasklists are recognised.
+- The listener builds its known-name list from the live `users` collection, the bundled `teamRoster.json` (in the task_assignment_automation repo) and the optional `ASSIGNEES` env var, so `ASSIGNEES` no longer has to list everyone.
+
 ## Duplicates, failures, retries
 
 - Re-delivered message: upserts with `$setOnInsert`; an already accepted item is never overwritten; `nlp_match_logs.seen_count` increments.
@@ -48,7 +55,7 @@ until then ingest-time validation catches ids that no longer exist.
 
 ## Verify end to end
 
-1. `cd listener && npm install && npm test` (22 tests).
+1. `cd listener && npm install && npm test` (35 tests).
 2. `cd backend && pytest tests/test_planning_integration.py -n 0` (35 tests; uses mongomock, no Atlas needed).
 3. `cd frontend && CI=true yarn test --watchAll=false` (9 tests).
 4. Dry run: set `DRY_RUN=true`, start the listener, post a tasklist in an allowed group; the console prints the items and logs.

@@ -3,7 +3,7 @@ import { X, Clock, Plus, Trash2, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
 import { lowTimeMessage } from "@/lib/timeRules";
-import { buildLookalikeIndex, isProjectClosed } from "@/lib/lookalikes";
+import { buildLookalikeIndex } from "@/lib/lookalikes";
 import { LookalikePill, ProjectNameParts } from "./ProjectPicker";
 import {
   NOT_AVAILABLE_LABEL,
@@ -185,7 +185,7 @@ export default function QuickLoggerModal({
     () =>
       resolvedClient
         ? projects.filter(
-            (p) => p.client_id === resolvedClient.id && !isProjectClosed(p)
+            (p) => p.client_id === resolvedClient.id
           )
         : [],
     [projects, resolvedClient]
@@ -201,7 +201,7 @@ export default function QuickLoggerModal({
   const lookalikes = useMemo(
     () =>
       open
-        ? buildLookalikeIndex(projects.filter((p) => !isProjectClosed(p)), clientNameOf)
+        ? buildLookalikeIndex(projects, clientNameOf)
         : new Map(),
     [open, projects, clientNameOf]
   );

@@ -44,7 +44,7 @@ import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { trackEvent } from "@/analytics";
-import { buildLookalikeIndex, isProjectClosed } from "@/lib/lookalikes";
+import { buildLookalikeIndex } from "@/lib/lookalikes";
 
 const COLUMNS = [
   "Date",
@@ -530,7 +530,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   const projectLookalikes = useMemo(
     () =>
       buildLookalikeIndex(
-        (projects || []).filter((project) => !isProjectClosed(project)),
+        projects || [],
         clientNameOf
       ),
     [projects, clientNameOf]

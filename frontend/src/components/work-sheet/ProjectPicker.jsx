@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import { STAGE_COLORS } from "@/constants/projectPalette";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { distinguishingParts, isProjectClosed } from "@/lib/lookalikes";
+import { distinguishingParts } from "@/lib/lookalikes";
 import { focusAdjacentCell } from "./useWorksheetKeyboardNavigation";
 
 // More than this many options and the list asks the user to type instead of
@@ -100,7 +100,6 @@ export function ProjectPicker({
     const rows = [];
 
     projects.forEach((project) => {
-      if (isProjectClosed(project)) return;
       const ownClient = clientNameOf(project.client_id);
       if (!matchesQuery(project, ownClient, q)) return;
 

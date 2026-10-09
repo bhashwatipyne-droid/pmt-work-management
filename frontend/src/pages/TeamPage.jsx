@@ -644,7 +644,7 @@ export default function TeamPage() {
   return (
     <div
       data-testid={TEAM.page}
-      className="flex-1 overflow-auto bg-[#f7f9fc] px-6 py-6 lg:px-8"
+      className="flex-1 overflow-auto bg-[#f7f9fc] px-3 py-4 md:px-6 md:py-6 lg:px-8"
     >
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">

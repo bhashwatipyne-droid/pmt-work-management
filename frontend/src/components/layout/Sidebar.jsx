@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Bug,
@@ -17,12 +17,6 @@ import { usePinnedProjects } from "@/hooks/usePinnedProjects";
 import { LAYOUT } from "@/constants/testIds";
 import { STATUS_COLORS } from "@/constants/projectPalette";
 import { ROLE_LABELS } from "@/lib/permissions";
-import { startPolling } from "@/lib/polling";
-import { onCountsRefresh } from "@/lib/countsBus";
-import {
-  getApprovalsPendingCount,
-  getWorkItemsPendingCount,
-} from "@/services/api";
 import NotificationCenter from "@/components/notifications/NotificationCenter";
 import { useCommandCenter } from "./CommandCenter";
 import {
@@ -31,22 +25,12 @@ import {
   IS_MAC,
 } from "./navItems";
 
-// Background safety-net cadence for the sidebar's badge counts, in case
-// they were changed by someone else / another tab. Anything the current
-// user does themselves refreshes instantly via the countsBus event. It
-// pauses while the tab is hidden and refreshes when visible again
-// (see startPolling).
-// 45s: the Approvals count is the heaviest call the app polls (it was
-// 2-3s on the free backend instance), so it runs less often.
-const COUNT_POLL_MS = 45000;
-const FIRST_COUNT_DELAY_MS = 1200;
-
 const SECTION_TITLE =
   "px-2 pb-1.5 text-[11px] font-bold uppercase leading-[14px] tracking-[0.05em] text-[#546490]";
 
 // Design: the Work sheet count is a soft red pill, Approvals a solid brand
 // pill. Anything above 99 reads "99+".
-const CountPill = ({ count, tone, className = "" }) => {
+export const CountPill = ({ count, tone, className = "" }) => {
   if (!count || count <= 0) return null;
 
   return (
@@ -64,7 +48,9 @@ const CountPill = ({ count, tone, className = "" }) => {
   );
 };
 
-export const Sidebar = () => {
+// The counts come from useNavCounts() in AppLayout so the mobile bottom bar can
+// share them. Below `md` this sidebar is hidden; MobileNav takes over.
+export const Sidebar = ({ counts = { worksheet: 0, approvals: 0 } }) => {
   const { currentUser, logout } = useUser();
   const access = useAccess();
   const navigate = useNavigate();
@@ -75,48 +61,10 @@ export const Sidebar = () => {
     () => localStorage.getItem("pmt_sidebar_collapsed") === "true"
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [approvalsCount, setApprovalsCount] = useState(0);
-  const [worksheetCount, setWorksheetCount] = useState(0);
   const helpButtonRef = useRef(null);
 
   const initial = (currentUser?.name || "?").trim().charAt(0).toUpperCase();
   const sections = getNavSections(access);
-  const canSeeApprovals = access.canViewApprovals;
-
-  useEffect(() => {
-    if (!currentUser?.id) return undefined;
-
-    let cancelled = false;
-
-    const fetchCounts = () => {
-      if (!access.canViewWorksheet) return;
-
-      getWorkItemsPendingCount(currentUser.id)
-        .then((data) => !cancelled && setWorksheetCount(data?.count || 0))
-        .catch(() => {});
-
-      if (canSeeApprovals) {
-        getApprovalsPendingCount(currentUser.id)
-          .then((data) => !cancelled && setApprovalsCount(data?.count || 0))
-          .catch(() => {});
-      }
-    };
-
-    // The badges are not what the person opened the page for, so the first
-    // fetch waits a moment and lets the page's own data requests go first
-    // (on a busy or waking backend those two extra queries otherwise queue in
-    // front of the page).
-    const firstFetch = window.setTimeout(fetchCounts, FIRST_COUNT_DELAY_MS);
-    const stopPolling = startPolling(fetchCounts, COUNT_POLL_MS);
-    const unsubscribe = onCountsRefresh(fetchCounts);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(firstFetch);
-      stopPolling();
-      unsubscribe();
-    };
-  }, [currentUser?.id, canSeeApprovals, access.canViewWorksheet]);
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {
@@ -142,7 +90,7 @@ export const Sidebar = () => {
   };
 
   const countFor = (key) =>
-    key === "worksheet" ? worksheetCount : key === "approvals" ? approvalsCount : 0;
+    key === "worksheet" ? counts.worksheet : key === "approvals" ? counts.approvals : 0;
   const toneFor = (key) => (key === "approvals" ? "brand" : "error");
 
   const footerButton =
@@ -150,7 +98,7 @@ export const Sidebar = () => {
 
   return (
     <aside
-      className={`relative flex shrink-0 flex-col bg-[#f5f6f8] shadow-[inset_-1px_0_0_rgb(226,232,240)] transition-all duration-200 ${
+      className={`relative hidden shrink-0 flex-col bg-[#f5f6f8] md:flex shadow-[inset_-1px_0_0_rgb(226,232,240)] transition-all duration-200 ${
         collapsed ? "w-[68px]" : "w-[236px]"
       }`}
     >

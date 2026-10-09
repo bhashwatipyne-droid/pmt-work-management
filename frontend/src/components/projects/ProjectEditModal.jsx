@@ -117,7 +117,7 @@ const ProjectEditModal = ({
       }}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header: breadcrumb + close */}

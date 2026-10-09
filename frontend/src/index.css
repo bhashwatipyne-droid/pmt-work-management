@@ -431,3 +431,59 @@
 .pmt-hscroll::-webkit-scrollbar-thumb:hover {
   background-color: #a9acc4;
 }
+
+/* ── Phones (below Tailwind md) ─────────────────────────────────────────────
+   iOS Safari zooms the whole page when a field under 16px gets focus, and then
+   stays zoomed. Keep every text-entry control at 16px on phones. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Momentum scrolling and no rubber-banding of the whole page behind panels */
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Wide tables/boards keep their own horizontal scroll; the page never scrolls sideways. */
+@media (max-width: 767px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+}
+
+:root {
+  --pmt-bottom-offset: 0px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    /* height of the fixed bottom nav, so floating buttons sit above it */
+    --pmt-bottom-offset: calc(56px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Planning: tighter page padding, and the person column stays put while the
+   timeline scrolls sideways. */
+@media (max-width: 767px) {
+  .pmt-plan-wrap {
+    padding: 16px 12px 32px !important;
+    gap: 16px !important;
+  }
+
+  .pmt-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+  }
+}

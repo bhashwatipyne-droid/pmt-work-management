@@ -256,7 +256,7 @@ export default function LoginPage({ onResetDone, onResetCancel } = {}) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f7f9fc] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#f7f9fc] px-4 max-md:min-h-[100dvh]">
       <div className="w-full max-w-[400px]">
         {/* Brand */}
         <div className="mb-8 flex flex-col items-center">

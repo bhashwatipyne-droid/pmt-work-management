@@ -62,7 +62,7 @@ export const KanbanColumn = ({
       onDragOver={readOnly ? undefined : (event) => onDragOverColumn?.(event, status)}
       onDrop={readOnly ? undefined : (event) => onDropColumn?.(event, status)}
       style={{ width: COLUMN_WIDTH, minWidth: COLUMN_WIDTH }}
-      className="flex shrink-0 flex-col"
+      className="flex shrink-0 flex-col max-md:snap-start"
     >
       {/* Header pill */}
       <div

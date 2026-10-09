@@ -109,7 +109,7 @@ export default function ProfilePage() {
   );
 
   return (
-    <div className="flex-1 overflow-auto bg-[#f7f9fc] px-6 py-6 lg:px-8">
+    <div className="flex-1 overflow-auto bg-[#f7f9fc] px-3 py-4 md:px-6 md:py-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Profile & Account</h1>

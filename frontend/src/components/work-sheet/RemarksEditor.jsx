@@ -79,7 +79,7 @@ export function RemarksEditor({
         aria-label={`Edit ${title.toLowerCase()}`}
         onKeyDown={handleKeyDown}
         style={{ left: pos.left, top: pos.top, width: pos.width }}
-        className="fixed z-[61] flex max-h-[calc(100vh-16px)] flex-col overflow-hidden rounded-[10px] bg-white shadow-[inset_0_0_0_2px_#2b2bb5,0_6px_25px_rgba(13,28,61,0.15)]"
+        className="fixed z-[61] flex max-h-[calc(100dvh-16px)] flex-col overflow-hidden rounded-[10px] bg-white shadow-[inset_0_0_0_2px_#2b2bb5,0_6px_25px_rgba(13,28,61,0.15)]"
       >
         <div className="flex items-center gap-2 px-3 pb-2 pt-2.5">
           <span className="text-xs font-semibold text-foreground">{title}</span>
@@ -104,7 +104,7 @@ export function RemarksEditor({
           onChange={(e) => setDraft(e.target.value)}
           placeholder={readOnly ? emptyText : placeholder}
           rows={7}
-          className="mx-3 max-h-[50vh] min-h-[140px] resize-y rounded-lg border-none bg-slate-50 px-3 py-2.5 text-sm leading-5 text-foreground outline-none"
+          className="mx-3 max-h-[50dvh] min-h-[140px] resize-y rounded-lg border-none bg-slate-50 px-3 py-2.5 text-sm leading-5 text-foreground outline-none"
         />
 
         <div className="flex items-center gap-2 px-3 py-2.5">

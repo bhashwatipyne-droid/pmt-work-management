@@ -213,7 +213,7 @@ export const ImportDeliverablesModal = ({
         aria-modal="true"
         aria-labelledby="import-deliverables-title"
         data-testid="import-deliverables-modal"
-        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

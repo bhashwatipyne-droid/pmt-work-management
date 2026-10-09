@@ -108,7 +108,7 @@ const WORK_STATUS_BADGE = {
 };
 
 const DELIV_GRID =
-  "grid grid-cols-[minmax(260px,2.2fr)_210px_170px_minmax(130px,1fr)] gap-x-4";
+  "grid grid-cols-[minmax(260px,2.2fr)_210px_170px_minmax(130px,1fr)] gap-x-4 max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-y-1";
 const LOG_GRID =
   "grid grid-cols-[190px_minmax(220px,2fr)_110px_70px_120px] gap-x-4";
 
@@ -590,7 +590,7 @@ export default function ProjectDetailPage() {
       data-testid="project-detail-page"
       className="flex-1 overflow-auto bg-white font-['Inter',sans-serif] text-[rgb(13,27,62)] antialiased"
     >
-      <div className="mx-auto flex max-w-[1240px] flex-col gap-5 px-6 pb-16 pt-4">
+      <div className="mx-auto flex max-w-[1240px] flex-col gap-4 px-4 pb-16 pt-3 md:gap-5 md:px-6 md:pt-4">
         {/* Back link + header */}
         <div className="flex flex-col gap-2.5">
           <button
@@ -723,9 +723,9 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Progress + stage tiles */}
-        <div className="grid grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] gap-3 overflow-x-auto">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] md:overflow-x-auto">
           <div
-            className={`flex min-w-0 flex-col gap-3 rounded-xl bg-white p-4 ${HAIRLINE}`}
+            className={`col-span-2 flex min-w-0 flex-col gap-3 rounded-xl bg-white p-4 md:col-span-1 ${HAIRLINE}`}
           >
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-2xl font-semibold leading-8 text-[rgb(13,27,62)]">
@@ -885,8 +885,8 @@ export default function ProjectDetailPage() {
 
           {isDeliv ? (
             <div className="overflow-x-auto">
-              <div className="min-w-[860px]">
-                <div className={`${DELIV_GRID} ${HEAD_ROW}`}>
+              <div className="md:min-w-[860px]">
+                <div className={`${DELIV_GRID} ${HEAD_ROW} max-md:hidden`}>
                   <span>Deliverable</span>
                   <span>Workflow</span>
                   <span>Status</span>
@@ -936,11 +936,11 @@ export default function ProjectDetailPage() {
                                     }
                                   : undefined
                               }
-                              className={`${DELIV_GRID} min-h-[52px] items-center pl-[34px] pr-4 text-sm shadow-[inset_0_-1px_0_rgb(243,244,246)] hover:bg-[rgb(249,250,251)] ${
+                              className={`${DELIV_GRID} min-h-[52px] items-center pl-[34px] pr-4 text-sm max-md:py-2 max-md:pl-4 shadow-[inset_0_-1px_0_rgb(243,244,246)] hover:bg-[rgb(249,250,251)] ${
                                 canManage ? "cursor-pointer focus:bg-[rgb(249,250,251)] focus:outline-none" : ""
                               }`}
                             >
-                              <span className="flex min-w-0 flex-col gap-0.5 py-1.5">
+                              <span className="flex min-w-0 flex-col gap-0.5 py-1.5 max-md:order-1">
                                 {canManage ? (
                                   <DeliverableNameInput
                                     name={d.name}
@@ -959,7 +959,7 @@ export default function ProjectDetailPage() {
                                 </span>
                               </span>
 
-                              <span className="flex flex-wrap items-center gap-1 text-xs text-[rgb(74,88,120)]">
+                              <span className="flex flex-wrap items-center gap-1 text-xs text-[rgb(74,88,120)] max-md:order-3">
                                 {flow.map((stage, i) => (
                                   <span key={stage} className="flex items-center gap-1">
                                     <span className="flex items-center gap-[5px]">
@@ -973,12 +973,12 @@ export default function ProjectDetailPage() {
                                 ))}
                               </span>
 
-                              <span className="p-0.5">
+                              <span className="p-0.5 max-md:order-2 max-md:justify-self-end">
                                 <Badge color={status.badge}>{status.label}</Badge>
                               </span>
 
                               <span
-                                className={`text-[13px] tabular-nums ${
+                                className={`text-[13px] tabular-nums max-md:order-4 max-md:justify-self-end ${
                                   overdue ? "text-[rgb(239,68,68)]" : "text-[rgb(84,100,144)]"
                                 }`}
                                 title={overdue ? `${d.current_stage} is overdue` : undefined}

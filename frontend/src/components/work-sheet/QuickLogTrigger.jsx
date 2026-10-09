@@ -26,7 +26,9 @@ export const QuickLogTrigger = ({ onOpen }) => {
     const width = rect?.width || 140;
     const height = rect?.height || 56;
     const maxLeft = window.innerWidth - width - 8;
-    const maxTop = window.innerHeight - height - 8;
+    // on a phone the bottom nav (56px) is in the way
+    const reserved = window.innerWidth < 768 ? 64 : 0;
+    const maxTop = window.innerHeight - height - 8 - reserved;
     return {
       left: Math.min(Math.max(8, left), Math.max(8, maxLeft)),
       top: Math.min(Math.max(8, top), Math.max(8, maxTop)),
@@ -110,7 +112,7 @@ export const QuickLogTrigger = ({ onOpen }) => {
 
   const style = position
     ? { left: position.left, top: position.top, right: "auto", bottom: "auto" }
-    : { right: EDGE_MARGIN, bottom: EDGE_MARGIN };
+    : { right: EDGE_MARGIN, bottom: "calc(var(--pmt-bottom-offset, 0px) + 24px)" };
 
   return (
     <button

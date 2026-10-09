@@ -103,6 +103,7 @@ export default function PlanningPage() {
       <div
         data-screen-label="Planning"
         data-testid="planning-page"
+        className="pmt-plan-wrap"
         style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 72px", display: "flex", flexDirection: "column", gap: 20 }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -238,7 +239,7 @@ export default function PlanningPage() {
                   boxShadow: "inset 0 1px 0 rgb(234,238,244), inset 0 -1px 0 rgb(234,238,244)",
                 }}
               >
-                <span style={{ padding: "0 16px", fontSize: 12, fontWeight: 600, color: "var(--neutral-500)" }}>Person · load</span>
+                <span className="pmt-sticky-col" style={{ padding: "0 16px", fontSize: 12, fontWeight: 600, color: "var(--neutral-500)", background: "var(--neutral-50)" }}>Person · load</span>
                 <div style={{ position: "relative", height: "100%" }}>
                   {plan.ticks.map((k) => (
                     <span
@@ -268,7 +269,7 @@ export default function PlanningPage() {
                   key={r.name}
                   style={{ display: "grid", gridTemplateColumns: "230px minmax(0,1fr)", boxShadow: "inset 0 -1px 0 rgb(243,244,246)" }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", boxShadow: "inset -1px 0 0 rgb(243,244,246)" }}>
+                  <div className="pmt-sticky-col" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", boxShadow: "inset -1px 0 0 rgb(243,244,246)", background: "#fff" }}>
                     <Avatar text={r.ini} size={30} fontSize={11} />
                     <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
                       <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>

@@ -142,7 +142,7 @@ export const WorksheetFilterPanel = ({
         aria-label="Close filters"
       />
 
-      <div className="absolute right-4 top-20 flex max-h-[calc(100vh-110px)] w-[380px] flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md">
+      <div className="absolute right-4 top-20 flex max-h-[calc(100dvh-110px)] w-[380px] flex-col overflow-hidden rounded-md max-md:inset-x-0 max-md:bottom-0 max-md:right-auto max-md:top-auto max-md:max-h-[88dvh] max-md:w-full max-md:rounded-b-none max-md:rounded-t-2xl border bg-popover text-popover-foreground shadow-md">
         <div className="flex items-center justify-between border-b px-4 py-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">

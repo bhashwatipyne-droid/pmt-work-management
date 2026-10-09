@@ -888,15 +888,15 @@ export default function ProjectsPage() {
   return (
     <div
       data-testid={PROJECTS.page}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-5 pb-6 pt-[21px]"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-3 pb-6 pt-[21px] md:px-5"
     >
       {/* Title + toolbar - a white band under the top bar, as in the redesign:
           title and counts on the left, Board / List and the solid-blue
           "New project" on the right, then the search and filters. */}
-      <div className="-mx-5 -mt-[21px] shrink-0 border-b border-[#eaeef4] bg-white px-5 pb-3 pt-5">
+      <div className="-mx-3 -mt-[21px] shrink-0 border-b border-[#eaeef4] bg-white px-3 pb-3 pt-4 md:-mx-5 md:px-5 md:pt-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex min-w-[200px] flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-2xl font-semibold leading-8 tracking-tight text-[#0d1b3e]">
+            <h1 className="text-xl font-semibold leading-8 tracking-tight text-[#0d1b3e] md:text-2xl">
               Projects
             </h1>
             <span className="text-[13px] text-[#546490]">
@@ -949,7 +949,7 @@ export default function ProjectsPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {/* Search */}
-          <label className="flex h-8 w-[320px] max-w-full items-center gap-2 rounded-[7px] border border-[#eff0f2] bg-white pl-3 pr-2 focus-within:border-[#2b2bb5] focus-within:ring-[3px] focus-within:ring-[#2b2bb5]/20">
+          <label className="flex h-10 w-full items-center md:h-8 md:w-[320px] md:max-w-full gap-2 rounded-[7px] border border-[#eff0f2] bg-white pl-3 pr-2 focus-within:border-[#2b2bb5] focus-within:ring-[3px] focus-within:ring-[#2b2bb5]/20">
             <Search className="h-3 w-3 shrink-0 text-[#a2aab6]" strokeWidth={2.5} />
             <input
               data-testid={PROJECTS.searchInput}
@@ -1196,7 +1196,7 @@ export default function ProjectsPage() {
                 its tallest column needs; the Content wrapper above supplies
                 the vertical scrollbar, at the page's actual available
                 height rather than a guessed one. */}
-            <div className="pmt-hscroll overflow-x-auto pb-4">
+            <div className="pmt-hscroll overflow-x-auto pb-4 max-md:snap-x max-md:snap-mandatory">
               <div className="flex items-start gap-[10px]" style={{ minWidth: boardWidth }}>
                 {visibleStatuses.map((status) => {
                   const columnProjects = byStatus[status] || [];

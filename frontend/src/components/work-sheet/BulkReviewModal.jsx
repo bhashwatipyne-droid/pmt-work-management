@@ -274,7 +274,7 @@ export default function BulkReviewModal({ open, onClose, currentUser }) {
         role="dialog"
         aria-modal="true"
         aria-label="Bulk review"
-        className="fixed left-1/2 top-1/2 z-[63] flex h-[min(760px,calc(100vh-32px))] w-[min(1080px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl bg-white shadow-[0_6px_25px_rgba(13,28,61,0.15)]"
+        className="fixed left-1/2 top-1/2 z-[63] flex h-[min(760px,calc(100dvh-32px))] w-[min(1080px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl bg-white shadow-[0_6px_25px_rgba(13,28,61,0.15)]"
       >
         <div className="flex items-center gap-3 px-5 pb-4 pt-5">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-[#f0f0fd] text-[#2b2bb5]">

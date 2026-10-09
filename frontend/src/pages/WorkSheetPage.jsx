@@ -26,6 +26,8 @@ import { WorkSheetTable, SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/
 import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
+import { MobileWorkList } from "@/components/work-sheet/MobileWorkList";
+import { useIsMobile } from "@/hooks/useIsMobile";
 // Lazy — both are closed by default (~1,500 lines combined), so their
 // code only needs to download once someone actually opens one, instead
 // of padding out the Work Sheet page's own initial chunk.
@@ -150,6 +152,7 @@ export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
   const location = useLocation();
   const navigate = useNavigate();
+  const isPhone = useIsMobile();
   const [rawItems, setItems] = useState([]);
 
   // Content rows whose creator is missing or no longer matches a real user show
@@ -1952,6 +1955,18 @@ export default function WorkSheetPage() {
 
       {loading ? (
         <WorkSheetTableSkeleton />
+      ) : isPhone ? (
+        <MobileWorkList
+          items={sortedItems}
+          currentUser={currentUser}
+          users={users}
+          options={options}
+          projects={projects}
+          deliverables={deliverables}
+          clients={clients}
+          hiddenRows={hiddenRows}
+          onUpdate={handleUpdate}
+        />
       ) : (
         <WorkSheetTable
           ref={tableRef}

@@ -39,7 +39,7 @@ export default function EfficiencySettingsPage() {
   ].filter((c) => c.visible);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-6">
+    <div className="flex flex-1 flex-col overflow-y-auto p-3 md:p-6">
       <Link
         to="/efficiency"
         className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800"

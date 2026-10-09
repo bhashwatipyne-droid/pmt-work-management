@@ -455,7 +455,7 @@ export default function NotificationCenter({ placement = "header" }) {
           aria-label="Notifications"
           data-testid="notification-panel"
           className={[
-            "absolute top-11 z-50 flex h-[min(720px,calc(100vh-72px))] w-[520px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_6px_25px_rgba(13,28,61,0.1)]",
+            "absolute top-11 z-50 flex h-[min(720px,calc(100dvh-72px))] w-[520px] max-w-[calc(100vw-16px)] flex-col max-md:fixed max-md:inset-x-2 max-md:left-2 max-md:right-2 max-md:top-[calc(60px+env(safe-area-inset-top))] max-md:h-[calc(100dvh-140px-env(safe-area-inset-top))] max-md:w-auto overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_6px_25px_rgba(13,28,61,0.1)]",
             placement === "sidebar" ? "left-0" : "right-0",
           ].join(" ")}
         >

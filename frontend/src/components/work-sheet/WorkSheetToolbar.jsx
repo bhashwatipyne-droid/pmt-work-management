@@ -100,7 +100,7 @@ const SearchBox = ({ value, onChange }) => {
   };
 
   return (
-    <div className="relative min-w-[220px] max-w-[400px] flex-1">
+    <div className="relative min-w-0 max-w-[400px] flex-1 max-md:basis-full md:min-w-[220px]">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
       <Input
@@ -121,7 +121,7 @@ const SearchBox = ({ value, onChange }) => {
             else inputRef.current?.blur();
           }
         }}
-        className="h-8 w-full rounded-[7px] border-[#eff0f2] pl-9 pr-9 text-[13px] shadow-none"
+        className="h-10 w-full rounded-[7px] border-[#eff0f2] pl-9 pr-9 text-[13px] shadow-none md:h-8"
       />
 
       {text ? (
@@ -201,8 +201,8 @@ export const WorkSheetToolbar = ({
     <div className="border-b border-[#eaeef4] bg-white">
       {/* TITLE + PRIMARY ACTIONS ROW
           (Bulk review is no longer here - it lives in the top bar.) */}
-      <div className="flex flex-wrap items-center gap-3 px-5 pb-3 pt-5">
-        <h1 className="min-w-[160px] flex-1 text-2xl font-semibold tracking-tight text-[#0d1b3e]">
+      <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-4 md:gap-3 md:px-5 md:pt-5">
+        <h1 className="min-w-[120px] flex-1 text-xl font-semibold md:min-w-[160px] md:text-2xl tracking-tight text-[#0d1b3e]">
           {title}
         </h1>
 
@@ -222,7 +222,7 @@ export const WorkSheetToolbar = ({
         )}
 
         {canAdd && (
-          <div className="inline-flex h-8">
+          <div className="inline-flex h-8 max-md:hidden">
             <Button
               data-testid={WORKSHEET.addRowBtn}
               onClick={onAddRow}
@@ -267,7 +267,7 @@ export const WorkSheetToolbar = ({
       {tabs}
 
       {/* SEARCH / FILTER / GROUP ROW */}
-      <div className="flex flex-wrap items-center gap-2 px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 md:px-5">
         <SearchBox
           value={filters.search}
           onChange={(next) =>

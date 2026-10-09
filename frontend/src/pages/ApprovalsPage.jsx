@@ -5,6 +5,7 @@ import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO }
 import {
   Check,
   Undo2,
+  ChevronLeft,
   ChevronRight,
   ShieldCheck,
   Users,
@@ -146,6 +147,8 @@ export default function ApprovalsPage() {
   // a time, navigated via tabs.
   const [activeQueue, setActiveQueue] = useState(COLUMNS[0].key);
   const [selectedId, setSelectedId] = useState(null);
+  // Phones show the list OR the detail, never both side by side.
+  const [detailOpen, setDetailOpen] = useState(false);
 
   // Filters. Visibility/hidden toggle and the old per-column "authority"
   // filter are both gone — authority is now the queue tab itself, and
@@ -319,6 +322,7 @@ export default function ApprovalsPage() {
     if (!aList.some((item) => item.id === selectedId)) {
       setSelectedId(aList[0]?.id ?? null);
     }
+    if (aList.length === 0) setDetailOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQueue, aList.map((i) => i.id).join(",")]);
 
@@ -590,7 +594,7 @@ export default function ApprovalsPage() {
   return (
     <div data-testid={APPROVALS.page} className="flex h-full flex-col bg-background">
       {/* HEADER */}
-      <div className="flex items-center gap-3 px-5 pt-5">
+      <div className="flex items-center gap-3 px-3 pt-4 md:px-5 md:pt-5">
         <h1 className="flex-1 text-2xl font-semibold tracking-tight text-foreground">Approvals</h1>
 
         {canAct && selectedIds.size > 0 ? (
@@ -665,7 +669,7 @@ export default function ApprovalsPage() {
       <div
         role="tablist"
         aria-label="Approval queues"
-        className="mt-3 flex gap-1 overflow-x-auto px-5 shadow-[inset_0_-1px_0_rgba(234,238,244,1)]"
+        className="mt-3 flex gap-1 overflow-x-auto px-3 shadow-[inset_0_-1px_0_rgba(234,238,244,1)]"
       >
         {COLUMNS.map((column) => {
           const Icon = column.icon;
@@ -714,8 +718,8 @@ export default function ApprovalsPage() {
       </div>
 
       {/* SEARCH + FILTER ROW */}
-      <div className="flex items-center gap-2 px-5 py-3">
-        <div className="relative">
+      <div className="flex items-center gap-2 px-3 py-3 md:px-5">
+        <div className="relative min-w-0 flex-1 md:flex-none">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -723,7 +727,7 @@ export default function ApprovalsPage() {
             placeholder="Search deliverable, project, client..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-10 w-64 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-800 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            className="h-10 w-full rounded-lg border border-slate-200 md:w-64 bg-white pl-8 pr-3 text-sm text-slate-800 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
           />
         </div>
 
@@ -739,7 +743,7 @@ export default function ApprovalsPage() {
       {/* BODY: master list + detail */}
       <div className="flex min-h-0 flex-1">
         {/* LIST */}
-        <div className="flex w-[360px] shrink-0 flex-col border-r border-slate-200">
+        <div className={`flex w-full shrink-0 flex-col border-r border-slate-200 md:w-[360px] ${detailOpen ? "max-md:hidden" : ""}`}>
           <div className="flex h-10 shrink-0 items-center gap-3 border-b border-slate-200 px-4">
             {canAct && (
               <input
@@ -782,7 +786,10 @@ export default function ApprovalsPage() {
                       setDragging(null);
                       setDragOverQueue(null);
                     }}
-                    onClick={() => setSelectedId(item.id)}
+                    onClick={() => {
+                      setSelectedId(item.id);
+                      setDetailOpen(true);
+                    }}
                     className={[
                       "flex w-full cursor-pointer items-start gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition-colors",
                       isSelected ? "bg-[#f0f0fd]" : "hover:bg-slate-50",
@@ -827,11 +834,20 @@ export default function ApprovalsPage() {
         </div>
 
         {/* DETAIL */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${detailOpen ? "" : "max-md:hidden"}`}>
           {aSel ? (
-            <div className="max-w-[720px] px-7 pb-10 pt-6">
+            <div className="max-w-[720px] px-4 pb-10 pt-4 md:px-7 md:pt-6">
+              <button
+                type="button"
+                onClick={() => setDetailOpen(false)}
+                className="mb-3 inline-flex h-10 items-center gap-1 rounded-lg pr-3 text-sm font-medium text-[#2b2bb5] active:bg-[#f0f0fd] md:hidden"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back to list
+              </button>
+
               <div className="flex flex-wrap items-start gap-4">
-                <div className="flex min-w-[240px] flex-1 flex-col gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-2 md:min-w-[240px]">
                   <div className="flex items-center gap-2">
                     {(() => {
                       const chip = dueChip(aSel.due_date);
@@ -866,7 +882,7 @@ export default function ApprovalsPage() {
                 )}
               </div>
 
-              <div className="mt-5 grid grid-cols-[130px_1fr] gap-y-2.5 text-sm">
+              <div className="mt-5 grid grid-cols-[92px_1fr] gap-y-2.5 md:grid-cols-[130px_1fr] text-sm">
                 <span className="text-slate-500">Project</span>
                 <span className="text-foreground">{aSel.project_name}</span>
                 <span className="text-slate-500">Client</span>

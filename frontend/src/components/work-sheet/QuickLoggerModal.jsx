@@ -816,11 +816,11 @@ export default function QuickLoggerModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(12,12,13,0.1)] px-4 pt-[10vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(12,12,13,0.1)] px-4 pt-[10dvh]">
       <div
         role="dialog"
         aria-label="Quick log"
-        className="flex max-h-[calc(100vh-10vh-16px)] w-[680px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_15px_25px_rgba(13,28,61,0.12)]"
+        className="flex max-h-[calc(100dvh-10vh-16px)] w-[680px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_15px_25px_rgba(13,28,61,0.12)]"
       >
         {/* Header */}
         <div className="flex items-center gap-2.5 px-5 pt-4">

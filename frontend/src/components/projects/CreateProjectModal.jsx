@@ -424,7 +424,7 @@ export const CreateProjectModal = ({
         onKeyDown={(e) => {
           if (e.key === "Escape" && addClientName === null) handleClose();
         }}
-        className="flex max-h-[calc(100vh-48px)] w-full max-w-[820px] flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex max-h-[calc(100dvh-48px)] w-full max-w-[820px] flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
       >
         {/* Header: breadcrumb + close */}
         <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-6 py-4">

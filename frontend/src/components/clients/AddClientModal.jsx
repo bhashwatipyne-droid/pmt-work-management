@@ -223,7 +223,7 @@ export function AddClientModal({
             handleCreate();
           }
         }}
-        className="flex max-h-[calc(100vh-48px)] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[calc(100dvh-48px)] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-start gap-3 border-b border-border px-6 pb-4 pt-5">

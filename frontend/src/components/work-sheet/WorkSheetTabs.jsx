@@ -17,7 +17,7 @@ export const WorkSheetTabs = ({ activeSheet, onChange, counts }) => {
     <div
       role="tablist"
       aria-label="Sheets"
-      className="flex items-center gap-1 bg-white px-5 shadow-[inset_0_-1px_0_#eaeef4]"
+      className="flex items-center gap-1 overflow-x-auto bg-white px-3 shadow-[inset_0_-1px_0_#eaeef4] md:px-5"
     >
       {SHEETS.map((sheet) => {
         const count = counts?.[sheet.key];
@@ -31,7 +31,7 @@ export const WorkSheetTabs = ({ activeSheet, onChange, counts }) => {
             aria-selected={isActive}
             onClick={() => onChange(sheet.key)}
             className={cn(
-              "flex h-[38px] items-center gap-1.5 px-2.5 text-[13px] font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20",
+              "flex h-[42px] shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 md:h-[38px] text-[13px] font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20",
               isActive
                 ? "text-[#0d1b3e] shadow-[inset_0_-2px_0_#2b2bb5]"
                 : "text-[#546490] hover:text-[#0d1b3e]"

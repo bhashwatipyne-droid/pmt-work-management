@@ -89,7 +89,7 @@ export default function EfficiencyPage() {
   if (userLoading || !currentUser) return null;
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-6">
+    <div className="flex flex-1 flex-col overflow-y-auto p-3 md:p-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="min-w-[160px] flex-1 text-xl font-semibold tracking-tight text-slate-900">
           Efficiency

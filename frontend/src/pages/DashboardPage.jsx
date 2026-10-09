@@ -416,7 +416,7 @@ export default function DashboardPage() {
     <div data-testid="dashboard-page" className="flex-1 overflow-auto bg-white font-['Inter',sans-serif] leading-[normal] text-[rgb(13,27,62)] antialiased">
       <div
         data-screen-label="Home"
-        className={`mx-auto flex max-w-[1280px] flex-col gap-6 px-6 pb-[72px] pt-6 transition-opacity ${loading ? "opacity-60" : ""}`}
+        className={`mx-auto flex max-w-[1280px] flex-col gap-5 px-4 pb-24 pt-4 transition-opacity md:gap-6 md:px-6 md:pb-[72px] md:pt-6 ${loading ? "opacity-60" : ""}`}
       >
         {/* ---------------- Header ---------------- */}
         <div className="flex flex-col gap-3.5">
@@ -545,7 +545,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ---------------- Tabs ---------------- */}
-        <div className="sticky top-0 z-[6] -mx-6 -mb-2 -mt-3 flex items-center gap-2 bg-white px-6 shadow-[inset_0_-1px_0_rgb(234,238,244)]">
+        <div className="sticky top-0 z-[6] -mx-4 -mb-2 -mt-3 flex items-center gap-2 bg-white px-4 md:-mx-6 md:px-6 shadow-[inset_0_-1px_0_rgb(234,238,244)]">
           <div role="tablist" aria-label="Home sections" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
             {tabs.map((t) => {
               const on = tab === t.key;

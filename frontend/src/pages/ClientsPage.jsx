@@ -472,7 +472,7 @@ const ClientModal = ({
             ? "clients-edit-modal"
             : CLIENTS.addModal
         }
-        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
+        className="flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -809,7 +809,7 @@ export default function ClientsPage() {
   return (
     <div
       data-testid={CLIENTS.page}
-      className="flex-1 overflow-auto bg-[#f7f9fc] px-6 py-6 lg:px-8"
+      className="flex-1 overflow-auto bg-[#f7f9fc] px-3 py-4 md:px-6 md:py-6 lg:px-8"
     >
       {/* PAGE HEADER */}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">

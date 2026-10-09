@@ -255,7 +255,7 @@ export const CommandPalette = ({ open, onClose, actions }) => {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-start justify-center bg-[rgba(12,12,13,0.1)] px-4 pt-[12vh]"
+      className="fixed inset-0 z-[70] flex items-start justify-center bg-[rgba(12,12,13,0.1)] px-4 pt-[12dvh]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

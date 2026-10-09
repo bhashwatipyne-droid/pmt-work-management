@@ -185,6 +185,17 @@ const initials = (name) =>
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+// Deliverables imported as already finished (import status "Finish") are stored
+// by older imports as current_stage "Finish" + stage_status "Closed". Show them
+// where newer imports put them: at the last of their own stages, as Completed.
+const stageOf = (d) => {
+  if (STAGES.includes(d.current_stage)) return d.current_stage;
+  const own = (d.required_stages || []).filter((s) => STAGES.includes(s));
+  return own[own.length - 1] || "Content";
+};
+const statusOf = (d) =>
+  d.stage_status === "Closed" ? "Completed" : d.stage_status || "Not Started";
+
 const stageWindow = (d) => {
   const w = d.stage_schedule?.[d.current_stage];
   if (w) return { start: w.start_dt, end: w.end_dt };
@@ -194,7 +205,7 @@ const stageWindow = (d) => {
 // Mirrors the backend's per-stage overdue check (server.py's
 // _ensure_overdue_notifications) so the schedule reads "late" right away.
 const isOverdue = (d) => {
-  if (d.stage_status === "Completed") return false;
+  if (statusOf(d) === "Completed") return false;
   const end = d.stage_schedule?.[d.current_stage]?.end_dt;
   return Boolean(end) && end.slice(0, 10) < todayIso();
 };
@@ -495,15 +506,15 @@ export default function ProjectDetailPage() {
   const deliverableGroups = useMemo(() => {
     const filtered = deliverables.filter(
       (d) =>
-        (stageFilter === "all" || d.current_stage === stageFilter) &&
+        (stageFilter === "all" || stageOf(d) === stageFilter) &&
         (!q || `${d.name} ${d.type || ""}`.toLowerCase().includes(q))
     );
     return STAGES.map((stage) => {
-      const rows = filtered.filter((d) => d.current_stage === stage);
+      const rows = filtered.filter((d) => stageOf(d) === stage);
       return {
         stage,
         rows,
-        done: rows.filter((d) => d.stage_status === "Completed").length,
+        done: rows.filter((d) => statusOf(d) === "Completed").length,
       };
     }).filter((g) => g.rows.length);
   }, [deliverables, stageFilter, q]);
@@ -548,23 +559,23 @@ export default function ProjectDetailPage() {
   }
 
   const total = deliverables.length;
-  const done = deliverables.filter((d) => d.stage_status === "Completed").length;
+  const done = deliverables.filter((d) => statusOf(d) === "Completed").length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const segments = DELIVERABLE_STATUSES.map((s) => ({
     ...s,
-    n: deliverables.filter((d) => (d.stage_status || "Not Started") === s.key).length,
+    n: deliverables.filter((d) => statusOf(d) === s.key).length,
     color: BADGE[s.badge].dot,
   })).filter((s) => s.n);
 
   const tiles = ["all", ...STAGES].map((key) => {
     const rows =
-      key === "all" ? deliverables : deliverables.filter((d) => d.current_stage === key);
+      key === "all" ? deliverables : deliverables.filter((d) => stageOf(d) === key);
     return {
       key,
       label: key === "all" ? "All deliverables" : key,
       dot: STAGE_DOT[key] || NEUTRAL_900,
       count: rows.length,
-      done: rows.filter((d) => d.stage_status === "Completed").length,
+      done: rows.filter((d) => statusOf(d) === "Completed").length,
     };
   });
 
@@ -897,7 +908,7 @@ export default function ProjectDetailPage() {
                       {open &&
                         g.rows.map((d) => {
                           const status =
-                            DELIVERABLE_STATUS[d.stage_status] ||
+                            DELIVERABLE_STATUS[statusOf(d)] ||
                             DELIVERABLE_STATUS["Not Started"];
                           const flow = d.required_stages?.length
                             ? d.required_stages

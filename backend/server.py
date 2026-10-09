@@ -2128,7 +2128,7 @@ async def _ensure_overdue_notifications():
     legacy_overdue = await db.deliverables.find(
         {
             "end_dt": {"$lt": today},
-            "stage_status": {"$ne": "Completed"},
+            "stage_status": {"$nin": ["Completed", "Closed"]},   # Closed = legacy finished import
             "$or": [{"stage_schedule": {"$exists": False}}, {"stage_schedule": {}}],
         },
         {"_id": 0},
@@ -2136,7 +2136,7 @@ async def _ensure_overdue_notifications():
 
     scheduled_candidates = await db.deliverables.find(
         {
-            "stage_status": {"$ne": "Completed"},
+            "stage_status": {"$nin": ["Completed", "Closed"]},   # Closed = legacy finished import
             "stage_schedule": {"$nin": [None, {}]},
         },
         {"_id": 0},

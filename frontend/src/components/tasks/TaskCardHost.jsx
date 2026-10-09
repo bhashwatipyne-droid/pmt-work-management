@@ -21,7 +21,7 @@ import { acceptTask, askAboutTask, declineTask, usePlanningStore } from "@/servi
 // "Task assigned to you": a sticky-note card that stacks pending assignments,
 // with Accept / Decline / Ask a question, and a "N tasks waiting" pill once it
 // is minimised. Follows the design prototype. The queue comes from
-// services/planningApi.js (sample data until the backend exists).
+// services/planningApi.js (/api/planning/my-tasks).
 
 const AMBER_TEXT = "rgb(120,53,15)";
 const AMBER_LINE = "rgb(252,211,77)";
@@ -126,19 +126,19 @@ function TaskCard({ queue, onMinimise }) {
   const LoadIcon = over ? AlertTriangle : Check;
 
   const accept = async () => {
-    await acceptTask(n.id);
+    if (!(await acceptTask(n.id))) return;
     reset();
     toast.success("Accepted · “" + n.task + "” added to your Work sheet");
   };
   const sendDecline = async () => {
     if (!reason) return toast.message("Choose a reason first");
-    await declineTask(n.id, reason, msg.trim());
+    if (!(await declineTask(n.id, reason, msg.trim()))) return;
     reset();
     toast.success("Declined · " + first + " has been notified");
   };
   const sendAsk = async () => {
     if (!msg.trim()) return toast.message("Type your question first");
-    await askAboutTask(n.id, msg.trim());
+    if (!(await askAboutTask(n.id, msg.trim()))) return;
     reset();
     toast.success("Question sent to " + first + " · task stays in your queue");
   };
@@ -421,7 +421,7 @@ function TaskCard({ queue, onMinimise }) {
 
 // Rendered once in the app layout. Hidden while the queue is empty.
 export default function TaskCardHost() {
-  const { notes } = usePlanningStore();
+  const { notes } = usePlanningStore("cards");
   const [open, setOpen] = useState(true);
 
   if (!notes.length) return null;

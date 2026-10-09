@@ -14,7 +14,7 @@ import {
 
 // Planning: today's and this week's deliverables, what changed, and expected
 // efficiency against potential. Markup and spacing follow the design prototype.
-// Data comes from services/planningApi.js (sample data until the backend exists).
+// Data comes from services/planningApi.js (/api/planning/overview).
 
 const INSIGHT_ICONS = {
   shuffle: Shuffle,
@@ -67,7 +67,7 @@ const SectionHead = ({ title, sub, right }) => (
 const LIST_COLS = "minmax(220px,2fr) 170px minmax(200px,1.5fr) 130px 70px 100px";
 
 export default function PlanningPage() {
-  const { tasks, dismissed } = usePlanningStore();
+  const { tasks, dismissed, people, ctx } = usePlanningStore("plan");
   const { currentUser } = useUser();
   const [period, setPeriod] = useState("today");
   const [cat, setCat] = useState("all");
@@ -82,17 +82,17 @@ export default function PlanningPage() {
   const dept = ownTeam || pickedDept;
 
   const plan = useMemo(
-    () => computePlan(tasks, { period, cat, dept, dismissed }),
-    [tasks, period, cat, dept, dismissed]
+    () => computePlan(tasks, { period, cat, dept, dismissed, people, ctx }),
+    [tasks, period, cat, dept, dismissed, people, ctx]
   );
   const week = plan.week;
   const hasDismissed = Object.keys(dismissed).length > 0;
 
-  const runInsight = (n) => {
+  const runInsight = async (n) => {
     if (!n.act) return;
     if (n.act.type === "reassign") {
-      reassignTask(n.act.taskId, n.act.to, n.act.from);
-      toast.success("“" + n.act.task + "” moved to " + n.act.to);
+      const moved = await reassignTask(n.act.taskId, n.act.to, n.act.from);
+      if (moved) toast.success("“" + n.act.task + "” moved to " + n.act.to);
     } else if (n.act.type === "filterCat") {
       setCat(n.act.cat);
     }

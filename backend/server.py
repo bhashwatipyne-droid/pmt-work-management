@@ -39,6 +39,7 @@ try:
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
     from invoicing import create_invoicing_router  # noqa: F401
+    from planning import create_planning_router  # noqa: F401
     import deliverable_import  # noqa: F401
     import project_duplicates  # noqa: F401
 except ImportError:
@@ -47,6 +48,7 @@ except ImportError:
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
     from backend.invoicing import create_invoicing_router  # noqa: F401
+    from backend.planning import create_planning_router  # noqa: F401
     from backend import deliverable_import  # noqa: F401
     from backend import project_duplicates  # noqa: F401
 
@@ -7924,6 +7926,22 @@ api_router.include_router(
         move_project_to_status=_move_project_to_status,
         now_iso=now_iso,
         log_activity=log_activity,
+    )
+)
+
+# WhatsApp tasklists -> task cards, Planning page and Work Sheet rows. Accepting
+# a task goes through create_work_item(), so every Work Sheet rule applies.
+api_router.include_router(
+    create_planning_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        create_work_item=create_work_item,
+        work_item_create_model=WorkItemCreate,
+        department_to_stage=DEPARTMENT_TO_STAGE,
+        deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,
+        upsert_notification=_upsert_notification,
+        now_iso=now_iso,
+        log_error=lambda message: logging.getLogger(__name__).warning(message),
     )
 )
 

@@ -79,6 +79,14 @@ let webpackConfig = {
       },
     },
   },
+  // Lets `yarn test` resolve the same "@/..." imports the app uses.
+  jest: {
+    configure: {
+      moduleNameMapper: {
+        "^@/(.*)$": "<rootDir>/src/$1",
+      },
+    },
+  },
   webpack: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

@@ -26,6 +26,7 @@ Pillow; if Pillow is missing the page still works and the card just has no image
 Collection: project_shares {id, token, project_id, created_by, created_at,
 revoked, revoked_at}.
 """
+import asyncio
 import hashlib
 import html
 import io
@@ -437,14 +438,18 @@ def create_project_share_router(
         share = await shares.find_one({"token": token, "revoked": {"$ne": True}}, {"_id": 0})
         if not share:
             raise gone
-        project = await db.projects.find_one({"id": share["project_id"]}, {"_id": 0})
+        # The project and its deliverables are read together (each read is a
+        # round trip to the database, and this page is opened from phones).
+        project, deliverables = await asyncio.gather(
+            db.projects.find_one({"id": share["project_id"]}, {"_id": 0}),
+            db.deliverables.find(
+                {"project_id": share["project_id"]},
+                {"_id": 0, "name": 1, "type": 1, "current_stage": 1, "stage_status": 1, "end_dt": 1, "created_at": 1},
+            ).to_list(2000),
+        )
         if not project or project.get("hidden"):
             raise gone
         client = await db.clients.find_one({"id": project.get("client_id")}, {"_id": 0, "name": 1})
-        deliverables = await db.deliverables.find(
-            {"project_id": project["id"]},
-            {"_id": 0, "name": 1, "type": 1, "current_stage": 1, "stage_status": 1, "end_dt": 1, "created_at": 1},
-        ).to_list(2000)
         data = build_share_data(project, (client or {}).get("name") or "", deliverables)
         return (data, share, project) if with_share else data
 

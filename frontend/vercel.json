@@ -1,16 +1,6 @@
 {
   "rewrites": [
-    {
-      "source": "/share/:token",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": ".*(WhatsApp|whatsapp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot|Applebot|Embedly|Pinterest|iframely|vkShare|Signal).*"
-        }
-      ],
-      "destination": "/api/share-preview?token=:token"
-    },
+    { "source": "/share/:token", "destination": "/api/share-preview?token=:token" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -55,7 +55,7 @@ export default function ShareProjectModal({ open, onClose, project, userId }) {
     try {
       await stopProjectShare(userId, project.id);
       setShare(null);
-      toast.success("Sharing stopped. The link no longer works.");
+      toast.success("Sharing stopped. The link stops working within a couple of minutes.");
       onClose();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Could not stop sharing.");

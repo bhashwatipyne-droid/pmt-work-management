@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { UserProvider, useUser } from "@/context/UserContext";
 import { trackEvent } from "@/analytics";
+import { APP_ACTIONS, requestAppAction, setQuickLogPreset } from "@/lib/appActions";
 import { Toaster } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import PushNotifications from "@/components/notifications/PushNotifications";
@@ -24,7 +25,6 @@ import { RequireAccess } from "@/components/layout/RequireAccess";
 // everything else loads on demand when actually navigated to.
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const WorkSheetPage = lazy(() => import("@/pages/WorkSheetPage"));
-const SharedProjectPage = lazy(() => import("@/pages/SharedProjectPage"));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage"));
@@ -71,6 +71,24 @@ function AppShell() {
   const location = useLocation();
   const lastTrackedPath = useRef(null);
 
+  // "Log work" on a shared project page (served by frontend/api/share-preview.js)
+  // lands here as /?log_work=<project id>: open the quick logger on that project
+  // once the Work Sheet is up (after sign-in, if needed).
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const projectId = params.get("log_work");
+      if (!projectId) return;
+      setQuickLogPreset(projectId);
+      requestAppAction(APP_ACTIONS.QUICK_LOG);
+      params.delete("log_work");
+      const query = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+    } catch (_) {
+      // a malformed address just opens the app as usual
+    }
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.id) return;
 
@@ -98,18 +116,6 @@ function AppShell() {
     currentUser?.id,
     currentUser?.role,
   ]);
-
-  // A shared project link (from WhatsApp) opens as a modal for anyone, signed in
-  // or not; "Log work" there is what asks a visitor to sign in.
-  if (location.pathname.startsWith("/share/")) {
-    return (
-      <Suspense fallback={<AppShellSkeleton />}>
-        <Routes>
-          <Route path="/share/:token" element={<SharedProjectPage />} />
-        </Routes>
-      </Suspense>
-    );
-  }
 
   if (loading) {
     return <AppShellSkeleton />;

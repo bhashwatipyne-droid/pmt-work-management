@@ -18,7 +18,7 @@ module.exports = async (req, res) => {
     const image = Buffer.from(await upstream.arrayBuffer());
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Content-Length", String(image.length));
-    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "public, s-maxage=86400, stale-while-revalidate=86400");
     res.status(200).send(image);
   } catch (_) {
     res.status(502).send("Not available");

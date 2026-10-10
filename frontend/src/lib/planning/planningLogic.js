@@ -153,14 +153,14 @@ export function computePlan(
   const sumH = (l) => fmtH(l.reduce((s, t) => s + hrs(t), 0));
   const tileLbl = {
     new: week ? "Assigned this week" : "Assigned today",
-    planned: week ? "Planned for this week" : "Planned for today",
+    planned: week ? "Extra work this week" : "Extra work today",
     rolled: "Rolled over / delayed",
     resched: "Rescheduled",
     reprio: "Reprioritised",
   };
   const tileSub = {
-    new: "New work added in this period",
-    planned: "Assigned before the period began",
+    new: "Tasks assigned through WhatsApp",
+    planned: "Added in the Work Sheet, beyond assigned tasks",
     rolled: week ? "Carried from last week or late" : "Carried from yesterday or late",
     resched: "Moved in from another date",
     reprio: "Priority changed",
@@ -350,7 +350,7 @@ export function computePlan(
     todayLeft: pos(P_TODAY) + "%",
     todayW: pos(P_TODAY + 1) - pos(P_TODAY) + "%",
     legend: [
-      ...P_ORDER.map((k) => ({ label: k === "new" ? "New" : P_CATS[k][0], bg: P_CATS[k][1], ring: P_CATS[k][3] })),
+      ...P_ORDER.map((k) => ({ label: k === "new" ? "Assigned" : P_CATS[k][0], bg: P_CATS[k][1], ring: P_CATS[k][3] })),
       { label: "Done", bg: "var(--success-100)", ring: "inset 0 0 0 1px rgb(110,231,183)" },
     ],
     team: {

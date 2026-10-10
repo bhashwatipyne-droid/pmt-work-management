@@ -57,7 +57,7 @@ export const P_CATS = {
   reprio: ['Reprioritised', 'var(--info-100)', 'rgb(30,64,175)', 'inset 0 0 0 1px rgb(147,197,253)', 'var(--info-500)'],
   resched: ['Rescheduled', 'var(--warning-100)', 'rgb(146,64,14)', 'inset 0 0 0 1px rgb(252,211,77)', 'var(--warning-500)'],
   new: ['New', 'var(--brand-50)', 'var(--brand-700)', 'inset 0 0 0 1px var(--brand-200)', 'var(--brand-500)'],
-  planned: ['Planned earlier', 'var(--neutral-100)', 'var(--neutral-700)', 'inset 0 0 0 1px var(--neutral-200)', 'var(--neutral-400)'],
+  planned: ['Extra work', 'var(--neutral-100)', 'var(--neutral-700)', 'inset 0 0 0 1px var(--neutral-200)', 'var(--neutral-400)'],
 };
 
 export const P_ORDER = ['new', 'planned', 'rolled', 'resched', 'reprio'];

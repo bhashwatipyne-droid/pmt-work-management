@@ -95,6 +95,10 @@ from an earlier day is "rolled over" like a late task. Rows accepted from a What
 `source_task_id` and are not counted twice. Only people on the Planning team list (members and managers of
 Content / Design / Animation, no test accounts) appear, and a manager sees their own team.
 
+On the Planning tiles, WhatsApp tasks are "Assigned" (`cat: new`) and typed rows are "Extra work"
+(`cat: planned`), because assignment only happens through WhatsApp; late unfinished work of either kind is
+"Rolled over / delayed".
+
 Today's typed rows also count toward the "load" shown on a task card. They cannot be reassigned from Planning
 (the person logged them themselves), so they are never offered as a "Move this task" suggestion.
 

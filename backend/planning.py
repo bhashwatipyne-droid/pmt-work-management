@@ -294,10 +294,13 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             note = f"From {_day_label(date.fromisoformat(work_date))} · {late}d late"
         else:
             d0 = d1 = idx(work_date)
+            # Assignment only happens through WhatsApp ("new" = assigned). Anything
+            # a person adds to the Work Sheet themselves is extra work on top of
+            # it ("planned" = extra), whenever it was added.
+            cat = "planned" if from_sheet else "new"
             if created_day == work_date == today_iso:
-                cat, note = "new", f"{verb} today"
+                note = f"{verb} today"
             else:
-                cat = "planned"
                 note = (
                     f"{verb} " + (_day_label(created.astimezone(IST).date()) if created else _day_label(date.fromisoformat(work_date)))
                 )

@@ -497,10 +497,11 @@ def test_plan_rows_new_planned_rolled_and_done():
         item(deliverable_name="Finished", work_date="2026-10-07", status="accepted", work_item_id="w2"),
     ], {"w1": "Ongoing", "w2": "Closed"}, NOW)}
     assert (rows["New one"]["cat"], rows["New one"]["d0"], rows["New one"]["d1"]) == ("new", 4, 4)
-    assert rows["Planned"]["cat"] == "planned" and rows["Planned"]["note"] == "Assigned Tue 6 · not accepted yet"
+    # a WhatsApp task is "assigned" whenever it was posted; only Work Sheet rows are "extra"
+    assert rows["Planned"]["cat"] == "new" and rows["Planned"]["note"] == "Assigned Tue 6 · not accepted yet"
     assert (rows["Late"]["cat"], rows["Late"]["d0"], rows["Late"]["d1"], rows["Late"]["status"]) == ("rolled", 2, 4, "wip")
     assert rows["Late"]["note"] == "From Wed 7 · 2d late"
-    assert rows["Finished"]["cat"] == "planned" and rows["Finished"]["status"] == "done"   # done work is not "late"
+    assert rows["Finished"]["cat"] == "new" and rows["Finished"]["status"] == "done"   # done work is not "late"
 
 
 def test_todays_bars_are_stacked_from_the_start_of_the_day():
@@ -555,7 +556,7 @@ def test_a_row_typed_into_the_work_sheet_appears_on_the_planning_page(env):
     assert task["who"] == "Ratnesh Bor" and task["task"] == "Weekly newsletter"
     assert task["proj"] == "ICICI Prudential Contra Fund"
     assert task["est"] == 1.5                       # the time logged on the row
-    assert task["status"] == "todo" and task["cat"] == "new" and task["note"] == "Logged today"
+    assert task["status"] == "todo" and task["cat"] == "planned" and task["note"] == "Logged today"
     assert task["src"] == "worksheet"
     # WhatsApp rows are unchanged (no src key)
     assert all("src" not in t for t in env.get("/planning/overview", "admin-1").json()["tasks"] if t["id"] != row["id"])

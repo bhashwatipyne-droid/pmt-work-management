@@ -639,3 +639,27 @@ def test_sheet_rows_become_plan_items_the_planner_can_draw():
     assert len(items) == 1
     assert items[0]["assignee_pmt_name"] == "Ratnesh Bor" and items[0]["project_name"] == "Contra"
     assert statuses[rows[0]["id"]] == "Not Started"
+
+
+def test_work_waiting_on_a_reviewer_is_stuck_in_review_not_late():
+    rows = {r["task"]: r for r in planning.build_plan_rows([
+        item(deliverable_name="In review today", status="accepted", work_item_id="r1"),
+        item(deliverable_name="In review since Wed", work_date="2026-10-07", status="accepted", work_item_id="r2"),
+        item(deliverable_name="Sent back", work_date="2026-10-07", status="accepted", work_item_id="c1"),
+        item(deliverable_name="Reworking", status="accepted", work_item_id="c2"),
+        item(deliverable_name="Still theirs and late", work_date="2026-10-07", status="accepted", work_item_id="w1"),
+    ], {"r1": "Ready for Review", "r2": "Ready for Review", "c1": "Changes Requested",
+        "c2": "Rework", "w1": "Ongoing"}, NOW)}
+    assert rows["In review today"]["cat"] == "review" and rows["In review today"]["note"] == "Waiting for review"
+    stuck = rows["In review since Wed"]
+    assert stuck["cat"] == "review" and stuck["note"] == "Waiting for review · since Wed 7"
+    assert (stuck["d0"], stuck["d1"]) == (2, 4)           # the bar still runs up to today
+    assert rows["Sent back"]["cat"] == "changes" and rows["Sent back"]["note"] == "Changes requested · since Wed 7"
+    assert rows["Reworking"]["cat"] == "changes"
+    assert rows["Still theirs and late"]["cat"] == "rolled"
+
+
+def test_a_typed_row_waiting_for_review_is_stuck_in_review(env):
+    row = sheet_row(status="Ready for Review")
+    add_sheet_rows(row)
+    assert plan_for(env)[row["id"]]["cat"] == "review"

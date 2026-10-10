@@ -65,6 +65,7 @@ CLAIM_STALE_SECONDS = 120
 
 OPEN_STATUSES = ("pending", "accepted")
 WORK_ITEM_DONE = ("Closed", "Scrap")
+WORK_ITEM_SENT_BACK = ("Changes Requested", "Rework")
 WORK_ITEM_ACTIVE = ("Ongoing", "Ready for Review", "Changes Requested", "Rework", "On Hold")
 
 TEST_ACCOUNT = re.compile(r"\btest(ing)?\b", re.I)
@@ -304,6 +305,19 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
                 note = (
                     f"{verb} " + (_day_label(created.astimezone(IST).date()) if created else _day_label(date.fromisoformat(work_date)))
                 )
+        # Work waiting on someone else is not "late", it is stuck: finished and
+        # sent for review, or sent back with changes. These win over "rolled over"
+        # so a delay chart is only about work that is still the person's to do.
+        sheet_status = work_status.get(item.get("work_item_id") or "") if item.get("status") == "accepted" else ""
+        stuck = (
+            "review" if sheet_status == "Ready for Review"
+            else "changes" if sheet_status in WORK_ITEM_SENT_BACK
+            else None
+        )
+        if stuck:
+            cat = stuck
+            since = f" · since {_day_label(date.fromisoformat(work_date))}" if rolled else ""
+            note = ("Waiting for review" if stuck == "review" else "Changes requested") + since
         if item.get("plan_note"):
             note = item["plan_note"]
         if item.get("status") == "pending":

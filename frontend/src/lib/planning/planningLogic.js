@@ -166,15 +166,15 @@ export function computePlan(
     new: week ? "Assigned this week" : "Assigned today",
     planned: week ? "Extra work this week" : "Extra work today",
     rolled: "Rolled over / delayed",
-    resched: "Rescheduled",
-    reprio: "Reprioritised",
+    review: "Stuck in review",
+    changes: "Changes requested",
   };
   const tileSub = {
     new: "Tasks assigned through WhatsApp",
     planned: "Added in the Work Sheet, beyond assigned tasks",
     rolled: week ? "Carried from last week or late" : "Carried from yesterday or late",
-    resched: "Moved in from another date",
-    reprio: "Priority changed",
+    review: "Done by the person, waiting for a reviewer",
+    changes: "Sent back to the person to fix",
   };
   const tiles = [
     ["all", "All tasks", "Everything scheduled " + periodWord, "var(--neutral-900)"],
@@ -316,7 +316,7 @@ export function computePlan(
   }
 
   // ---- task list ----
-  const rank = (t) => P_ORDER.indexOf(t.cat === "rolled" ? "reprio" : t.cat);
+  const rank = (t) => P_ORDER.indexOf(t.cat === "rolled" ? "changes" : t.cat);
   const listed = (cat === "all" ? all : all.filter((t) => t.cat === cat))
     .slice()
     .sort((a, b) => rank(b) - rank(a) || a.who.localeCompare(b.who));

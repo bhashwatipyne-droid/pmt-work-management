@@ -83,3 +83,17 @@ test("work the person typed into their own Work Sheet is drawn but never suggest
   const move = computePlan(mixed, { period: "today", people, ctx }).insights.find((i) => i.act?.type === "reassign");
   expect(move.act.taskId).toBe("t-w");
 });
+
+test("work waiting on a reviewer and work sent back get their own tiles", () => {
+  const people = toPeopleRows(apiPeople);
+  const tasks = [
+    { ...apiTasks[0], id: "r", cat: "review", note: "Waiting for review" },
+    { ...apiTasks[0], id: "c", cat: "changes", note: "Changes requested" },
+    { ...apiTasks[1] },
+  ];
+  const tiles = Object.fromEntries(computePlan(tasks, { period: "today", people, ctx }).tiles.map((t) => [t.key, t]));
+  expect(tiles.review).toMatchObject({ label: "Stuck in review", n: 1 });
+  expect(tiles.changes).toMatchObject({ label: "Changes requested", n: 1 });
+  expect(tiles.rolled.n).toBe(1);
+  expect(tiles.resched).toBeUndefined();
+});

@@ -414,10 +414,18 @@ def create_project_share_router(
     def describe(request: Request, share: Optional[dict]) -> Dict[str, Any]:
         if not share:
             return {"active": False}
+        # When the app's address is known the link is on the app's own domain
+        # (WhatsApp previews it from there; see frontend/api/share-preview.js).
+        app_url = share.get("app_url") or clean_app_url(os.environ.get("FRONTEND_URL"))
+        link = (
+            f"{app_url}/share/{share['token']}?v={int(time.time())}"
+            if app_url
+            else share_url(request, share["token"])
+        )
         return {
             "active": True,
             "token": share["token"],
-            "url": share_url(request, share["token"]),
+            "url": link,
             "preview_url": preview_url(request, share["token"]),
             "created_at": share.get("created_at"),
         }

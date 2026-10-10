@@ -107,7 +107,9 @@ def env():
 
 
 def token_of(url):
-    return url.split("/api/share/p/")[1].split("?")[0]
+    """The token is the last part of the address, on the API (.../share/p/<token>)
+    or on the app (.../share/<token>)."""
+    return url.split("?")[0].rstrip("/").split("/")[-1]
 
 
 def test_a_manager_starts_sharing_and_gets_a_link(env):
@@ -285,3 +287,13 @@ def test_the_preview_picture_is_kept_until_the_project_changes(env):
     assert env.public(f"/api/share/p/{token}/preview.png").content == first
     run(server.db.deliverables.update_one({"id": "d2"}, {"$set": {"stage_status": "Completed"}}))
     assert env.public(f"/api/share/p/{token}/preview.png").content != first
+
+
+def test_when_the_app_address_is_known_the_link_is_on_the_apps_own_domain(env):
+    body = start_for_app(env, "https://pmt.example.com/projects/x")
+    token = token_of(body["url"])
+    assert body["url"].startswith(f"https://pmt.example.com/share/{token}?v=")
+    # the picture shown in the dialog still comes from the API
+    assert body["preview_url"].startswith("http") and f"/api/share/p/{token}/preview.png" in body["preview_url"]
+    # and the API link keeps working (it sends people on to the app)
+    assert env.public(f"/api/share/p/{token}").status_code == 200

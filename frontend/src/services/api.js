@@ -764,7 +764,14 @@ export const getProjectShare = (userId, id) =>
 
 export const startProjectShare = (userId, id) =>
   axios
-    .post(`${API}/projects/${id}/share`, {}, { headers: authHeaders(userId) })
+    // The link opens in this app, so the server is told where it lives.
+    .post(`${API}/projects/${id}/share`, { app_url: window.location.origin }, { headers: authHeaders(userId) })
+    .then((r) => r.data);
+
+// What the shared-link modal shows. Public: no sign-in, so no credentials.
+export const getSharedProject = (token) =>
+  axios
+    .get(`${API}/share/p/${encodeURIComponent(token)}/data`, { withCredentials: false })
     .then((r) => r.data);
 
 export const stopProjectShare = (userId, id) =>

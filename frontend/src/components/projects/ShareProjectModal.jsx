@@ -85,8 +85,9 @@ export default function ShareProjectModal({ open, onClose, project, userId }) {
               Share this project
             </h2>
             <p className="mt-1 text-sm leading-5 text-slate-600">
-              Paste the link in WhatsApp and it shows a preview of the deliverables. Anyone with the link can
-              view the list (read only, no sign-in).
+              Paste the link in WhatsApp and it shows a preview card. Opening the link shows the deliverables
+              with Log work and Copy to clipboard. Anyone with the link can view the list (read only, no
+              sign-in).
             </p>
           </div>
           <button

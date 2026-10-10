@@ -210,3 +210,78 @@ def test_share_data_and_wording():
     assert data["timeline"] == "1 Sep 2026 – 31 Oct 2026"
     assert project_share.summary_text(data) == "Client · 1 of 2 deliverables done · Active"
     assert data["rows"][0]["due"] == "1 Oct 2026"
+
+
+BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"}
+WHATSAPP = {"User-Agent": "WhatsApp/2.23.20.0 A"}
+
+
+def start_for_app(env, app_url="https://pmt.example.com/projects/x?y=1"):
+    return env.as_user("manager-1").post(f"/api/projects/{PROJECT}/share", json={"app_url": app_url}).json()
+
+
+def test_a_person_is_sent_to_the_app_but_a_crawler_gets_the_preview_tags(env):
+    token = token_of(start_for_app(env)["url"])
+    person = env.as_user(None).get(f"/api/share/p/{token}?v=1", headers=BROWSER, follow_redirects=False)
+    assert person.status_code == 302
+    # only the origin of the address given is kept
+    assert person.headers["location"] == f"https://pmt.example.com/share/{token}"
+    bot = env.as_user(None).get(f"/api/share/p/{token}?v=1", headers=WHATSAPP, follow_redirects=False)
+    assert bot.status_code == 200 and 'property="og:title"' in bot.text and 'property="og:image"' in bot.text
+
+
+def test_without_an_app_address_everyone_gets_the_plain_page(env):
+    token = token_of(env.start().json()["url"])
+    page = env.as_user(None).get(f"/api/share/p/{token}", headers=BROWSER, follow_redirects=False)
+    assert page.status_code == 200 and "Deliverable 1" in page.text
+
+
+def test_the_app_address_can_come_from_the_environment(env, monkeypatch):
+    monkeypatch.setenv("FRONTEND_URL", "https://app.example.com/")
+    token = token_of(env.start().json()["url"])
+    page = env.as_user(None).get(f"/api/share/p/{token}", headers=BROWSER, follow_redirects=False)
+    assert page.status_code == 302 and page.headers["location"] == f"https://app.example.com/share/{token}"
+
+
+def test_the_app_address_follows_where_the_manager_opens_the_dialog_from(env):
+    token = token_of(start_for_app(env, "https://old.example.com")["url"])
+    start_for_app(env, "https://new.example.com")
+    page = env.as_user(None).get(f"/api/share/p/{token}", headers=BROWSER, follow_redirects=False)
+    assert page.headers["location"] == f"https://new.example.com/share/{token}"
+
+
+def test_a_bad_app_address_is_ignored(env):
+    for bad in ("javascript:alert(1)", "not a url", "//evil.example.com", ""):
+        assert project_share.clean_app_url(bad) == ""
+    assert project_share.clean_app_url("http://localhost:3000/x") == "http://localhost:3000"
+    token = token_of(start_for_app(env, "javascript:alert(1)")["url"])
+    page = env.as_user(None).get(f"/api/share/p/{token}", headers=BROWSER, follow_redirects=False)
+    assert page.status_code == 200
+
+
+def test_the_modal_gets_its_facts_as_json_without_signing_in(env):
+    token = token_of(env.start().json()["url"])
+    body = env.public(f"/api/share/p/{token}/data").json()
+    assert body["project_id"] == PROJECT and body["name"] == "Contra <Fund> & Co"
+    assert (body["done"], body["total"]) == (1, 3) and body["summary"].endswith("Active")
+    assert [r["name"] for r in body["rows"]] == ["Deliverable 1", "Deliverable 2", "Deliverable 3"]
+    assert set(body["rows"][0]) == {"name", "type", "stage", "status", "due"}
+    env.as_user("manager-1").delete(f"/api/projects/{PROJECT}/share")
+    assert env.public(f"/api/share/p/{token}/data").status_code == 404
+
+
+def test_which_visitors_count_as_preview_crawlers():
+    for ua in ("WhatsApp/2.23.20.0 A", "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+               "Mozilla/5.0 (compatible; Twitterbot/1.0)", "TelegramBot (like TwitterBot)", "", None):
+        assert project_share.is_preview_bot(ua), ua
+    assert not project_share.is_preview_bot(BROWSER["User-Agent"])
+    assert not project_share.is_preview_bot("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1")
+
+
+def test_the_preview_picture_is_kept_until_the_project_changes(env):
+    pytest.importorskip("PIL")
+    token = token_of(env.start().json()["url"])
+    first = env.public(f"/api/share/p/{token}/preview.png").content
+    assert env.public(f"/api/share/p/{token}/preview.png").content == first
+    run(server.db.deliverables.update_one({"id": "d2"}, {"$set": {"stage_status": "Completed"}}))
+    assert env.public(f"/api/share/p/{token}/preview.png").content != first

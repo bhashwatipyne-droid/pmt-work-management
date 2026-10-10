@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { X, Clock, Plus, Trash2, AlertCircle } from "lucide-react";
 import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
+import { clearQuickLogPreset, peekQuickLogPreset } from "@/lib/appActions";
 import { lowTimeMessage } from "@/lib/timeRules";
 import { buildLookalikeIndex } from "@/lib/lookalikes";
 import { LookalikePill, ProjectNameParts } from "./ProjectPicker";
@@ -336,6 +337,24 @@ export default function QuickLoggerModal({
 
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
+
+  // Opened from a shared project link ("Log work"): start on that project.
+  // Waits for the projects to arrive when the page has only just loaded.
+  useEffect(() => {
+    if (!open) return;
+    const projectId = peekQuickLogPreset();
+    const project = projectId ? projectMap.get(projectId) : null;
+    if (!project) return;
+    clearQuickLogPreset();
+    const clientName = clientMap.get(project.client_id)?.name || "";
+    setDraft({
+      ...emptyDraft(),
+      client_id: project.client_id || "",
+      project_id: project.id,
+      text: `${clientName} / ${project.name} / `,
+    });
+    setSuggestionsNonce((n) => n + 1);
+  }, [open, projectMap, clientMap]);
 
   // Clicking anywhere outside the input/suggestions (but still inside the
   // modal — e.g. the logged-entries list, the quick-duration buttons, or

@@ -24,6 +24,7 @@ import { RequireAccess } from "@/components/layout/RequireAccess";
 // everything else loads on demand when actually navigated to.
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const WorkSheetPage = lazy(() => import("@/pages/WorkSheetPage"));
+const SharedProjectPage = lazy(() => import("@/pages/SharedProjectPage"));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
 const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage"));
@@ -97,6 +98,18 @@ function AppShell() {
     currentUser?.id,
     currentUser?.role,
   ]);
+
+  // A shared project link (from WhatsApp) opens as a modal for anyone, signed in
+  // or not; "Log work" there is what asks a visitor to sign in.
+  if (location.pathname.startsWith("/share/")) {
+    return (
+      <Suspense fallback={<AppShellSkeleton />}>
+        <Routes>
+          <Route path="/share/:token" element={<SharedProjectPage />} />
+        </Routes>
+      </Suspense>
+    );
+  }
 
   if (loading) {
     return <AppShellSkeleton />;

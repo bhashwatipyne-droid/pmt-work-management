@@ -14,6 +14,26 @@ export const APP_ACTIONS = {
   SHOW_MISSING: "show-missing-deliverables",
 };
 
+// "Log work" on a shared project link opens the quick logger with that project
+// already chosen. The preset waits (a person may have to sign in first) until the
+// logger opens and the projects have loaded, and expires after half an hour.
+const PRESET_MINUTES = 30;
+let quickLogPreset = null;
+
+export const setQuickLogPreset = (projectId) => {
+  quickLogPreset = projectId ? { projectId, at: Date.now() } : null;
+};
+
+// The project to start the quick logger on, or null. Does not consume it.
+export const peekQuickLogPreset = () =>
+  quickLogPreset && Date.now() - quickLogPreset.at < PRESET_MINUTES * 60000
+    ? quickLogPreset.projectId
+    : null;
+
+export const clearQuickLogPreset = () => {
+  quickLogPreset = null;
+};
+
 export const requestAppAction = (name) => {
   const handler = handlers.get(name);
   if (handler) {

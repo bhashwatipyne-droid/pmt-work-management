@@ -11,8 +11,11 @@ deliverables table); opened, it shows the full read-only list.
     DELETE /projects/{id}/share      stop sharing; the link stops working at once
 
   Anyone with the link (no sign-in; WhatsApp's crawler cannot sign in)
-    GET    /share/p/{token}              the page, with the preview tags
+    GET    /share/p/{token}              link-preview crawlers (WhatsApp, ...) get a page with
+                                         the preview tags; a person's browser is sent on to the
+                                         app (/share/{token}), where it opens as a modal
     GET    /share/p/{token}/preview.png  the image WhatsApp shows in the card
+    GET    /share/p/{token}/data         the same facts as JSON, for that modal
 
 The token is random and unguessable, and it is the only thing that grants access:
 the page shows the deliverable list (name, type, stage, status, due date) and the
@@ -23,17 +26,21 @@ Pillow; if Pillow is missing the page still works and the card just has no image
 Collection: project_shares {id, token, project_id, created_by, created_at,
 revoked, revoked_at}.
 """
+import hashlib
 import html
 import io
+import json
 import os
 import secrets
 import time
 from datetime import date
 from functools import lru_cache
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from pydantic import BaseModel, ConfigDict
 from starlette.concurrency import run_in_threadpool
 
 SHARES = "project_shares"
@@ -58,6 +65,40 @@ STATUS_STYLE = {
     "Closed": ("Done", (209, 250, 229), (6, 95, 70)),
 }
 DONE_STATUSES = ("Completed", "Closed")
+
+
+# Who gets the preview page and who is sent on to the app. Link-preview crawlers
+# do not follow redirects or run JavaScript, so they must be served the tags.
+PREVIEW_BOTS = (
+    "whatsapp", "facebookexternalhit", "facebot", "twitterbot", "slackbot", "telegrambot",
+    "linkedinbot", "discordbot", "skypeuripreview", "googlebot", "bingbot", "applebot",
+    "embedly", "pinterest", "iframely", "vkshare", "signal", "preview", "crawler", "spider", "bot",
+)
+
+
+def is_preview_bot(user_agent: Optional[str]) -> bool:
+    ua = (user_agent or "").lower()
+    # Every real browser says "Mozilla"; WhatsApp's crawler does not.
+    return not ua or "mozilla" not in ua or any(marker in ua for marker in PREVIEW_BOTS)
+
+
+def clean_app_url(value: Optional[str]) -> str:
+    """The address of the PMT web app, as an origin ("https://pmt.example.com"),
+    or "" when it is not a plain http(s) address."""
+    try:
+        parts = urlparse((value or "").strip())
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+class StartShare(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    # Where the web app lives (the page asking passes window.location.origin):
+    # the link opens there. Falls back to FRONTEND_URL.
+    app_url: Optional[str] = None
 
 
 # --------------------------------------------------------------- pure helpers
@@ -169,6 +210,22 @@ def _fit(text: str, font, max_width: float) -> str:
     while text and font.getlength(text + "…") > max_width:
         text = text[:-1]
     return text.rstrip() + "…"
+
+
+_png_cache: Dict[str, bytes] = {}
+
+
+def render_preview_png_cached(data: dict) -> bytes:
+    """The picture takes a couple of seconds the first time (WhatsApp gives up
+    quickly), so it is kept until the project's facts change."""
+    key = hashlib.sha1(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
+    png = _png_cache.get(key)
+    if png is None:
+        png = render_preview_png(data)
+        if len(_png_cache) >= 64:
+            _png_cache.pop(next(iter(_png_cache)))
+        _png_cache[key] = png
+    return png
 
 
 def render_preview_png(data: dict) -> bytes:
@@ -359,12 +416,13 @@ def create_project_share_router(
             return {"active": False}
         return {
             "active": True,
+            "token": share["token"],
             "url": share_url(request, share["token"]),
             "preview_url": preview_url(request, share["token"]),
             "created_at": share.get("created_at"),
         }
 
-    async def data_for(token: str) -> dict:
+    async def data_for(token: str, with_share: bool = False):
         """The picture and page data for a token, or 404 when it is unknown,
         revoked, or its project is gone or hidden."""
         gone = HTTPException(status_code=404, detail="This link is no longer available")
@@ -379,7 +437,8 @@ def create_project_share_router(
             {"project_id": project["id"]},
             {"_id": 0, "name": 1, "type": 1, "current_stage": 1, "stage_status": 1, "end_dt": 1, "created_at": 1},
         ).to_list(2000)
-        return build_share_data(project, (client or {}).get("name") or "", deliverables)
+        data = build_share_data(project, (client or {}).get("name") or "", deliverables)
+        return (data, share, project) if with_share else data
 
     @router.get("/projects/{project_id}/share")
     async def get_share(project_id: str, request: Request):
@@ -388,9 +447,10 @@ def create_project_share_router(
         return describe(request, await active_share(project_id))
 
     @router.post("/projects/{project_id}/share")
-    async def start_share(project_id: str, request: Request):
+    async def start_share(project_id: str, request: Request, payload: Optional[StartShare] = None):
         user = await sharer(request)
         await load_project(project_id)
+        app_url = clean_app_url(payload.app_url if payload else None)
         share = await active_share(project_id)
         if not share:
             share = {
@@ -400,8 +460,13 @@ def create_project_share_router(
                 "created_by": user.id,
                 "created_at": now_iso(),
                 "revoked": False,
+                "app_url": app_url,
             }
             await shares.insert_one(dict(share))
+        elif app_url and share.get("app_url") != app_url:
+            # The link follows wherever the app is opened from now.
+            await shares.update_one({"token": share["token"]}, {"$set": {"app_url": app_url}})
+            share = {**share, "app_url": app_url}
         return describe(request, share)
 
     @router.delete("/projects/{project_id}/share")
@@ -416,13 +481,18 @@ def create_project_share_router(
     @router.get("/share/p/{token}", response_class=HTMLResponse)
     async def public_page(token: str, request: Request, v: Optional[str] = None):
         try:
-            data = await data_for(token)
+            data, share, _ = await data_for(token, with_share=True)
         except HTTPException:
             return HTMLResponse(
                 "<!doctype html><meta charset=utf-8><meta name=robots content=noindex>"
                 "<title>Link unavailable</title><body style=\"font:16px system-ui;padding:32px\">"
                 "This link is no longer available.</body>",
                 status_code=404,
+            )
+        app_url = share.get("app_url") or clean_app_url(os.environ.get("FRONTEND_URL"))
+        if app_url and not is_preview_bot(request.headers.get("user-agent")):
+            return RedirectResponse(
+                f"{app_url}/share/{token}", status_code=302, headers={"Cache-Control": "no-store"}
             )
         try:
             import PIL  # noqa: F401
@@ -436,9 +506,14 @@ def create_project_share_router(
     async def public_preview(token: str):
         data = await data_for(token)
         try:
-            png = await run_in_threadpool(render_preview_png, data)
+            png = await run_in_threadpool(render_preview_png_cached, data)
         except ImportError:
             raise HTTPException(status_code=404, detail="Preview images are not available")
-        return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
+        return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})
+
+    @router.get("/share/p/{token}/data")
+    async def public_data(token: str):
+        data, _, project = await data_for(token, with_share=True)
+        return {**data, "project_id": project["id"], "summary": summary_text(data)}
 
     return router

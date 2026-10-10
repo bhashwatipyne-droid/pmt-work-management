@@ -6,6 +6,7 @@ import {
   ChevronDown,
   EyeOff,
   Filter,
+  Snowflake,
   X,
 } from "lucide-react";
 
@@ -22,6 +23,9 @@ export const WorksheetColumnMenu = ({
   onSortAsc,
   onSortDesc,
   onHide,
+  isFrozen = false,
+  onFreeze,
+  onUnfreeze,
   filterControl,
   onClearFilter,
 }) => {
@@ -195,6 +199,28 @@ export const WorksheetColumnMenu = ({
 
             {filterControl}
           </div>
+        </>
+      )}
+
+      {/* FREEZE */}
+      {(onFreeze || onUnfreeze) && (
+        <>
+          <div className="my-1.5 border-t border-slate-100" />
+
+          <button
+            type="button"
+            data-testid="worksheet-column-freeze"
+            onClick={() => handleAction(isFrozen ? onUnfreeze : onFreeze)}
+            className="
+              flex w-full items-center gap-3
+              px-3 py-2
+              text-left text-[13px]
+              hover:bg-slate-50
+            "
+          >
+            <Snowflake className="h-4 w-4 shrink-0 text-slate-500" />
+            <span>{isFrozen ? "Unfreeze columns" : "Freeze up to this column"}</span>
+          </button>
         </>
       )}
 

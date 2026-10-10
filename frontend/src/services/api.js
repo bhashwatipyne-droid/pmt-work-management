@@ -754,3 +754,20 @@ export const raiseInvoice = (id) =>
 
 export const undoRaiseInvoice = (id) =>
   axios.post(`${API}/invoicing/projects/${id}/undo`).then((r) => r.data);
+
+// ---------------- Share a project as a link (WhatsApp preview) ----------------
+
+export const getProjectShare = (userId, id) =>
+  axios
+    .get(`${API}/projects/${id}/share`, { headers: authHeaders(userId) })
+    .then((r) => r.data);
+
+export const startProjectShare = (userId, id) =>
+  axios
+    .post(`${API}/projects/${id}/share`, {}, { headers: authHeaders(userId) })
+    .then((r) => r.data);
+
+export const stopProjectShare = (userId, id) =>
+  axios
+    .delete(`${API}/projects/${id}/share`, { headers: authHeaders(userId) })
+    .then((r) => r.data);

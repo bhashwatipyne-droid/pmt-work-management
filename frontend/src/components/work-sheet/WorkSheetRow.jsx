@@ -15,6 +15,7 @@ import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler, startEditingCell } from "./useWorksheetKeyboardNavigation";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
+import { frozenStyle } from "@/lib/worksheetFreeze";
 import {
   NOT_AVAILABLE_LABEL,
   NOT_AVAILABLE_VALUE,
@@ -110,6 +111,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onExtendSelection,
     onCheckboxRangeSelect,
     hiddenColumns = [],
+    frozenLefts,
     columnOrder = [],
     columnWidths = {},
     onRowDragStart,
@@ -303,6 +305,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
 
   const cellStyle = (col) => ({
     display: isColumnHidden(COLUMN_NAMES[col]) ? "none" : undefined,
+    ...frozenStyle(frozenLefts, COLUMN_NAMES[col]),
   });
 
   // Lazy dropdown lists (below) only mount SelectItems for the open dropdown,

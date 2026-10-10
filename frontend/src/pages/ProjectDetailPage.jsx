@@ -13,6 +13,7 @@ import {
   Plus,
   Pencil,
   Search,
+  Share2,
   Trash2,
   Upload,
   X,
@@ -37,6 +38,7 @@ import { APP_ACTIONS, requestAppAction } from "@/lib/appActions";
 import { DeliverableModal } from "@/components/projects/DeliverableModal";
 import { ImportDeliverablesModal } from "@/components/projects/ImportDeliverablesModal";
 import ProjectEditModal from "@/components/projects/ProjectEditModal";
+import ShareProjectModal from "@/components/projects/ShareProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { QuickLogTrigger } from "@/components/work-sheet/QuickLogTrigger";
 import {
@@ -346,6 +348,7 @@ export default function ProjectDetailPage() {
   const [deliverableTypes, setDeliverableTypes] = useState([]);
   const [clients, setClients] = useState([]);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState(false);
   // Other projects with names easy to confuse with this one, warned about
@@ -646,6 +649,18 @@ export default function ProjectDetailPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Managers and admins send the project to a WhatsApp group as a link. */}
+              {["admin", "manager"].includes(currentUser?.role) && (
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  data-testid="project-detail-share-btn"
+                  className="flex h-[34px] items-center gap-2 rounded-[7px] bg-white px-3 text-[13px] font-semibold text-[rgb(13,27,62)] shadow-[inset_0_0_0_1px_rgb(239,240,242)] hover:bg-[rgb(249,250,251)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgb(220,220,248)]"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-[rgb(84,100,144)]" />
+                  Share
+                </button>
+              )}
               {canManage && (
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
@@ -1132,6 +1147,13 @@ export default function ProjectDetailPage() {
         deliverableTypes={deliverableTypes}
         onClose={() => setImportOpen(false)}
         onImported={refreshProject}
+      />
+
+      <ShareProjectModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        project={project}
+        userId={currentUserId}
       />
 
       <ProjectEditModal

@@ -40,6 +40,7 @@ try:
     from home_dashboard import create_home_dashboard_router  # noqa: F401
     from invoicing import create_invoicing_router  # noqa: F401
     from planning import create_planning_router  # noqa: F401
+    from project_share import create_project_share_router  # noqa: F401
     import deliverable_import  # noqa: F401
     import project_duplicates  # noqa: F401
 except ImportError:
@@ -49,6 +50,7 @@ except ImportError:
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
     from backend.invoicing import create_invoicing_router  # noqa: F401
     from backend.planning import create_planning_router  # noqa: F401
+    from backend.project_share import create_project_share_router  # noqa: F401
     from backend import deliverable_import  # noqa: F401
     from backend import project_duplicates  # noqa: F401
 
@@ -8120,6 +8122,15 @@ api_router.include_router(
         upsert_notification=_upsert_notification,
         now_iso=now_iso,
         log_error=lambda message: logging.getLogger(__name__).warning(message),
+    )
+)
+
+# Share a project as a link with a WhatsApp preview (public read-only page).
+api_router.include_router(
+    create_project_share_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        now_iso=now_iso,
     )
 )
 

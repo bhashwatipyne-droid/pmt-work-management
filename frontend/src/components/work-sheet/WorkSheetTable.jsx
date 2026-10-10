@@ -16,6 +16,7 @@ import {
 import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
+import { computeFrozenLefts, frozenStyle } from "@/lib/worksheetFreeze";
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
 import {
   DELIVERABLE_SPECIAL_OPTIONS,
@@ -269,6 +270,23 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       return [];
     }
   });
+  // Frozen columns: this column and every one before it stay in place while
+  // the sheet scrolls sideways (like "Freeze up to column" in a spreadsheet).
+  const [frozenThrough, setFrozenThrough] = useState(() => {
+    try {
+      return localStorage.getItem("worksheet_frozen_column") || null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (frozenThrough) localStorage.setItem("worksheet_frozen_column", frozenThrough);
+      else localStorage.removeItem("worksheet_frozen_column");
+    } catch {
+      // private mode: the freeze just lasts for this visit
+    }
+  }, [frozenThrough]);
   const excludedColumns = SHEET_EXCLUDED_COLUMNS[sheetKey] || NO_COLUMNS;
   // What is actually hidden on this tab: the person's own hidden columns plus
   // the ones this tab doesn't use.
@@ -1375,6 +1393,16 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     allVisibleIds.every((id) => selectedSet.has(id));
 
   const visibleColumns = columnOrder.filter((column) => !effectiveHiddenColumns.includes(column));
+
+  // Where each frozen column sticks: just right of the gutter and of the frozen
+  // columns before it. null when nothing is frozen (or the frozen part would
+  // fill most of the screen, which would leave nothing to scroll).
+  const frozenLefts = useMemo(
+    () => computeFrozenLefts(visibleColumns, frozenThrough, columnWidths),
+    // visibleColumns is rebuilt on every render; its content is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleColumns.join("|"), frozenThrough, columnWidths]
+  );
 
   const isMember = currentUser.role === "member";
   const memberStage = MEMBER_STAGE_BY_DEPARTMENT[currentUser.department];
@@ -2530,7 +2558,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                   className={`group relative flex min-h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 py-1 text-[12px] font-bold leading-4 text-slate-900 ${
                     draggedColumn === column ? "opacity-50" : ""
                   }`}
-                  style={{ gridColumn: visibleColumns.indexOf(column) + 3 }}
+                  style={{
+                    gridColumn: visibleColumns.indexOf(column) + 3,
+                    ...frozenStyle(frozenLefts, column, 36),
+                  }}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={() => handleColumnDrop(column)}
                 >
@@ -2586,6 +2617,16 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                           direction: "desc",
                         })
                       }
+                      isFrozen={frozenThrough === column}
+                      onFreeze={() => {
+                        const lefts = computeFrozenLefts(visibleColumns, column, columnWidths);
+                        if (!lefts) {
+                          toast.error("Those columns are too wide to freeze on this screen. Narrow them or freeze an earlier column.");
+                          return;
+                        }
+                        setFrozenThrough(column);
+                      }}
+                      onUnfreeze={() => setFrozenThrough(null)}
                       onHide={() =>
                         setHiddenColumns((current) =>
                           current.includes(column)
@@ -2767,6 +2808,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
                     onDelete={onDelete}
                     onDuplicate={onDuplicateRow}
                     hiddenColumns={effectiveHiddenColumns}
+                    frozenLefts={frozenLefts}
                     columnOrder={columnOrder}
                     columnWidths={columnWidths}
                     onRowDragStart={handleRowDragStart}

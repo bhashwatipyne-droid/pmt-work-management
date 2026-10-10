@@ -523,3 +523,118 @@ def test_due_and_ago_wording():
     assert planning.due_view("2026-10-08T18:00:00+05:30", NOW)["dueIn"] == "overdue"
     assert planning.ago_text("2026-10-09T07:55:00+00:00", NOW) == "5 min ago"
     assert planning.ago_text("2026-10-09T05:00:00+00:00", NOW) == "3h ago"
+
+
+# ------------------------------------------- Work Sheet rows typed in by hand
+
+def sheet_row(owner="member-rb", **over):
+    """A row somebody filled in on the Work Sheet themselves (no WhatsApp task)."""
+    row = {
+        "id": str(uuid.uuid4()), "creator_id": owner, "work_date": today_iso(), "month": today_iso()[:7],
+        "deliverable_name": "Weekly newsletter", "deliverable_type": "Newsletters",
+        "project_id": CONTRA_PROJECT, "status": "Not Started", "time_taken_minutes": 90,
+        "stage": "Content", "work_category": "Core",
+        "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    row.update(over)
+    return row
+
+
+def add_sheet_rows(*rows):
+    run(server.db.work_items.insert_many([dict(r) for r in rows]))
+
+
+def plan_for(env, user="admin-1"):
+    return {t["id"]: t for t in env.get("/planning/overview", user).json()["tasks"]}
+
+
+def test_a_row_typed_into_the_work_sheet_appears_on_the_planning_page(env):
+    row = sheet_row()
+    add_sheet_rows(row)
+    task = plan_for(env)[row["id"]]
+    assert task["who"] == "Ratnesh Bor" and task["task"] == "Weekly newsletter"
+    assert task["proj"] == "ICICI Prudential Contra Fund"
+    assert task["est"] == 1.5                       # the time logged on the row
+    assert task["status"] == "todo" and task["cat"] == "new" and task["note"] == "Logged today"
+    assert task["src"] == "worksheet"
+    # WhatsApp rows are unchanged (no src key)
+    assert all("src" not in t for t in env.get("/planning/overview", "admin-1").json()["tasks"] if t["id"] != row["id"])
+
+
+def test_the_work_sheet_status_drives_the_planning_status(env):
+    started, finished = sheet_row(status="Ongoing"), sheet_row(status="Closed")
+    add_sheet_rows(started, finished)
+    plan = plan_for(env)
+    assert plan[started["id"]]["status"] == "wip" and plan[finished["id"]]["status"] == "done"
+
+
+def test_a_late_unfinished_row_is_rolled_over_like_a_late_task(env):
+    yesterday = (datetime.now(IST).date() - timedelta(days=1)).isoformat()
+    row = sheet_row(work_date=yesterday)
+    add_sheet_rows(row)
+    task = plan_for(env).get(row["id"])
+    if datetime.now(IST).weekday() == 0:
+        # yesterday was Sunday: still listed, drawn from Monday
+        assert task is not None
+    else:
+        assert task["cat"] == "rolled" and "late" in task["note"]
+
+
+def test_rows_that_say_nothing_or_are_thrown_away_are_left_out(env):
+    blank = sheet_row(deliverable_name="", deliverable_type="", project_id=None)
+    scrapped = sheet_row(status="Scrap")
+    nobody = sheet_row(owner=None)
+    add_sheet_rows(blank, scrapped, nobody)
+    plan = plan_for(env)
+    assert not ({blank["id"], scrapped["id"], nobody["id"]} & set(plan))
+
+
+def test_a_row_made_from_a_whatsapp_task_is_not_counted_twice(env):
+    task_id = env.item(2)["id"]
+    work_item_id = env.post(f"/planning/my-tasks/{task_id}/accept", "member-rb").json()["work_item_id"]
+    plan = plan_for(env)
+    assert task_id in plan and work_item_id not in plan
+    assert "src" not in plan[task_id]
+
+
+def test_a_manager_sees_manual_rows_of_their_own_team_only(env):
+    mine, other_team = sheet_row("member-rb"), sheet_row("member-an", stage="Design")
+    add_sheet_rows(mine, other_team)
+    assert mine["id"] in plan_for(env, "manager-vs") and other_team["id"] not in plan_for(env, "manager-vs")
+    assert other_team["id"] in plan_for(env, "manager-ab") and mine["id"] not in plan_for(env, "manager-ab")
+    assert {mine["id"], other_team["id"]} <= set(plan_for(env, "admin-1"))
+
+
+def test_test_accounts_do_not_show_up(env):
+    row = sheet_row("member-test")
+    add_sheet_rows(row)
+    assert row["id"] not in plan_for(env)
+
+
+def test_manual_and_whatsapp_bars_stack_one_after_another_today(env):
+    first, second = sheet_row(time_taken_minutes=60), sheet_row(time_taken_minutes=120)
+    add_sheet_rows(first, second)
+    data = env.get("/planning/overview", "admin-1").json()
+    today = data["ctx"]["today"]
+    mine = sorted(
+        (t for t in data["tasks"] if t["who"] == "Ratnesh Bor" and t["d0"] <= today <= t["d1"]),
+        key=lambda t: t["sh"],
+    )
+    assert len(mine) >= 2
+    starts = [t["sh"] for t in mine]
+    assert len(starts) == len(set(starts))      # no two bars start at the same time
+
+
+def test_todays_manual_work_counts_towards_the_load_on_a_task_card(env):
+    before = env.get("/planning/my-tasks", "member-rb").json()[0]["load"]
+    add_sheet_rows(sheet_row(time_taken_minutes=90), sheet_row(time_taken_minutes=60, status="Closed"))
+    after = env.get("/planning/my-tasks", "member-rb").json()[0]["load"]
+    assert after == round(before + 1.5, 2)      # the closed row is done, so it is not load
+
+
+def test_sheet_rows_become_plan_items_the_planner_can_draw():
+    rows = [sheet_row(), sheet_row(deliverable_name=" ", deliverable_type="", project_id=None)]
+    items, statuses = planning.sheet_rows_as_items(rows, {"member-rb": "Ratnesh Bor"}, {CONTRA_PROJECT: "Contra"})
+    assert len(items) == 1
+    assert items[0]["assignee_pmt_name"] == "Ratnesh Bor" and items[0]["project_name"] == "Contra"
+    assert statuses[rows[0]["id"]] == "Not Started"

@@ -213,9 +213,62 @@ def plan_status(item: dict, work_status: Optional[str]) -> str:
     return "todo"
 
 
+SHEET_SOURCE = "worksheet"
+
+
+def is_plannable_sheet_row(row: dict) -> bool:
+    """A Work Sheet row somebody filled in by hand that says what the work is.
+    Blank rows (added in bulk, or still being typed), scrapped work and rows
+    nobody owns say nothing about the plan."""
+    if row.get("status") == "Scrap" or not row.get("creator_id"):
+        return False
+    try:
+        date.fromisoformat(str(row.get("work_date") or ""))
+    except ValueError:
+        return False
+    return bool(
+        (row.get("deliverable_name") or "").strip()
+        or row.get("deliverable_id")
+        or row.get("project_id")
+        or row.get("deliverable_type")
+    )
+
+
+def sheet_rows_as_items(
+    rows: List[dict], names: Dict[str, str], project_names: Dict[str, str]
+) -> tuple:
+    """Work Sheet rows -> (items, work_status) in the shape build_plan_rows reads
+    for WhatsApp tasks, so a row typed straight into the sheet lands on the same
+    Gantt and workload maths. Its Work Sheet status is its plan status (Closed is
+    done, Ongoing / Ready for Review / ... is in progress, Not Started is to do)
+    and the time logged on it is its estimate."""
+    items, statuses = [], {}
+    for row in rows:
+        if not is_plannable_sheet_row(row):
+            continue
+        minutes = row.get("time_taken_minutes")
+        items.append({
+            "id": row["id"],
+            "source": SHEET_SOURCE,
+            "status": "accepted",
+            "work_item_id": row["id"],
+            "assignee_pmt_name": names.get(row["creator_id"], ""),
+            "deliverable_name": (row.get("deliverable_name") or "").strip()
+            or row.get("deliverable_type")
+            or "",
+            "project_name": project_names.get(row.get("project_id") or "", ""),
+            "work_date": row["work_date"],
+            "created_at": row.get("created_at"),
+            "est_minutes": minutes if isinstance(minutes, (int, float)) and minutes > 0 else None,
+            "seq": 0,
+        })
+        statuses[row["id"]] = row.get("status") or ""
+    return items, statuses
+
+
 def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetime) -> List[dict]:
-    """tasklist_items -> the rows the Planning screen's maths expects
-    (lib/planning/planningLogic.js taskFromRow)."""
+    """tasklist_items (and Work Sheet rows, via sheet_rows_as_items) -> the rows
+    the Planning screen's maths expects (lib/planning/planningLogic.js taskFromRow)."""
     week = week_context(now)
     monday: date = week["monday"]
     today_iso = week["ctx"]["date"]
@@ -226,6 +279,8 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
 
     rows = []
     for item in items:
+        from_sheet = item.get("source") == SHEET_SOURCE
+        verb = "Logged" if from_sheet else "Assigned"
         work_date = item.get("work_date") or today_iso
         status = plan_status(item, work_status.get(item.get("work_item_id") or ""))
         rolled = status != "done" and work_date < today_iso
@@ -240,11 +295,11 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
         else:
             d0 = d1 = idx(work_date)
             if created_day == work_date == today_iso:
-                cat, note = "new", "Assigned today"
+                cat, note = "new", f"{verb} today"
             else:
                 cat = "planned"
                 note = (
-                    "Assigned " + (_day_label(created.astimezone(IST).date()) if created else _day_label(date.fromisoformat(work_date)))
+                    f"{verb} " + (_day_label(created.astimezone(IST).date()) if created else _day_label(date.fromisoformat(work_date)))
                 )
         if item.get("plan_note"):
             note = item["plan_note"]
@@ -263,6 +318,9 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             "note": note,
             "sh": DAY_START,
             "status": status,
+            # Only on rows that came from the Work Sheet: they belong to the
+            # person who logged them, so the Planning page cannot reassign them.
+            **({"src": SHEET_SOURCE} if from_sheet else {}),
             "_order": (item.get("created_at") or "", item.get("seq") or 0),
         })
 
@@ -337,6 +395,39 @@ def create_planning_router(
             {"id": {"$in": ids}}, {"_id": 0, "id": 1, "status": 1}
         ).to_list(len(ids))
         return {r["id"]: r.get("status") or "" for r in rows}
+
+    async def manual_sheet_items(
+        names: Dict[str, str], date_from: str, date_to: str
+    ) -> tuple:
+        """Work Sheet rows these people filled in by hand between two dates, as
+        plan items. Rows made from a WhatsApp task (source_task_id) are left out:
+        the task itself already stands for them."""
+        if not names:
+            return [], {}
+        rows = await db.work_items.find(
+            {
+                "creator_id": {"$in": list(names)},
+                "work_date": {"$gte": date_from, "$lte": date_to},
+                "source_task_id": {"$in": [None, ""]},
+                "status": {"$ne": "Scrap"},
+            },
+            {
+                "_id": 0, "id": 1, "creator_id": 1, "status": 1, "work_date": 1, "created_at": 1,
+                "deliverable_name": 1, "deliverable_type": 1, "deliverable_id": 1,
+                "project_id": 1, "time_taken_minutes": 1,
+            },
+        ).to_list(5000)
+        rows = [r for r in rows if is_plannable_sheet_row(r)]
+        project_ids = list({r["project_id"] for r in rows if r.get("project_id")})
+        project_names: Dict[str, str] = {}
+        if project_ids:
+            project_names = {
+                p["id"]: p.get("name") or ""
+                for p in await db.projects.find(
+                    {"id": {"$in": project_ids}}, {"_id": 0, "id": 1, "name": 1}
+                ).to_list(len(project_ids))
+            }
+        return sheet_rows_as_items(rows, names, project_names)
 
     def history(by: str, action: str, detail: str = "") -> dict:
         return {"at": now_iso(), "by": by, "action": action, "detail": detail}
@@ -434,10 +525,17 @@ def create_planning_router(
             {"assignee_user_id": user.id, "status": "accepted", "work_date": today}, {"_id": 0}
         ).to_list(200)
         statuses = await work_status_map(planned)
-        load = round(sum(
+        load = sum(
             est_hours(i) for i in planned
             if statuses.get(i.get("work_item_id") or "") not in WORK_ITEM_DONE
-        ), 2)
+        )
+        # Work they typed into their own Work Sheet for today is load too.
+        sheet_items, sheet_statuses = await manual_sheet_items({user.id: user.name}, today, today)
+        load += sum(
+            est_hours(i) for i in sheet_items
+            if sheet_statuses.get(i["id"]) not in WORK_ITEM_DONE
+        )
+        load = round(load, 2)
 
         cards = []
         for item in pending:
@@ -648,16 +746,6 @@ def create_planning_router(
             query["team"] = {"$in": [t for t, d in TEAM_DEPARTMENT.items() if d == user.department]}
         rows = await items.find(query, {"_id": 0}).to_list(2000)
 
-        statuses = await work_status_map(rows)
-        week_start = monday.isoformat()
-        rows = [
-            r for r in rows
-            # finished work from before this week is history, not plan
-            if not (plan_status(r, statuses.get(r.get("work_item_id") or "")) == "done"
-                    and (r.get("work_date") or "") < week_start)
-        ]
-        tasks = build_plan_rows(rows, statuses, current)
-
         people_query: Dict[str, Any] = {
             "active": {"$ne": False},
             "role": {"$in": ["member", "manager"]},
@@ -670,6 +758,28 @@ def create_planning_router(
             ).to_list(500)
             if not TEST_ACCOUNT.search(f"{p['name']} {p.get('username') or ''}")
         ]
+
+        statuses = await work_status_map(rows)
+
+        # The other way of filling the Work Sheet: rows people typed in
+        # themselves (no WhatsApp task behind them) are plan too. They go through
+        # the same maths, so they land on the Gantt and in everyone's workload.
+        sheet_items, sheet_statuses = await manual_sheet_items(
+            {p["id"]: p["name"] for p in people},
+            (monday - timedelta(days=14)).isoformat(),
+            (monday + timedelta(days=6)).isoformat(),
+        )
+        rows = rows + sheet_items
+        statuses = {**statuses, **sheet_statuses}
+
+        week_start = monday.isoformat()
+        rows = [
+            r for r in rows
+            # finished work from before this week is history, not plan
+            if not (plan_status(r, statuses.get(r.get("work_item_id") or "")) == "done"
+                    and (r.get("work_date") or "") < week_start)
+        ]
+        tasks = build_plan_rows(rows, statuses, current)
         return {"ctx": week["ctx"], "tasks": tasks, "people": people}
 
     @router.post("/tasks/{task_id}/reassign")

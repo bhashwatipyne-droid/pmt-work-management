@@ -65,3 +65,21 @@ test("a reassign suggestion carries the task id (a string id from the API)", () 
   expect(move.act).toMatchObject({ to: "Milind Tandi", from: "Ratnesh Bor" });
   expect(typeof move.act.taskId).toBe("string");
 });
+
+test("work the person typed into their own Work Sheet is drawn but never suggested for reassignment", () => {
+  const people = toPeopleRows([
+    { id: "u1", name: "Ratnesh Bor", dept: "Content" },
+    { id: "u2", name: "Milind Tandi", dept: "Content" },
+  ]);
+  const job = (k, extra = {}) => ({ id: "t-" + k, who: "Ratnesh Bor", task: "Job " + k, proj: "P", d0: 4, d1: 4, est: 4, cat: "new", note: "", sh: 9.5, status: "todo", ...extra });
+  const typed = ["a", "b", "c"].map((k) => job(k, { src: "worksheet", note: "Logged today" }));
+
+  const plan = computePlan(typed, { period: "today", people, ctx });
+  expect(plan.rows[0].bars).toHaveLength(3);
+  expect(plan.insights.find((i) => i.act?.type === "reassign")).toBeUndefined();
+
+  // one WhatsApp task among them can still be moved
+  const mixed = [...typed, job("w")];
+  const move = computePlan(mixed, { period: "today", people, ctx }).insights.find((i) => i.act?.type === "reassign");
+  expect(move.act.taskId).toBe("t-w");
+});

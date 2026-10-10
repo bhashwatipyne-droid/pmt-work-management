@@ -77,6 +77,27 @@ db.nlp_match_logs.aggregate([{ $group: { _id: "$human_resolution.outcome", n: { 
 
 The matcher is score-based, so the log stores raw scores, the #1–#2 margin and the runner-up alternatives (not statistical confidence intervals).
 
+## Manual Work Sheet rows on the Planning page
+
+The Work Sheet has a second way in besides WhatsApp: rows people type in themselves. Those are plan too.
+`/api/planning/overview` (the Gantt, workload and suggestions) draws both kinds side by side:
+
+| Source | Where it comes from | Marked |
+|---|---|---|
+| WhatsApp task | `tasklist_items` (pending or accepted) | no `src` key |
+| Typed into the Work Sheet | `work_items` with no `source_task_id` | `src: "worksheet"`, note "Logged <day>" |
+
+A typed row is included when it has an owner, a valid work date in the window (last two weeks to the end of
+this week), is not `Scrap`, and names something (deliverable name, type, deliverable or project). Blank rows
+are ignored. Its Work Sheet status is its plan status (Closed = done, Ongoing / Ready for Review / ... = in
+progress, Not Started = to do), the time logged on it is its estimate (60 min if none), and an unfinished row
+from an earlier day is "rolled over" like a late task. Rows accepted from a WhatsApp task have a
+`source_task_id` and are not counted twice. Only people on the Planning team list (members and managers of
+Content / Design / Animation, no test accounts) appear, and a manager sees their own team.
+
+Today's typed rows also count toward the "load" shown on a task card. They cannot be reassigned from Planning
+(the person logged them themselves), so they are never offered as a "Move this task" suggestion.
+
 ## Known gaps
 
 - No review-queue screen yet (API only: `/api/planning/review`, `/resolve`, `/reject`).

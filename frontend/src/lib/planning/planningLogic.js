@@ -204,7 +204,9 @@ export function computePlan(
     .sort((a, b) => b.pct - a.pct)
     .forEach((o) => {
       const cands = tasks
-        .filter((t) => t.who === o.p[0] && inP(t) && t.status !== "done" && t.cat !== "rolled")
+        // Rows the person typed into their own Work Sheet are theirs to move
+        // (there is no WhatsApp task to reassign), so they are never suggested.
+        .filter((t) => t.who === o.p[0] && inP(t) && t.status !== "done" && t.cat !== "rolled" && t.src !== "worksheet")
         .sort((a, b) => hrs(a) - hrs(b));
       for (const t of cands) {
         const key = "mv" + t.id;

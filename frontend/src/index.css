@@ -231,6 +231,23 @@
     color: #64748b;
   }
 
+  /* Frozen gutter: the drag grip and the checkbox stay put while the sheet
+     scrolls sideways. Widths match ROW_NUM_WIDTH / CHECKBOX_WIDTH in
+     constants/worksheetColumnWidths.js (the checkbox sits right after the
+     grip). Their backgrounds are opaque, so the columns slide underneath. */
+  .sheet-mode .row-num,
+  .sheet-mode .row-num-head {
+    position: sticky !important;
+    left: 0;
+    z-index: 20;
+  }
+
+  .sheet-mode .checkbox-cell {
+    position: sticky !important;
+    left: 26px;
+    z-index: 20;
+  }
+
   .sheet-mode tbody .checkbox-cell {
     border-right: 1px solid #e5e7eb;
     border-bottom: 1px solid #eef0f4;

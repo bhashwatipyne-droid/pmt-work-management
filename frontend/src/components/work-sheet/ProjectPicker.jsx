@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsUpDown, Search, X } from "lucide-react";
+import { Check, ChevronsUpDown, ListChecks, Search, X } from "lucide-react";
 import { STAGE_COLORS } from "@/constants/projectPalette";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { distinguishingParts } from "@/lib/lookalikes";
+import { distinguishingParts, isProjectClosed } from "@/lib/lookalikes";
 import { focusAdjacentCell } from "./useWorksheetKeyboardNavigation";
 
 // More than this many options and the list asks the user to type instead of
 // mounting a thousand rows at once.
 const MAX_OPTIONS = 150;
 const PREVIEW_WIDTH = 340;
+const NO_IDS = [];
 
 // A project name with the words that tell it apart from its look-alikes in
 // bold ("ICICI Prudential Contra Fund – **Anniversary**").
@@ -49,8 +50,14 @@ const matchesQuery = (project, clientName, q) => {
 // redesign's picker: projects grouped by the row's client (recently used
 // first), look-alike names flagged with the words that differ in bold, and a
 // hover preview of the project's deliverables that fills Project and
-// Deliverable in one click. Delivered and scrapped projects are not offered:
-// no new work gets logged against them.
+// Deliverable in one click.
+//
+// With `multi` (a Campaign Ideation Plan row, which covers several projects at
+// once) the list becomes a tick list: clicking a project ticks or unticks it
+// and the list stays open until Done. Ticks are kept here while the list is
+// open and handed to `onCommit` once when it closes (Done, Esc, click away, Tab),
+// so ticking five projects is one save, not five. Finished projects are listed
+// too, under their own heading, because an analysis can look back at them.
 export function ProjectPicker({
   value,
   projects = [],
@@ -59,6 +66,9 @@ export function ProjectPicker({
   isRecent = () => false,
   lookalikes,
   deliverablesByProject = {},
+  multi = false,
+  selectedIds = NO_IDS,
+  onCommit,
   disabled = false,
   open = false,
   onOpenChange,
@@ -80,6 +90,37 @@ export function ProjectPicker({
 
   const current = value ? projects.find((p) => String(p.id) === String(value)) : null;
   const clientName = clientId ? clientNameOf(clientId) : "";
+
+  // Multi-select: what is ticked while the list is open (starts from what is
+  // saved, handed to onCommit when the list closes).
+  const [draftIds, setDraftIds] = useState(selectedIds);
+  const draftRef = useRef(selectedIds);
+  const savedRef = useRef(selectedIds);
+  const wasOpenRef = useRef(false);
+  savedRef.current = selectedIds;
+  const ticks = open && multi ? draftIds : selectedIds;
+  const selectedSet = useMemo(() => new Set(ticks.map(String)), [ticks]);
+  const selectedProjects = useMemo(
+    () => selectedIds.map((id) => projects.find((p) => String(p.id) === String(id))).filter(Boolean),
+    [selectedIds, projects]
+  );
+  const extraCount = Math.max(0, selectedIds.length - 1);
+
+  const setDraft = (next) => {
+    draftRef.current = next;
+    setDraftIds(next);
+  };
+
+  useLayoutEffect(() => {
+    if (open && multi) setDraft(savedRef.current);
+    if (wasOpenRef.current && !open && multi) {
+      const next = draftRef.current;
+      if (next.join("|") !== savedRef.current.join("|")) onCommit?.(next);
+    }
+    wasOpenRef.current = open;
+    // Only when the list opens or closes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -103,15 +144,12 @@ export function ProjectPicker({
       const ownClient = clientNameOf(project.client_id);
       if (!matchesQuery(project, ownClient, q)) return;
 
-      let group;
-      if (clientId) {
-        // A client is already chosen on the row, so only its projects are
-        // offered (clear the client to search across all of them).
-        if (project.client_id !== clientId) return;
-        group = isRecent(project.id) ? 0 : 1;
-      } else {
-        group = isRecent(project.id) ? 0 : 1;
-      }
+      // A client is already chosen on the row, so only its projects are
+      // offered (clear the client to search across all of them).
+      if (clientId && project.client_id !== clientId) return;
+      // Only a multi-project row can look back at a finished project; on any
+      // other row it is listed as before.
+      const group = multi && isProjectClosed(project) ? 2 : isRecent(project.id) ? 0 : 1;
       rows.push({ project, group });
     });
 
@@ -121,8 +159,9 @@ export function ProjectPicker({
       ? [
           `Recently used for ${clientName}`,
           `Other projects for ${clientName}`,
+          `Closed projects for ${clientName}`,
         ]
-      : ["Recently used", "All projects", ""];
+      : ["Recently used", "All projects", "Closed projects"];
 
     const next = rows.map((row, i) => ({
       ...row,
@@ -130,7 +169,7 @@ export function ProjectPicker({
     }));
     lastOptionsRef.current = next;
     return next;
-  }, [open, search, projects, clientId, clientName, clientNameOf, isRecent]);
+  }, [open, search, projects, clientId, clientName, clientNameOf, isRecent, multi]);
 
   const shown = options.slice(0, MAX_OPTIONS);
   const hiddenCount = options.length - shown.length;
@@ -157,11 +196,24 @@ export function ProjectPicker({
   const close = () => onOpenChange?.(false);
 
   const pick = (project, deliverable = null) => {
+    if (multi) {
+      // Ticking keeps the list open so several can be ticked in a row.
+      const current = draftRef.current;
+      setDraft(
+        current.includes(project.id)
+          ? current.filter((id) => id !== project.id)
+          : [...current, project.id]
+      );
+      return;
+    }
     onPick?.(project, deliverable);
     close();
   };
 
   const showPreviewFor = (project, target) => {
+    // The hover preview fills Project and Deliverable from one click, which
+    // has no meaning while ticking several projects.
+    if (multi) return;
     clearTimeout(previewTimerRef.current);
     const contentTop = contentRef.current?.getBoundingClientRect().top || 0;
     const top = target ? target.getBoundingClientRect().top - contentTop - 8 : 0;
@@ -224,9 +276,10 @@ export function ProjectPicker({
       const option = shown[highlight];
       if (event.key === "Tab") {
         // Tab picks the highlighted project (if the search found one) and
-        // moves on, like a spreadsheet.
+        // moves on, like a spreadsheet. On a tick list it just moves on with
+        // what is ticked.
         leavingByTabRef.current = true;
-        if (option && search.trim()) onPick?.(option.project, null);
+        if (!multi && option && search.trim()) onPick?.(option.project, null);
         close();
         focusAdjacentCell(triggerRef.current, event.shiftKey ? -1 : 1);
         return;
@@ -268,12 +321,24 @@ export function ProjectPicker({
           data-testid={testId}
           disabled={disabled}
           onKeyDown={handleTriggerKeyDown}
-          title={current?.name}
+          title={multi ? selectedProjects.map((p) => p.name).join(", ") || undefined : current?.name}
           className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 py-[5px] text-left text-[13px] leading-5 outline-none"
         >
-          <span className={`min-w-0 flex-1 truncate ${current ? "" : "text-muted-foreground"}`}>
-            {current?.name || "Project"}
+          <span
+            className={`min-w-0 flex-1 truncate ${
+              (multi ? selectedProjects[0] : current) ? "" : "text-muted-foreground"
+            }`}
+          >
+            {multi ? selectedProjects[0]?.name || "Project" : current?.name || "Project"}
           </span>
+          {multi && extraCount > 0 && (
+            <span
+              data-testid="worksheet-project-extra-count"
+              className="shrink-0 rounded-full bg-[#f0f0fd] px-1.5 text-[11px] font-semibold leading-4 text-[#1a1a8a]"
+            >
+              +{extraCount}
+            </span>
+          )}
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
       </PopoverTrigger>
@@ -317,6 +382,42 @@ export function ProjectPicker({
             Bold words tell similar projects apart.
           </p>
         )}
+        {multi && (
+          <div
+            data-testid="worksheet-project-multi-banner"
+            className="mt-1.5 flex items-center gap-2 rounded-lg bg-[#f0f0fd] px-2.5 py-2"
+          >
+            <ListChecks className="h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />
+            <span className="min-w-0 flex-1 text-xs font-semibold leading-4 text-[#1a1a8a]">
+              Campaign ideation · multi-select
+              <br />
+              <span className="font-normal text-slate-700">
+                {ticks.length
+                  ? `${ticks.length} ${ticks.length === 1 ? "project" : "projects"} ticked · Qty ${ticks.length}`
+                  : "Tick every project this analysis covers"}
+              </span>
+            </span>
+            {ticks.length > 0 && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setDraft([])}
+                className="h-7 rounded-[7px] px-2 text-xs font-semibold text-slate-700 hover:bg-white"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              data-testid="worksheet-project-multi-done"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={close}
+              className="h-7 rounded-[7px] bg-[#2b2bb5] px-3 text-xs font-semibold text-white hover:bg-[#1a1a8a]"
+            >
+              Done
+            </button>
+          </div>
+        )}
 
         <div
           ref={listRef}
@@ -331,6 +432,8 @@ export function ProjectPicker({
             const otherClient = project.client_id !== clientId;
             const sub = otherClient ? clientNameOf(project.client_id) : "";
             const isCurrent = String(project.id) === String(value);
+            const ticked = multi && selectedSet.has(String(project.id));
+            const closed = multi && option.group === 2;
 
             return (
               <div key={project.id} className="contents">
@@ -343,7 +446,9 @@ export function ProjectPicker({
                   type="button"
                   role="option"
                   aria-selected={index === highlight}
+                  aria-checked={multi ? ticked : undefined}
                   data-option-index={index}
+                  data-testid={multi ? `worksheet-project-option-${project.id}` : undefined}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(project)}
                   onMouseEnter={(e) => {
@@ -352,8 +457,19 @@ export function ProjectPicker({
                   }}
                   className={`flex shrink-0 items-start gap-2 rounded-md px-2.5 py-1.5 text-left ${
                     index === highlight ? "bg-[#f0f0fd]" : ""
-                  }`}
+                  } ${closed && !ticked ? "opacity-70" : ""}`}
                 >
+                  {multi && (
+                    <span
+                      role="checkbox"
+                      aria-checked={ticked}
+                      className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] ${
+                        ticked ? "bg-[#2b2bb5] text-white" : "bg-white shadow-[inset_0_0_0_1.5px_#cbd5e1]"
+                      }`}
+                    >
+                      {ticked && <Check className="h-3 w-3" strokeWidth={3} />}
+                    </span>
+                  )}
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="whitespace-normal break-words text-sm leading-[18px] text-foreground">
                       <ProjectNameParts project={project} twins={twins} clientNameOf={clientNameOf} />
@@ -362,9 +478,12 @@ export function ProjectPicker({
                       <span className="whitespace-normal break-words text-xs leading-4 text-slate-600">{project.description}</span>
                     )}
                     {sub && <span className="whitespace-normal break-words text-[11px] leading-[14px] text-muted-foreground">{sub}</span>}
+                    {closed && (
+                      <span className="text-[11px] leading-[14px] text-muted-foreground">{project.status}</span>
+                    )}
                     {twins.length > 0 && <LookalikePill />}
                   </span>
-                  {isCurrent && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />}
+                  {!multi && isCurrent && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />}
                 </button>
               </div>
             );

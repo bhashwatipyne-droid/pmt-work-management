@@ -34,8 +34,11 @@ import {
   MAX_QUANTITY,
   durationPatch,
   durationSecondsOf,
+  isMultiProjectRow,
   isQtySet,
   parseDurationSeconds,
+  projectIdsOf,
+  projectListPatch,
   qtyApplies,
   quantityOf,
 } from "@/lib/quantity";
@@ -1396,12 +1399,17 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
           return { work_date: parsed.toISOString().slice(0, 10) };
         }
         case "Client": {
+          // A Campaign Ideation Plan row's ticked projects go with its client.
+          const noProjects = isMultiProjectRow(targetItem)
+            ? projectListPatch(targetItem, [], projects)
+            : {};
           if (clear) {
             return {
               client_id: null,
               project_id: null,
               deliverable_id: null,
               deliverable_not_available: false,
+              ...noProjects,
             };
           }
           const match = clients.find((c) => ciEquals(c.name, text));
@@ -1411,6 +1419,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             project_id: null,
             deliverable_id: null,
             deliverable_not_available: false,
+            ...noProjects,
           };
         }
         case "Project": {
@@ -1419,6 +1428,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               project_id: null,
               deliverable_id: null,
               deliverable_not_available: false,
+              ...(isMultiProjectRow(targetItem) ? projectListPatch(targetItem, [], projects) : {}),
             };
           }
           const currentProject = projects.find(
@@ -1435,6 +1445,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             project_id: match.id,
             deliverable_id: null,
             deliverable_not_available: false,
+            // Pasting one project onto a Campaign Ideation Plan row leaves it
+            // covering just that project.
+            ...(isMultiProjectRow(targetItem)
+              ? projectListPatch(targetItem, [match.id], projects)
+              : {}),
           };
         }
         case "Deliverable": {
@@ -1479,8 +1494,15 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         case "Version":
           return { version: clear ? "" : text };
         case "Qty": {
-          // Only Design / Animate rows have a quantity.
+          // Only Design / Animate rows have a typed quantity; a Campaign
+          // Ideation Plan row's comes from its ticked projects (clearing it
+          // only clears the time for each).
           if (!qtyApplies(targetItem)) return null;
+          if (isMultiProjectRow(targetItem)) {
+            return clear
+              ? { quantity_items: projectIdsOf(targetItem).map(() => null) }
+              : null;
+          }
           if (clear) return { quantity: 1, quantity_items: [] };
           const n = Number(text.replace(/[^\d]/g, ""));
           if (!Number.isInteger(n) || n < 1 || n > MAX_QUANTITY) return null;
@@ -2779,6 +2801,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         key={qtyPanelItem.id}
         item={qtyPanelItem}
         options={options}
+        projects={projects}
         canEdit={canEditItem(qtyPanelItem)}
         onUpdate={onUpdate}
         onClose={closeQtyPanel}

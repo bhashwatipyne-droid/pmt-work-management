@@ -33,9 +33,12 @@ import {
   durationPatch,
   durationSecondsOf,
   formatDurationSeconds,
+  isMultiProjectRow,
   isQtySet,
   loggedCount,
   parseDurationSeconds,
+  projectIdsOf,
+  projectListPatch,
   qtyApplies,
   quantityOf,
   unitName,
@@ -314,6 +317,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     ? projects.find((p) => p.id === item.project_id)?.name
     : undefined;
 
+  // A Campaign Ideation Plan row covers several projects ticked in the Project
+  // cell; whatever empties that cell must empty the list too.
+  const multiProject = isMultiProjectRow(item);
+  const noProjects = () => (multiProject ? projectListPatch(item, [], projects) : {});
+
   const deliverableName = item.deliverable_id
     ? projectDeliverables.find((d) => d.id === item.deliverable_id)?.name
     : undefined;
@@ -370,6 +378,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         project_id: null,
         deliverable_id: null,
         deliverable_not_available: false,
+        ...noProjects(),
       });
       localStorage.removeItem("ws_last_client_id");
       localStorage.removeItem("ws_last_project_id");
@@ -382,6 +391,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         project_id: null,
         deliverable_id: null,
         deliverable_not_available: false,
+        ...noProjects(),
       });
       localStorage.removeItem("ws_last_project_id");
       localStorage.removeItem("ws_last_deliverable_id");
@@ -395,6 +405,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     }
 
     if (field === "quantity") {
+      if (multiProject) {
+        // The count is the ticked projects; only the time for each can be cleared.
+        if ((item.quantity_items || []).some(Boolean)) {
+          onUpdate(item.id, { quantity_items: projectIdsOf(item).map(() => null) });
+        }
+        return;
+      }
       // Back to the default of one unit, with no per-unit breakdown.
       if (isQtySet(item)) onUpdate(item.id, { quantity: 1, quantity_items: [] });
       return;
@@ -694,6 +711,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               project_id: null,
               deliverable_id: null,
               deliverable_not_available: false,
+              ...noProjects(),
             });
             if (nextClientId) localStorage.setItem("ws_last_client_id", nextClientId);
             else localStorage.removeItem("ws_last_client_id");
@@ -728,6 +746,18 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           isRecent={isRecentProject}
           lookalikes={lookalikes}
           deliverablesByProject={deliverablesByProject}
+          multi={multiProject}
+          selectedIds={multiProject ? projectIdsOf(item) : undefined}
+          onCommit={(ids) => {
+            const patch = projectListPatch(item, ids, projects);
+            if (ids[0] !== item.project_id) {
+              // A deliverable belongs to one project: a different first
+              // project starts without one.
+              patch.deliverable_id = null;
+              patch.deliverable_not_available = false;
+            }
+            onUpdate(item.id, patch);
+          }}
           onPick={(picked, deliverable) => {
             // Picking a project also sets its client, so a new row can start
             // from the project.
@@ -934,7 +964,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               onValueChange={(v) => {
                 const nextType = v === NONE_VALUE ? "" : v;
                 const category = options.deliverable_type_categories?.[nextType] || "";
-                onUpdate(item.id, { deliverable_type: nextType, work_category: category });
+                const patch = { deliverable_type: nextType, work_category: category };
+                if (multiProject && !isMultiProjectRow({ ...item, deliverable_type: nextType })) {
+                  // The ticked projects and the time for each only mean
+                  // something on a Campaign Ideation Plan row.
+                  Object.assign(patch, { project_ids: [], quantity: 1, quantity_items: [] });
+                }
+                onUpdate(item.id, patch);
               }}
               options={[
                 { value: NONE_VALUE, label: "—" },
@@ -964,7 +1000,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         {!applies ? (
           <span
             className="cell-plain block text-center text-[#d1d5db]"
-            title="Qty applies to Design and Animate rows only"
+            title="Qty applies to Design, Animate and Campaign Ideation Plan rows only"
           >
             —
           </span>
@@ -977,7 +1013,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             aria-haspopup="dialog"
             aria-expanded={qtyPanelOpen}
             data-testid={`worksheet-qty-chip-${item.id}`}
-            title={`${count} ${unitName(item, options, count)} - click to log time for each`}
+            title={
+              multiProject
+                ? `${count} ${unitName(item, options, count)} ticked - click to log time for each`
+                : `${count} ${unitName(item, options, count)} - click to log time for each`
+            }
             onClick={() => onOpenQty?.(item.id)}
             className="qty-chip group/qty flex h-[26px] w-full items-center gap-1.5 rounded-[7px] pl-2 pr-1.5 tabular-nums transition-colors"
           >
@@ -987,6 +1027,15 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             </span>
             <QtyListIcon className="shrink-0" />
           </button>
+        ) : multiProject ? (
+          // Nothing ticked yet: Qty is filled in from the Project cell.
+          <span
+            data-testid={`worksheet-qty-hint-${item.id}`}
+            className="cell-plain block text-center text-[12px] text-[#9aa4bd]"
+            title="Tick the projects this analysis covers in the Project column. Qty fills in automatically."
+          >
+            Pick projects
+          </span>
         ) : (
           <Input
             {...sheetCell(15)}
@@ -1013,7 +1062,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             className="peer qty-add h-[26px] w-full min-w-0 rounded-[7px] border border-[#eff0f2] bg-transparent py-0 pl-4 pr-2 text-center text-[12px] text-[#546490] shadow-none placeholder:text-[#546490] focus:pl-2 [&:not(:placeholder-shown)]:pl-2"
           />
         )}
-        {applies && !isSet && (
+        {applies && !isSet && !multiProject && (
           // Plus sign in front of the "Qty" placeholder; gone once typing starts.
           <QtyPlusIcon className="pointer-events-none absolute left-[calc(50%-17.5px)] top-1/2 -translate-y-1/2 text-[#546490] peer-focus:hidden peer-[:not(:placeholder-shown)]:hidden" />
         )}

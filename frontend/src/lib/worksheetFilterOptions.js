@@ -5,6 +5,7 @@
 // clash with a real id because ids are never wrapped in double underscores.
 
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
+import { projectIdsOf } from "@/lib/quantity";
 
 export const FILTER_BLANK = "__blank__";
 export const FILTER_NOT_AVAILABLE = "__not_available__";
@@ -25,9 +26,14 @@ export const REVIEWER_SPECIAL_OPTIONS = [
 
 // A project filter matches a row if its project is ticked, or "Blanks" is
 // ticked and the row has no project.
-export const matchesProjectFilter = (item, selected) =>
-  selected.has(item.project_id) ||
-  (selected.has(FILTER_BLANK) && !item.project_id);
+// A Campaign Ideation Plan row covers several projects and matches any of them.
+export const matchesProjectFilter = (item, selected) => {
+  const ids = projectIdsOf(item);
+  return (
+    ids.some((id) => selected.has(id)) ||
+    (selected.has(FILTER_BLANK) && ids.length === 0)
+  );
+};
 
 // "Blanks" = no deliverable picked and not marked "Not available";
 // "Not available" = the row was explicitly marked that way.

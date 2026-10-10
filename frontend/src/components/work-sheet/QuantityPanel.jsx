@@ -4,9 +4,11 @@ import { toast } from "sonner";
 import {
   MAX_QUANTITY,
   formatMinutes,
+  isMultiProjectRow,
   itemsOf,
   itemsTotal,
   loggedCount,
+  projectIdsOf,
   typedCount,
   parseDuration,
   quantityOf,
@@ -14,6 +16,7 @@ import {
 } from "@/lib/quantity";
 
 const STAGE_DOT = {
+  Content: "bg-[#2b2bb5]",
   Design: "bg-sky-500",
   Animate: "bg-amber-500",
 };
@@ -23,7 +26,15 @@ const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 // Side panel for a row's Qty: how many units the row covers, and the time each
 // one took. Opened from the Qty cell. The row's Time is the total of the
 // per-unit times once any are logged (the server keeps them in step).
-export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => {
+//
+// On a Campaign Ideation Plan row the units are the projects ticked in the
+// Project cell: the quantity is fixed to that count (change it by ticking or
+// unticking projects) and each line is named after its project.
+export const QuantityPanel = ({ item, options, projects = [], canEdit, onUpdate, onClose }) => {
+  const byProject = isMultiProjectRow(item);
+  const projectNames = byProject
+    ? projectIdsOf(item).map((id) => projects.find((p) => p.id === id)?.name || "Project")
+    : [];
   const quantity = quantityOf(item);
   const items = itemsOf(item);
   const total = itemsTotal(items);
@@ -79,7 +90,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
   const setQuantity = async (value) => {
     const n = Math.min(Math.max(Math.round(Number(value) || 0), 1), MAX_QUANTITY);
     setQtyDraft(null);
-    if (!canEdit || n === quantity) return;
+    if (!canEdit || byProject || n === quantity) return;
     const next = items.slice(0, n);
     while (next.length < n) next.push(null);
     await onUpdate(item.id, { quantity: n, quantity_items: next });
@@ -170,8 +181,20 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Quantity
             </span>
-            <span className="text-xs text-slate-500">Number of {unitMany}</span>
+            <span className="text-xs text-slate-500">
+              {byProject
+                ? "Fetched from the projects ticked for this analysis"
+                : `Number of ${unitMany}`}
+            </span>
           </span>
+          {byProject ? (
+            <span
+              data-testid="worksheet-qty-fixed"
+              className="flex h-[34px] min-w-12 items-center justify-center rounded-md bg-[#f0f0fd] px-3 text-base font-bold tabular-nums text-[#1a1a8a]"
+            >
+              {quantity}
+            </span>
+          ) : (
           <div className="flex items-center rounded-md bg-white ring-1 ring-inset ring-slate-300">
             <button
               type="button"
@@ -212,6 +235,7 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
               <Plus className="h-3.5 w-3.5" />
             </button>
           </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
@@ -259,14 +283,14 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
 
       <div className="grid h-9 grid-cols-[40px_minmax(0,1fr)_120px] items-center gap-x-3 border-b border-slate-200 bg-slate-50 px-5 text-xs font-semibold text-slate-700">
         <span>No.</span>
-        <span>Item</span>
+        <span>{byProject ? "Item / project" : "Item"}</span>
         <span>Time taken</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {items.map((minutes, index) => {
           const has = Number(minutes) > 0;
-          const label = `${Unit} ${index + 1}`;
+          const label = byProject ? projectNames[index] || `${Unit} ${index + 1}` : `${Unit} ${index + 1}`;
           const attachFirstEmpty = !has && !firstEmptyAssigned;
           if (attachFirstEmpty) firstEmptyAssigned = true;
 
@@ -282,7 +306,12 @@ export const QuantityPanel = ({ item, options, canEdit, onUpdate, onClose }) => 
               >
                 {index + 1}
               </span>
-              <span className="text-[13px] text-slate-900">{label}</span>
+              <span
+                className={`text-[13px] leading-4 text-slate-900 ${byProject ? "py-1.5" : ""}`}
+                title={byProject ? label : undefined}
+              >
+                {label}
+              </span>
               <input
                 ref={attachFirstEmpty ? firstEmptyRef : undefined}
                 data-qty-item={index}

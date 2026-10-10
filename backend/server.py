@@ -195,7 +195,7 @@ MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Revie
 # the Non-Core "needs time before it can be closed" check. Scrap is treated the
 # same as Closed - the time was spent either way.
 DONE_STATUSES = ("Closed", "Scrap")
-MEMBER_EDITABLE_FIELDS = {"quantity", "quantity_items", "project_ids", "video_duration_seconds", "video_duration_minutes","work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
+MEMBER_EDITABLE_FIELDS = {"quantity", "quantity_items", "deliverable_ids", "video_duration_seconds", "video_duration_minutes","work_date", "version", "time_taken_minutes", "remarks", "status", "client_id", "project_id", "deliverable_id", "deliverable_not_available", "stage", "deliverable_name", "deliverable_type", "deliverable_link", "reviewer_id", "work_category"}
 
 PROJECT_STATUSES = [
     "Active",
@@ -470,11 +470,12 @@ class WorkItem(BaseModel):
     # has no per-unit breakdown. When any is logged, time_taken_minutes is
     # their total (see apply_quantity_rules).
     quantity_items: List[Optional[float]] = Field(default_factory=list)
-    # Campaign Ideation Plan rows (Content) only: every project this one row
-    # covers, in the order they were ticked. project_id is always the first;
-    # quantity is the number of projects and quantity_items[i] is the time for
-    # project_ids[i] (see apply_project_list_rules). Empty on every other row.
-    project_ids: List[str] = Field(default_factory=list)
+    # Campaign Ideation Plan rows (Content) only: every deliverable of the row's
+    # project that this one row covers, in the order they were ticked.
+    # deliverable_id is always the first; quantity is the number of
+    # deliverables and quantity_items[i] is the time for deliverable_ids[i]
+    # (see apply_deliverable_list_rules). Empty on every other row.
+    deliverable_ids: List[str] = Field(default_factory=list)
     # Animate rows only: length of the finished video. SECONDS are the source
     # of truth; the minutes field is kept in step (seconds / 60) for older
     # readers and rows saved before seconds existed (see the validator below).
@@ -520,7 +521,7 @@ class WorkItemCreate(BaseModel):
     time_taken_minutes: Optional[float] = 0
     quantity: Optional[float] = 1.0
     quantity_items: Optional[List[Optional[float]]] = None
-    project_ids: Optional[List[str]] = None
+    deliverable_ids: Optional[List[str]] = None
     video_duration_seconds: Optional[float] = None
     video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
@@ -545,7 +546,7 @@ class WorkItemUpdate(BaseModel):
     time_taken_minutes: Optional[float] = None
     quantity: Optional[float] = None
     quantity_items: Optional[List[Optional[float]]] = None
-    project_ids: Optional[List[str]] = None
+    deliverable_ids: Optional[List[str]] = None
     video_duration_seconds: Optional[float] = None
     video_duration_minutes: Optional[float] = None
     creator_id: Optional[str] = None
@@ -909,22 +910,23 @@ QUANTITY_STAGES = {"Design", "Animate"}
 MAX_QUANTITY = 200
 
 # Campaign ideation is done in bulk: one "Campaign Ideation Plan (...)" row on
-# the Content sheet can cover several projects at once. Such a row works like a
-# Design/Animate row with a quantity, except that the quantity is not typed - it
-# is the number of projects ticked in the Project cell, and each unit is one of
-# those projects (quantity_items[i] is the time for project_ids[i]).
-MULTI_PROJECT_STAGE = "Content"
-MULTI_PROJECT_TYPE_PREFIX = "Campaign Ideation Plan"
+# the Content sheet can cover several deliverables of one project at once. Such
+# a row works like a Design/Animate row with a quantity, except that the
+# quantity is not typed - it is the number of deliverables ticked in the
+# Deliverable cell, and each unit is one of those deliverables
+# (quantity_items[i] is the time for deliverable_ids[i]).
+MULTI_DELIVERABLE_STAGE = "Content"
+MULTI_DELIVERABLE_TYPE_PREFIX = "Campaign Ideation Plan"
 
 
-def is_multi_project_row(row: dict) -> bool:
-    """True for a Content row whose type lets it cover several projects."""
-    return row.get("stage") == MULTI_PROJECT_STAGE and str(
+def is_multi_deliverable_row(row: dict) -> bool:
+    """True for a Content row whose type lets it cover several deliverables."""
+    return row.get("stage") == MULTI_DELIVERABLE_STAGE and str(
         row.get("deliverable_type") or ""
-    ).startswith(MULTI_PROJECT_TYPE_PREFIX)
+    ).startswith(MULTI_DELIVERABLE_TYPE_PREFIX)
 
 
-def _clean_project_ids(raw) -> list:
+def _clean_ids(raw) -> list:
     """The ids in order, without blanks or repeats."""
     seen = set()
     cleaned = []
@@ -937,8 +939,8 @@ def _clean_project_ids(raw) -> list:
 
 def units_of(row: dict) -> int:
     """How many units a row covers for time purposes: its quantity on a
-    Design/Animate row (or a multi-project Content row), 1 everywhere else."""
-    if row.get("stage") not in QUANTITY_STAGES and not is_multi_project_row(row):
+    Design/Animate row (or a multi-deliverable Content row), 1 everywhere else."""
+    if row.get("stage") not in QUANTITY_STAGES and not is_multi_deliverable_row(row):
         return 1
     try:
         return max(1, min(int(float(row.get("quantity") or 1)), MAX_QUANTITY))
@@ -996,123 +998,127 @@ def _clear_video_duration(update_fields: dict) -> None:
     update_fields["video_duration_minutes"] = None
 
 
-def apply_project_list_rules(existing: dict, update_fields: dict) -> None:
-    """Keep project_id, project_ids, quantity and quantity_items in step on a
-    multi-project row (see is_multi_project_row), and clear them when a row
-    stops being one. The first project is always the row's project_id, the
-    quantity is the number of projects, and each project keeps its own time when
-    the list changes. Mutates update_fields; raises HTTPException(400) on a
-    violation. `existing` is {} when creating."""
-    if "project_ids" in update_fields and update_fields["project_ids"] is None:
-        update_fields.pop("project_ids")
+def apply_deliverable_list_rules(existing: dict, update_fields: dict) -> None:
+    """Keep deliverable_id, deliverable_ids, quantity and quantity_items in step
+    on a multi-deliverable row (see is_multi_deliverable_row), and clear them
+    when a row stops being one. The first deliverable is always the row's
+    deliverable_id, the quantity is the number of deliverables, and each
+    deliverable keeps its own time when the list changes. A deliverable belongs
+    to one project, so moving the row to another project empties the list.
+    Mutates update_fields; raises HTTPException(400) on a violation.
+    `existing` is {} when creating."""
+    if "deliverable_ids" in update_fields and update_fields["deliverable_ids"] is None:
+        update_fields.pop("deliverable_ids")
 
     merged = {**existing, **update_fields}
-    was_multi = is_multi_project_row(existing)
+    was_multi = is_multi_deliverable_row(existing)
 
-    if not is_multi_project_row(merged):
-        if len(_clean_project_ids(update_fields.get("project_ids"))) > 1:
+    if not is_multi_deliverable_row(merged):
+        if len(_clean_ids(update_fields.get("deliverable_ids"))) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="Several projects can be ticked on Campaign Ideation Plan rows only.",
+                detail="Several deliverables can be ticked on Campaign Ideation Plan rows only.",
             )
         if was_multi:
-            # Back to an ordinary row: the project list and the time for each
-            # project mean nothing any more.
-            update_fields.update({"project_ids": [], "quantity": 1.0, "quantity_items": []})
-        elif "project_ids" in update_fields:
-            update_fields["project_ids"] = []
+            # Back to an ordinary row: the deliverable list and the time for
+            # each deliverable mean nothing any more.
+            update_fields.update({"deliverable_ids": [], "quantity": 1.0, "quantity_items": []})
+        elif "deliverable_ids" in update_fields:
+            update_fields["deliverable_ids"] = []
         return
 
-    # A row saved before the list existed has just its project_id.
-    stored_ids = _clean_project_ids(existing.get("project_ids"))
-    if not stored_ids and existing.get("project_id"):
-        stored_ids = [existing["project_id"]]
+    # A row saved before the list existed has just its deliverable_id.
+    stored_ids = _clean_ids(existing.get("deliverable_ids"))
+    if not stored_ids and existing.get("deliverable_id"):
+        stored_ids = [existing["deliverable_id"]]
 
-    if "project_ids" in update_fields:
-        ids = _clean_project_ids(update_fields["project_ids"])
-    elif "project_id" in update_fields:
-        # Set the old single-project way (paste, fill down, clearing the cell):
-        # the same first project leaves the ticked list alone, anything else
-        # replaces it.
-        project_id = update_fields["project_id"]
-        if project_id and stored_ids and project_id == stored_ids[0]:
+    project_changed = "project_id" in update_fields and update_fields["project_id"] != existing.get("project_id")
+
+    if "deliverable_ids" in update_fields:
+        ids = _clean_ids(update_fields["deliverable_ids"])
+    elif "deliverable_id" in update_fields:
+        # Set the old single-deliverable way (paste, fill down, clearing the
+        # cell): the same first deliverable leaves the ticked list alone,
+        # anything else replaces it.
+        deliverable_id = update_fields["deliverable_id"]
+        if deliverable_id and stored_ids and deliverable_id == stored_ids[0] and not project_changed:
             ids = stored_ids
         else:
-            ids = [project_id] if project_id else []
+            ids = [deliverable_id] if deliverable_id else []
+    elif project_changed:
+        ids = []
     else:
         ids = stored_ids
 
     if len(ids) > MAX_QUANTITY:
         raise HTTPException(
             status_code=400,
-            detail=f"A row can cover up to {MAX_QUANTITY} projects.",
+            detail=f"A row can cover up to {MAX_QUANTITY} deliverables.",
         )
 
     if (
         was_multi
         and ids == stored_ids
-        and "project_ids" not in update_fields
-        and "project_id" not in update_fields
+        and not project_changed
+        and "deliverable_ids" not in update_fields
+        and "deliverable_id" not in update_fields
     ):
-        # Nothing about the projects is changing, so a quantity sent along
+        # Nothing about the deliverables is changing, so a quantity sent along
         # with some other edit has nothing to say.
         update_fields.pop("quantity", None)
         return
 
-    update_fields["project_ids"] = ids
-    update_fields["project_id"] = ids[0] if ids else None
+    update_fields["deliverable_ids"] = ids
+    update_fields["deliverable_id"] = ids[0] if ids else None
     update_fields["quantity"] = float(max(1, len(ids)))
 
     if "quantity_items" not in update_fields:
         if not was_multi:
-            # Just became a multi-project row: nothing from before applies.
+            # Just became a multi-deliverable row: nothing from before applies.
             update_fields["quantity_items"] = []
         elif ids != stored_ids:
-            # Each project keeps the time typed for it when others are ticked or
-            # unticked; a newly ticked project starts empty.
+            # Each deliverable keeps the time typed for it when others are
+            # ticked or unticked; a newly ticked one starts empty.
             old = existing.get("quantity_items") or []
-            by_project = {pid: old[i] for i, pid in enumerate(stored_ids) if i < len(old)}
-            update_fields["quantity_items"] = [by_project.get(pid) for pid in ids]
+            by_deliverable = {did: old[i] for i, did in enumerate(stored_ids) if i < len(old)}
+            update_fields["quantity_items"] = [by_deliverable.get(did) for did in ids]
 
 
-async def validate_project_ids(update_fields: dict, existing: Optional[dict] = None) -> None:
-    """Check the projects ticked on a row: they must exist and share one client
-    (a row has a single client). Sets client_id and project_id (the first one)
-    from them. Raises HTTPException(400) on a violation."""
-    if update_fields.get("project_ids") is None:
+async def validate_deliverable_ids(update_fields: dict, existing: Optional[dict] = None) -> None:
+    """Check the deliverables ticked on a row: they must exist and belong to the
+    row's project. Sets deliverable_id (the first one) from them and drops a
+    "Not available" choice. Raises HTTPException(400) on a violation."""
+    if update_fields.get("deliverable_ids") is None:
         return
-    ids = _clean_project_ids(update_fields["project_ids"])
-    update_fields["project_ids"] = ids
+    ids = _clean_ids(update_fields["deliverable_ids"])
+    update_fields["deliverable_ids"] = ids
+    update_fields["deliverable_id"] = ids[0] if ids else None
     if not ids:
         return
     if len(ids) > MAX_QUANTITY:
         raise HTTPException(
             status_code=400,
-            detail=f"A row can cover up to {MAX_QUANTITY} projects.",
+            detail=f"A row can cover up to {MAX_QUANTITY} deliverables.",
         )
 
+    project_id = update_fields.get("project_id", (existing or {}).get("project_id"))
+    if not project_id:
+        raise HTTPException(status_code=400, detail="Select a project before ticking deliverables.")
+
     rows = await _cached_lookup(
-        ("projects", tuple(ids)),
-        lambda: db.projects.find(
-            {"id": {"$in": ids}}, {"_id": 0, "id": 1, "client_id": 1}
+        ("deliverables", tuple(ids)),
+        lambda: db.deliverables.find(
+            {"id": {"$in": ids}}, {"_id": 0, "id": 1, "project_id": 1}
         ).to_list(len(ids)),
     )
     if len({row["id"] for row in rows}) != len(ids):
-        raise HTTPException(status_code=400, detail="Invalid project")
-    client_ids = {row.get("client_id") for row in rows}
-    if len(client_ids) > 1:
+        raise HTTPException(status_code=400, detail="Invalid deliverable")
+    if any(row.get("project_id") != project_id for row in rows):
         raise HTTPException(
             status_code=400,
-            detail="Projects ticked on one row must belong to the same client.",
+            detail="Deliverables ticked on one row must belong to the row's project.",
         )
-    client_id = next(iter(client_ids))
-    if update_fields.get("client_id") and update_fields["client_id"] != client_id:
-        raise HTTPException(status_code=400, detail="Project does not belong to selected client")
-    update_fields["client_id"] = client_id
-    update_fields["project_id"] = ids[0]
-    # A deliverable belongs to one project; a different first project drops it.
-    if (existing or {}).get("project_id") != ids[0] and "deliverable_id" not in update_fields:
-        update_fields["deliverable_id"] = None
+    update_fields["deliverable_not_available"] = False
 
 
 def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
@@ -1126,12 +1132,12 @@ def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
         update_fields["quantity"] = 1.0
 
     normalize_video_duration(update_fields)
-    apply_project_list_rules(existing, update_fields)
+    apply_deliverable_list_rules(existing, update_fields)
 
     merged = {**existing, **update_fields}
     stage = merged.get("stage")
 
-    if stage not in QUANTITY_STAGES and not is_multi_project_row(merged):
+    if stage not in QUANTITY_STAGES and not is_multi_deliverable_row(merged):
         if (
             ("quantity" in update_fields and float(update_fields["quantity"]) != 1.0)
             or update_fields.get("quantity_items")
@@ -1522,7 +1528,7 @@ async def scoped_update_fields(
             raise HTTPException(status_code=400, detail="Project does not belong to selected client")
         update_fields["client_id"] = project_client_id
 
-    await validate_project_ids(update_fields, existing)
+    await validate_deliverable_ids(update_fields, existing)
 
     if "work_date" in update_fields and update_fields["work_date"]:
         validate_work_date(update_fields["work_date"])
@@ -3071,13 +3077,13 @@ async def list_work_items(
         query["work_category"] = {"$in": work_category}
 
     if project_id:
-        # A Campaign Ideation Plan row also belongs to every project ticked on it.
-        query.setdefault("$and", []).append(
-            {"$or": [{"project_id": {"$in": project_id}}, {"project_ids": {"$in": project_id}}]}
-        )
+        query["project_id"] = {"$in": project_id}
 
     if deliverable_id:
-        query["deliverable_id"] = {"$in": deliverable_id}
+        # A Campaign Ideation Plan row also belongs to every deliverable ticked on it.
+        query.setdefault("$and", []).append(
+            {"$or": [{"deliverable_id": {"$in": deliverable_id}}, {"deliverable_ids": {"$in": deliverable_id}}]}
+        )
 
     # Date range
     if date_from or date_to:
@@ -3184,7 +3190,7 @@ async def create_work_item(payload: WorkItemCreate, request: Request):
             raise HTTPException(status_code=400, detail="Project does not belong to selected client")
         data["client_id"] = project.get("client_id")
 
-    await validate_project_ids(data)
+    await validate_deliverable_ids(data)
 
     data["deliverable_not_available"] = bool(data.get("deliverable_not_available"))
     apply_deliverable_rules({}, data)
@@ -3416,7 +3422,7 @@ async def bulk_create_work_items(payload: BulkCreatePayload, request: Request):
             raise HTTPException(status_code=400, detail="Project does not belong to selected client")
         tpl["client_id"] = project.get("client_id")
 
-    await validate_project_ids(tpl)
+    await validate_deliverable_ids(tpl)
 
     work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     validate_work_date(work_date)
@@ -3611,12 +3617,12 @@ async def _build_collab_copy(
         else None
     )
     is_animate = source.get("stage") == "Animate"
-    # A Campaign Ideation Plan row covers the same projects; the time for each
-    # starts fresh, like the rest of what the person spent.
-    project_ids = (
-        _clean_project_ids(source.get("project_ids")) if is_multi_project_row(source) else []
+    # A Campaign Ideation Plan row covers the same deliverables; the time for
+    # each starts fresh, like the rest of what the person spent.
+    deliverable_ids = (
+        _clean_ids(source.get("deliverable_ids")) if is_multi_deliverable_row(source) else []
     )
-    units = max(1, len(project_ids))
+    units = max(1, len(deliverable_ids))
     if benchmark:
         benchmark = round(benchmark * units, 2)
     item = WorkItem(
@@ -3633,7 +3639,7 @@ async def _build_collab_copy(
         video_duration_seconds=source.get("video_duration_seconds") if is_animate else None,
         video_duration_minutes=source.get("video_duration_minutes") if is_animate else None,
         quantity=float(units),
-        project_ids=project_ids,
+        deliverable_ids=deliverable_ids,
         creator_id=person_id,
         reviewer_id=source.get("reviewer_id"),
         manager_id=source.get("manager_id"),

@@ -34,11 +34,11 @@ import {
   MAX_QUANTITY,
   durationPatch,
   durationSecondsOf,
-  isMultiProjectRow,
+  deliverableIdsOf,
+  deliverableListPatch,
+  isMultiDeliverableRow,
   isQtySet,
   parseDurationSeconds,
-  projectIdsOf,
-  projectListPatch,
   qtyApplies,
   quantityOf,
 } from "@/lib/quantity";
@@ -130,11 +130,20 @@ const NO_COLLAB_IDS = [];
 
 // Columns a department's own sheet doesn't use. They are left out of that
 // tab entirely (the "All" tab keeps every column): Duration only matters for
-// video work, and Qty is not used by Content.
+// video work. Content keeps Qty because a Campaign Ideation Plan row counts the
+// deliverables ticked on it (every other Content row shows "—").
 export const SHEET_EXCLUDED_COLUMNS = {
-  Content: ["Qty", "Duration"],
+  Content: ["Duration"],
   Design: ["Duration"],
 };
+
+// What to send with a project / client / deliverable change so a Campaign
+// Ideation Plan row also lets go of its ticked deliverables (they belong to the
+// project) - the server does the same, this just keeps the sheet in step.
+const noDeliverablesFor = (item) =>
+  isMultiDeliverableRow(item)
+    ? { deliverable_ids: [], quantity: 1, quantity_items: [] }
+    : {};
 
 const MEMBER_STAGE_BY_DEPARTMENT = {
   Content: "Content",
@@ -1399,10 +1408,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
           return { work_date: parsed.toISOString().slice(0, 10) };
         }
         case "Client": {
-          // A Campaign Ideation Plan row's ticked projects go with its client.
-          const noProjects = isMultiProjectRow(targetItem)
-            ? projectListPatch(targetItem, [], projects)
-            : {};
+          // A Campaign Ideation Plan row's ticked deliverables go with its project.
+          const noProjects = noDeliverablesFor(targetItem);
           if (clear) {
             return {
               client_id: null,
@@ -1428,7 +1435,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
               project_id: null,
               deliverable_id: null,
               deliverable_not_available: false,
-              ...(isMultiProjectRow(targetItem) ? projectListPatch(targetItem, [], projects) : {}),
+              ...noDeliverablesFor(targetItem),
             };
           }
           const currentProject = projects.find(
@@ -1445,26 +1452,38 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
             project_id: match.id,
             deliverable_id: null,
             deliverable_not_available: false,
-            // Pasting one project onto a Campaign Ideation Plan row leaves it
-            // covering just that project.
-            ...(isMultiProjectRow(targetItem)
-              ? projectListPatch(targetItem, [match.id], projects)
-              : {}),
+            ...noDeliverablesFor(targetItem),
           };
         }
         case "Deliverable": {
           if (clear) {
-            return { deliverable_id: null, deliverable_not_available: false };
+            return {
+              deliverable_id: null,
+              deliverable_not_available: false,
+              ...noDeliverablesFor(targetItem),
+            };
           }
           // "Not available" only makes sense on a row that has a project.
           if (ciEquals(text, NOT_AVAILABLE_LABEL)) {
             if (!targetItem.project_id) return null;
-            return { deliverable_id: null, deliverable_not_available: true };
+            return {
+              deliverable_id: null,
+              deliverable_not_available: true,
+              ...noDeliverablesFor(targetItem),
+            };
           }
           const pool = deliverablesByProject[targetItem.project_id] || [];
           const match = pool.find((d) => ciEquals(d.name, text));
           if (!match) return null;
-          return { deliverable_id: match.id, deliverable_not_available: false };
+          return {
+            deliverable_id: match.id,
+            deliverable_not_available: false,
+            // Pasting one deliverable onto a Campaign Ideation Plan row leaves
+            // it covering just that deliverable.
+            ...(isMultiDeliverableRow(targetItem)
+              ? deliverableListPatch(targetItem, [match.id])
+              : {}),
+          };
         }
         case "Stage": {
           if (clear) return { stage: null };
@@ -1495,12 +1514,12 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
           return { version: clear ? "" : text };
         case "Qty": {
           // Only Design / Animate rows have a typed quantity; a Campaign
-          // Ideation Plan row's comes from its ticked projects (clearing it
+          // Ideation Plan row's comes from its ticked deliverables (clearing it
           // only clears the time for each).
           if (!qtyApplies(targetItem)) return null;
-          if (isMultiProjectRow(targetItem)) {
+          if (isMultiDeliverableRow(targetItem)) {
             return clear
-              ? { quantity_items: projectIdsOf(targetItem).map(() => null) }
+              ? { quantity_items: deliverableIdsOf(targetItem).map(() => null) }
               : null;
           }
           if (clear) return { quantity: 1, quantity_items: [] };
@@ -2801,7 +2820,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         key={qtyPanelItem.id}
         item={qtyPanelItem}
         options={options}
-        projects={projects}
+        deliverables={deliverablesByProject[qtyPanelItem.project_id] || []}
         canEdit={canEditItem(qtyPanelItem)}
         onUpdate={onUpdate}
         onClose={closeQtyPanel}

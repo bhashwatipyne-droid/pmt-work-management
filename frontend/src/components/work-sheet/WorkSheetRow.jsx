@@ -7,6 +7,7 @@ import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { Checkbox } from "../ui/checkbox";
 import { SearchableSelect } from "./SearchableSelect";
 import { ProjectPicker } from "./ProjectPicker";
+import { DeliverableMultiPicker } from "./DeliverableMultiPicker";
 import { RemarksEditor } from "./RemarksEditor";
 import { CollaboratorPicker } from "./CollaboratorPicker";
 import { StatusBadge } from "./StatusBadge";
@@ -33,12 +34,12 @@ import {
   durationPatch,
   durationSecondsOf,
   formatDurationSeconds,
-  isMultiProjectRow,
+  deliverableIdsOf,
+  deliverableListPatch,
+  isMultiDeliverableRow,
   isQtySet,
   loggedCount,
   parseDurationSeconds,
-  projectIdsOf,
-  projectListPatch,
   qtyApplies,
   quantityOf,
   unitName,
@@ -317,10 +318,12 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     ? projects.find((p) => p.id === item.project_id)?.name
     : undefined;
 
-  // A Campaign Ideation Plan row covers several projects ticked in the Project
-  // cell; whatever empties that cell must empty the list too.
-  const multiProject = isMultiProjectRow(item);
-  const noProjects = () => (multiProject ? projectListPatch(item, [], projects) : {});
+  // A Campaign Ideation Plan row covers several of its project's deliverables,
+  // ticked in the Deliverable cell. They belong to the project, so whatever
+  // changes or empties the project must empty the list too.
+  const multiDeliverable = isMultiDeliverableRow(item);
+  const noDeliverables = () =>
+    multiDeliverable ? { deliverable_ids: [], quantity: 1, quantity_items: [] } : {};
 
   const deliverableName = item.deliverable_id
     ? projectDeliverables.find((d) => d.id === item.deliverable_id)?.name
@@ -378,7 +381,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         project_id: null,
         deliverable_id: null,
         deliverable_not_available: false,
-        ...noProjects(),
+        ...noDeliverables(),
       });
       localStorage.removeItem("ws_last_client_id");
       localStorage.removeItem("ws_last_project_id");
@@ -391,7 +394,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         project_id: null,
         deliverable_id: null,
         deliverable_not_available: false,
-        ...noProjects(),
+        ...noDeliverables(),
       });
       localStorage.removeItem("ws_last_project_id");
       localStorage.removeItem("ws_last_deliverable_id");
@@ -399,16 +402,21 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     }
 
     if (field === "deliverable_id") {
-      // Clearing the cell also clears a "Not available" choice.
-      onUpdate(item.id, { deliverable_id: null, deliverable_not_available: false });
+      // Clearing the cell also clears a "Not available" choice (and, on a
+      // Campaign Ideation Plan row, every ticked deliverable).
+      onUpdate(item.id, {
+        deliverable_id: null,
+        deliverable_not_available: false,
+        ...noDeliverables(),
+      });
       return;
     }
 
     if (field === "quantity") {
-      if (multiProject) {
-        // The count is the ticked projects; only the time for each can be cleared.
+      if (multiDeliverable) {
+        // The count is the ticked deliverables; only the time for each can be cleared.
         if ((item.quantity_items || []).some(Boolean)) {
-          onUpdate(item.id, { quantity_items: projectIdsOf(item).map(() => null) });
+          onUpdate(item.id, { quantity_items: deliverableIdsOf(item).map(() => null) });
         }
         return;
       }
@@ -711,7 +719,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               project_id: null,
               deliverable_id: null,
               deliverable_not_available: false,
-              ...noProjects(),
+              ...noDeliverables(),
             });
             if (nextClientId) localStorage.setItem("ws_last_client_id", nextClientId);
             else localStorage.removeItem("ws_last_client_id");
@@ -746,18 +754,6 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           isRecent={isRecentProject}
           lookalikes={lookalikes}
           deliverablesByProject={deliverablesByProject}
-          multi={multiProject}
-          selectedIds={multiProject ? projectIdsOf(item) : undefined}
-          onCommit={(ids) => {
-            const patch = projectListPatch(item, ids, projects);
-            if (ids[0] !== item.project_id) {
-              // A deliverable belongs to one project: a different first
-              // project starts without one.
-              patch.deliverable_id = null;
-              patch.deliverable_not_available = false;
-            }
-            onUpdate(item.id, patch);
-          }}
           onPick={(picked, deliverable) => {
             // Picking a project also sets its client, so a new row can start
             // from the project.
@@ -765,9 +761,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             if (deliverable) {
               patch.deliverable_id = deliverable.id;
               patch.deliverable_not_available = false;
+              if (multiDeliverable) Object.assign(patch, deliverableListPatch(item, [deliverable.id]));
             } else if (picked.id !== item.project_id) {
               patch.deliverable_id = null;
               patch.deliverable_not_available = false;
+              Object.assign(patch, noDeliverables());
             }
             onUpdate(item.id, patch);
 
@@ -786,6 +784,34 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       case "Deliverable":
         return (
 <TableCell {...cellProps(3, deliverableMissing && "shadow-[inset_2px_0_0_#fb7185]")}>
+        {multiDeliverable ? (
+        <DeliverableMultiPicker
+          open={openSelect === "deliverable"}
+          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
+          options={projectDeliverables}
+          selectedIds={deliverableIdsOf(item)}
+          notAvailable={Boolean(item.deliverable_not_available)}
+          missing={deliverableMissing}
+          showNotAvailable={Boolean(item.project_id)}
+          placeholder={item.project_id ? "Deliverable" : "Select project first"}
+          disabled={!canEditRow || !item.project_id}
+          triggerProps={sheetCell(3)}
+          data-testid={`worksheet-deliverable-select-${item.id}`}
+          onCommit={(ids, notAvailable) => {
+            if (notAvailable) {
+              // No matching deliverable exists yet: saving this notifies the
+              // admins to check the project's deliverables and add it.
+              onUpdate(item.id, {
+                deliverable_id: null,
+                deliverable_not_available: true,
+                ...noDeliverables(),
+              });
+              return;
+            }
+            onUpdate(item.id, deliverableListPatch(item, ids));
+          }}
+        />
+        ) : (
         <SearchableSelect
           open={openSelect === "deliverable"}
           onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
@@ -831,6 +857,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           data-testid={`worksheet-deliverable-select-${item.id}`}
           contentClassName="w-[460px] p-0"
         />
+        )}
         {renderFillHandle(3)}
       </TableCell>
         );
@@ -965,10 +992,10 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                 const nextType = v === NONE_VALUE ? "" : v;
                 const category = options.deliverable_type_categories?.[nextType] || "";
                 const patch = { deliverable_type: nextType, work_category: category };
-                if (multiProject && !isMultiProjectRow({ ...item, deliverable_type: nextType })) {
-                  // The ticked projects and the time for each only mean
+                if (multiDeliverable && !isMultiDeliverableRow({ ...item, deliverable_type: nextType })) {
+                  // The ticked deliverables and the time for each only mean
                   // something on a Campaign Ideation Plan row.
-                  Object.assign(patch, { project_ids: [], quantity: 1, quantity_items: [] });
+                  Object.assign(patch, { deliverable_ids: [], quantity: 1, quantity_items: [] });
                 }
                 onUpdate(item.id, patch);
               }}
@@ -1014,7 +1041,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             aria-expanded={qtyPanelOpen}
             data-testid={`worksheet-qty-chip-${item.id}`}
             title={
-              multiProject
+              multiDeliverable
                 ? `${count} ${unitName(item, options, count)} ticked - click to log time for each`
                 : `${count} ${unitName(item, options, count)} - click to log time for each`
             }
@@ -1027,14 +1054,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             </span>
             <QtyListIcon className="shrink-0" />
           </button>
-        ) : multiProject ? (
-          // Nothing ticked yet: Qty is filled in from the Project cell.
+        ) : multiDeliverable ? (
+          // Nothing ticked yet: Qty is filled in from the Deliverable cell.
           <span
             data-testid={`worksheet-qty-hint-${item.id}`}
             className="cell-plain block text-center text-[12px] text-[#9aa4bd]"
-            title="Tick the projects this analysis covers in the Project column. Qty fills in automatically."
+            title="Tick the deliverables this ideation covers in the Deliverable column. Qty fills in automatically."
           >
-            Pick projects
+            Pick deliverables
           </span>
         ) : (
           <Input
@@ -1062,7 +1089,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             className="peer qty-add h-[26px] w-full min-w-0 rounded-[7px] border border-[#eff0f2] bg-transparent py-0 pl-4 pr-2 text-center text-[12px] text-[#546490] shadow-none placeholder:text-[#546490] focus:pl-2 [&:not(:placeholder-shown)]:pl-2"
           />
         )}
-        {applies && !isSet && !multiProject && (
+        {applies && !isSet && !multiDeliverable && (
           // Plus sign in front of the "Qty" placeholder; gone once typing starts.
           <QtyPlusIcon className="pointer-events-none absolute left-[calc(50%-17.5px)] top-1/2 -translate-y-1/2 text-[#546490] peer-focus:hidden peer-[:not(:placeholder-shown)]:hidden" />
         )}

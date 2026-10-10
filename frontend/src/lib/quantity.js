@@ -9,64 +9,64 @@ export const MAX_QUANTITY = 200;
 export const MAX_UNIT_MINUTES = 1440;
 
 // Campaign ideation is done in bulk, so one Content row of a "Campaign Ideation
-// Plan (...)" type can cover several projects. Its Qty is not typed: it is the
-// number of projects ticked in the Project cell, and each unit in the Qty panel
-// is one of those projects (quantity_items[i] is the time for project_ids[i]).
-// Mirrors is_multi_project_row in backend/server.py.
-export const MULTI_PROJECT_STAGE = "Content";
-export const MULTI_PROJECT_TYPE_PREFIX = "Campaign Ideation Plan";
+// Plan (...)" type can cover several deliverables of its project. Its Qty is not
+// typed: it is the number of deliverables ticked in the Deliverable cell, and
+// each unit in the Qty panel is one of those deliverables (quantity_items[i] is
+// the time for deliverable_ids[i]).
+// Mirrors is_multi_deliverable_row in backend/server.py.
+export const MULTI_DELIVERABLE_STAGE = "Content";
+export const MULTI_DELIVERABLE_TYPE_PREFIX = "Campaign Ideation Plan";
 
-export const isMultiProjectType = (type) =>
-  String(type || "").startsWith(MULTI_PROJECT_TYPE_PREFIX);
+export const isMultiDeliverableType = (type) =>
+  String(type || "").startsWith(MULTI_DELIVERABLE_TYPE_PREFIX);
 
-export const isMultiProjectRow = (item) =>
-  item?.stage === MULTI_PROJECT_STAGE && isMultiProjectType(item?.deliverable_type);
+export const isMultiDeliverableRow = (item) =>
+  item?.stage === MULTI_DELIVERABLE_STAGE && isMultiDeliverableType(item?.deliverable_type);
 
-// The projects a row covers, first one first. Rows saved before the list
-// existed only have project_id.
-export const projectIdsOf = (item) => {
-  const ids = (item?.project_ids || []).filter(Boolean);
+// The deliverables a row covers, first one first. Rows saved before the list
+// existed only have deliverable_id.
+export const deliverableIdsOf = (item) => {
+  const ids = (item?.deliverable_ids || []).filter(Boolean);
   if (ids.length) return ids;
-  return item?.project_id ? [item.project_id] : [];
+  return item?.deliverable_id ? [item.deliverable_id] : [];
 };
 
-// The fields to send when the ticked projects change: the first becomes the
-// row's project (and its client), the quantity follows the count, and each
-// project keeps the time already typed for it. Mirrors apply_project_list_rules
-// in backend/server.py, which is the source of truth - sending the same values
-// just keeps the sheet's optimistic update from flickering.
-export const projectListPatch = (item, nextIds, projects = []) => {
-  const stored = projectIdsOf(item);
+// The fields to send when the ticked deliverables change: the first becomes the
+// row's deliverable, the quantity follows the count, and each deliverable keeps
+// the time already typed for it. Mirrors apply_deliverable_list_rules in
+// backend/server.py, which is the source of truth - sending the same values just
+// keeps the sheet's optimistic update from flickering.
+export const deliverableListPatch = (item, nextIds) => {
+  const stored = deliverableIdsOf(item);
   const oldItems = item?.quantity_items || [];
-  const byProject = new Map(stored.map((id, i) => [id, oldItems[i] ?? null]));
-  const first = projects.find((p) => p.id === nextIds[0]);
-  const patch = {
-    project_ids: nextIds,
-    project_id: nextIds[0] || null,
+  const byDeliverable = new Map(stored.map((id, i) => [id, oldItems[i] ?? null]));
+  return {
+    deliverable_ids: nextIds,
+    deliverable_id: nextIds[0] || null,
+    deliverable_not_available: false,
     quantity: Math.max(1, nextIds.length),
-    quantity_items: nextIds.map((id) => byProject.get(id) ?? null),
+    quantity_items: nextIds.map((id) => byDeliverable.get(id) ?? null),
   };
-  if (first?.client_id) patch.client_id = first.client_id;
-  return patch;
 };
 
 export const qtyApplies = (item) =>
-  QUANTITY_STAGES.includes(item?.stage) || isMultiProjectRow(item);
+  QUANTITY_STAGES.includes(item?.stage) || isMultiDeliverableRow(item);
 export const durationApplies = (item) => item?.stage === "Animate";
 
 export const quantityOf = (item) => {
-  if (isMultiProjectRow(item)) {
-    return Math.min(Math.max(projectIdsOf(item).length, 1), MAX_QUANTITY);
+  if (isMultiDeliverableRow(item)) {
+    return Math.min(Math.max(deliverableIdsOf(item).length, 1), MAX_QUANTITY);
   }
   const n = Math.round(Number(item?.quantity) || 1);
   return Math.min(Math.max(n, 1), MAX_QUANTITY);
 };
 
 // The cell shows a count only once someone has entered one: every older row
-// carries the default quantity of 1, which would just be noise.
+// carries the default quantity of 1, which would just be noise. A Campaign
+// Ideation Plan row shows it as soon as it has a deliverable.
 export const isQtySet = (item) =>
-  isMultiProjectRow(item)
-    ? projectIdsOf(item).length > 0
+  isMultiDeliverableRow(item)
+    ? deliverableIdsOf(item).length > 0
     : qtyApplies(item) &&
       (quantityOf(item) > 1 || (item?.quantity_items || []).length > 0);
 
@@ -93,8 +93,8 @@ export const itemsTotal = (items) =>
 // "slide" / "slides", "scene" / "scenes". Animate rows count scenes; other
 // types use the unit the server knows for them (Slide, Page, Reel...).
 export const unitName = (item, options, count = 2) => {
-  const base = isMultiProjectRow(item)
-    ? "project"
+  const base = isMultiDeliverableRow(item)
+    ? "deliverable"
     : item?.stage === "Animate"
       ? "scene"
       : String(options?.deliverable_type_units?.[item?.deliverable_type] || "item").toLowerCase();

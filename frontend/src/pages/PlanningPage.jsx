@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
 
-import { DEPT_FILTERS, computePlan, initials } from "@/lib/planning/planningLogic";
+import { BAR_H, DEPT_FILTERS, computePlan, initials } from "@/lib/planning/planningLogic";
 import {
   dismissInsight,
   reassignTask,
@@ -303,9 +303,9 @@ export default function PlanningPage() {
                           top: b.top,
                           left: b.left,
                           width: b.width,
-                          height: 24,
+                          height: BAR_H,
                           boxSizing: "border-box",
-                          padding: "0 8px",
+                          padding: "3px 8px",
                           borderRadius: 6,
                           background: b.bg,
                           boxShadow: b.ring,
@@ -315,15 +315,15 @@ export default function PlanningPage() {
                           alignItems: "center",
                           gap: 4,
                           fontSize: 12,
+                          lineHeight: "15px",
                           fontWeight: 500,
-                          whiteSpace: "nowrap",
                           overflow: "hidden",
                           zIndex: 1,
                           transition: "opacity 120ms ease",
                         }}
                       >
                         {b.done && <Check size={12} style={{ flexShrink: 0 }} />}
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{b.label}</span>
+                        <span style={{ minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflowWrap: "anywhere" }}>{b.label}</span>
                       </span>
                     ))}
                     {r.away && (

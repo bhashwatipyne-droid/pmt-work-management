@@ -29,6 +29,12 @@ export const fmtH = (h) => {
 const round = Math.round;
 const first = (n) => n.split(" ")[0];
 
+// Schedule bars: the least width a bar gets (share of the row) and the height of
+// one line of them (two lines of label fit in a bar).
+const MIN_BAR = 0.1;
+const LANE_H = 44;
+export const BAR_H = 38;
+
 export const DEPT_FILTERS = ["all", "Content", "Design", "Animation"];
 
 export const taskFromRow = (t, i) => ({
@@ -100,8 +106,13 @@ export function computePlan(
     const mine = all
       .filter((t) => t.who === L.p[0])
       .map((t) => {
-        const s = week ? t.d0 : t.sh;
-        return { t, s, e: week ? t.d1 + 1 : Math.min(18, s + todayH(t)) };
+        // A bar is never drawn narrower than MIN_BAR of the row, so its name stays
+        // readable; a task that starts near (or after) the end of the day is
+        // pulled back to fit. Bars that then overlap go on their own line.
+        const minSpan = (hi - lo) * MIN_BAR;
+        const s = Math.min(week ? t.d0 : t.sh, hi - minSpan);
+        const e = Math.min(hi, Math.max(s + minSpan, week ? t.d1 + 1 : s + todayH(t)));
+        return { t, s, e };
       })
       .sort((a, b) => a.s - b.s);
     const lanes = [];
@@ -125,7 +136,7 @@ export function computePlan(
       barW: Math.min(100, L.pct) + "%",
       barC: c[0],
       pctFg: c[1],
-      h: 12 + Math.max(1, lanes.length) * 30 + "px",
+      h: 12 + Math.max(1, lanes.length) * LANE_H + "px",
       bars: mine.map((b) => {
         const k = P_CATS[b.t.cat];
         const ps = pos(b.s);
@@ -138,7 +149,7 @@ export function computePlan(
             b.t.task + " · " + b.t.proj + " · " + fmtH(hrs(b.t)) + " · " + k[0] + (b.t.note ? " · " + b.t.note : ""),
           left: "calc(" + ps + "% + 2px)",
           width: "calc(" + (pe - ps) + "% - 4px)",
-          top: 6 + b.lane * 30 + "px",
+          top: 6 + b.lane * LANE_H + "px",
           bg: done ? "var(--success-100)" : k[1],
           fg: done ? "rgb(0,91,75)" : k[2],
           ring: done ? "inset 0 0 0 1px rgb(110,231,183)" : k[3],

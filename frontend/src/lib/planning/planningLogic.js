@@ -358,6 +358,13 @@ export function computePlan(
     ticks,
     rows,
     nowLeft: pos(P_NOW) + "%",
+    // The "now" line only means something during the working day (Today view).
+    showNow: !week && P_NOW >= lo && P_NOW <= hi,
+    nowLabel: (() => {
+      const m = Math.floor(P_NOW * 60);
+      const h = Math.floor(m / 60);
+      return (h % 12 || 12) + ":" + String(m % 60).padStart(2, "0") + (h < 12 ? " AM" : " PM");
+    })(),
     todayLeft: pos(P_TODAY) + "%",
     todayW: pos(P_TODAY + 1) - pos(P_TODAY) + "%",
     legend: [

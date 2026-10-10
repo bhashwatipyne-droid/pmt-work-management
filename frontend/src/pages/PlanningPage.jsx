@@ -261,13 +261,21 @@ export default function PlanningPage() {
                       {k.label}
                     </span>
                   ))}
+                  {plan.showNow && (
+                    <span
+                      title={"Now · " + plan.nowLabel}
+                      style={{ position: "absolute", top: 0, bottom: 0, left: plan.nowLeft, width: 2, background: "var(--error-500)", zIndex: 2 }}
+                    >
+                      <span style={{ position: "absolute", top: -1, left: -3, width: 8, height: 8, borderRadius: 9999, background: "var(--error-500)" }} />
+                    </span>
+                  )}
                 </div>
               </div>
 
               {plan.rows.map((r) => (
                 <div
                   key={r.name}
-                  style={{ display: "grid", gridTemplateColumns: "230px minmax(0,1fr)", boxShadow: "inset 0 -1px 0 rgb(243,244,246)" }}
+                  style={{ display: "grid", gridTemplateColumns: "230px minmax(0,1fr)", boxShadow: "inset 0 -1px 0 rgb(226,231,240)" }}
                 >
                   <div className="pmt-sticky-col" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", boxShadow: "inset -1px 0 0 rgb(243,244,246)", background: "#fff" }}>
                     <Avatar text={r.ini} size={30} fontSize={11} />
@@ -289,9 +297,9 @@ export default function PlanningPage() {
                       <span style={{ position: "absolute", top: 0, bottom: 0, left: plan.todayLeft, width: plan.todayW, background: "var(--brand-50)" }} />
                     )}
                     {plan.ticks.map((k) => (
-                      <span key={k.label} style={{ position: "absolute", top: 0, bottom: 0, left: k.left, width: 1, background: "rgb(243,244,246)" }} />
+                      <span key={k.label} style={{ position: "absolute", top: 0, bottom: 0, left: k.left, width: 1, background: "rgb(214,220,231)" }} />
                     ))}
-                    {!week && (
+                    {plan.showNow && (
                       <span style={{ position: "absolute", top: 0, bottom: 0, left: plan.nowLeft, width: 2, background: "var(--error-500)", zIndex: 2 }} />
                     )}
                     {r.bars.map((b) => (

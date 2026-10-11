@@ -216,6 +216,7 @@ export default function ApprovalsPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
+  const [deadlineFilter, setDeadlineFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -323,6 +324,8 @@ export default function ApprovalsPage() {
   const matchesFilters = (item) => {
     if (stageFilter && item.current_stage !== stageFilter) return false;
     if (projectFilter && item.project_name !== projectFilter) return false;
+    if (deadlineFilter === "with" && !item.due_date) return false;
+    if (deadlineFilter === "without" && item.due_date) return false;
 
     if (dateFrom || dateTo) {
       // Filter on the deadline - the same date the "Overdue" / "Due" chip is
@@ -348,15 +351,16 @@ export default function ApprovalsPage() {
     }
     return next;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board, search, stageFilter, projectFilter, dateFrom, dateTo]);
+  }, [board, search, stageFilter, projectFilter, deadlineFilter, dateFrom, dateTo]);
 
-  const activeFilterCount = [stageFilter, projectFilter, dateFrom || dateTo ? "date" : ""].filter(
+  const activeFilterCount = [stageFilter, projectFilter, deadlineFilter, dateFrom || dateTo ? "date" : ""].filter(
     Boolean
   ).length;
 
   const handleApplyFilters = (values) => {
     setStageFilter(values.stageFilter);
     setProjectFilter(values.projectFilter);
+    setDeadlineFilter(values.deadlineFilter || "");
     setDateFrom(values.dateFrom);
     setDateTo(values.dateTo);
   };
@@ -403,6 +407,7 @@ export default function ApprovalsPage() {
       setSearch("");
       setStageFilter("");
       setProjectFilter("");
+      setDeadlineFilter("");
       setDateFrom("");
       setDateTo("");
       setActiveQueue(hit.column);
@@ -813,7 +818,7 @@ export default function ApprovalsPage() {
         <ApprovalsFilterModal
           stages={stageOptions}
           projectOptions={projectOptions}
-          initialValues={{ stageFilter, projectFilter, dateFrom, dateTo }}
+          initialValues={{ stageFilter, projectFilter, deadlineFilter, dateFrom, dateTo }}
           onApply={handleApplyFilters}
           activeFilterCount={activeFilterCount}
         />

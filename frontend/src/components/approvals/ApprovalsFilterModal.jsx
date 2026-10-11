@@ -10,6 +10,7 @@ import { APPROVALS } from "@/constants/testIds";
 const EMPTY_VALUES = {
   stageFilter: "",
   projectFilter: "",
+  deadlineFilter: "",
   dateFrom: "",
   dateTo: "",
 };
@@ -144,6 +145,29 @@ export default function ApprovalsFilterModal({
           </div>
 
           <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Deadline
+            </label>
+
+            <select
+              value={draft.deadlineFilter}
+              onChange={(e) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  deadlineFilter: e.target.value,
+                  // A date range only makes sense for items that have one.
+                  ...(e.target.value === "without" ? { dateFrom: "", dateTo: "" } : {}),
+                }))
+              }
+              className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
+            >
+              <option value="">All</option>
+              <option value="with">With a deadline</option>
+              <option value="without">No deadline set</option>
+            </select>
+          </div>
+
+          <div className={draft.deadlineFilter === "without" ? "pointer-events-none opacity-50" : ""}>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               Deadline between
             </label>

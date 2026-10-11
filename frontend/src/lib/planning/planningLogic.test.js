@@ -97,3 +97,10 @@ test("work waiting on a reviewer and work sent back get their own tiles", () => 
   expect(tiles.rolled.n).toBe(1);
   expect(tiles.resched).toBeUndefined();
 });
+
+test("on a holiday nothing is planned and nobody has a load", () => {
+  const rows = toPeopleRows(apiPeople);
+  const plan = computePlan(apiTasks, { period: "today", people: rows, ctx: { ...ctx, holiday: "Sunday" } });
+  expect(plan.rows.every((l) => l.bars.length === 0)).toBe(true);
+  expect(plan.rows[0].loadTxt).toBe("Holiday · Sunday");
+});

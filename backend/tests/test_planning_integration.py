@@ -569,16 +569,21 @@ def test_the_work_sheet_status_drives_the_planning_status(env):
     assert plan[started["id"]]["status"] == "wip" and plan[finished["id"]]["status"] == "done"
 
 
-def test_a_late_unfinished_row_is_rolled_over_like_a_late_task(env):
+def test_a_past_typed_row_stays_on_its_own_day_and_is_not_rolled_forward(env):
+    # A Work Sheet row records work done on its date. Carrying it into today
+    # counted the same hours again on every later day.
     yesterday = (datetime.now(IST).date() - timedelta(days=1)).isoformat()
     row = sheet_row(work_date=yesterday)
     add_sheet_rows(row)
     task = plan_for(env).get(row["id"])
-    if datetime.now(IST).weekday() == 0:
-        # yesterday was Sunday: still listed, drawn from Monday
-        assert task is not None
-    else:
-        assert task["cat"] == "rolled" and "late" in task["note"]
+    if task is not None:
+        assert task["cat"] == "planned" and task["d0"] == task["d1"]
+
+
+def test_weekends_and_listed_holidays_have_no_plan_day():
+    assert planning.holiday_name(date(2026, 10, 11)) == "Sunday"
+    assert planning.holiday_name(date(2026, 10, 12)) == ""
+    assert planning.week_context(NOW)["ctx"]["holiday"] == ""
 
 
 def test_rows_that_say_nothing_or_are_thrown_away_are_left_out(env):

@@ -56,6 +56,26 @@ TEAM_DEPARTMENT = {"content": "Content", "design": "Design"}
 DAY_START = 9.5
 DAY_END = 18.0
 
+# Days nobody is planned for. Weekends always count; add public holidays with
+# PLANNING_HOLIDAYS="2026-11-08:Diwali,2026-12-25:Christmas" (name optional).
+def _holidays_from_env() -> Dict[str, str]:
+    found: Dict[str, str] = {}
+    for part in os.environ.get("PLANNING_HOLIDAYS", "").split(","):
+        day, _, name = part.strip().partition(":")
+        if day:
+            found[day] = name.strip() or "Holiday"
+    return found
+
+
+HOLIDAYS = _holidays_from_env()
+
+
+def holiday_name(day: date) -> str:
+    """"" on a normal working day, otherwise what the day is called."""
+    if day.isoformat() in HOLIDAYS:
+        return HOLIDAYS[day.isoformat()]
+    return day.strftime("%A") if day.weekday() >= 5 else ""
+
 # The tasklist carries no estimate, so every task is planned at this size until
 # a person changes it. Shown to the assignee as the card's "Estimate".
 DEFAULT_ESTIMATE_MINUTES = float(os.environ.get("PLANNING_DEFAULT_ESTIMATE_MINUTES", "60"))
@@ -144,6 +164,7 @@ def week_context(now: datetime) -> dict:
                 f"{_day_label(monday)} – {_day_label(friday)} {friday.strftime('%b')}"
             ),
             "today_label": _long_day(today.date()),
+            "holiday": holiday_name(today.date()),
         },
     }
 
@@ -284,7 +305,10 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
         verb = "Logged" if from_sheet else "Assigned"
         work_date = item.get("work_date") or today_iso
         status = plan_status(item, work_status.get(item.get("work_item_id") or ""))
-        rolled = status != "done" and work_date < today_iso
+        # A row typed into the Work Sheet is a record of work done on its own
+        # date, so it stays on that day. Only assigned tasks carry over; rolling
+        # logged rows forward counted the same hours again on every later day.
+        rolled = status != "done" and work_date < today_iso and not from_sheet
         created = _parse_dt(item.get("created_at"))
         created_day = created.astimezone(IST).date().isoformat() if created else None
 
@@ -412,6 +436,24 @@ def create_planning_router(
             {"id": {"$in": ids}}, {"_id": 0, "id": 1, "status": 1}
         ).to_list(len(ids))
         return {r["id"]: r.get("status") or "" for r in rows}
+
+    async def apply_logged_minutes(item_list: List[dict]) -> None:
+        """An accepted task becomes a Work Sheet row, and the time logged on that
+        row is the real size of the work. Use it instead of the 60 minute
+        default so the planned hours match what the sheet adds up to."""
+        wanted = {
+            i["work_item_id"]: i for i in item_list
+            if i.get("status") == "accepted" and i.get("work_item_id") and i.get("source") != SHEET_SOURCE
+        }
+        if not wanted:
+            return
+        found = await db.work_items.find(
+            {"id": {"$in": list(wanted)}}, {"_id": 0, "id": 1, "time_taken_minutes": 1}
+        ).to_list(len(wanted))
+        for row in found:
+            minutes = row.get("time_taken_minutes")
+            if isinstance(minutes, (int, float)) and minutes > 0:
+                wanted[row["id"]]["est_minutes"] = minutes
 
     async def manual_sheet_items(
         names: Dict[str, str], date_from: str, date_to: str
@@ -541,6 +583,7 @@ def create_planning_router(
         planned = await items.find(
             {"assignee_user_id": user.id, "status": "accepted", "work_date": today}, {"_id": 0}
         ).to_list(200)
+        await apply_logged_minutes(planned)
         statuses = await work_status_map(planned)
         load = sum(
             est_hours(i) for i in planned
@@ -789,12 +832,20 @@ def create_planning_router(
         rows = rows + sheet_items
         statuses = {**statuses, **sheet_statuses}
 
+        await apply_logged_minutes(rows)
+
         week_start = monday.isoformat()
         rows = [
             r for r in rows
-            # finished work from before this week is history, not plan
-            if not (plan_status(r, statuses.get(r.get("work_item_id") or "")) == "done"
-                    and (r.get("work_date") or "") < week_start)
+            # finished work from before this week is history, not plan; so is
+            # anything typed into the Work Sheet on an earlier week's day
+            if not (
+                (r.get("work_date") or "") < week_start
+                and (
+                    r.get("source") == SHEET_SOURCE
+                    or plan_status(r, statuses.get(r.get("work_item_id") or "")) == "done"
+                )
+            )
         ]
         tasks = build_plan_rows(rows, statuses, current)
         return {"ctx": week["ctx"], "tasks": tasks, "people": people}

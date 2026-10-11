@@ -66,7 +66,9 @@ export function computePlan(
   const week = period === "week";
   const span = (t) => t.d1 - t.d0 + 1;
   const todayH = (t) => (t.d0 <= P_TODAY && t.d1 >= P_TODAY ? t.est / span(t) : 0);
-  const inP = (t) => week || (t.d0 <= P_TODAY && t.d1 >= P_TODAY);
+  // A weekend or public holiday has nothing planned and nobody expected to work.
+  const holiday = !week && ctx?.holiday ? ctx.holiday : "";
+  const inP = (t) => week || (!holiday && t.d0 <= P_TODAY && t.d1 >= P_TODAY);
   const hrs = (t) => (week ? t.est : todayH(t));
   const periodWord = week ? "this week" : "today";
 
@@ -74,7 +76,7 @@ export function computePlan(
   const names = new Set(people.map((p) => p[0]));
   const all = tasks.filter((t) => inP(t) && names.has(t.who));
 
-  const potOf = (p) => (week ? P_HPD * (5 - p[5].length) : p[5].includes(P_TODAY) ? 0 : P_HPD);
+  const potOf = (p) => (week ? P_HPD * (5 - p[5].length) : holiday || p[5].includes(P_TODAY) ? 0 : P_HPD);
   const loadOf = (p) => {
     const a = tasks.filter((t) => t.who === p[0] && inP(t)).reduce((s, t) => s + hrs(t), 0);
     const pot = potOf(p);
@@ -131,7 +133,7 @@ export function computePlan(
       ini: initials(L.p[0]),
       dept: L.p[1],
       away: L.pot === 0,
-      loadTxt: L.pot ? fmtH(L.a) + " of " + fmtH(L.pot) : "On leave",
+      loadTxt: L.pot ? fmtH(L.a) + " of " + fmtH(L.pot) : holiday ? "Holiday · " + holiday : "On leave",
       pct: L.pot ? round(L.pct) + "%" : "–",
       barW: Math.min(100, L.pct) + "%",
       barC: c[0],
@@ -359,7 +361,7 @@ export function computePlan(
     rows,
     nowLeft: pos(P_NOW) + "%",
     // The "now" line only means something during the working day (Today view).
-    showNow: !week && P_NOW >= lo && P_NOW <= hi,
+    showNow: !week && !holiday && P_NOW >= lo && P_NOW <= hi,
     nowLabel: (() => {
       const m = Math.floor(P_NOW * 60);
       const h = Math.floor(m / 60);

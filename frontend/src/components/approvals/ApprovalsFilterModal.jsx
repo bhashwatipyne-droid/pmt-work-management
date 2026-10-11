@@ -145,7 +145,7 @@ export default function ApprovalsFilterModal({
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Requested between
+              Deadline between
             </label>
 
             {/* Two plain date fields. This used to be a calendar popover

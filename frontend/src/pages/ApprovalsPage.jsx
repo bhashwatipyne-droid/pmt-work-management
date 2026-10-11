@@ -325,19 +325,13 @@ export default function ApprovalsPage() {
     if (projectFilter && item.project_name !== projectFilter) return false;
 
     if (dateFrom || dateTo) {
-      // Compare on the viewer's calendar day. Slicing the UTC timestamp put
-      // anything requested in the early hours (IST) on the previous day.
-      let requested = null;
-      try {
-        requested = item.requested_at
-          ? format(parseISO(item.requested_at), "yyyy-MM-dd")
-          : null;
-      } catch {
-        requested = null;
-      }
-      if (!requested) return false;
-      if (dateFrom && requested < dateFrom) return false;
-      if (dateTo && requested > dateTo) return false;
+      // Filter on the deadline - the same date the "Overdue" / "Due" chip is
+      // worked out from. (It used to compare the date the approval was
+      // requested, so an item 40 days overdue vanished from a recent range.)
+      const due = String(item.due_date || "").slice(0, 10);
+      if (!due) return false;
+      if (dateFrom && due < dateFrom) return false;
+      if (dateTo && due > dateTo) return false;
     }
 
     return makeMatcher(search)(

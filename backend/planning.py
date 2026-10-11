@@ -36,6 +36,7 @@ Collections used
     notifications      insert, through the existing notification helper
     users / clients / projects / deliverables   read only
 """
+import asyncio
 import os
 import re
 import uuid
@@ -819,35 +820,40 @@ def create_planning_router(
         }
         if user.role == "manager":
             query["team"] = {"$in": [t for t, d in TEAM_DEPARTMENT.items() if d == user.department]}
-        rows = await items.find(query, {"_id": 0}).to_list(2000)
-
         people_query: Dict[str, Any] = {
             "active": {"$ne": False},
             "role": {"$in": ["member", "manager"]},
             "department": {"$in": [user.department] if user.role == "manager" else list(PLAN_DEPARTMENTS)},
         }
+        # The tasks and the people don't depend on each other: fetch them at once.
+        rows, people_rows = await asyncio.gather(
+            items.find(query, {"_id": 0}).to_list(2000),
+            db.users.find(
+                people_query, {"_id": 0, "id": 1, "name": 1, "department": 1, "username": 1}
+            ).to_list(500),
+        )
         people = [
             {"id": p["id"], "name": p["name"], "dept": p["department"]}
-            for p in await db.users.find(
-                people_query, {"_id": 0, "id": 1, "name": 1, "department": 1, "username": 1}
-            ).to_list(500)
+            for p in people_rows
             if not TEST_ACCOUNT.search(f"{p['name']} {p.get('username') or ''}")
         ]
-
-        statuses = await work_status_map(rows)
 
         # The other way of filling the Work Sheet: rows people typed in
         # themselves (no WhatsApp task behind them) are plan too. They go through
         # the same maths, so they land on the Gantt and in everyone's workload.
-        sheet_items, sheet_statuses = await manual_sheet_items(
-            {p["id"]: p["name"] for p in people},
-            (monday - timedelta(days=14)).isoformat(),
-            (monday + timedelta(days=6)).isoformat(),
+        # Looked up alongside the work-status and logged-time lookups for the
+        # WhatsApp tasks, which only need the task rows.
+        (sheet_items, sheet_statuses), statuses, _ = await asyncio.gather(
+            manual_sheet_items(
+                {p["id"]: p["name"] for p in people},
+                (monday - timedelta(days=14)).isoformat(),
+                (monday + timedelta(days=6)).isoformat(),
+            ),
+            work_status_map(rows),
+            apply_logged_minutes(rows),
         )
         rows = rows + sheet_items
         statuses = {**statuses, **sheet_statuses}
-
-        await apply_logged_minutes(rows)
 
         week_start = monday.isoformat()
         rows = [

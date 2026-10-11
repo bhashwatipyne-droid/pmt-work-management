@@ -32,6 +32,7 @@ let state = {
   people: [],
   peopleById: [],
   ctx: null,
+  planLoading: false,
   planDate: "", // "" = today; otherwise YYYY-MM-DD of the day being looked at
   dismissed: {},
   loaded: { plan: false, cards: false },
@@ -70,24 +71,30 @@ const fail = (scope, err, what) => {
   failing = { ...failing, [scope]: true };
 };
 
+// Days already fetched, so going back to one shows it at once while a fresh
+// copy loads behind it.
+const planCache = new Map();
+
 export const refreshPlan = async () => {
   try {
     const asked = state.planDate;
     const { data } = await axios.get(`${API}/planning/overview`, {
       params: asked ? { date: asked } : {},
     });
-    // A slower answer for a day the person has already moved off must not
-    // overwrite the day they are looking at now.
-    if (asked !== state.planDate) return;
-    failing = { ...failing, plan: false };
-    setState({
+    const view = {
       tasks: data.tasks || [],
       people: toPeopleRows(data.people),
       peopleById: data.people || [],
       ctx: data.ctx || null,
-      loaded: { ...state.loaded, plan: true },
-    });
+    };
+    planCache.set(asked, view);
+    // A slower answer for a day the person has already moved off must not
+    // overwrite the day they are looking at now.
+    if (asked !== state.planDate) return;
+    failing = { ...failing, plan: false };
+    setState({ ...view, planLoading: false, loaded: { ...state.loaded, plan: true } });
   } catch (err) {
+    setState({ planLoading: false });
     fail("plan", err, "the plan");
   }
 };
@@ -142,7 +149,11 @@ export const usePlanningStore = (scope) => {
 
 // Look at the plan for another day ("" goes back to today).
 export const setPlanDate = (day) => {
-  setState({ planDate: day || "" });
+  const key = day || "";
+  const cached = planCache.get(key);
+  // Cached: show it now. Otherwise keep the old view, marked as loading, until
+  // the new day arrives.
+  setState({ planDate: key, ...(cached ? { ...cached, planLoading: false } : { planLoading: true }) });
   return refreshPlan();
 };
 

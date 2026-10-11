@@ -68,7 +68,7 @@ const SectionHead = ({ title, sub, right }) => (
 const LIST_COLS = "minmax(220px,2fr) 170px minmax(200px,1.5fr) 130px 70px 100px";
 
 export default function PlanningPage() {
-  const { tasks, dismissed, people, ctx, planDate } = usePlanningStore("plan");
+  const { tasks, dismissed, people, ctx, planDate, planLoading } = usePlanningStore("plan");
   const { currentUser } = useUser();
   const [period, setPeriod] = useState("today");
   const [cat, setCat] = useState("all");
@@ -115,6 +115,9 @@ export default function PlanningPage() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {planLoading && (
+            <span role="status" style={{ fontSize: 12, color: "var(--neutral-500)" }}>Loading…</span>
+          )}
           <div style={segWrap}>
             {[
               ["today", "Today"],
@@ -194,7 +197,7 @@ export default function PlanningPage() {
         </div>
 
         {/* Summary tiles */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
+        <div style={{ opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease", pointerEvents: planLoading ? "none" : "auto", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
           {plan.tiles.map((c) => (
             <button
               key={c.key}
@@ -231,7 +234,7 @@ export default function PlanningPage() {
         </div>
 
         {/* Schedule */}
-        <section style={{ ...CARD, overflow: "hidden" }}>
+        <section style={{ ...CARD, overflow: "hidden", opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease" }}>
           <SectionHead
             title="Schedule"
             sub="Each bar is a deliverable. Colour shows what changed; the bar on the left is assigned work against potential."

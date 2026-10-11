@@ -7605,10 +7605,19 @@ async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
     await _upsert_notifications_batch(notifications)
 
 
+async def _notify_stage_handoff_safe(deliverable: dict, stage: str, ts: str):
+    # A notification problem must never fail the approval itself.
+    try:
+        await _notify_stage_handoff(deliverable, stage, ts)
+    except Exception:
+        logger.exception("Could not send stage hand-off notifications")
+
+
 async def advance_deliverable_stage(
     deliverable: dict,
     reviewer_id: str,
     note: str,
+    notify_in_background: bool = False,
 ):
     ts = now_iso()
 
@@ -7679,16 +7688,17 @@ async def advance_deliverable_stage(
     )
 
     if next_stage and updated:
-        # A notification problem must never fail the approval itself.
-        try:
-            await _notify_stage_handoff(updated, next_stage, ts)
-        except Exception:
-            logger.exception("Could not send stage hand-off notifications")
+        if notify_in_background:
+            # Bulk approvals: don't make the reviewer wait on the
+            # notification writes for every deliverable.
+            _fire_and_forget(_notify_stage_handoff_safe(updated, next_stage, ts))
+        else:
+            await _notify_stage_handoff_safe(updated, next_stage, ts)
 
     return updated
 
 
-async def _load_approvable_item(user: User, approval_item_id: str):
+async def _load_approvable_item(user: User, approval_item_id: str, preloaded: Optional[dict] = None):
     """Fetch an approval item (or the synthetic implicit-manager one) plus its
     deliverable and run the checks every approve path shares. Raises
     HTTPException exactly like the single-item endpoint always did."""
@@ -7698,7 +7708,7 @@ async def _load_approvable_item(user: User, approval_item_id: str):
         item = {"id": approval_item_id, "deliverable_id": deliverable_id, "approval_type": "MANAGER", "status": "PENDING", "assigned_to": None, "department": user.department}
     if not item:
         raise HTTPException(status_code=404, detail="Approval item not found")
-    d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
+    d = (preloaded or {}).get(item["deliverable_id"]) or await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
     if not d:
         raise HTTPException(status_code=404, detail="Deliverable not found")
     if item.get("status") != "PENDING":
@@ -7708,13 +7718,13 @@ async def _load_approvable_item(user: User, approval_item_id: str):
     return item, d
 
 
-async def _apply_approval(user: User, item: dict, d: dict, note: str):
+async def _apply_approval(user: User, item: dict, d: dict, note: str, notify_in_background: bool = False):
     """Record one approval and advance the deliverable if nothing else is
     pending. Returns the deliverable id. Does NOT build the heavy response."""
     ts = now_iso()
     approval_item_id = item["id"]
     if item.get("approval_workflow_id") is None:
-        await advance_deliverable_stage(d, user.id, note)
+        await advance_deliverable_stage(d, user.id, note, notify_in_background)
     else:
         # Only flip an item that is still PENDING so a duplicate/parallel
         # request cannot approve (and advance the stage) twice.
@@ -7728,7 +7738,7 @@ async def _apply_approval(user: User, item: dict, d: dict, note: str):
             {"approval_workflow_id": item["approval_workflow_id"], "status": "PENDING"}
         )
         if pending == 0:
-            await advance_deliverable_stage(d, user.id, note)
+            await advance_deliverable_stage(d, user.id, note, notify_in_background)
     await db.approval_history.insert_one({
         "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
         "deliverable_id": d["id"], "action": "APPROVED", "performed_by": user.id,
@@ -7791,14 +7801,26 @@ async def bulk_approve_approval_items(payload: ApprovalBulkDecision, request: Re
         groups.setdefault(did, []).append(item_id)
 
     approved: list = []
-    sem = asyncio.Semaphore(4)
+    # Each approval is a handful of database round trips, so a wider fan-out
+    # across deliverables is what keeps a big selection fast.
+    sem = asyncio.Semaphore(16)
+
+    # Every deliverable in one query instead of one lookup per item. A
+    # deliverable's own items still run one after the other below, so the
+    # copy loaded here is only used for its first item.
+    deliverables_by_id = {
+        x["id"]: x
+        for x in await db.deliverables.find({"id": {"$in": list(groups)}}, {"_id": 0}).to_list(len(groups) or 1)
+    } if groups else {}
 
     async def run_group(item_ids: list):
         async with sem:
-            for item_id in item_ids:
+            for position, item_id in enumerate(item_ids):
                 try:
-                    item, d = await _load_approvable_item(user, item_id)
-                    await _apply_approval(user, item, d, note)
+                    item, d = await _load_approvable_item(
+                        user, item_id, deliverables_by_id if position == 0 else None
+                    )
+                    await _apply_approval(user, item, d, note, notify_in_background=True)
                     approved.append(item_id)
                 except HTTPException as exc:
                     failed.append({"id": item_id, "detail": exc.detail})

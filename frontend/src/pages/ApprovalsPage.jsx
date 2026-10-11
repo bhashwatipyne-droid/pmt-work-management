@@ -1,5 +1,5 @@
 import { makeMatcher } from "@/lib/search";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO } from "date-fns";
@@ -124,6 +124,64 @@ const MOD_LABEL = IS_MAC ? "⌘" : "Ctrl";
 
 const KBD_CLASS =
   "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
+
+// One row of the queue list. Memoised so ticking a checkbox (or moving the
+// highlight) re-renders only the rows whose own state changed, not all of the
+// hundreds in the queue - that was most of the input lag on bulk selection.
+const ApprovalRow = memo(function ApprovalRow({
+  item,
+  isSelected,
+  checked,
+  canAct,
+  draggable,
+  onOpen,
+  onToggle,
+  onDragStart,
+  onDragEnd,
+}) {
+  const chip = dueChip(item.due_date);
+
+  return (
+    <div
+      data-testid={`${APPROVALS.listRowPrefix}-${item.id}`}
+      draggable={draggable}
+      onDragStart={() => onDragStart(item)}
+      onDragEnd={onDragEnd}
+      onClick={() => onOpen(item.id)}
+      className={[
+        "flex w-full cursor-pointer items-start gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition-colors",
+        isSelected ? "bg-[#f0f0fd]" : "hover:bg-slate-50",
+      ].join(" ")}
+    >
+      {canAct && (
+        <input
+          type="checkbox"
+          data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
+          checked={checked}
+          onChange={() => onToggle(item.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
+          aria-label={`Select ${item.deliverable_name}`}
+        />
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="flex-1" />
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>
+            {chip.label}
+          </span>
+        </div>
+        <div className="mt-1 truncate text-sm font-semibold leading-5 text-slate-900">
+          {item.deliverable_name}
+        </div>
+        <div className="mt-0.5 truncate text-xs text-slate-500">
+          {item.project_name} · {item.client_name || "—"}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
@@ -394,14 +452,25 @@ export default function ApprovalsPage() {
   }, [scrollToId, activeQueue, board]);
 
   // ---------- Selection (bulk) ----------
-  const toggleSelect = (id) => {
+  const toggleSelect = useCallback((id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
+
+  const openRow = useCallback((id) => {
+    setSelectedId(id);
+    setDetailOpen(true);
+  }, []);
+
+  const startDrag = useCallback((item) => setDragging(item), []);
+  const endDrag = useCallback(() => {
+    setDragging(null);
+    setDragOverQueue(null);
+  }, []);
 
   const allInQueueSelected = aList.length > 0 && aList.every((item) => selectedIds.has(item.id));
 
@@ -444,7 +513,8 @@ export default function ApprovalsPage() {
         return next;
       });
 
-      await fetchBoard();
+      removeFromBoard([item.id]);
+      fetchBoard({ silent: true });
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Action failed");
     }
@@ -494,10 +564,26 @@ export default function ApprovalsPage() {
   };
 
   // ---------- Bulk actions ----------
+  // Take the given items off the board right away so the click feels
+  // instant; the server confirms in the background and a silent refresh
+  // restores anything that didn't go through.
+  const removeFromBoard = (ids) => {
+    const gone = new Set(ids);
+    setBoard((current) => {
+      const next = {};
+      for (const key of Object.keys(current || {})) {
+        next[key] = (current[key] || []).filter((item) => !gone.has(item.id));
+      }
+      return next;
+    });
+  };
+
   const handleBulkApprove = async () => {
     const ids = [...selectedIds];
     if (!canAct || !ids.length) return;
     setBulkLoading(true);
+    removeFromBoard(ids);
+    clearSelection();
 
     try {
       // One request for the whole selection (the server groups by
@@ -509,12 +595,11 @@ export default function ApprovalsPage() {
       if (failedCount) {
         toast.error(`${failedCount} could not be approved (already handled or not allowed)`);
       }
-      clearSelection();
-      await fetchBoard();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Bulk approve failed");
     } finally {
       setBulkLoading(false);
+      fetchBoard({ silent: true });
     }
   };
 
@@ -522,6 +607,8 @@ export default function ApprovalsPage() {
     const ids = [...selectedIds];
     if (!canAct || !ids.length) return;
     setBulkLoading(true);
+    removeFromBoard(ids);
+    clearSelection();
 
     try {
       const results = await Promise.allSettled(
@@ -529,9 +616,9 @@ export default function ApprovalsPage() {
       );
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
       toast.success(`${succeeded} of ${ids.length} sent back`);
-      await fetchBoard();
     } finally {
       setBulkLoading(false);
+      fetchBoard({ silent: true });
     }
   };
 
@@ -770,63 +857,20 @@ export default function ApprovalsPage() {
                 <span className="text-xs text-muted-foreground">This queue is clear.</span>
               </div>
             ) : (
-              aList.map((item) => {
-                const isSelected = item.id === selectedId;
-                const checked = selectedIds.has(item.id);
-
-                return (
-                  <div
-                    key={item.id}
-                    data-testid={`${APPROVALS.listRowPrefix}-${item.id}`}
-                    draggable={canAct && !movingId}
-                    onDragStart={() => setDragging(item)}
-                    onDragEnd={() => {
-                      setDragging(null);
-                      setDragOverQueue(null);
-                    }}
-                    onClick={() => {
-                      setSelectedId(item.id);
-                      setDetailOpen(true);
-                    }}
-                    className={[
-                      "flex w-full cursor-pointer items-start gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition-colors",
-                      isSelected ? "bg-[#f0f0fd]" : "hover:bg-slate-50",
-                    ].join(" ")}
-                  >
-                    {canAct && (
-                      <input
-                        type="checkbox"
-                        data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
-                        checked={checked}
-                        onChange={() => toggleSelect(item.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-                        aria-label={`Select ${item.deliverable_name}`}
-                      />
-                    )}
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="flex-1" />
-                        {(() => {
-                          const chip = dueChip(item.due_date);
-                          return (
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>
-                              {chip.label}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                      <div className="mt-1 truncate text-sm font-semibold leading-5 text-slate-900">
-                        {item.deliverable_name}
-                      </div>
-                      <div className="mt-0.5 truncate text-xs text-slate-500">
-                        {item.project_name} · {item.client_name || "—"}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
+              aList.map((item) => (
+                <ApprovalRow
+                  key={item.id}
+                  item={item}
+                  isSelected={item.id === selectedId}
+                  checked={selectedIds.has(item.id)}
+                  canAct={canAct}
+                  draggable={canAct && !movingId}
+                  onOpen={openRow}
+                  onToggle={toggleSelect}
+                  onDragStart={startDrag}
+                  onDragEnd={endDrag}
+                />
+              ))
             )}
           </div>
         </div>

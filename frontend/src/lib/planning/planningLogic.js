@@ -133,7 +133,7 @@ export function computePlan(
       ini: initials(L.p[0]),
       dept: L.p[1],
       away: L.pot === 0,
-      loadTxt: L.pot ? fmtH(L.a) + " of " + fmtH(L.pot) : holiday ? "Holiday · " + holiday : "On leave",
+      loadTxt: L.pot ? fmtH(L.a) + " of " + fmtH(L.pot) : holiday ? "Holiday · " + holiday : "Not scheduled",
       pct: L.pot ? round(L.pct) + "%" : "–",
       barW: Math.min(100, L.pct) + "%",
       barC: c[0],
@@ -198,12 +198,12 @@ export function computePlan(
       const c = loadC(L.pct);
       return {
         name: L.p[0],
-        meta: L.pot ? fmtH(L.a) + " assigned of " + fmtH(L.pot) : "On leave " + periodWord,
+        meta: L.pot ? fmtH(L.a) + " assigned of " + fmtH(L.pot) : "Not scheduled " + periodWord,
         load: L.pot ? round(L.pct) + "%" : "–",
         exp: L.pot ? L.exp + "%" : "–",
         fill: Math.min(125, L.pct) / 1.25 + "%",
         barC: c[0],
-        tag: L.pot ? c[2] : "On leave",
+        tag: L.pot ? c[2] : "Off",
         tagFg: L.pot ? c[1] : "var(--neutral-500)",
         why: "On-time " + L.p[2] + "% · feedback " + L.p[3] + "/5",
       };
@@ -361,7 +361,7 @@ export function computePlan(
     rows,
     nowLeft: pos(P_NOW) + "%",
     // The "now" line only means something during the working day (Today view).
-    showNow: !week && !holiday && P_NOW >= lo && P_NOW <= hi,
+    showNow: !week && !holiday && !ctx?.past && P_NOW >= lo && P_NOW <= hi,
     nowLabel: (() => {
       const m = Math.floor(P_NOW * 60);
       const h = Math.floor(m / 60);

@@ -32,6 +32,7 @@ let state = {
   people: [],
   peopleById: [],
   ctx: null,
+  planDate: "", // "" = today; otherwise YYYY-MM-DD of the day being looked at
   dismissed: {},
   loaded: { plan: false, cards: false },
 };
@@ -71,7 +72,13 @@ const fail = (scope, err, what) => {
 
 export const refreshPlan = async () => {
   try {
-    const { data } = await axios.get(`${API}/planning/overview`);
+    const asked = state.planDate;
+    const { data } = await axios.get(`${API}/planning/overview`, {
+      params: asked ? { date: asked } : {},
+    });
+    // A slower answer for a day the person has already moved off must not
+    // overwrite the day they are looking at now.
+    if (asked !== state.planDate) return;
     failing = { ...failing, plan: false };
     setState({
       tasks: data.tasks || [],
@@ -132,6 +139,12 @@ export const usePlanningStore = (scope) => {
 };
 
 // ---------------- Planning ----------------
+
+// Look at the plan for another day ("" goes back to today).
+export const setPlanDate = (day) => {
+  setState({ planDate: day || "" });
+  return refreshPlan();
+};
 
 export const getPlanTasks = async () => {
   await refreshPlan();

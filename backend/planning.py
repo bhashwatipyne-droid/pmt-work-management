@@ -39,7 +39,7 @@ Collections used
 import os
 import re
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, date as date_type, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -146,9 +146,11 @@ def _clock(dt: datetime) -> str:
     return f"{hour}:{dt.minute:02d} {'AM' if dt.hour < 12 else 'PM'}"
 
 
-def week_context(now: datetime) -> dict:
+def week_context(now: datetime, real_now: Optional[datetime] = None) -> dict:
     """The Monday-Friday week containing `now` (IST), as the Planning page needs it."""
     today = now.astimezone(IST)
+    # Looking at an earlier day: there is no "now" line, and the page says so.
+    past = bool(real_now) and today.date() < real_now.astimezone(IST).date()
     monday = today.date() - timedelta(days=today.weekday())
     days = [monday + timedelta(days=i) for i in range(5)]
     friday = days[-1]
@@ -165,6 +167,7 @@ def week_context(now: datetime) -> dict:
             ),
             "today_label": _long_day(today.date()),
             "holiday": holiday_name(today.date()),
+            "past": past,
         },
     }
 
@@ -789,10 +792,22 @@ def create_planning_router(
     # ------------------------------------------------ managers: Planning
 
     @router.get("/overview")
-    async def overview(request: Request):
+    async def overview(request: Request, date: Optional[str] = Query(None)):
+        """The plan as of `date` (YYYY-MM-DD, IST); today when omitted. An earlier
+        day shows that day's Gantt: Work Sheet rows by the date they were logged,
+        tasks as they stood on it (a task since reassigned or declined is not
+        reconstructed)."""
         user = await planner(request)
-        current = now()
-        week = week_context(current)
+        real_now = now()
+        current = real_now
+        if date:
+            try:
+                picked = date_type.fromisoformat(date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="date must look like 2026-10-09")
+            if picked < real_now.astimezone(IST).date():
+                current = datetime(picked.year, picked.month, picked.day, 12, 0, tzinfo=IST)
+        week = week_context(current, real_now)
         monday: date = week["monday"]
 
         query: Dict[str, Any] = {

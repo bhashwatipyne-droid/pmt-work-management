@@ -9,6 +9,7 @@ import {
   dismissInsight,
   reassignTask,
   resetInsights,
+  setPlanDate,
   usePlanningStore,
 } from "@/services/planningApi";
 
@@ -67,7 +68,7 @@ const SectionHead = ({ title, sub, right }) => (
 const LIST_COLS = "minmax(220px,2fr) 170px minmax(200px,1.5fr) 130px 70px 100px";
 
 export default function PlanningPage() {
-  const { tasks, dismissed, people, ctx } = usePlanningStore("plan");
+  const { tasks, dismissed, people, ctx, planDate } = usePlanningStore("plan");
   const { currentUser } = useUser();
   const [period, setPeriod] = useState("today");
   const [cat, setCat] = useState("all");
@@ -142,6 +143,24 @@ export default function PlanningPage() {
             ))}
           </div>
           <span style={{ fontSize: 14, fontWeight: 600, color: "var(--neutral-900)" }}>{plan.periodLabel}</span>
+          <input
+            type="date"
+            aria-label="Show the plan for a day"
+            data-testid="planning-date"
+            value={planDate || ctx?.date || ""}
+            onChange={(e) => setPlanDate(e.target.value)}
+            style={{ height: 32, padding: "0 8px", borderRadius: 8, border: "1px solid var(--neutral-200)", background: "#fff", fontSize: 13, color: "var(--neutral-900)" }}
+          />
+          {planDate && (
+            <button
+              type="button"
+              className="pp-hv-n50"
+              onClick={() => setPlanDate("")}
+              style={{ height: 30, padding: "0 10px", border: "none", borderRadius: 7, background: "transparent", color: "var(--brand-500)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            >
+              Back to today
+            </button>
+          )}
           <span style={{ flex: 1 }} />
           {ownTeam && (
             <span style={{ padding: "6px 12px", borderRadius: 8, background: "var(--neutral-100)", fontSize: 12, fontWeight: 600, color: "var(--neutral-900)" }}>
@@ -334,12 +353,7 @@ export default function PlanningPage() {
                         <span style={{ minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflowWrap: "anywhere" }}>{b.label}</span>
                       </span>
                     ))}
-                    {r.away && (
-                      <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", paddingLeft: 12, fontSize: 12, color: "var(--neutral-500)" }}>
-                        On leave
-                      </span>
-                    )}
-                  </div>
+                                  </div>
                 </div>
               ))}
             </div>

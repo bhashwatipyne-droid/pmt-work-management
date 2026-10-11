@@ -48,6 +48,7 @@ import { trackEvent } from "../analytics";
 import { ProjectFilterPanel } from "@/components/projects/ProjectFilterPanel";
 import { ExportIconButton } from "@/components/ui/ExportIconButton";
 import { downloadCsv, todayStamp } from "@/lib/exportCsv";
+import { makeMatcher } from "@/lib/search";
 import {
   Popover,
   PopoverContent,
@@ -253,6 +254,11 @@ export default function ProjectsPage() {
 
   // Typing stays instant; the (heavier) re-filtering of the board follows it.
   const deferredSearch = useDeferredValue(search);
+  // Deliverable names load on the first search; until then (or while the
+  // list is still catching up with the typing) don't claim "no results".
+  const searchPending =
+    deferredSearch !== search ||
+    (Boolean(search.trim()) && deliverableNamesByProject === null);
 
   // Depends on "has the user typed anything", not the text itself, so a
   // request in flight is not thrown away on every keystroke.
@@ -268,8 +274,8 @@ export default function ProjectsPage() {
         setDeliverableNamesByProject(byProject || {});
       })
       .catch(() => {
-        // Search still works on project fields; try again when the search
-        // box is next emptied and typed into.
+        // Search still works on project fields; stop waiting on the names.
+        if (!cancelled) setDeliverableNamesByProject({});
       });
 
     return () => {
@@ -278,7 +284,7 @@ export default function ProjectsPage() {
   }, [hasSearch, deliverableNamesByProject]);
 
   const filtered = useMemo(() => {
-    const q = deferredSearch.trim().toLowerCase();
+    const match = makeMatcher(deferredSearch);
 
     return projects
       .filter((p) => {
@@ -298,14 +304,12 @@ export default function ProjectsPage() {
         if (dateFrom && (!endDay || endDay < dateFrom)) return false;
         if (dateTo && (!endDay || endDay > dateTo)) return false;
 
-        if (!q) return true;
-
-        return (
-          (p.name || "").toLowerCase().includes(q) ||
-          (p.code || "").toLowerCase().includes(q) ||
-          (p.client_name || "").toLowerCase().includes(q) ||
-          (p.description || "").toLowerCase().includes(q) ||
-          (deliverableNamesByProject?.[p.id] || []).some((name) => name.includes(q))
+        return match(
+          p.name,
+          p.code,
+          p.client_name,
+          p.description,
+          deliverableNamesByProject?.[p.id]
         );
       });
     // Filtering only here — the active "Sort by" choice is applied once,
@@ -1153,7 +1157,7 @@ export default function ProjectsPage() {
       <div
         className={`min-h-0 flex-1 overflow-auto ${view === "list" ? "mt-[17px]" : "mt-4"}`}
       >
-        {loading ? (
+        {loading || (filtered.length === 0 && searchPending) ? (
           view === "chart" ? (
             <ProjectsBoardSkeleton />
           ) : (

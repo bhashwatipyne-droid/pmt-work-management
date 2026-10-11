@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -504,13 +505,14 @@ export default function ProjectDetailPage() {
     [users]
   );
 
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
 
   const deliverableGroups = useMemo(() => {
+    const match = makeMatcher(q);
     const filtered = deliverables.filter(
       (d) =>
         (stageFilter === "all" || stageOf(d) === stageFilter) &&
-        (!q || `${d.name} ${d.type || ""}`.toLowerCase().includes(q))
+        match(d.name, d.type)
     );
     return STAGES.map((stage) => {
       const rows = filtered.filter((d) => stageOf(d) === stage);
@@ -523,12 +525,9 @@ export default function ProjectDetailPage() {
   }, [deliverables, stageFilter, q]);
 
   const workGroups = useMemo(() => {
-    const filtered = workItems.filter(
-      (w) =>
-        !q ||
-        `${w.deliverable_name || ""} ${userName[w.creator_id] || ""} ${w.stage || ""}`
-          .toLowerCase()
-          .includes(q)
+    const match = makeMatcher(q);
+    const filtered = workItems.filter((w) =>
+      match(w.deliverable_name, userName[w.creator_id], w.stage)
     );
     const byDate = new Map();
     filtered.forEach((w) => {

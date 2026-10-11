@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronRight, List, Search } from "lucide-react";
 
@@ -117,16 +118,10 @@ export default function TeamActivityTab({ activity, onOpenSheet }) {
   const [open, setOpen] = useState({});
 
   const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const match = makeMatcher(query);
     const list = activity.everyone
       .filter(activity.tests[filter])
-      .filter(
-        (p) =>
-          !q ||
-          `${p.name} ${p.now?.name || ""} ${p.now?.meta || ""} ${p.next?.name || ""}`
-            .toLowerCase()
-            .includes(q)
-      );
+      .filter((p) => match(p.name, p.now?.name, p.now?.meta, p.next?.name));
     return activity.sort(list);
   }, [activity, filter, query]);
 

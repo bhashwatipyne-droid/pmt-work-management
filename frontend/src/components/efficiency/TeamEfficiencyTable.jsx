@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { useNavigate } from "react-router-dom";
@@ -110,8 +111,8 @@ export const TeamEfficiencyTable = ({
     let rows = employees;
 
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      rows = rows.filter((e) => e.name?.toLowerCase().includes(q));
+      const match = makeMatcher(search);
+      rows = rows.filter((e) => match(e.name));
     }
 
     if (department) {

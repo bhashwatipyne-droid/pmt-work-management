@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import { STAGE_COLORS } from "@/constants/projectPalette";
@@ -35,14 +36,7 @@ export function LookalikePill() {
 
 const matchesQuery = (project, clientName, q) => {
   if (!q) return true;
-  const haystack = [project.name, clientName, project.description]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return q
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((word) => haystack.includes(word));
+  return makeMatcher(q)(project.name, clientName, project.description);
 };
 
 // Work Sheet Project cell. Replaces the plain searchable list with the
@@ -247,14 +241,10 @@ export function ProjectPicker({
 
   const previewProject = preview ? projects.find((p) => p.id === preview.id) : null;
   const allPreviewDeliverables = previewProject ? deliverablesByProject[previewProject.id] || [] : [];
-  const pq = previewQuery.trim().toLowerCase();
-  const previewDeliverables = pq
+  const previewMatch = makeMatcher(previewQuery);
+  const previewDeliverables = previewQuery.trim()
     ? allPreviewDeliverables.filter((d) =>
-        [d.name, d.type, d.current_stage, d.stage_status]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(pq)
+        previewMatch(d.name, d.type, d.current_stage, d.stage_status)
       )
     : allPreviewDeliverables;
 

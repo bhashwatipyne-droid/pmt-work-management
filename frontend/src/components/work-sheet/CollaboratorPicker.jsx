@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
@@ -65,10 +66,8 @@ export function CollaboratorPicker({
   const added = useMemo(() => new Set(addedIds), [addedIds]);
 
   const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const list = needle
-      ? people.filter((p) => (p.name || "").toLowerCase().includes(needle))
-      : people;
+    const match = makeMatcher(search);
+    const list = search.trim() ? people.filter((p) => match(p.name)) : people;
     // People already on the entry sink to the bottom.
     return [...list].sort(
       (a, b) => Number(added.has(a.id)) - Number(added.has(b.id))

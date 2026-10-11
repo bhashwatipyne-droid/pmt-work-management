@@ -216,6 +216,18 @@ STAGES = ["Content", "Design", "Animate"]
 PROJECT_LIST_LIMIT = 5000
 
 
+def search_clauses(search: str, fields: List[str]) -> List[dict]:
+    """Forgiving text search: one clause per word typed, each of which must
+    match one of `fields`. Punctuation and spacing in the query are ignored,
+    and the words may sit apart in the stored text, so "absl -spl" finds
+    "ABSL - SPL Campaign". Returns [] when the query has no searchable words."""
+    words = re.findall(r"\w+", search or "", re.UNICODE)[:8]
+    return [
+        {"$or": [{f: {"$regex": re.escape(w), "$options": "i"}} for f in fields]}
+        for w in words
+    ]
+
+
 def normalize_stages(stages: Optional[List[str]]) -> List[str]:
     """
     Return selected production stages in the canonical production order.
@@ -3111,21 +3123,9 @@ async def list_work_items(
     # command palette, which reuses this) matches literally instead of
     # producing an invalid regular expression and a 500.
     if search:
-        search_pattern = re.escape(search)
-        query["$or"] = [
-            {
-                "deliverable_name": {
-                    "$regex": search_pattern,
-                    "$options": "i",
-                }
-            },
-            {
-                "remarks": {
-                    "$regex": search_pattern,
-                    "$options": "i",
-                }
-            },
-        ]
+        query.setdefault("$and", []).extend(
+            search_clauses(search, ["deliverable_name", "remarks"])
+        )
 
     # Ask the database for exactly `limit` rows (or the 5000 cap) in ONE batch.
     # to_list(n) alone does not do that: it does not send a limit to the server,
@@ -5377,13 +5377,7 @@ async def list_projects(
         query["status"] = status
 
     if search:
-        search_pattern = re.escape(search)
-        and_clauses.append({
-            "$or": [
-                {"name": {"$regex": search_pattern, "$options": "i"}},
-                {"code": {"$regex": search_pattern, "$options": "i"}},
-            ]
-        })
+        and_clauses.extend(search_clauses(search, ["name", "code"]))
 
     if and_clauses:
         query["$and"] = and_clauses

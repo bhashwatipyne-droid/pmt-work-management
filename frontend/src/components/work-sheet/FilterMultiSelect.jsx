@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { memo, useCallback, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "../ui/input";
@@ -48,11 +49,9 @@ export const FilterMultiSelect = memo(function FilterMultiSelect({
   const [search, setSearch] = useState("");
 
   const { rows: filtered, hiddenCount } = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const matches = needle
-      ? values.filter((value) =>
-          (value.label || "").toLowerCase().includes(needle)
-        )
+    const match = makeMatcher(search);
+    const matches = search.trim()
+      ? values.filter((value) => match(value.label))
       : values;
 
     if (matches.length <= MAX_VISIBLE) {

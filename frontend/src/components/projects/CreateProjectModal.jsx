@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -142,6 +143,7 @@ export const CreateProjectModal = ({
   // Client search: most-used clients when empty; otherwise names containing
   // the text, then look-alike names ("ABSL" finds Aditya Birla Sun Life MF).
   const q = clientQuery.trim().toLowerCase();
+  const matchClient = makeMatcher(clientQuery);
   const clientOptions = (() => {
     if (!q) {
       return clients
@@ -151,7 +153,7 @@ export const CreateProjectModal = ({
         .map((client) => ({ client, why: "" }));
     }
     const direct = clients
-      .filter((c) => (c.name || "").toLowerCase().includes(q))
+      .filter((c) => matchClient(c.name))
       .map((client) => ({ client, why: "" }));
     const fuzzy = findSimilarClients(clientQuery, clients)
       .filter((m) => !direct.some((d) => d.client.id === m.client.id))

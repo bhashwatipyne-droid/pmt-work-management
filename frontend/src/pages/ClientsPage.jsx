@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { avatarColorClasses } from "@/lib/avatarColors";
@@ -761,24 +762,14 @@ export default function ClientsPage() {
   }, [currentUser?.role]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const match = makeMatcher(search);
 
     return clients.filter((c) => {
-      if (!q) return true;
-
       const contactNames = Array.isArray(c.contact_persons)
-        ? c.contact_persons
-            .map((contact) => contact.name || "")
-            .join(" ")
-        : "";
+        ? c.contact_persons.map((contact) => contact.name || "")
+        : [];
 
-      return (
-        c.name?.toLowerCase().includes(q) ||
-        contactNames.toLowerCase().includes(q) ||
-        (c.contact_person || "")
-          .toLowerCase()
-          .includes(q)
-      );
+      return match(c.name, contactNames, c.contact_person);
     });
   }, [clients, search]);
 

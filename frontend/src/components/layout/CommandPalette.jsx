@@ -16,6 +16,7 @@ import {
 import { useUser } from "@/context/UserContext";
 import { useAccess } from "@/hooks/useAccess";
 import { getClients, getProjects, getWorkItems } from "@/services/api";
+import { makeMatcher, searchTokens } from "@/lib/search";
 import { getNavItems } from "./navItems";
 
 const KBD =
@@ -43,6 +44,7 @@ export const CommandPalette = ({ open, onClose, actions }) => {
   const [projects, setProjects] = useState(null);
   const [clients, setClients] = useState(null);
   const [rows, setRows] = useState([]);
+  const [rowsLoading, setRowsLoading] = useState(false);
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
@@ -76,17 +78,20 @@ export const CommandPalette = ({ open, onClose, actions }) => {
   // Work sheet rows are searched on the server (there can be thousands),
   // debounced so typing doesn't fire a request per keystroke.
   useEffect(() => {
-    const q = query.trim();
+    const q = searchTokens(query).join(" ");
     if (!open || q.length < MIN_ROW_QUERY || !currentUserId) {
       setRows([]);
+      setRowsLoading(false);
       return undefined;
     }
 
     let cancelled = false;
+    setRowsLoading(true);
     const timer = setTimeout(() => {
       getWorkItems(currentUserId, { search: q, limit: 6 })
         .then((data) => !cancelled && setRows(Array.isArray(data) ? data : []))
-        .catch(() => !cancelled && setRows([]));
+        .catch(() => !cancelled && setRows([]))
+        .finally(() => !cancelled && setRowsLoading(false));
     }, ROW_SEARCH_DELAY_MS);
 
     return () => {
@@ -169,11 +174,10 @@ export const CommandPalette = ({ open, onClose, actions }) => {
       .filter(Boolean)
       .map((a) => ({ group: "Actions", ...a }));
 
-    const q = query.trim().toLowerCase();
-    if (!q) return [...nav, ...acts];
+    if (!query.trim()) return [...nav, ...acts];
 
-    const matches = (item) =>
-      `${item.label} ${item.meta || ""}`.toLowerCase().includes(q);
+    const match = makeMatcher(query);
+    const matches = (item) => match(item.label, item.meta);
 
     const projectItems = (projects || [])
       .map((p) => ({
@@ -220,6 +224,12 @@ export const CommandPalette = ({ open, onClose, actions }) => {
     const el = listRef.current?.querySelector(`[data-cmd-index="${activeIndex}"]`);
     el?.scrollIntoView?.({ block: "nearest" });
   }, [activeIndex, items.length]);
+
+  const searching =
+    rowsLoading ||
+    (Boolean(query.trim()) &&
+      ((projects === null && access.canViewProjects) ||
+        (clients === null && access.canViewClients)));
 
   if (!open) return null;
 
@@ -322,7 +332,22 @@ export const CommandPalette = ({ open, onClose, actions }) => {
             </div>
           ))}
 
-          {items.length === 0 && (
+          {searching && (
+            <div
+              role="status"
+              aria-label="Searching"
+              className="flex flex-col gap-1.5 px-2.5 py-2"
+            >
+              {(items.length === 0 ? [0, 1, 2] : [0]).map((n) => (
+                <div
+                  key={n}
+                  className="h-7 animate-pulse rounded-[7px] bg-slate-100"
+                />
+              ))}
+            </div>
+          )}
+
+          {items.length === 0 && !searching && (
             <div className="p-7 text-center text-[13px] text-slate-500">
               No matches for “{query}”
             </div>

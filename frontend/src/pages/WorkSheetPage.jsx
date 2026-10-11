@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import { APP_ACTIONS, registerAppAction } from "@/lib/appActions";
 import { refreshCounts } from "@/lib/countsBus";
 import { downloadCsv, slugify, todayStamp } from "@/lib/exportCsv";
+import { makeMatcher, searchTokens } from "@/lib/search";
 import { consumePrefetch, WORKSHEET_INITIAL_ROW_LIMIT } from "@/services/prefetch";
 import {
   addWorkItemCollaborators,
@@ -638,6 +639,14 @@ export default function WorkSheetPage() {
     return map;
   }, [projects]);
 
+  // Typing stays instant; filtering the rows follows it.
+  const deferredSearch = useDeferredValue(filters.search || "");
+  // Not "no results" yet: the list is catching up with the typing, or the
+  // full list is still arriving behind the fast first slice.
+  const searchPending =
+    deferredSearch !== (filters.search || "") ||
+    (loadingFullList && Boolean((filters.search || "").trim()));
+
   const filteredItems = useMemo(() => {
     const sheetStage =
       activeSheet === "Master"
@@ -652,12 +661,8 @@ export default function WorkSheetPage() {
     // Every word has to match somewhere in the row, in any order, so
     // "icici contra carousel" finds a carousel in ICICI's Contra Fund
     // project even though those words sit in different columns.
-    const searchTerms = (filters.search || "")
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-    const search = searchTerms.length > 0;
+    const matchesSearch = makeMatcher(deferredSearch);
+    const search = searchTokens(deferredSearch).length > 0;
     const projectIds = filters.project_ids?.length ? new Set(filters.project_ids) : null;
     const deliverableIds = filters.deliverable_ids?.length ? new Set(filters.deliverable_ids) : null;
     const deliverableTypes = filters.deliverable_types?.length ? new Set(filters.deliverable_types) : null;
@@ -689,8 +694,18 @@ export default function WorkSheetPage() {
 
         const owner = userNameById.get(item.creator_id) || "";
 
-        const haystack = `${item.deliverable_name || ""} ${item.remarks || ""} ${clientName} ${projectName} ${item.deliverable_type || ""} ${owner}`.toLowerCase();
-        if (!searchTerms.every((term) => haystack.includes(term))) return false;
+        if (
+          !matchesSearch(
+            item.deliverable_name,
+            item.remarks,
+            clientName,
+            projectName,
+            item.deliverable_type,
+            owner
+          )
+        ) {
+          return false;
+        }
       }
 
       if (
@@ -718,6 +733,7 @@ export default function WorkSheetPage() {
   }, [
     items,
     filters,
+    deferredSearch,
     month,
     activeSheet,
     clientNameById,
@@ -1953,7 +1969,7 @@ export default function WorkSheetPage() {
         />
       )}
 
-      {loading ? (
+      {loading || (sortedItems.length === 0 && searchPending) ? (
         <WorkSheetTableSkeleton />
       ) : isPhone ? (
         <MobileWorkList

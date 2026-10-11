@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -166,8 +167,8 @@ export default function EfficiencyActivityTargetsPage() {
   useEffect(() => loadTargets(), [loadTargets]);
 
   const filteredEmployees = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? employees.filter((e) => e.name?.toLowerCase().includes(q)) : employees;
+    const match = makeMatcher(search);
+    return search.trim() ? employees.filter((e) => match(e.name)) : employees;
   }, [employees, search]);
 
   const selectedRow = employees.find((e) => e.user_id === employeeId);
@@ -193,10 +194,10 @@ export default function EfficiencyActivityTargetsPage() {
     return { act, t, set, on, min, p: set ? per(Number(t.time_per_unit_minutes)) : { d: "–", m: "–" } };
   });
   const setN = rows.filter((r) => r.set).length;
-  const tq = tgtQ.trim().toLowerCase();
+  const matchTarget = makeMatcher(tgtQ);
   const visible = rows.filter(
     (r) =>
-      (!tq || r.act.toLowerCase().includes(tq)) &&
+      matchTarget(r.act) &&
       (tgtFilter === "all" || (tgtFilter === "set" ? r.set : !r.set))
   );
 

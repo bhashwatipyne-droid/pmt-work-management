@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -281,13 +282,10 @@ export default function ApprovalsPage() {
       if (dateTo && requested > dateTo) return false;
     }
 
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-
-    return (
-      (item.project_name || "").toLowerCase().includes(q) ||
-      (item.deliverable_name || "").toLowerCase().includes(q) ||
-      (item.client_name || "").toLowerCase().includes(q)
+    return makeMatcher(search)(
+      item.project_name,
+      item.deliverable_name,
+      item.client_name
     );
   };
 

@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -170,9 +171,10 @@ function InvoiceList({ onOpen, refreshKey }) {
   const list = useMemo(() => {
     const ready = (data.ready || []).map((p) => rowOf(p, false));
     const raised = (data.raised || []).map((p) => rowOf(p, true));
-    const q = query.trim().toLowerCase();
-    const shown = (tab === "ready" ? ready : raised).filter(
-      (r) => !q || (r.name + " " + r.client + " " + r.code).toLowerCase().includes(q)
+    const q = query.trim();
+    const match = makeMatcher(q);
+    const shown = (tab === "ready" ? ready : raised).filter((r) =>
+      match(r.name, r.client, r.code)
     );
     const sum = (k) => ready.reduce((a, r) => a + r[k], 0);
     return {

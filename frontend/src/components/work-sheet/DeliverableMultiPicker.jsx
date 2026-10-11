@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, ListChecks } from "lucide-react";
 import { STAGE_COLORS } from "@/constants/projectPalette";
@@ -79,12 +80,9 @@ export function DeliverableMultiPicker({
   const selected = selectedIds.map((id) => byId.get(String(id))).filter(Boolean);
 
   const shown = useMemo(() => {
-    const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return options;
-    return options.filter((o) => {
-      const haystack = [o.name, o.current_stage, o.stage_status].filter(Boolean).join(" ").toLowerCase();
-      return words.every((word) => haystack.includes(word));
-    });
+    if (!search.trim()) return options;
+    const match = makeMatcher(search);
+    return options.filter((o) => match(o.name, o.current_stage, o.stage_status));
   }, [options, search]);
 
   // The "Not available" row sits after the deliverables and can be highlighted

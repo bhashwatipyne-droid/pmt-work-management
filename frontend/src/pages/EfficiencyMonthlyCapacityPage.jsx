@@ -1,3 +1,4 @@
+import { makeMatcher } from "@/lib/search";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -175,10 +176,9 @@ export default function EfficiencyMonthlyCapacityPage() {
   );
 
   const filteredEmployees = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const match = makeMatcher(search);
     return employees.filter(
-      (e) =>
-        (!q || e.name?.toLowerCase().includes(q)) && (filter === "all" || !isSet(e.user_id))
+      (e) => match(e.name) && (filter === "all" || !isSet(e.user_id))
     );
   }, [employees, search, filter, isSet]);
 

@@ -46,10 +46,10 @@ test("computes from API people and context", () => {
   expect(plan.list.find((l) => l.id === "t-1").who).toBe("Ratnesh Bor");
 });
 
-test("people without seed stats get neutral stats and trigger no fake 'hold new work' advice", () => {
+test("people with no approval history have no on-time stats and trigger no fake 'hold new work' advice", () => {
   const rows = toPeopleRows(apiPeople);
   const joiner = rows.find((r) => r[0] === "New Joiner");
-  expect(joiner.slice(2, 5)).toEqual([80, 4, 2]);
+  expect(joiner.slice(2, 5)).toEqual([null, null, null]);
   const plan = computePlan(apiTasks, { period: "today", people: rows, ctx });
   expect(plan.insights.some((i) => i.title.startsWith("Hold new work"))).toBe(false);
 });

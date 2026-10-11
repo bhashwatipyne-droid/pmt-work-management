@@ -16,13 +16,8 @@ import axios from "axios";
 import { toast } from "sonner";
 
 import { API } from "@/services/api";
-import { P_PEOPLE } from "@/lib/planning/seed";
 
 const POLL_MS = 60 * 1000;
-// The efficiency numbers (on-time %, feedback, revisions) have no data source yet.
-// People without a seed entry get neutral values that do not trigger any
-// "hold new work" style suggestion.
-const NEUTRAL_STATS = [80, 4.0, 2.0, []];
 
 const listeners = new Set();
 
@@ -57,12 +52,18 @@ const errorText = (err, fallback) => {
 
 // ---------------- loading ----------------
 
+// [name, dept, on-time %, client feedback, revision rounds, leave days]. On-time
+// and revisions are worked out by the server from the approval history (null
+// until there is enough of it); client feedback has no data source.
 export const toPeopleRows = (people) =>
-  (people || []).map((p) => {
-    const seed = P_PEOPLE.find((s) => s[0] === p.name);
-    const [onTime, feedback, revisions, leave] = seed ? seed.slice(2) : NEUTRAL_STATS;
-    return [p.name, p.dept, onTime, feedback, revisions, leave];
-  });
+  (people || []).map((p) => [
+    p.name,
+    p.dept,
+    p.stats?.on_time ?? null,
+    null,
+    p.stats?.revisions ?? null,
+    [],
+  ]);
 
 let failing = { plan: false, cards: false };
 

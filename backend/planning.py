@@ -385,87 +385,6 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
     return rows
 
 
-STATS_WEEKS = 8
-MIN_STAT_SAMPLES = 3
-
-
-async def person_stats(db, user_ids: List[str], now: datetime) -> Dict[str, dict]:
-    """On-time % and average revision rounds per person over the last 8 weeks,
-    worked out from the approval history.
-
-    An approval (or a "changes requested") on a deliverable is credited to each
-    person who logged Work Sheet time on it on or before that day, using the
-    stage they were last logging against. An approval is on time when it came
-    by the end of that stage's deadline (deliverables or stages with no
-    deadline are not counted). Revisions are the sent-back rounds per
-    deliverable the person worked on. With fewer than 3 such cases the figure
-    is None: too little data to say anything.
-    """
-    if not user_ids:
-        return {}
-    since = (now - timedelta(weeks=STATS_WEEKS)).isoformat()
-    events = await db.approval_history.find(
-        {"created_at": {"$gte": since}, "action": {"$in": ["APPROVED", "CHANGES_REQUESTED"]}},
-        {"_id": 0, "deliverable_id": 1, "action": 1, "created_at": 1},
-    ).to_list(20000)
-    deliverable_ids = list({e["deliverable_id"] for e in events if e.get("deliverable_id")})
-    if not deliverable_ids:
-        return {}
-    work, deliverables = await asyncio.gather(
-        db.work_items.find(
-            {
-                "deliverable_id": {"$in": deliverable_ids},
-                "creator_id": {"$in": user_ids},
-                "status": {"$ne": "Scrap"},
-            },
-            {"_id": 0, "deliverable_id": 1, "creator_id": 1, "stage": 1, "work_date": 1},
-        ).to_list(50000),
-        db.deliverables.find(
-            {"id": {"$in": deliverable_ids}}, {"_id": 0, "id": 1, "stage_schedule": 1}
-        ).to_list(len(deliverable_ids)),
-    )
-    schedule = {d["id"]: d.get("stage_schedule") or {} for d in deliverables}
-    by_deliverable: Dict[str, Dict[str, List[dict]]] = {}
-    for w in work:
-        if w.get("deliverable_id") and w.get("creator_id") and w.get("work_date"):
-            by_deliverable.setdefault(w["deliverable_id"], {}).setdefault(w["creator_id"], []).append(w)
-
-    on_time: Dict[str, List[int]] = {}      # user -> [counted, on time]
-    sent_back: Dict[str, int] = {}          # user -> rounds
-    touched: Dict[str, set] = {}            # user -> deliverables worked on
-    for event in events:
-        stamp = _parse_dt(event.get("created_at"))
-        did = event.get("deliverable_id")
-        if not stamp or did not in by_deliverable:
-            continue
-        day = stamp.astimezone(IST).date().isoformat()
-        for uid, rows in by_deliverable[did].items():
-            before = [r for r in rows if r["work_date"] <= day]
-            if not before:
-                continue
-            stage = max(before, key=lambda r: r["work_date"]).get("stage")
-            touched.setdefault(uid, set()).add(did)
-            if event["action"] == "CHANGES_REQUESTED":
-                sent_back[uid] = sent_back.get(uid, 0) + 1
-                continue
-            deadline = ((schedule.get(did) or {}).get(stage) or {}).get("end_dt")
-            if not deadline:
-                continue
-            counted = on_time.setdefault(uid, [0, 0])
-            counted[0] += 1
-            counted[1] += 1 if day <= str(deadline)[:10] else 0
-
-    stats: Dict[str, dict] = {}
-    for uid in user_ids:
-        counted, hit = on_time.get(uid, [0, 0])
-        worked = len(touched.get(uid, ()))
-        stats[uid] = {
-            "on_time": round(hit / counted * 100) if counted >= MIN_STAT_SAMPLES else None,
-            "revisions": round(sent_back.get(uid, 0) / worked, 1) if worked >= MIN_STAT_SAMPLES else None,
-        }
-    return stats
-
-
 # --------------------------------------------------------------------- router
 
 def create_planning_router(
@@ -950,14 +869,6 @@ def create_planning_router(
             )
         ]
         tasks = build_plan_rows(rows, statuses, current)
-        try:
-            stats = await person_stats(db, [p["id"] for p in people], real_now)
-        except Exception as exc:  # noqa: BLE001 - the plan must load without the stats
-            if log_error:
-                log_error(f"planning: could not work out person stats: {exc}")
-            stats = {}
-        for p in people:
-            p["stats"] = stats.get(p["id"]) or {"on_time": None, "revisions": None}
         return {"ctx": week["ctx"], "tasks": tasks, "people": people}
 
     @router.post("/tasks/{task_id}/reassign")

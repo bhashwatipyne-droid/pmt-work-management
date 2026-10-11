@@ -54,11 +54,6 @@ export const taskFromRow = (t, i) => ({
 // `people` ([name, dept, onTime%, feedback, revisions, leaveDays][]) and `ctx`
 // (the week/today description from /api/planning/overview) default to the sample
 // data, so the maths can still be exercised without a backend.
-// On-time % is null until the person has enough finished work to say. Until then
-// they are not marked down for it (100) and the screen says there is no data.
-const onTimeOf = (p) => (p[2] == null ? 100 : p[2]);
-const onTimeText = (p) => (p[2] == null ? "On-time: not enough data yet" : "On-time " + p[2] + "%");
-
 export function computePlan(
   tasks,
   { period = "today", cat = "all", dept = "all", dismissed = {}, people: peopleRows, ctx } = {}
@@ -90,7 +85,7 @@ export function computePlan(
       a,
       pot,
       pct: pot ? (a / pot) * 100 : 0,
-      exp: pot ? round(Math.min((a / pot) * 100, 100) * (onTimeOf(p) / 100)) : 0,
+      exp: pot ? round(Math.min((a / pot) * 100, 100)) : 0,
     };
   };
   const loads = people.map(loadOf);
@@ -195,7 +190,7 @@ export function computePlan(
   const tA = loads.reduce((s, l) => s + l.a, 0);
   const tP = loads.reduce((s, l) => s + l.pot, 0);
   const tExp = tP
-    ? round((loads.reduce((s, l) => s + Math.min(l.a, l.pot) * (onTimeOf(l.p) / 100), 0) / tP) * 100)
+    ? round((loads.reduce((s, l) => s + Math.min(l.a, l.pot), 0) / tP) * 100)
     : 0;
   const eff = [...loads]
     .sort((a, b) => b.pct - a.pct)
@@ -210,7 +205,7 @@ export function computePlan(
         barC: c[0],
         tag: L.pot ? c[2] : "Off",
         tagFg: L.pot ? c[1] : "var(--neutral-500)",
-        why: onTimeText(L.p),
+        why: "",
       };
     });
 
@@ -238,7 +233,7 @@ export function computePlan(
               ((l.a + hrs(t)) / l.pot) * 100 <= 95 &&
               !moved.has(l.p[0])
           )
-          .sort((a, b) => onTimeOf(b.p) - onTimeOf(a.p) || a.pct - b.pct)[0];
+          .sort((a, b) => a.pct - b.pct)[0];
         if (!tgt) continue;
         moved.add(tgt.p[0]);
         ins.push({
@@ -249,7 +244,7 @@ export function computePlan(
           title: "Move “" + t.task + "” to " + tgt.p[0],
           body:
             first(o.p[0]) + " is at " + round(o.pct) + "% of potential " + periodWord + ". " +
-            first(tgt.p[0]) + " has " + fmtH(tgt.pot - tgt.a) + " free" + (tgt.p[2] == null ? "." : " and delivers " + tgt.p[2] + "% on time."),
+            first(tgt.p[0]) + " has " + fmtH(tgt.pot - tgt.a) + " free.",
           factors: [
             "Qty vs potential " + round(o.pct) + "% → " + round(((o.a - hrs(t)) / o.pot) * 100) + "%",
             first(tgt.p[0]) + " " + round(tgt.pct) + "% → " + round(((tgt.a + hrs(t)) / tgt.pot) * 100) + "%",
@@ -259,32 +254,6 @@ export function computePlan(
         });
         break;
       }
-    });
-  loads
-    .filter((l) => l.p[2] != null && l.p[2] < 75 && all.some((t) => t.who === l.p[0] && t.cat === "rolled"))
-    .sort((a, b) => a.p[2] - b.p[2])
-    .slice(0, 1)
-    .forEach((l) => {
-      const key = "rk" + l.p[0];
-      if (dismissed[key]) return;
-      const t = all.find((x) => x.who === l.p[0] && x.cat === "rolled");
-      ins.push({
-        key,
-        icon: "hourglass",
-        tone: "var(--error-50)",
-        toneFg: "var(--error-500)",
-        title: "Hold new work for " + l.p[0],
-        body:
-          "“" + t.task + "” is " + t.note.toLowerCase() +
-          ". Similar deliverables slipped 2.4 days on average over the last 8 weeks.",
-        factors: [
-          "On-time " + l.p[2] + "% · 8 weeks",
-          ...(l.p[4] == null ? [] : ["Avg " + l.p[4] + " revision rounds"]),
-          "Load " + round(l.pct) + "%",
-        ],
-        action: "Show delayed",
-        act: { type: "filterCat", cat: "rolled" },
-      });
     });
   loads
     .filter((l) => l.pot > 0 && l.pct < 60 && !moved.has(l.p[0]))
@@ -302,7 +271,7 @@ export function computePlan(
         body:
           fmtH(l.pot - l.a) + " free " + periodWord + ". At past pace that is about " +
           Math.max(1, Math.floor((l.pot - l.a) / 2.5)) + " more deliverables of average size.",
-        factors: ["Qty vs potential " + round(l.pct) + "%", onTimeText(l.p)],
+        factors: ["Qty vs potential " + round(l.pct) + "%"],
         action: "",
         act: null,
       });

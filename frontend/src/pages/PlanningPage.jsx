@@ -368,7 +368,7 @@ export default function PlanningPage() {
           <section style={CARD}>
             <SectionHead
               title="Expected efficiency"
-              sub="Assigned work against each person’s potential, weighted by past on-time delivery"
+              sub="Assigned work against each person’s potential"
             />
             <div style={{ margin: "0 16px 12px", padding: 14, borderRadius: 10, background: "var(--brand-50)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -401,7 +401,7 @@ export default function PlanningPage() {
                     <span title="100% of potential" style={{ position: "absolute", left: "80%", top: -3, bottom: -3, width: 2, background: "var(--neutral-900)" }} />
                   </span>
                   <span style={{ fontSize: 12, color: "var(--neutral-500)" }}>
-                    {e.meta} · {e.why}
+                    {e.meta}
                   </span>
                 </span>
                 <span style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: "var(--neutral-900)", fontVariantNumeric: "tabular-nums" }}>{e.load}</span>

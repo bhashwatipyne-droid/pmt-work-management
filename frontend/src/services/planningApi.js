@@ -52,18 +52,9 @@ const errorText = (err, fallback) => {
 
 // ---------------- loading ----------------
 
-// [name, dept, on-time %, client feedback, revision rounds, leave days]. On-time
-// and revisions are worked out by the server from the approval history (null
-// until there is enough of it); client feedback has no data source.
+// [name, dept, (unused), (unused), (unused), leave days]
 export const toPeopleRows = (people) =>
-  (people || []).map((p) => [
-    p.name,
-    p.dept,
-    p.stats?.on_time ?? null,
-    null,
-    p.stats?.revisions ?? null,
-    [],
-  ]);
+  (people || []).map((p) => [p.name, p.dept, null, null, null, []]);
 
 let failing = { plan: false, cards: false };
 

@@ -358,7 +358,7 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             "id": item["id"],
             "who": item.get("assignee_pmt_name") or item.get("assignee_name") or "",
             "task": task_title(item),
-            "proj": item.get("project_name") or item.get("project_text") or "",
+            "proj": item.get("project_name") or item.get("project_text") or ("Project to be confirmed" if item.get("project_unconfirmed") else ""),
             "d0": d0,
             "d1": d1,
             "est": est_hours(item),
@@ -613,7 +613,7 @@ def create_planning_router(
                 "ago": ago_text(item.get("created_at"), current),
                 "pri": "P1" if str(item.get("priority") or "").lower() in ("high", "urgent") else "P2",
                 "task": task_title(item),
-                "proj": item.get("project_name") or item.get("project_text") or "",
+                "proj": item.get("project_name") or item.get("project_text") or ("Project to be confirmed" if item.get("project_unconfirmed") else ""),
                 "client": item.get("client_name") or "",
                 "est": est_hours(item),
                 "qty": item.get("qty_text") or "—",
@@ -632,8 +632,18 @@ def create_planning_router(
         if existing:
             return existing["id"]
 
-        project = await db.projects.find_one({"id": item.get("project_id")}, {"_id": 0})
-        if (
+        # The manager named the client but the project is not in PMT yet: the Work
+        # Sheet row is made without a project and the member picks it there.
+        no_project_yet = bool(item.get("project_unconfirmed")) and not item.get("project_id")
+
+        project = (
+            None
+            if no_project_yet
+            else await db.projects.find_one({"id": item.get("project_id")}, {"_id": 0})
+        )
+        if no_project_yet:
+            pass
+        elif (
             not project
             or project.get("hidden")
             or project.get("duplicate_of")
@@ -645,7 +655,7 @@ def create_planning_router(
             )
 
         deliverable = None
-        if item.get("deliverable_id"):
+        if item.get("deliverable_id") and project:
             deliverable = await db.deliverables.find_one(
                 {"id": item["deliverable_id"], "project_id": project["id"]}, {"_id": 0}
             )
@@ -660,12 +670,12 @@ def create_planning_router(
             deliverable_type=d_type,
             work_category=deliverable_type_categories.get(d_type, "Core"),
             creator_id=user.id,
-            client_id=project.get("client_id"),
-            project_id=project["id"],
+            client_id=project.get("client_id") if project else item.get("client_id"),
+            project_id=project["id"] if project else None,
             deliverable_id=(deliverable or {}).get("id"),
             # A deliverable the project does not have yet is the Work Sheet's
             # own "Not available" case (admins are told to add it).
-            deliverable_not_available=bool(item.get("deliverable_name") and not deliverable),
+            deliverable_not_available=bool(project and item.get("deliverable_name") and not deliverable),
             stage=department_to_stage[user.department],
             remarks=remarks,
             status="Not Started",

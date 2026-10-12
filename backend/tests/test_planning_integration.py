@@ -710,3 +710,23 @@ def test_animation_tasks_reach_the_animation_team_and_nobody_else(env):
     assert "anim-held" in [r["id"] for r in review.json()]
     # other teams' managers do not get it in their review queue
     assert "anim-held" not in [r["id"] for r in env.get("/planning/review", "manager-vs").json()]
+
+
+def test_a_task_with_a_named_client_but_no_project_can_be_accepted(env):
+    """The listener queues it as 'project to be confirmed'; accepting must make a
+    Work Sheet row without a project instead of failing with a 409."""
+    base = copy.deepcopy(FIXTURE["items"][0])
+    run(server.db.tasklist_items.insert_one(dict(
+        base, id="noproj", seq=95, dedupe_key="noproj-1", status="pending",
+        assignee_user_id="member-rb", assignee_name="Ratnesh", assignee_pmt_name="Ratnesh Bor",
+        project_id=None, project_name=None, project_text=None, deliverable_id=None,
+        deliverable_name="PPT first for design approval", project_unconfirmed=True,
+    )))
+    cards = env.get("/planning/my-tasks", "member-rb").json()
+    card = next(c for c in cards if c["id"] == "noproj")
+    assert card["proj"] == "Project to be confirmed"
+    r = env.post("/planning/my-tasks/noproj/accept", "member-rb")
+    assert r.status_code == 200, r.text
+    row = next(x for x in env.work_items(creator_id="member-rb") if x["deliverable_name"] == "PPT first for design approval")
+    assert row["project_id"] in (None, "")
+    assert row["client_id"] == base["client_id"]

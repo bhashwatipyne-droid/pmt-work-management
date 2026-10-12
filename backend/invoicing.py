@@ -80,6 +80,33 @@ def create_invoicing_router(
             {"project_id": project_id, "status": {"$ne": "Scrap"}}, {"_id": 0}
         ).sort([("work_date", 1), ("id", 1)]).to_list(5000)
 
+    async def _deliverable_rows(project_ids: List[str]) -> Dict[str, List[dict]]:
+        """Projects brought over from the old sheet (or merged) have deliverables but no
+        work-sheet rows yet. Show each deliverable as one piece (no time logged) so the
+        project is not billed as empty."""
+        out: Dict[str, List[dict]] = {pid: [] for pid in project_ids}
+        if not project_ids:
+            return out
+        docs = await db.deliverables.find(
+            {"project_id": {"$in": project_ids}},
+            {"_id": 0, "id": 1, "project_id": 1, "name": 1, "type": 1, "owner_id": 1, "current_stage": 1},
+        ).sort("id", 1).to_list(50000)
+        for d in docs:
+            out.setdefault(d["project_id"], []).append(
+                {
+                    "id": d["id"],
+                    "project_id": d["project_id"],
+                    "stage": d.get("current_stage") or "Content",
+                    "creator_id": d.get("owner_id") or None,
+                    "quantity": 1,
+                    "time_taken_minutes": 0,
+                    "deliverable_name": d.get("name") or "",
+                    "deliverable_type": d.get("type") or "",
+                    "deliverable_link": "",
+                }
+            )
+        return out
+
     def _lines(rows: List[dict], edits: Dict[str, dict], people: Dict[str, dict]) -> List[dict]:
         """One line per piece. A collaborator's copy of a row is the same piece, so
         it adds its time to the original instead of being billed again."""
@@ -192,6 +219,10 @@ def create_invoicing_router(
             ).to_list(50000)
             for r in rows_all:
                 by_project.setdefault(r["project_id"], []).append(r)
+            empty = [pid for pid in project_ids if not by_project.get(pid)]
+            for pid, drows in (await _deliverable_rows(empty)).items():
+                by_project[pid] = drows
+                rows_all.extend(drows)
         people = await _people(rows_all)
 
         rows = []
@@ -219,6 +250,8 @@ def create_invoicing_router(
         project = await _project_or_404(project_id)
         clients = await _clients_for([project])
         work = await _work_rows(project_id)
+        if not work:
+            work = (await _deliverable_rows([project_id])).get(project_id, [])
         lines = _lines(work, project.get("invoice_line_edits") or {}, await _people(work))
         return {
             **await _meta(project, clients),
@@ -233,6 +266,10 @@ def create_invoicing_router(
         belongs = await db.work_items.find_one(
             {"id": work_item_id, "project_id": project_id}, {"_id": 0, "id": 1}
         )
+        if not belongs:
+            belongs = await db.deliverables.find_one(
+                {"id": work_item_id, "project_id": project_id}, {"_id": 0, "id": 1}
+            )
         if not belongs:
             raise HTTPException(status_code=404, detail="Line not found")
         patch = payload.model_dump(exclude_unset=True)

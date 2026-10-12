@@ -242,7 +242,8 @@ export function ProjectPicker({
   const previewProject = preview ? projects.find((p) => p.id === preview.id) : null;
   const allPreviewDeliverables = previewProject ? deliverablesByProject[previewProject.id] || [] : [];
   const previewMatch = makeMatcher(previewQuery);
-  const previewDeliverables = previewQuery.trim()
+  const pq = previewQuery.trim();
+  const previewDeliverables = pq
     ? allPreviewDeliverables.filter((d) =>
         previewMatch(d.name, d.type, d.current_stage, d.stage_status)
       )

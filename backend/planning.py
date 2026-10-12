@@ -53,7 +53,10 @@ LOGS = "nlp_match_logs"
 
 # Planning page: the three production departments, and a working day.
 PLAN_DEPARTMENTS = ("Content", "Design", "Animation")
-TEAM_DEPARTMENT = {"content": "Content", "design": "Design"}
+# tasklist team (as the WhatsApp listener writes it) -> PMT department. Every
+# department in PLAN_DEPARTMENTS needs an entry: a task for a team that is not
+# listed here is stored but never shown to anyone.
+TEAM_DEPARTMENT = {"content": "Content", "design": "Design", "animation": "Animation"}
 DAY_START = 9.5
 DAY_END = 18.0
 

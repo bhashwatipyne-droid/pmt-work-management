@@ -668,3 +668,45 @@ def test_a_typed_row_waiting_for_review_is_stuck_in_review(env):
     row = sheet_row(status="Ready for Review")
     add_sheet_rows(row)
     assert plan_for(env)[row["id"]]["cat"] == "review"
+
+
+# ------------------------------------------------------------ the Animation team
+
+def _add_animation_people_and_items():
+    run(server.db.users.insert_many([
+        {"id": "member-anim", "name": "Anim Member", "role": "member", "department": "Animation", "active": True, "email": "anim-member@x.test"},
+        {"id": "manager-anim", "name": "Anim Manager", "role": "manager", "department": "Animation", "active": True, "email": "anim-manager@x.test"},
+    ]))
+    server._user_cache.clear()
+    base = copy.deepcopy(FIXTURE["items"][0])
+    ready = dict(
+        base, id="anim-ready", seq=90, team="animation", dedupe_key="anim-1", status="pending",
+        assignee_user_id="member-anim", assignee_name="Anim Member", assignee_pmt_name="Anim Member",
+    )
+    held = dict(
+        base, id="anim-held", seq=91, team="animation", dedupe_key="anim-2", status="needs_review",
+        needs_review=True, review_reasons=["Ambiguous project"], assignee_user_id=None,
+    )
+    run(server.db.tasklist_items.insert_many([ready, held]))
+
+
+def test_every_planning_department_can_receive_tasklists():
+    """A department the listener can write tasks for but PMT cannot map to is a
+    silent black hole: the task is stored and nobody ever sees it."""
+    assert set(planning.TEAM_DEPARTMENT.values()) == set(planning.PLAN_DEPARTMENTS)
+
+
+def test_animation_tasks_reach_the_animation_team_and_nobody_else(env):
+    _add_animation_people_and_items()
+
+    cards = env.get("/planning/my-tasks", "member-anim").json()
+    assert [c["id"] for c in cards] == ["anim-ready"]
+
+    # a Content member never sees an Animation card
+    assert "anim-ready" not in [c["id"] for c in env.get("/planning/my-tasks", "member-rb").json()]
+
+    review = env.get("/planning/review", "manager-anim")
+    assert review.status_code == 200
+    assert "anim-held" in [r["id"] for r in review.json()]
+    # other teams' managers do not get it in their review queue
+    assert "anim-held" not in [r["id"] for r in env.get("/planning/review", "manager-vs").json()]

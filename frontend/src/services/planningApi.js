@@ -17,7 +17,9 @@ import { toast } from "sonner";
 
 import { API } from "@/services/api";
 
-const POLL_MS = 60 * 1000;
+// New WhatsApp tasklists should show up within seconds, not minutes. Polling
+// only runs while the tab is visible (see tick), so a short interval is cheap.
+const POLL_MS = 10 * 1000;
 
 const listeners = new Set();
 
@@ -107,6 +109,7 @@ const watchers = { plan: 0, cards: 0 };
 let timer = null;
 
 const tick = () => {
+  if (document.hidden) return;
   Object.keys(watchers).forEach((scope) => {
     if (watchers[scope] > 0) REFRESH[scope]();
   });
@@ -118,19 +121,21 @@ const startWatching = (scope) => {
   if (!timer) {
     timer = setInterval(tick, POLL_MS);
     window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", tick);
   }
   return () => {
     watchers[scope] -= 1;
     if (Object.values(watchers).every((n) => n <= 0) && timer) {
       clearInterval(timer);
       window.removeEventListener("focus", tick);
+      document.removeEventListener("visibilitychange", tick);
       timer = null;
     }
   };
 };
 
 // scope: "plan" (Planning page) or "cards" (task cards). It starts loading and
-// keeps the data fresh (every minute and when the tab regains focus) while the
+// keeps the data fresh (every 10 seconds while visible, and when the tab regains focus) while the
 // component is mounted.
 export const usePlanningStore = (scope) => {
   useEffect(() => (scope ? startWatching(scope) : undefined), [scope]);

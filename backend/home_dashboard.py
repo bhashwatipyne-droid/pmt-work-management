@@ -33,7 +33,8 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
   approvals    per deliverable, its pending approval items (type + the person
                assigned, if any) - who has to sign off
   reviews      work-sheet entries a member marked "Ready for Review" that their
-               assigned reviewer has not acted on yet. Owner = the member who
+               assigned reviewer has not acted on yet (not for deliverables that are
+               already done, or projects already billed / completed). Owner = the member who
                logged it, reviewer = who it is assigned to, since = when it was
                marked ready (dropped once older than MAX_OVERDUE_DAYS)
 
@@ -395,8 +396,18 @@ def create_home_dashboard_router(
             })
 
         # ---- work-sheet reviews still waiting on the reviewer ---------------
+        # A work-sheet entry still awaiting its reviewer is not actionable once
+        # the deliverable it belongs to is finished (or its project is billed),
+        # so it must not push the project into "Watch" / the action queue.
+        done_deliverables = {
+            d["id"] for d in deliverables if d.get("stage_status") in DONE_STAGE_STATUSES
+        }
         reviews_out = []
         for w in review_items:
+            if w.get("deliverable_id") in done_deliverables:
+                continue
+            if (project_by_id.get(w.get("project_id")) or {}).get("status") in BILLED_PROJECT_STATUSES:
+                continue
             since = marked_ready_at.get(w["id"]) or w.get("updated_at") or w.get("created_at")
             since_day = _day(since)
             project_id = w.get("project_id")

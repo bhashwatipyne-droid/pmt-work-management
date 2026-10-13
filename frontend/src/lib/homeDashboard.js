@@ -20,7 +20,12 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export const pc = (n, d) => (d ? Math.round((n / d) * 100) : 0);
 
-export const currentMonth = () => new Date().toISOString().slice(0, 7);
+// Local calendar month (the team is in IST); toISOString() would use UTC and
+// show the previous month for the first hours of the 1st.
+export const currentMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
 
 export const shiftMonth = (month, delta) => {
   const [y, m] = month.split("-").map(Number);
@@ -137,7 +142,8 @@ export function buildHome({ data, team, filters, userName }) {
     r.stage_status === "Changes Requested" ||
     r.pending_approvals > 0;
   const blocked = attention.filter(waiting);
-  const repeated = scoped.filter((r) => r.revisions >= 2);
+  // Already billed / completed work is past chasing, so it is not an action.
+  const repeated = scoped.filter((r) => r.revisions >= 2 && r.bucket !== "billed");
 
   const signals = {
     crit: { value: crit.length, den: delay.length },

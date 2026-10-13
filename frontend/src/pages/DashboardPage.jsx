@@ -288,6 +288,7 @@ export default function DashboardPage() {
     setTab("actions");
   };
 
+  const billedViaProject = h.billed.filter((r) => ["Raised Invoice", "Completed"].includes(projects[r.project_id]?.status)).length;
   const kpis = [
     { label: "Active deliverables", value: activeN, den: h.total, denLabel: "total", rows: h.active, dot: C.brand500, go: () => setTab("risk") },
     { label: "On track", value: h.on.length, den: activeN, denLabel: "active", rows: h.on, dot: C.success500, go: () => setTab("risk") },
@@ -300,7 +301,10 @@ export default function DashboardPage() {
       },
     },
     { label: "Ready for billing", value: h.ready.length, den: h.total, denLabel: "total", rows: h.ready, dot: C.info500, go: () => navigate("/projects") },
-    { label: "Billed / completed", value: h.billed.length, den: h.total, denLabel: "total", rows: h.billed, dot: C.n400, go: () => navigate("/projects") },
+    {
+      label: "Billed / completed", value: h.billed.length, den: h.total, denLabel: "total", rows: h.billed, dot: C.n400, go: () => navigate("/projects"),
+      note: `${billedViaProject} in invoiced / completed projects · ${h.billed.length - billedViaProject} marked done`,
+    },
   ];
 
   const cats = [
@@ -435,7 +439,7 @@ export default function DashboardPage() {
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <span className="min-w-[112px] text-center text-[13px] font-medium">{label}</span>
-                <button type="button" aria-label="Next month" onClick={() => setMonth((m) => shiftMonth(m, 1))} className="flex h-8 w-8 items-center justify-center text-[rgb(74,88,120)]">
+                <button type="button" aria-label="Next month" disabled={month >= currentMonth()} onClick={() => setMonth((m) => (m >= currentMonth() ? m : shiftMonth(m, 1)))} className="flex h-8 w-8 items-center justify-center text-[rgb(74,88,120)] disabled:cursor-not-allowed disabled:opacity-30">
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
@@ -602,6 +606,11 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
+              {data.stale_overdue > 0 && (
+                <span className="basis-full text-[12px] text-[rgb(138,151,181)]">
+                  {data.stale_overdue} open deliverable{data.stale_overdue === 1 ? "" : "s"} overdue by more than {data.definitions?.max_overdue_days ?? 45} days are not counted here (likely stale data).
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => openActions(critCount ? "crit" : "all")}
@@ -635,6 +644,7 @@ export default function DashboardPage() {
                     <span className="text-[12px] leading-4 text-[rgb(84,100,144)]">
                       {pc(k.value, k.den)}% of {k.denLabel} · {h.projectsOf(k.rows)} projects
                     </span>
+                    {k.note && <span className="text-[12px] leading-4 text-[rgb(138,151,181)]">{k.note}</span>}
                     {k.extra && (
                       <Pill bg={k.extra.good ? C.success100 : C.error50} fg={k.extra.good ? C.successText : C.error500}>
                         {k.extra.text}

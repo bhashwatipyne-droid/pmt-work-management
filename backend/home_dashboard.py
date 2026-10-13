@@ -66,6 +66,12 @@ ACTIVITY_DAYS = 14
 ACTIVITY_RECENT = 4
 
 BILLED_PROJECT_STATUSES = {"Raised Invoice", "Completed"}
+# "Closed" is the legacy finished-import status (see migrate_finished_deliverables.py);
+# it means done exactly like "Completed".
+DONE_STAGE_STATUSES = {"Completed", "Closed"}
+# Same clock the Planning module uses: the team works in IST, so "today" and
+# "this month" must roll over at IST midnight, not UTC midnight.
+IST = timezone(timedelta(hours=5, minutes=30))
 EXCLUDED_PROJECT_STATUSES = {"Scrapped"}
 
 
@@ -117,10 +123,15 @@ def create_home_dashboard_router(
     async def dashboard_home(request: Request, month: Optional[str] = Query(None)):
         await require_admin(request)
 
-        today = datetime.now(timezone.utc).date()
-        month = month or today.strftime("%Y-%m")
+        today = datetime.now(IST).date()
+        this_month = today.strftime("%Y-%m")
+        month = month or this_month
         if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
             raise HTTPException(status_code=400, detail="month must look like 2026-09")
+        # Nothing is "due in the future" as far as management is concerned, and
+        # a future month would only echo this month's carried-over delays.
+        if month > this_month:
+            month = this_month
 
         m_start, m_end = _month_bounds(month)
         trend_months = _prev_months(month, 6)
@@ -162,6 +173,8 @@ def create_home_dashboard_router(
                 {"$group": {
                     "_id": {"d": "$deliverable_id", "s": "$stage"},
                     "creator_id": {"$first": "$creator_id"},
+                    "work_date": {"$first": "$work_date"},
+                    "created_at": {"$first": "$created_at"},
                 }},
             ]).to_list(None),
             db.work_item_activity_log.aggregate([
@@ -231,12 +244,19 @@ def create_home_dashboard_router(
                 "status": p.get("status", ""),
             }
 
+        # $group output has no defined order, so "latest across stages" is
+        # picked here from each group's own latest entry.
         owner = {}
         latest_any_stage = {}
+        latest_stamp = {}
         for row in owner_rows:
             key = row.get("_id") or {}
-            owner[(key.get("d"), key.get("s"))] = row.get("creator_id")
-            latest_any_stage.setdefault(key.get("d"), row.get("creator_id"))
+            d_id = key.get("d")
+            owner[(d_id, key.get("s"))] = row.get("creator_id")
+            stamp = (str(row.get("work_date") or ""), str(row.get("created_at") or ""))
+            if d_id not in latest_stamp or stamp > latest_stamp[d_id]:
+                latest_stamp[d_id] = stamp
+                latest_any_stage[d_id] = row.get("creator_id")
 
         revisions: Dict[str, int] = {}
         if wi_rework_rows:
@@ -265,6 +285,7 @@ def create_home_dashboard_router(
         rows_out = []
         trend_due: Dict[str, List[bool]] = {m: [] for m in trend_months}
         trend_first_pass: Dict[str, List[bool]] = {m: [] for m in trend_months}
+        stale_overdue = 0
 
         for d in deliverables:
             project = project_by_id.get(d.get("project_id"))
@@ -273,7 +294,11 @@ def create_home_dashboard_router(
 
             stage = d.get("current_stage") or "Content"
             stage_status = d.get("stage_status") or "Not Started"
-            done = stage_status == "Completed"
+            done = stage_status in DONE_STAGE_STATUSES
+            # A deliverable inside an already-invoiced / completed project is
+            # finished for delivery purposes even if its own status was never
+            # ticked, so it must not count as late in the trend either.
+            finished = done or project["status"] in BILLED_PROJECT_STATUSES
             window = (d.get("stage_schedule") or {}).get(stage) or {}
             due = _day(window.get("end_dt")) or _day(d.get("end_dt"))
             final_due = _day(d.get("end_dt")) or due
@@ -285,7 +310,7 @@ def create_home_dashboard_router(
             # deliverable's last update as its completion date - the app
             # doesn't store a separate completed-at.
             if due and due[:7] in trend_due:
-                late = (done and completed_on and completed_on > due) or (not done and due < today_s)
+                late = (done and completed_on and completed_on > due) or (not finished and due < today_s)
                 trend_due[due[:7]].append(bool(late))
             if completed_on and completed_on[:7] in trend_first_pass:
                 trend_first_pass[completed_on[:7]].append(revs == 0)
@@ -302,6 +327,11 @@ def create_home_dashboard_router(
                 and today_s <= final_due <= next_until
             )
             if not scoped and not in_next:
+                if (
+                    due and due < overdue_floor and not finished
+                    and project["status"] != "Ready for Invoice"
+                ):
+                    stale_overdue += 1
                 continue
 
             bucket = None
@@ -428,6 +458,9 @@ def create_home_dashboard_router(
                 "max_overdue_days": MAX_OVERDUE_DAYS,
             },
             "deliverables": rows_out,
+            # Open deliverables overdue by more than max_overdue_days: left out of
+            # every number above, counted here so they are not silently forgotten.
+            "stale_overdue": stale_overdue,
             "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,
@@ -444,7 +477,7 @@ def create_home_dashboard_router(
     async def dashboard_team_activity(request: Request):
         await require_admin(request)
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(IST).date()
         today_s = today.isoformat()
 
         members, projects = await asyncio.gather(

@@ -196,8 +196,11 @@ const stageOf = (d) => {
   const own = (d.required_stages || []).filter((s) => STAGES.includes(s));
   return own[own.length - 1] || "Content";
 };
-const statusOf = (d) =>
-  d.stage_status === "Closed" ? "Completed" : d.stage_status || "Not Started";
+// Imported / work-sheet wording that is not in the deliverable status list:
+// Closed = done, Ongoing = in progress, Rework = changes requested. Without this
+// they all fell through to "Not started".
+const LEGACY_STATUS = { Closed: "Completed", Ongoing: "In Progress", Rework: "Changes Requested" };
+const statusOf = (d) => LEGACY_STATUS[d.stage_status] || d.stage_status || "Not Started";
 
 const stageWindow = (d) => {
   const w = d.stage_schedule?.[d.current_stage];

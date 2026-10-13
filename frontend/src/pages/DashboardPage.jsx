@@ -626,11 +626,6 @@ export default function DashboardPage() {
                   </ul>
                 </details>
               )}
-              {data.stale_overdue > 0 && (
-                <span className="basis-full text-[12px] text-[rgb(138,151,181)]">
-                  {data.stale_overdue} open deliverable{data.stale_overdue === 1 ? "" : "s"} overdue by more than {data.definitions?.max_overdue_days ?? 45} days are not counted here (likely stale data).
-                </span>
-              )}
               <button
                 type="button"
                 onClick={() => openActions(critCount ? "crit" : "all")}

@@ -16,9 +16,7 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                project's end date; if that is missing too it is reported as
                "unscheduled" instead of being dropped silently
   month scope  due falls in the month, plus anything still not done whose due
-               is before the month ("carried over") - but only if it went overdue
-               in the last MAX_OVERDUE_DAYS; older leftovers are stale data, not
-               something management can act on
+               is before the month ("carried over"), however long ago it was due
   upcoming     only when viewing the CURRENT month: open work due after the month's
                end that is not billed / ready for invoice. It is healthy work
                scheduled ahead, so it counts (as on track) instead of vanishing.
@@ -39,7 +37,7 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                assigned reviewer has not acted on yet (not for deliverables that are
                already done, or projects already billed / completed). Owner = the member who
                logged it, reviewer = who it is assigned to, since = when it was
-               marked ready (dropped once older than MAX_OVERDUE_DAYS)
+               marked ready (no age limit)
 
 team activity  GET /api/dashboard/team-activity - fetched only when the Home page's
                "Team activity" tab is opened, so the other tabs don't pay for it.
@@ -63,7 +61,6 @@ AT_RISK_DAYS = 2
 CRITICAL_LATE_DAYS = 3
 STALE_WORKING_DAYS = 3
 NEXT_DAYS = 7
-MAX_OVERDUE_DAYS = 45
 
 # Team activity. A working day is 8.5h - the same default the Efficiency module
 # uses (efficiency.DEFAULT_WORKING_HOURS_PER_DAY) - so "load this week" reads as
@@ -146,7 +143,6 @@ def create_home_dashboard_router(
         today_s, m_start_s, m_end_s = today.isoformat(), m_start.isoformat(), m_end.isoformat()
         risk_until = (today + timedelta(days=AT_RISK_DAYS)).isoformat()
         next_until = (today + timedelta(days=NEXT_DAYS)).isoformat()
-        overdue_floor = (today - timedelta(days=MAX_OVERDUE_DAYS)).isoformat()
 
         (
             projects,
@@ -293,7 +289,6 @@ def create_home_dashboard_router(
         rows_out = []
         trend_due: Dict[str, List[bool]] = {m: [] for m in trend_months}
         trend_first_pass: Dict[str, List[bool]] = {m: [] for m in trend_months}
-        stale_overdue = 0
         unscheduled: List[dict] = []
 
         for d in deliverables:
@@ -329,7 +324,7 @@ def create_home_dashboard_router(
                 trend_first_pass[completed_on[:7]].append(revs == 0)
 
             in_month = bool(due) and m_start_s <= due <= m_end_s
-            carried = bool(due) and overdue_floor <= due < m_start_s and not done
+            carried = bool(due) and due < m_start_s and not finished
             # Viewing the current month: open work scheduled beyond it is still
             # live work. (Past months stay as they were - nothing "upcoming".)
             upcoming = (
@@ -353,11 +348,6 @@ def create_home_dashboard_router(
             ):
                 unscheduled.append({"id": d["id"], "name": d.get("name", ""), "project_id": project["id"], "project": project["name"]})
             if not scoped and not in_next:
-                if (
-                    due and due < overdue_floor and not finished
-                    and project["status"] != "Ready for Invoice"
-                ):
-                    stale_overdue += 1
                 continue
 
             bucket = None
@@ -426,7 +416,7 @@ def create_home_dashboard_router(
             since = marked_ready_at.get(w["id"]) or w.get("updated_at") or w.get("created_at")
             since_day = _day(since)
             project_id = w.get("project_id")
-            if not since_day or since_day < overdue_floor:
+            if not since_day:
                 continue
             if project_id and project_id not in project_by_id:
                 continue
@@ -491,12 +481,8 @@ def create_home_dashboard_router(
                 "critical_late_days": CRITICAL_LATE_DAYS,
                 "stale_working_days": STALE_WORKING_DAYS,
                 "next_days": NEXT_DAYS,
-                "max_overdue_days": MAX_OVERDUE_DAYS,
             },
             "deliverables": rows_out,
-            # Open deliverables overdue by more than max_overdue_days: left out of
-            # every number above, counted here so they are not silently forgotten.
-            "stale_overdue": stale_overdue,
             # Open deliverables with no deadline of their own and none on their
             # project either: they cannot be placed in any month.
             "unscheduled": unscheduled,

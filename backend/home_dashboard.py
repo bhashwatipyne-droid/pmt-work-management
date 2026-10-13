@@ -16,6 +16,9 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                is before the month ("carried over") - but only if it went overdue
                in the last MAX_OVERDUE_DAYS; older leftovers are stale data, not
                something management can act on
+  upcoming     only when viewing the CURRENT month: open work due after the month's
+               end that is not billed / ready for invoice. It is healthy work
+               scheduled ahead, so it counts (as on track) instead of vanishing.
   bucket       billed   project Raised Invoice / Completed, or the deliverable
                         itself is Completed
                ready    project Ready for Invoice
@@ -317,7 +320,14 @@ def create_home_dashboard_router(
 
             in_month = bool(due) and m_start_s <= due <= m_end_s
             carried = bool(due) and overdue_floor <= due < m_start_s and not done
-            scoped = in_month or carried
+            # Viewing the current month: open work scheduled beyond it is still
+            # live work. (Past months stay as they were - nothing "upcoming".)
+            upcoming = (
+                month == this_month
+                and bool(due) and due > m_end_s and not finished
+                and project["status"] != "Ready for Invoice"
+            )
+            scoped = in_month or carried or upcoming
 
             in_next = (
                 not done

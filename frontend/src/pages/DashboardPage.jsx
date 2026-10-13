@@ -320,8 +320,12 @@ export default function DashboardPage() {
   const glance = [
     {
       dot: C.success500,
-      lead: `${pc(h.on.length, activeN)}% of active work is on track`,
-      rest: `— ${h.on.length} of ${activeN} deliverables across ${h.projectsOf(h.on)} projects.`,
+      lead: h.on.length
+        ? `${pc(h.on.length, activeN)}% of active work is on track`
+        : activeN ? "Nothing open is on track" : "No active work",
+      rest: h.on.length
+        ? `— ${h.on.length} of ${activeN} deliverables across ${h.projectsOf(h.on)} projects.`
+        : activeN ? `— all ${activeN} open deliverables are late or due within 2 days.` : "in this view.",
     },
     h.delay.length
       ? {

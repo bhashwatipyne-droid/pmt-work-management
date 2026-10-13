@@ -999,6 +999,13 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                   // The ticked deliverables and the time for each only mean
                   // something on a Campaign Ideation Plan row.
                   Object.assign(patch, { deliverable_ids: [], quantity: 1, quantity_items: [] });
+                } else if (
+                  !multiDeliverable &&
+                  isQtySet(item) &&
+                  !qtyApplies({ ...item, ...patch })
+                ) {
+                  // A Content row moved to a Non-Core type: the quantity no longer applies.
+                  Object.assign(patch, { quantity: 1, quantity_items: [] });
                 }
                 onUpdate(item.id, patch);
               }}
@@ -1030,7 +1037,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
         {!applies ? (
           <span
             className="cell-plain block text-center text-[#d1d5db]"
-            title="Qty applies to Design, Animate and Campaign Ideation Plan rows only"
+            title="Qty applies to Design and Animate rows, and to Content rows on a Core deliverable type (not Non-Core activities)"
           >
             —
           </span>

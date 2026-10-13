@@ -951,10 +951,35 @@ def _clean_ids(raw) -> list:
     return cleaned
 
 
+def is_content_quantity_row(row: dict) -> bool:
+    """True for a Content row on a Core deliverable type (Carousel, Minimalist,
+    Presentation (PPT) - Per Slide ...) - it gets a typed Qty with time per
+    unit, the same as a Design row. Non-Core activities (meetings, hiring...)
+    never do, and Campaign Ideation Plan rows keep their own rule (their
+    quantity is the number of ticked deliverables)."""
+    if row.get("stage") != MULTI_DELIVERABLE_STAGE or is_multi_deliverable_row(row):
+        return False
+    deliverable_type = row.get("deliverable_type") or ""
+    if not deliverable_type:
+        return False
+    category = DELIVERABLE_TYPE_CATEGORIES.get(deliverable_type) or row.get("work_category")
+    return category == "Core"
+
+
+def quantity_applies(row: dict) -> bool:
+    """Whether a row can carry a quantity (and per-unit times) at all."""
+    return (
+        row.get("stage") in QUANTITY_STAGES
+        or is_multi_deliverable_row(row)
+        or is_content_quantity_row(row)
+    )
+
+
 def units_of(row: dict) -> int:
     """How many units a row covers for time purposes: its quantity on a
-    Design/Animate row (or a multi-deliverable Content row), 1 everywhere else."""
-    if row.get("stage") not in QUANTITY_STAGES and not is_multi_deliverable_row(row):
+    Design/Animate row, a multi-deliverable Content row or a Core Content row,
+    1 everywhere else."""
+    if not quantity_applies(row):
         return 1
     try:
         return max(1, min(int(float(row.get("quantity") or 1)), MAX_QUANTITY))
@@ -1151,16 +1176,24 @@ def apply_quantity_rules(existing: dict, update_fields: dict) -> None:
     merged = {**existing, **update_fields}
     stage = merged.get("stage")
 
-    if stage not in QUANTITY_STAGES and not is_multi_deliverable_row(merged):
+    if not quantity_applies(merged):
         if (
             ("quantity" in update_fields and float(update_fields["quantity"]) != 1.0)
             or update_fields.get("quantity_items")
         ):
-            raise HTTPException(status_code=400, detail="Quantity applies to Design and Animate rows only.")
+            raise HTTPException(
+                status_code=400,
+                detail="Quantity applies to Design, Animate and Content rows on Core deliverable types only.",
+            )
         if update_fields.get("video_duration_seconds") is not None:
             raise HTTPException(status_code=400, detail="Duration applies to Animate rows only.")
-        # Stage moved away from Design/Animate: the old quantity no longer means anything.
-        if "stage" in update_fields and (
+        # Stage or type moved to something quantity doesn't cover (another stage,
+        # or a Non-Core type on a Content row): the old quantity no longer means anything.
+        if (
+            "stage" in update_fields
+            or "deliverable_type" in update_fields
+            or "work_category" in update_fields
+        ) and (
             float(existing.get("quantity") or 1) != 1.0
             or existing.get("quantity_items")
             or _has_video_duration(existing)

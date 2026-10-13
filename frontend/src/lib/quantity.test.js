@@ -80,8 +80,13 @@ describe("multi-deliverable (Campaign Ideation Plan) rows", () => {
     expect(loggedCount(ideationRow({ quantity_items: [20, null, 45] }))).toBe(2);
   });
 
-  test("an ordinary Content row has no quantity", () => {
-    const plain = { stage: "Content", deliverable_type: "Carousel", deliverable_id: "d1" };
+  test("a Non-Core Content row has no quantity", () => {
+    const plain = {
+      stage: "Content",
+      deliverable_type: "Project Briefing",
+      work_category: "Non-Core",
+      deliverable_id: "d1",
+    };
     expect(qtyApplies(plain)).toBe(false);
     expect(isQtySet(plain)).toBe(false);
   });
@@ -90,6 +95,51 @@ describe("multi-deliverable (Campaign Ideation Plan) rows", () => {
     const row = ideationRow();
     expect(matchesDeliverableFilter(row, new Set(["d3"]))).toBe(true);
     expect(matchesDeliverableFilter(row, new Set(["d9"]))).toBe(false);
+  });
+});
+
+describe("Content rows on Core deliverable types", () => {
+  const ppt = (extra = {}) => ({
+    id: "row-2",
+    stage: "Content",
+    deliverable_type: "Presentation (PPT) - Per Slide",
+    work_category: "Core",
+    quantity: 1,
+    quantity_items: [],
+    ...extra,
+  });
+
+  test("Qty applies, like it does on a Design row", () => {
+    expect(qtyApplies(ppt())).toBe(true);
+    expect(qtyApplies({ stage: "Design", deliverable_type: "Carousel" })).toBe(true);
+  });
+
+  test("a typed quantity counts, with one time slot per unit", () => {
+    const row = ppt({ quantity: 12, quantity_items: Array(12).fill(null) });
+    expect(isQtySet(row)).toBe(true);
+    expect(quantityOf(row)).toBe(12);
+  });
+
+  test("a default row shows no count yet", () => {
+    expect(isQtySet(ppt())).toBe(false);
+  });
+
+  test("the unit is named after the type", () => {
+    const options = { deliverable_type_units: { "Presentation (PPT) - Per Slide": "Slide" } };
+    expect(unitName(ppt(), options, 1)).toBe("slide");
+    expect(unitName(ppt(), options, 12)).toBe("slides");
+  });
+
+  test("Non-Core activities, a missing type and other stages stay out", () => {
+    expect(qtyApplies(ppt({ deliverable_type: "Hiring and Interviews", work_category: "Non-Core" }))).toBe(false);
+    expect(qtyApplies(ppt({ deliverable_type: "" }))).toBe(false);
+    expect(qtyApplies(ppt({ stage: "Review" }))).toBe(false);
+  });
+
+  test("Campaign Ideation Plan keeps its own rule: quantity follows the ticked deliverables", () => {
+    const row = ideationRow({ work_category: "Core", quantity: 9 });
+    expect(isMultiDeliverableRow(row)).toBe(true);
+    expect(quantityOf(row)).toBe(3);
   });
 });
 

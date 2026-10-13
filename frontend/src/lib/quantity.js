@@ -1,5 +1,6 @@
-// Qty column helpers. A Design or Animate row can stand for several units (a
-// 23-slide deck is ONE row with quantity 23). The per-unit minutes live in
+// Qty column helpers. A Design or Animate row - or a Content row on a Core
+// deliverable type - can stand for several units (a 23-slide deck is ONE row
+// with quantity 23). The per-unit minutes live in
 // `quantity_items`; when any are logged the row's Time is their total.
 // Mirrors apply_quantity_rules in backend/server.py, which is the source of
 // truth - these only let the sheet explain a problem before a request is made.
@@ -49,8 +50,21 @@ export const deliverableListPatch = (item, nextIds) => {
   };
 };
 
+// A Content row on a Core deliverable type (Carousel, Minimalist, Presentation
+// (PPT) - Per Slide ...) has a typed Qty with time per unit, like a Design row.
+// Non-Core activities (meetings, hiring, trainings...) never do, and Campaign
+// Ideation Plan rows keep their own rule above.
+// Mirrors is_content_quantity_row in backend/server.py.
+export const isContentQuantityRow = (item) =>
+  item?.stage === MULTI_DELIVERABLE_STAGE &&
+  !isMultiDeliverableRow(item) &&
+  Boolean(item?.deliverable_type) &&
+  item?.work_category === "Core";
+
 export const qtyApplies = (item) =>
-  QUANTITY_STAGES.includes(item?.stage) || isMultiDeliverableRow(item);
+  QUANTITY_STAGES.includes(item?.stage) ||
+  isMultiDeliverableRow(item) ||
+  isContentQuantityRow(item);
 export const durationApplies = (item) => item?.stage === "Animate";
 
 export const quantityOf = (item) => {

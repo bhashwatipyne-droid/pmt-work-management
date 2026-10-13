@@ -24,6 +24,24 @@ export const isMultiDeliverableType = (type) =>
 export const isMultiDeliverableRow = (item) =>
   item?.stage === MULTI_DELIVERABLE_STAGE && isMultiDeliverableType(item?.deliverable_type);
 
+// The fields to send when a row's Deliverable Type changes. The category follows
+// the type, and anything the new type can't carry is cleared: the ticked
+// deliverables once a row stops being a Campaign Ideation Plan one, and the
+// quantity once the type no longer takes one (a Non-Core activity).
+// `categories` is options.deliverable_type_categories.
+export const typeChangePatch = (item, nextType, categories = {}) => {
+  const patch = { deliverable_type: nextType, work_category: categories?.[nextType] || "" };
+  const next = { ...item, ...patch };
+  if (isMultiDeliverableRow(item) && !isMultiDeliverableRow(next)) {
+    // The ticked deliverables and the time for each only mean something on a
+    // Campaign Ideation Plan row.
+    Object.assign(patch, { deliverable_ids: [], quantity: 1, quantity_items: [] });
+  } else if (!isMultiDeliverableRow(item) && isQtySet(item) && !qtyApplies(next)) {
+    Object.assign(patch, { quantity: 1, quantity_items: [] });
+  }
+  return patch;
+};
+
 // The deliverables a row covers, first one first. Rows saved before the list
 // existed only have deliverable_id.
 export const deliverableIdsOf = (item) => {
@@ -60,6 +78,28 @@ export const isContentQuantityRow = (item) =>
   !isMultiDeliverableRow(item) &&
   Boolean(item?.deliverable_type) &&
   item?.work_category === "Core";
+
+// The fields to send when a deliverable is picked for a row: the deliverable
+// itself plus, when it has a type the sheet knows, the row's Deliverable Type
+// (and its category). `types` is options.deliverable_types and `categories`
+// options.deliverable_type_categories. A type already on the row is not sent
+// again.
+export const pickDeliverablePatch = (item, deliverable, { types = [], categories = {} } = {}) => {
+  const patch = { deliverable_id: deliverable.id, deliverable_not_available: false };
+  let after = item;
+  if (
+    deliverable.type &&
+    deliverable.type !== item?.deliverable_type &&
+    types.includes(deliverable.type)
+  ) {
+    const typePatch = typeChangePatch(item, deliverable.type, categories);
+    Object.assign(patch, typePatch);
+    after = { ...item, ...typePatch };
+  }
+  // A Campaign Ideation Plan row keeps its ticked list in step with the pick.
+  if (isMultiDeliverableRow(after)) Object.assign(patch, deliverableListPatch(after, [deliverable.id]));
+  return patch;
+};
 
 export const qtyApplies = (item) =>
   QUANTITY_STAGES.includes(item?.stage) ||

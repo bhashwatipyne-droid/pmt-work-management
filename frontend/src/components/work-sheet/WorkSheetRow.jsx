@@ -41,8 +41,10 @@ import {
   isQtySet,
   loggedCount,
   parseDurationSeconds,
+  pickDeliverablePatch,
   qtyApplies,
   quantityOf,
+  typeChangePatch,
   unitName,
 } from "@/lib/quantity";
 
@@ -762,9 +764,14 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             // from the project.
             const patch = { project_id: picked.id, client_id: picked.client_id };
             if (deliverable) {
-              patch.deliverable_id = deliverable.id;
-              patch.deliverable_not_available = false;
-              if (multiDeliverable) Object.assign(patch, deliverableListPatch(item, [deliverable.id]));
+              // Project, deliverable and the deliverable's type all at once.
+              Object.assign(
+                patch,
+                pickDeliverablePatch(item, deliverable, {
+                  types: options.deliverable_types || [],
+                  categories: options.deliverable_type_categories || {},
+                })
+              );
             } else if (picked.id !== item.project_id) {
               patch.deliverable_id = null;
               patch.deliverable_not_available = false;
@@ -832,6 +839,18 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               onUpdate(item.id, { deliverable_id: null, deliverable_not_available: true });
               return;
             }
+            const picked = v === NONE_VALUE ? null : projectDeliverables.find((d) => String(d.id) === String(v));
+            if (picked) {
+              // The deliverable's type fills the row's Deliverable Type too.
+              onUpdate(
+                item.id,
+                pickDeliverablePatch(item, picked, {
+                  types: options.deliverable_types || [],
+                  categories: options.deliverable_type_categories || {},
+                })
+              );
+              return;
+            }
             onUpdate(item.id, {
               deliverable_id: v === NONE_VALUE ? null : v,
               deliverable_not_available: false,
@@ -839,7 +858,11 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           }}
           options={[
             { value: NONE_VALUE, label: "—" },
-            ...projectDeliverables.map((deliverable) => ({ value: String(deliverable.id), label: deliverable.name })),
+            ...projectDeliverables.map((deliverable) => ({
+              value: String(deliverable.id),
+              label: deliverable.name,
+              chip: deliverable.type || "",
+            })),
             // Last on purpose: people should look for the real deliverable first.
             ...(item.project_id ? [{ value: NOT_AVAILABLE_VALUE, label: NOT_AVAILABLE_LABEL }] : []),
           ]}
@@ -993,21 +1016,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
               value={item.deliverable_type || NONE_VALUE}
               onValueChange={(v) => {
                 const nextType = v === NONE_VALUE ? "" : v;
-                const category = options.deliverable_type_categories?.[nextType] || "";
-                const patch = { deliverable_type: nextType, work_category: category };
-                if (multiDeliverable && !isMultiDeliverableRow({ ...item, deliverable_type: nextType })) {
-                  // The ticked deliverables and the time for each only mean
-                  // something on a Campaign Ideation Plan row.
-                  Object.assign(patch, { deliverable_ids: [], quantity: 1, quantity_items: [] });
-                } else if (
-                  !multiDeliverable &&
-                  isQtySet(item) &&
-                  !qtyApplies({ ...item, ...patch })
-                ) {
-                  // A Content row moved to a Non-Core type: the quantity no longer applies.
-                  Object.assign(patch, { quantity: 1, quantity_items: [] });
-                }
-                onUpdate(item.id, patch);
+                onUpdate(item.id, typeChangePatch(item, nextType, options.deliverable_type_categories));
               }}
               options={[
                 { value: NONE_VALUE, label: "—" },

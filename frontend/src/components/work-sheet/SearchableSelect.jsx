@@ -220,7 +220,7 @@ export function SearchableSelect({
             {normalizedOptions.map((option) => (
               <CommandItem
                 key={String(option.value)}
-                value={`${option.label} ${option.value}`}
+                value={`${option.label} ${option.chip || ""} ${option.value}`}
                 disabled={option.disabled}
                 className="items-start"
                 onSelect={() => {
@@ -238,6 +238,12 @@ export function SearchableSelect({
                 <span className="min-w-0 flex-1 whitespace-normal break-words leading-5">
                   {option.label}
                 </span>
+                {/* Optional small pill after the label, e.g. a deliverable's type. */}
+                {option.chip && (
+                  <span className="mt-0.5 inline-flex max-w-[45%] shrink-0 rounded-full bg-[#f0f0fd] px-2 py-px text-[11px] font-medium leading-4 text-[#1a1a8a]">
+                    {option.chip}
+                  </span>
+                )}
               </CommandItem>
             ))}
           </CommandList>

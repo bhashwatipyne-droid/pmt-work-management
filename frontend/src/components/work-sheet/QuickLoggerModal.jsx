@@ -5,7 +5,7 @@ import { getTimeDefaults } from "@/services/api";
 import { clearQuickLogPreset, peekQuickLogPreset } from "@/lib/appActions";
 import { lowTimeMessage } from "@/lib/timeRules";
 import { buildLookalikeIndex } from "@/lib/lookalikes";
-import { LookalikePill, ProjectNameParts } from "./ProjectPicker";
+import { ProjectNameParts } from "./ProjectPicker";
 import {
   NOT_AVAILABLE_LABEL,
   NOT_AVAILABLE_VALUE,
@@ -935,7 +935,6 @@ export default function QuickLoggerModal({
                                 {item.description}
                               </span>
                             )}
-                            {lookalikes.has(item.id) && <LookalikePill />}
                           </span>
                         ) : (
                           <span className="min-w-0 flex-1 self-center whitespace-normal break-words">

@@ -1,4 +1,4 @@
-import { makeMatcher } from "@/lib/search";
+import { makeMatcher, normalizeText, searchTokens } from "@/lib/search";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import { STAGE_COLORS } from "@/constants/projectPalette";
@@ -9,7 +9,22 @@ import { focusAdjacentCell } from "./useWorksheetKeyboardNavigation";
 // More than this many options and the list asks the user to type instead of
 // mounting a thousand rows at once.
 const MAX_OPTIONS = 150;
-const PREVIEW_WIDTH = 340;
+const PREVIEW_WIDTH = 400;
+// Deliverables listed under a project when the search matched them.
+const MAX_HITS_PER_PROJECT = 5;
+
+// The deliverable's type ("Carousel", "Key Visuals ...") as a small pill next
+// to its name, so two deliverables with the same name can be told apart.
+export function DeliverableTypeChip({ type, className = "" }) {
+  if (!type) return null;
+  return (
+    <span
+      className={`inline-flex shrink-0 rounded-full bg-[#f0f0fd] px-2 py-px text-[11px] font-medium leading-4 text-[#1a1a8a] ${className}`}
+    >
+      {type}
+    </span>
+  );
+}
 
 // A project name with the words that tell it apart from its look-alikes in
 // bold ("ICICI Prudential Contra Fund – **Anniversary**").
@@ -26,25 +41,14 @@ export function ProjectNameParts({ project, twins, clientNameOf }) {
   );
 }
 
-export function LookalikePill() {
-  return (
-    <span className="mt-0.5 inline-flex self-start rounded-full bg-amber-100 px-2 py-px text-[11px] font-medium leading-4 text-amber-800">
-      Has a look-alike
-    </span>
-  );
-}
-
-const matchesQuery = (project, clientName, q) => {
-  if (!q) return true;
-  return makeMatcher(q)(project.name, clientName, project.description);
-};
-
 // Work Sheet Project cell. Replaces the plain searchable list with the
 // redesign's picker: projects grouped by the row's client (recently used
-// first), look-alike names flagged with the words that differ in bold, and a
+// first), look-alike names told apart by the words that differ in bold, and a
 // hover preview of the project's deliverables that fills Project and
-// Deliverable in one click. Delivered and scrapped projects are not offered:
-// no new work gets logged against them.
+// Deliverable (and its type) in one click. Typing also searches deliverable
+// names: a match is listed under its project and picking it fills both.
+// Delivered and scrapped projects are not offered: no new work gets logged
+// against them.
 export function ProjectPicker({
   value,
   projects = [],
@@ -92,10 +96,29 @@ export function ProjectPicker({
     if (!open) return lastOptionsRef.current;
     const q = search.trim().toLowerCase();
     const rows = [];
+    const matchProject = makeMatcher(q);
+    const tokens = searchTokens(q);
+    // A deliverable is a hit when every word typed is found across its own
+    // name, the project and the client ("invesco kv"), and at least one of
+    // those words is in the deliverable's name - so typing a project name does
+    // not list every deliverable of it.
+    const nameHasToken = (deliverable) => {
+      const name = normalizeText(deliverable.name);
+      const compact = name.replace(/ /g, "");
+      return tokens.some((t) => name.includes(t) || compact.includes(t));
+    };
 
     projects.forEach((project) => {
       const ownClient = clientNameOf(project.client_id);
-      if (!matchesQuery(project, ownClient, q)) return;
+      const projectHit = matchProject(project.name, ownClient, project.description);
+      const hits = q
+        ? (deliverablesByProject[project.id] || []).filter(
+            (d) =>
+              nameHasToken(d) &&
+              matchProject(d.name, project.name, ownClient, project.description)
+          )
+        : [];
+      if (!projectHit && hits.length === 0) return;
 
       let group;
       if (clientId) {
@@ -106,7 +129,7 @@ export function ProjectPicker({
       } else {
         group = isRecent(project.id) ? 0 : 1;
       }
-      rows.push({ project, group });
+      rows.push({ project, group, hits });
     });
 
     rows.sort((a, b) => a.group - b.group);
@@ -118,13 +141,28 @@ export function ProjectPicker({
         ]
       : ["Recently used", "All projects", ""];
 
-    const next = rows.map((row, i) => ({
-      ...row,
-      head: i === 0 || rows[i - 1].group !== row.group ? heads[row.group] : null,
-    }));
+    // One entry per selectable line: a project, then the deliverables the
+    // search found in it (so Enter / arrow keys walk through both).
+    const next = [];
+    rows.forEach((row, i) => {
+      next.push({
+        kind: "project",
+        project: row.project,
+        head: i === 0 || rows[i - 1].group !== row.group ? heads[row.group] : null,
+      });
+      const listed = row.hits.slice(0, MAX_HITS_PER_PROJECT);
+      listed.forEach((deliverable, j) => {
+        next.push({
+          kind: "deliverable",
+          project: row.project,
+          deliverable,
+          moreAfter: j === listed.length - 1 ? row.hits.length - listed.length : 0,
+        });
+      });
+    });
     lastOptionsRef.current = next;
     return next;
-  }, [open, search, projects, clientId, clientName, clientNameOf, isRecent]);
+  }, [open, search, projects, deliverablesByProject, clientId, clientName, clientNameOf, isRecent]);
 
   const shown = options.slice(0, MAX_OPTIONS);
   const hiddenCount = options.length - shown.length;
@@ -220,12 +258,12 @@ export function ProjectPicker({
         // Tab picks the highlighted project (if the search found one) and
         // moves on, like a spreadsheet.
         leavingByTabRef.current = true;
-        if (option && search.trim()) onPick?.(option.project, null);
+        if (option && search.trim()) onPick?.(option.project, option.deliverable || null);
         close();
         focusAdjacentCell(triggerRef.current, event.shiftKey ? -1 : 1);
         return;
       }
-      if (option) pick(option.project);
+      if (option) pick(option.project, option.deliverable || null);
       return;
     }
 
@@ -299,8 +337,8 @@ export function ProjectPicker({
             setPreview(null);
           }}
           onKeyDown={handleSearchKeyDown}
-          placeholder="Search project or client"
-          aria-label="Search projects"
+          placeholder="Search project, client or deliverable"
+          aria-label="Search projects and deliverables"
           className="h-8 w-full rounded-md border border-input px-2 text-[13px] outline-none focus:border-[#2b2bb5]"
         />
         {hasLookalikes && (
@@ -318,6 +356,43 @@ export function ProjectPicker({
         >
           {shown.map((option, index) => {
             const { project } = option;
+
+            if (option.kind === "deliverable") {
+              const d = option.deliverable;
+              const dot = STAGE_COLORS[d.current_stage]?.dot || "bg-slate-300";
+              return (
+                <div key={`d-${project.id}-${d.id}`} className="contents">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === highlight}
+                    data-option-index={index}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pick(project, d)}
+                    onMouseEnter={() => {
+                      setHighlight(index);
+                      setPreview(null);
+                    }}
+                    title={`Use ${d.name} in ${project.name}`}
+                    className={`ml-5 flex shrink-0 items-start gap-2 rounded-md px-2.5 py-1.5 text-left ${
+                      index === highlight ? "bg-[#f0f0fd]" : ""
+                    }`}
+                  >
+                    <span title={d.current_stage} className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+                    <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] leading-[18px] text-foreground">
+                      {d.name}
+                    </span>
+                    <DeliverableTypeChip type={d.type} className="mt-px" />
+                  </button>
+                  {option.moreAfter > 0 && (
+                    <span className="ml-5 px-2.5 pb-1 text-[11px] text-muted-foreground">
+                      {option.moreAfter} more in this project. Type more to narrow.
+                    </span>
+                  )}
+                </div>
+              );
+            }
+
             const twins = lookalikes?.get(project.id) || [];
             const otherClient = project.client_id !== clientId;
             const sub = otherClient ? clientNameOf(project.client_id) : "";
@@ -353,7 +428,6 @@ export function ProjectPicker({
                       <span className="whitespace-normal break-words text-xs leading-4 text-slate-600">{project.description}</span>
                     )}
                     {sub && <span className="whitespace-normal break-words text-[11px] leading-[14px] text-muted-foreground">{sub}</span>}
-                    {twins.length > 0 && <LookalikePill />}
                   </span>
                   {isCurrent && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2b2bb5]" />}
                 </button>
@@ -453,7 +527,7 @@ export function ProjectPicker({
             {previewDeliverables.length > 0 ? (
               <>
                 <span className="-mt-1 text-[11px] leading-[14px] text-muted-foreground">
-                  Click a deliverable to fill project and deliverable.
+                  Click a deliverable to fill project, deliverable and type.
                 </span>
                 <div className="-mx-1.5 flex max-h-[240px] min-h-[60px] flex-col gap-0.5 overflow-y-auto overscroll-contain px-1.5">
                   {previewDeliverables.map((d) => {
@@ -465,15 +539,19 @@ export function ProjectPicker({
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => pick(previewProject, d)}
                         title={`Use ${d.name}`}
-                        className="-mx-1.5 flex min-h-8 shrink-0 items-center gap-2 rounded-[7px] px-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-[#f0f0fd]"
+                        className="-mx-1.5 flex min-h-8 shrink-0 items-start gap-2 rounded-[7px] px-1.5 py-1.5 text-left text-[13px] leading-[18px] text-foreground transition-colors hover:bg-[#f0f0fd]"
                       >
-                        <span title={d.current_stage} className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-                        <span className="min-w-0 flex-1 truncate">{d.name}</span>
-                        {d.stage_status && (
-                          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-px text-[11px] font-medium leading-4 text-slate-600">
-                            {d.stage_status}
-                          </span>
-                        )}
+                        <span title={d.current_stage} className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+                        {/* Wrapped, not clipped: long names are read in full. */}
+                        <span className="min-w-0 flex-1 whitespace-normal break-words">{d.name}</span>
+                        <span className="flex max-w-[45%] shrink-0 flex-wrap items-start justify-end gap-1">
+                          <DeliverableTypeChip type={d.type} />
+                          {d.stage_status && (
+                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-px text-[11px] font-medium leading-4 text-slate-600">
+                              {d.stage_status}
+                            </span>
+                          )}
+                        </span>
                       </button>
                     );
                   })}

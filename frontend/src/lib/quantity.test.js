@@ -4,8 +4,10 @@ import {
   isMultiDeliverableRow,
   isQtySet,
   loggedCount,
+  pickDeliverablePatch,
   qtyApplies,
   quantityOf,
+  typeChangePatch,
   unitName,
 } from "./quantity";
 import { matchesDeliverableFilter } from "./worksheetFilterOptions";
@@ -183,5 +185,54 @@ describe("deliverableListPatch", () => {
   test("a legacy row's one deliverable keeps its time when more are ticked", () => {
     const legacy = ideationRow({ deliverable_ids: undefined, quantity: 1, quantity_items: [25] });
     expect(deliverableListPatch(legacy, ["d1", "d2"]).quantity_items).toEqual([25, null]);
+  });
+});
+
+describe("typeChangePatch / pickDeliverablePatch", () => {
+  const categories = {
+    Carousel: "Core",
+    Poster: "Core",
+    "Hiring and Interviews": "Non-Core",
+    [PEER]: "Core",
+  };
+  const types = Object.keys(categories);
+  const row = (extra = {}) => ({ id: "r", stage: "Content", deliverable_type: "", work_category: "", ...extra });
+
+  test("picking a deliverable fills the deliverable and its type with the category", () => {
+    const patch = pickDeliverablePatch(row(), { id: "d1", type: "Carousel" }, { types, categories });
+    expect(patch).toMatchObject({
+      deliverable_id: "d1",
+      deliverable_not_available: false,
+      deliverable_type: "Carousel",
+      work_category: "Core",
+    });
+  });
+
+  test("a deliverable with no type, or one the sheet doesn't know, leaves the type alone", () => {
+    expect(pickDeliverablePatch(row(), { id: "d1", type: "" }, { types, categories })).not.toHaveProperty("deliverable_type");
+    expect(pickDeliverablePatch(row(), { id: "d1", type: "Mystery" }, { types, categories })).not.toHaveProperty("deliverable_type");
+  });
+
+  test("the same type is not sent again", () => {
+    const patch = pickDeliverablePatch(row({ deliverable_type: "Poster" }), { id: "d1", type: "Poster" }, { types, categories });
+    expect(patch).not.toHaveProperty("deliverable_type");
+  });
+
+  test("a Campaign Ideation Plan deliverable makes the row cover just that deliverable", () => {
+    const patch = pickDeliverablePatch(row(), { id: "d1", type: PEER }, { types, categories });
+    expect(patch.deliverable_type).toBe(PEER);
+    expect(patch.deliverable_ids).toEqual(["d1"]);
+    expect(patch.quantity).toBe(1);
+  });
+
+  test("leaving a Campaign Ideation Plan type clears the ticked deliverables", () => {
+    const patch = typeChangePatch(ideationRow({ work_category: "Core" }), "Carousel", categories);
+    expect(patch).toMatchObject({ deliverable_ids: [], quantity: 1, quantity_items: [] });
+  });
+
+  test("moving a Content row with a quantity to a Non-Core type resets the quantity", () => {
+    const item = row({ deliverable_type: "Carousel", work_category: "Core", quantity: 5, quantity_items: [null, null, null, null, null] });
+    expect(typeChangePatch(item, "Hiring and Interviews", categories)).toMatchObject({ quantity: 1, quantity_items: [] });
+    expect(typeChangePatch(item, "Poster", categories)).not.toHaveProperty("quantity");
   });
 });

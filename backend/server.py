@@ -4546,7 +4546,13 @@ async def worksheet_lookups(request: Request):
         .sort("created_at", -1)
         .batch_size(1000)
         .to_list(None),
-        db.deliverables.find({}, {"_id": 0, "id": 1, "name": 1, "project_id": 1})
+        # type: the chip next to each deliverable name, and the Deliverable Type
+        # a pick fills in. current_stage / stage_status: the dot and status
+        # pill in the project hover list.
+        db.deliverables.find(
+            {},
+            {"_id": 0, "id": 1, "name": 1, "project_id": 1, "type": 1, "current_stage": 1, "stage_status": 1},
+        )
         .sort("created_at", 1)
         .batch_size(5000)
         .to_list(None),

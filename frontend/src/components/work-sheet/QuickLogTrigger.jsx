@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 
-// Default resting spot — bottom-right, with a little breathing room from
-// the edge. Position is session-only: every fresh page load starts back
-// here, exactly as specified (no localStorage), even though the button
-// is freely draggable anywhere on screen while the page is open.
-const EDGE_MARGIN = 24;
+// Default resting spot — bottom-left of the page, just right of the sidebar
+// (it follows the sidebar when that is collapsed), with a little breathing
+// room. Position is session-only: every fresh page load starts back here,
+// exactly as specified (no localStorage), even though the button is freely
+// draggable anywhere on screen while the page is open.
+const EDGE_MARGIN = 16;
 
 // A press that moves less than this many pixels still counts as a click
 // (opens the logger) rather than a drag — otherwise every click would
@@ -13,7 +14,7 @@ const EDGE_MARGIN = 24;
 const DRAG_THRESHOLD = 4;
 
 export const QuickLogTrigger = ({ onOpen }) => {
-  const [position, setPosition] = useState(null); // null = default bottom-right via CSS
+  const [position, setPosition] = useState(null); // null = default bottom-left via CSS
   const draggingRef = useRef(false);
   const movedRef = useRef(false);
   const dragStartRef = useRef({ x: 0, y: 0, left: 0, top: 0 });
@@ -93,7 +94,7 @@ export const QuickLogTrigger = ({ onOpen }) => {
     draggingRef.current = true;
     movedRef.current = false;
 
-    // Switch from the default bottom-right CSS anchor to an explicit
+    // Switch from the default bottom-left CSS anchor to an explicit
     // left/top the moment a drag starts, so the button doesn't jump.
     if (!position) {
       setPosition({ left: rect.left, top: rect.top });
@@ -112,7 +113,10 @@ export const QuickLogTrigger = ({ onOpen }) => {
 
   const style = position
     ? { left: position.left, top: position.top, right: "auto", bottom: "auto" }
-    : { right: EDGE_MARGIN, bottom: "calc(var(--pmt-bottom-offset, 0px) + 24px)" };
+    : {
+        left: `calc(var(--pmt-sidebar-width, 0px) + ${EDGE_MARGIN}px)`,
+        bottom: "calc(var(--pmt-bottom-offset, 0px) + 24px)",
+      };
 
   return (
     <button

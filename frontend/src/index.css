@@ -481,12 +481,17 @@ body {
 
 :root {
   --pmt-bottom-offset: 0px;
+  /* Width of the sidebar (the Sidebar sets --pmt-sidebar-w to 68px / 236px),
+     so floating buttons can rest just right of it. */
+  --pmt-sidebar-width: var(--pmt-sidebar-w, 236px);
 }
 
 @media (max-width: 767px) {
   :root {
     /* height of the fixed bottom nav, so floating buttons sit above it */
     --pmt-bottom-offset: calc(56px + env(safe-area-inset-bottom));
+    /* no sidebar on a phone */
+    --pmt-sidebar-width: 0px;
   }
 }
 

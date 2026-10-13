@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Bug,
@@ -62,6 +62,13 @@ export const Sidebar = ({ counts = { worksheet: 0, approvals: 0 } }) => {
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const helpButtonRef = useRef(null);
+
+  // Tell floating buttons (Quick log) where the sidebar ends, so they can rest
+  // just right of it. index.css turns this into --pmt-sidebar-width, which is 0
+  // on a phone where the sidebar is hidden.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--pmt-sidebar-w", collapsed ? "68px" : "236px");
+  }, [collapsed]);
 
   const initial = (currentUser?.name || "?").trim().charAt(0).toUpperCase();
   const sections = getNavSections(access);

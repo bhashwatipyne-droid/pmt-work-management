@@ -610,6 +610,22 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
+              {(data.unscheduled || []).length > 0 && (
+                <details className="basis-full text-[12px] text-[rgb(138,151,181)]">
+                  <summary className="cursor-pointer">
+                    {data.unscheduled.length} open deliverable{data.unscheduled.length === 1 ? "" : "s"} ha{data.unscheduled.length === 1 ? "s" : "ve"} no due date, on the deliverable or its project, so they are not counted.
+                  </summary>
+                  <ul className="mt-1.5 flex flex-col gap-1 pl-4">
+                    {data.unscheduled.slice(0, 20).map((u) => (
+                      <li key={u.id}>
+                        <button type="button" onClick={() => goProject(u.project_id)} className="text-left text-[rgb(84,100,144)] hover:underline">
+                          {u.name || u.id} · {u.project || "Project"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {data.stale_overdue > 0 && (
                 <span className="basis-full text-[12px] text-[rgb(138,151,181)]">
                   {data.stale_overdue} open deliverable{data.stale_overdue === 1 ? "" : "s"} overdue by more than {data.definitions?.max_overdue_days ?? 45} days are not counted here (likely stale data).

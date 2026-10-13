@@ -12,6 +12,9 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
   due          the deliverable's CURRENT stage deadline
                (stage_schedule[current_stage].end_dt, else the deliverable end_dt)
   final_due    the deliverable's overall deadline (end_dt)
+  no deadline  an open deliverable with no stage / deliverable end date uses its
+               project's end date; if that is missing too it is reported as
+               "unscheduled" instead of being dropped silently
   month scope  due falls in the month, plus anything still not done whose due
                is before the month ("carried over") - but only if it went overdue
                in the last MAX_OVERDUE_DAYS; older leftovers are stale data, not
@@ -160,7 +163,7 @@ def create_home_dashboard_router(
             review_items,
         ) = await asyncio.gather(
             db.projects.find(
-                {}, {"_id": 0, "id": 1, "name": 1, "client_id": 1, "status": 1, "hidden": 1}
+                {}, {"_id": 0, "id": 1, "name": 1, "client_id": 1, "status": 1, "hidden": 1, "end_date": 1}
             ).to_list(None),
             db.clients.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(None),
             db.deliverables.find(
@@ -246,6 +249,7 @@ def create_home_dashboard_router(
                 "client_id": p.get("client_id"),
                 "client_name": client_name.get(p.get("client_id"), ""),
                 "status": p.get("status", ""),
+                "end_date": _day(p.get("end_date")),
             }
 
         # $group output has no defined order, so "latest across stages" is
@@ -290,6 +294,7 @@ def create_home_dashboard_router(
         trend_due: Dict[str, List[bool]] = {m: [] for m in trend_months}
         trend_first_pass: Dict[str, List[bool]] = {m: [] for m in trend_months}
         stale_overdue = 0
+        unscheduled: List[dict] = []
 
         for d in deliverables:
             project = project_by_id.get(d.get("project_id"))
@@ -305,6 +310,10 @@ def create_home_dashboard_router(
             finished = done or project["status"] in BILLED_PROJECT_STATUSES
             window = (d.get("stage_schedule") or {}).get(stage) or {}
             due = _day(window.get("end_dt")) or _day(d.get("end_dt"))
+            # Open work with no deadline of its own inherits its project's end
+            # date, so it still lands in a month instead of vanishing.
+            if not due and not finished:
+                due = project.get("end_date")
             final_due = _day(d.get("end_dt")) or due
             revs = revisions.get(d["id"], 0)
             completed_on = _day(d.get("updated_at")) if done else None
@@ -337,6 +346,12 @@ def create_home_dashboard_router(
                 and bool(final_due)
                 and today_s <= final_due <= next_until
             )
+            if (
+                not due and not finished
+                and project["status"] not in ("Ready for Invoice",)
+                and len(unscheduled) < 200
+            ):
+                unscheduled.append({"id": d["id"], "name": d.get("name", ""), "project_id": project["id"], "project": project["name"]})
             if not scoped and not in_next:
                 if (
                     due and due < overdue_floor and not finished
@@ -482,6 +497,9 @@ def create_home_dashboard_router(
             # Open deliverables overdue by more than max_overdue_days: left out of
             # every number above, counted here so they are not silently forgotten.
             "stale_overdue": stale_overdue,
+            # Open deliverables with no deadline of their own and none on their
+            # project either: they cannot be placed in any month.
+            "unscheduled": unscheduled,
             "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,

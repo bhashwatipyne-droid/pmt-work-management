@@ -50,7 +50,7 @@ export function MonthPicker({
   const [viewYear, setViewYear] = useState((selected || today || { year: new Date().getFullYear() }).year);
 
   const isAfterMax = (year, month) => !!max && year * 12 + month > max.year * 12 + max.month;
-  const atMax = !!max && !!selected && !isAfterMax(selected.year, selected.month + 1);
+  const atMax = !!max && !!selected && isAfterMax(selected.year, selected.month + 1);
 
   const step = (delta) => {
     const from = selected || today;

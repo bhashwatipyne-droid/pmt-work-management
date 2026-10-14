@@ -15,11 +15,16 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
   no deadline  an open deliverable with no stage / deliverable end date uses its
                project's end date; if that is missing too it is reported as
                "unscheduled" instead of being dropped silently
-  month scope  due falls in the month, plus anything still not done whose due
-               is before the month ("carried over"), however long ago it was due
-  upcoming     only when viewing the CURRENT month: open work due after the month's
-               end that is not billed / ready for invoice. It is healthy work
-               scheduled ahead, so it counts (as on track) instead of vanishing.
+  month scope  a deliverable is in a month's scope if it is any of:
+                 new          its start_dt falls in the month
+                 due          its due falls in the month
+                 spilled in   started (or, with no start, due) before the month
+                              and still open when the month began
+               Work due after the month is NOT scope unless it started in it.
+  spilling out in scope and still open after the month ends (current month:
+               open and due after the month)
+  stale        open work overdue more than STALE_DAYS before the month: left
+               out of scope, reported as the stale_backlog count
   bucket       billed   project Raised Invoice / Completed, or the deliverable
                         itself is Completed
                ready    project Ready for Invoice
@@ -61,6 +66,9 @@ AT_RISK_DAYS = 2
 CRITICAL_LATE_DAYS = 3
 STALE_WORKING_DAYS = 3
 NEXT_DAYS = 7
+# Open work overdue for longer than this before the month starts is backlog,
+# reported as a count instead of being carried into every month's scope.
+STALE_DAYS = 90
 
 # Team activity. A working day is 8.5h - the same default the Efficiency module
 # uses (efficiency.DEFAULT_WORKING_HOURS_PER_DAY) - so "load this week" reads as
@@ -166,7 +174,8 @@ def create_home_dashboard_router(
                 {},
                 {
                     "_id": 0, "id": 1, "name": 1, "project_id": 1, "current_stage": 1,
-                    "stage_status": 1, "stage_schedule": 1, "end_dt": 1, "updated_at": 1,
+                    "stage_status": 1, "stage_schedule": 1, "start_dt": 1, "end_dt": 1,
+                    "updated_at": 1,
                 },
             ).to_list(None),
             # Owner = whoever last logged work on this deliverable at its stage.
@@ -290,6 +299,8 @@ def create_home_dashboard_router(
         trend_due: Dict[str, List[bool]] = {m: [] for m in trend_months}
         trend_first_pass: Dict[str, List[bool]] = {m: [] for m in trend_months}
         unscheduled: List[dict] = []
+        stale_before_s = (m_start - timedelta(days=STALE_DAYS)).isoformat()
+        stale_backlog = 0
 
         for d in deliverables:
             project = project_by_id.get(d.get("project_id"))
@@ -323,16 +334,39 @@ def create_home_dashboard_router(
             if completed_on and completed_on[:7] in trend_first_pass:
                 trend_first_pass[completed_on[:7]].append(revs == 0)
 
+            start = _day(d.get("start_dt"))
+            # Was it still open on a given day? Without a stored completed-at,
+            # a done deliverable's last update stands in for when it finished;
+            # one finished only through its billed project has no date and
+            # counts as closed.
+            def open_on(day_s: str) -> bool:
+                if not finished:
+                    return True
+                return bool(completed_on) and completed_on >= day_s
+
+            is_new = bool(start) and m_start_s <= start <= m_end_s
             in_month = bool(due) and m_start_s <= due <= m_end_s
-            carried = bool(due) and due < m_start_s and not finished
-            # Viewing the current month: open work scheduled beyond it is still
-            # live work. (Past months stay as they were - nothing "upcoming".)
-            upcoming = (
-                month == this_month
-                and bool(due) and due > m_end_s and not finished
-                and project["status"] != "Ready for Invoice"
+            started_before = (start or due or "") < m_start_s and not is_new
+            # Spilled in: started before the month and still open when it
+            # began. Work overdue for longer than STALE_DAYS is backlog, not
+            # this month's work - it is counted separately, not scoped.
+            stale = (
+                not finished and bool(due) and due < stale_before_s
+                and not is_new and not in_month
             )
-            scoped = in_month or carried or upcoming
+            spilled_in = (
+                started_before and not in_month and not stale
+                and bool(start or due) and open_on(m_start_s)
+            )
+            scoped = is_new or in_month or spilled_in
+            # Spilling out: in this month's scope and still open after it ends
+            # (for the current month: open and due after the month).
+            spilling_out = scoped and (
+                (not finished and bool(due) and due > m_end_s)
+                if month == this_month else open_on((m_end + timedelta(days=1)).isoformat())
+            )
+            if stale:
+                stale_backlog += 1
 
             in_next = (
                 not done
@@ -356,6 +390,8 @@ def create_home_dashboard_router(
                     bucket = "billed"
                 elif project["status"] == "Ready for Invoice":
                     bucket = "ready"
+                elif not due:
+                    bucket = "on"
                 elif due < today_s:
                     bucket = "delay"
                 elif due <= risk_until and stage_status != "Ready for Review":
@@ -390,6 +426,14 @@ def create_home_dashboard_router(
                 "final_due": final_due,
                 "days_late": days_late,
                 "bucket": bucket,
+                # Which of the month's counts this row belongs to (a row can be
+                # in several, e.g. new and due in the same month).
+                "month_flags": {
+                    "new": is_new,
+                    "due": in_month,
+                    "spilled_in": spilled_in,
+                    "spilling_out": spilling_out,
+                } if scoped else None,
                 "next_status": next_status,
                 "owner_id": owner.get((d["id"], stage)) or latest_any_stage.get(d["id"]),
                 "revisions": revs,
@@ -486,6 +530,9 @@ def create_home_dashboard_router(
             # Open deliverables with no deadline of their own and none on their
             # project either: they cannot be placed in any month.
             "unscheduled": unscheduled,
+            # Open work overdue for more than STALE_DAYS before the month - left
+            # out of the month's scope, counted here instead.
+            "stale_backlog": stale_backlog,
             "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,

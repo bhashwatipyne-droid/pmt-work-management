@@ -255,8 +255,19 @@ export function buildHome({ data, team, filters, userName }) {
     avgRevisions: total ? revTotal / total : 0,
   };
 
+  // The month's own counts (see home_dashboard.py "month scope"): a row can be
+  // in more than one, e.g. started and due in the same month.
+  const flagged = (k) => scoped.filter((r) => r.month_flags?.[k]);
+  const month = {
+    new: flagged("new"),
+    due: flagged("due"),
+    spilledIn: flagged("spilled_in"),
+    spillingOut: flagged("spilling_out"),
+    staleBacklog: data.stale_backlog || 0,
+  };
+
   return {
-    total, active, on, risk, delay, ready, billed, projectsOf,
+    total, active, on, risk, delay, ready, billed, projectsOf, month,
     projectCount: projectsOf(scoped),
     signals, actions, next, nextCount, delayAll, delayTeams, portfolio, quality,
   };

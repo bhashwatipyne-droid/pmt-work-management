@@ -30,19 +30,36 @@ export const monthLabel = (value) => {
   return parsed ? `${MONTH_NAMES[parsed.month]} ${parsed.year}` : "All months";
 };
 
-// Month stepper for the Work Sheet header: arrows go to the previous / next
-// month, and clicking the label opens a year + month grid (with "All months").
-export function MonthPicker({ value, onChange, currentMonth }) {
+// Month stepper for the Work Sheet header and Home: arrows go to the previous /
+// next month, and clicking the label opens a year + month grid.
+//   allowAll  - show the "All months" choice (Work Sheet). Home has none.
+//   maxMonth  - latest month that can be chosen ("2026-10"); later months are
+//               disabled in the grid and the next arrow stops there (Home).
+export function MonthPicker({
+  value,
+  onChange,
+  currentMonth,
+  allowAll = true,
+  maxMonth,
+  testId = "worksheet-month-picker",
+}) {
   const [open, setOpen] = useState(false);
   const selected = parse(value);
   const today = parse(currentMonth);
+  const max = parse(maxMonth);
   const [viewYear, setViewYear] = useState((selected || today || { year: new Date().getFullYear() }).year);
+
+  const isAfterMax = (year, month) => !!max && year * 12 + month > max.year * 12 + max.month;
+  const atMax = !!max && !!selected && !isAfterMax(selected.year, selected.month + 1);
 
   const step = (delta) => {
     const from = selected || today;
     if (!from) return;
     const index = from.year * 12 + from.month + delta;
-    onChange(format(Math.floor(index / 12), ((index % 12) + 12) % 12));
+    const year = Math.floor(index / 12);
+    const month = ((index % 12) + 12) % 12;
+    if (isAfterMax(year, month)) return;
+    onChange(format(year, month));
   };
 
   const pick = (next) => {
@@ -54,7 +71,7 @@ export function MonthPicker({ value, onChange, currentMonth }) {
     <div
       role="group"
       aria-label="Month"
-      data-testid="worksheet-month-picker"
+      data-testid={testId}
       className="inline-flex h-8 items-center rounded-[7px] bg-white shadow-[inset_0_0_0_1px_#eff0f2]"
     >
       <button
@@ -99,8 +116,9 @@ export function MonthPicker({ value, onChange, currentMonth }) {
             <button
               type="button"
               aria-label="Next year"
+              disabled={!!max && viewYear >= max.year}
               onClick={() => setViewYear((year) => year + 1)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -110,14 +128,16 @@ export function MonthPicker({ value, onChange, currentMonth }) {
             {MONTH_NAMES.map((name, index) => {
               const isSelected = selected?.year === viewYear && selected.month === index;
               const isToday = today?.year === viewYear && today.month === index;
+              const future = isAfterMax(viewYear, index);
 
               return (
                 <button
                   key={name}
                   type="button"
+                  disabled={future}
                   onClick={() => pick(format(viewYear, index))}
                   aria-pressed={isSelected}
-                  className={`h-8 rounded-md text-[13px] transition-colors ${
+                  className={`h-8 rounded-md text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent ${
                     isSelected
                       ? "bg-[#2b2bb5] font-semibold text-white"
                       : `text-foreground hover:bg-[#f0f0fd] ${
@@ -132,15 +152,19 @@ export function MonthPicker({ value, onChange, currentMonth }) {
           </div>
 
           <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
-            <button
-              type="button"
-              onClick={() => pick("")}
-              className={`h-7 rounded-md px-2 text-xs font-semibold hover:bg-[#f0f0fd] ${
-                value ? "text-[#2b2bb5]" : "text-muted-foreground"
-              }`}
-            >
-              All months
-            </button>
+            {allowAll ? (
+              <button
+                type="button"
+                onClick={() => pick("")}
+                className={`h-7 rounded-md px-2 text-xs font-semibold hover:bg-[#f0f0fd] ${
+                  value ? "text-[#2b2bb5]" : "text-muted-foreground"
+                }`}
+              >
+                All months
+              </button>
+            ) : (
+              <span />
+            )}
             {currentMonth && (
               <button
                 type="button"
@@ -157,8 +181,9 @@ export function MonthPicker({ value, onChange, currentMonth }) {
       <button
         type="button"
         aria-label="Next month"
+        disabled={atMax}
         onClick={() => step(1)}
-        className="flex h-full w-8 items-center justify-center rounded-r-[7px] text-[#4a5878] transition-colors hover:bg-[#f9fafb]"
+        className="flex h-full w-8 items-center justify-center rounded-r-[7px] text-[#4a5878] transition-colors hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronRight className="h-4 w-4" />
       </button>

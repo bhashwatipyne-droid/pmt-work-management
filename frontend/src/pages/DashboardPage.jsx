@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
-  ChevronLeft,
   ChevronRight,
   FileText,
   Filter,
@@ -20,6 +19,7 @@ import { useUser } from "@/context/UserContext";
 import { getDashboardHome, getEfficiencyOverview, getEfficiencyTrend, getTeamActivity } from "@/services/api";
 import { DashboardSkeleton } from "@/components/skeletons/Skeletons";
 import TeamActivityTab from "@/components/dashboard/TeamActivityTab";
+import { MonthPicker } from "@/components/work-sheet/MonthPicker";
 import {
   NEXT_STATUSES,
   TEAMS,
@@ -438,15 +438,16 @@ export default function DashboardPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               {/* Month */}
-              <div className="flex items-center rounded-[7px] bg-white shadow-[inset_0_0_0_1px_rgb(239,240,242)]">
-                <button type="button" aria-label="Previous month" onClick={() => setMonth((m) => shiftMonth(m, -1))} className="flex h-8 w-8 items-center justify-center text-[rgb(74,88,120)]">
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="min-w-[112px] text-center text-[13px] font-medium">{label}</span>
-                <button type="button" aria-label="Next month" disabled={month >= currentMonth()} onClick={() => setMonth((m) => (m >= currentMonth() ? m : shiftMonth(m, 1)))} className="flex h-8 w-8 items-center justify-center text-[rgb(74,88,120)] disabled:cursor-not-allowed disabled:opacity-30">
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+              {/* Same picker as the Work Sheet: click the month to choose one from
+                  a grid. Home has no "All months" and cannot go past this month. */}
+              <MonthPicker
+                value={month}
+                onChange={(next) => next && setMonth(next)}
+                currentMonth={currentMonth()}
+                maxMonth={currentMonth()}
+                allowAll={false}
+                testId="home-month-picker"
+              />
 
               {/* Filters */}
               <span className="relative flex">

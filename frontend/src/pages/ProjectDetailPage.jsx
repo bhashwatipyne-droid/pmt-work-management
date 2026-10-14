@@ -557,6 +557,20 @@ export default function ProjectDetailPage() {
       .sort((a, b) => b.minutes - a.minutes);
   }, [workItems, userName]);
 
+  // Height of the pinned stats block, so the tabs row can pin right below it.
+  const statsRef = useRef(null);
+  const [statsH, setStatsH] = useState(0);
+  useEffect(() => {
+    const el = statsRef.current;
+    if (!el) return undefined;
+    const measure = () => setStatsH(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [project]);
+
   if (userLoading || !currentUser) return null;
 
   if (loading || !project) {
@@ -742,6 +756,7 @@ export default function ProjectDetailPage() {
         {/* Progress + stage tiles. Sticky on desktop so the numbers and stage
             filters stay in view while scrolling a long deliverables list. */}
         <div
+          ref={statsRef}
           data-testid="project-detail-stats"
           className="z-20 -mx-4 bg-white px-4 py-2 md:sticky md:top-0 md:-mx-6 md:px-6"
         >
@@ -811,7 +826,12 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Tabs panel */}
-        <div className={`flex flex-col overflow-hidden rounded-xl bg-white ${HAIRLINE}`}>
+        <div className={`flex flex-col overflow-clip rounded-xl bg-white ${HAIRLINE}`}>
+          {/* Tabs + toolbar stay pinned under the stats block on desktop. */}
+          <div
+            className="z-10 bg-white md:sticky md:top-[var(--stats-h,0px)]"
+            style={{ "--stats-h": `${statsH}px` }}
+          >
           <div
             role="tablist"
             aria-label="Project sections"
@@ -904,6 +924,7 @@ export default function ProjectDetailPage() {
                 Log time
               </button>
             )}
+          </div>
           </div>
 
           {isDeliv ? (

@@ -1657,7 +1657,7 @@ def _member_can_view_approval(user: User, deliverable: Optional[dict]) -> bool:
 
 
 async def require_approver(request: Request) -> User:
-    """Approvals actions (approve, send back, move, hide). Managers and admins
+    """Approvals actions (approve, move, hide). Managers and admins
     may act; members stay read-only."""
     user = await get_acting_user(request)
     if user.role not in {"manager", "admin"}:
@@ -7980,48 +7980,6 @@ async def bulk_approve_approval_items(payload: ApprovalBulkDecision, request: Re
     return {"approved": approved, "failed": failed}
 
 
-@api_router.post("/approval-items/{approval_item_id}/send-back")
-async def send_back_approval_item(approval_item_id: str, payload: ApprovalDecision, request: Request):
-    user = await require_approver(request)
-    item = await db.approval_items.find_one({"id": approval_item_id}, {"_id": 0})
-    if not item and approval_item_id.startswith("implicit-manager-"):
-        deliverable_id = approval_item_id.removeprefix("implicit-manager-")
-        item = {"id": approval_item_id, "deliverable_id": deliverable_id, "approval_type": "MANAGER", "status": "PENDING", "assigned_to": None, "department": user.department}
-    if not item:
-        raise HTTPException(status_code=404, detail="Approval item not found")
-    d = await db.deliverables.find_one({"id": item["deliverable_id"]}, {"_id": 0})
-    if not d:
-        raise HTTPException(status_code=404, detail="Deliverable not found")
-    if item.get("status") != "PENDING":
-        raise HTTPException(status_code=400, detail="This approval is not pending")
-    if not await _approval_item_can_act(user, item, d):
-        raise HTTPException(status_code=403, detail="You are not authorized to send this item back")
-    ts = now_iso()
-    if item.get("approval_workflow_id") is None:
-        await db.deliverables.update_one({"id": d["id"]}, {"$set": {"stage_status": "Changes Requested", "updated_at": ts, "last_review_action": "rejected", "last_reviewer_id": user.id, "last_review_note": payload.note or ""}})
-        await db.approval_history.insert_one({"id": str(uuid.uuid4()), "approval_item_id": approval_item_id, "deliverable_id": d["id"], "action": "CHANGES_REQUESTED", "performed_by": user.id, "comment": payload.note or "", "created_at": ts})
-        return await get_deliverable_approvals(d["id"], request)
-    await db.approval_items.update_one(
-        {"id": approval_item_id},
-        {"$set": {"status": "CHANGES_REQUESTED", "sent_back_by": user.id, "sent_back_at": ts, "comments": payload.note or "", "updated_at": ts}},
-    )
-    workflow = await _get_approval_workflow(d["id"])
-    await db.approval_workflows.update_one(
-        {"id": workflow["id"]},
-        {"$set": {"status": "CHANGES_REQUESTED", "updated_at": ts}},
-    )
-    await db.deliverables.update_one(
-        {"id": d["id"]},
-        {"$set": {"stage_status": "Changes Requested", "updated_at": ts}},
-    )
-    await db.approval_history.insert_one({
-        "id": str(uuid.uuid4()), "approval_item_id": approval_item_id,
-        "deliverable_id": d["id"], "action": "CHANGES_REQUESTED", "performed_by": user.id,
-        "comment": payload.note or "", "created_at": ts,
-    })
-    return await get_deliverable_approvals(d["id"], request)
-
-
 @api_router.patch("/approval-items/{approval_item_id}/move")
 async def move_approval_item(approval_item_id: str, payload: ApprovalMove, request: Request):
     user = await require_approver(request)
@@ -8237,19 +8195,6 @@ async def approve_deliverable(deliverable_id: str, payload: ApprovalDecision, re
     # Use the deliverable's own selected pipeline, not the fixed global
     # stage order, so this stays consistent with the Approvals Kanban.
     return await advance_deliverable_stage(existing, user.id, payload.note or "")
-
-
-@api_router.post("/deliverables/{deliverable_id}/reject")
-async def reject_deliverable(deliverable_id: str, payload: ApprovalDecision, request: Request):
-    user = await get_acting_user(request)
-    if user.role not in ("manager", "admin"):
-        raise HTTPException(status_code=403, detail="Only managers and admins can reject")
-    existing = await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Deliverable not found")
-    update = {"stage_status": "Changes Requested", "updated_at": now_iso(), "last_review_note": payload.note or "", "last_review_action": "rejected", "last_reviewer_id": user.id}
-    await db.deliverables.update_one({"id": deliverable_id}, {"$set": update})
-    return await db.deliverables.find_one({"id": deliverable_id}, {"_id": 0})
 
 
 api_router.include_router(

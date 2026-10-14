@@ -52,7 +52,7 @@ export const getAccess = (user) => {
 
     // ---- What each role can change ----
     canManageProjects: admin, // create, edit, hide, delete, import, reorder
-    canActOnApprovals: manager || admin, // approve, send back, move between queues
+    canActOnApprovals: manager || admin, // approve, move between queues
     canConfigureEfficiency: manager, // monthly capacity, team potential
     canManageClients: admin,
     canManageTeam: admin,

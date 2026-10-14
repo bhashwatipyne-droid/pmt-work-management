@@ -532,19 +532,6 @@ export const bulkApproveApprovalItems = (userId, ids, note = "") =>
     )
     .then((r) => r.data);
 
-export const sendBackApprovalItem = (
-  userId,
-  approvalItemId,
-  note = ""
-) =>
-  axios
-    .post(
-      `${API}/approval-items/${approvalItemId}/send-back`,
-      { note },
-      { headers: authHeaders(userId) }
-    )
-    .then((r) => r.data);
-
 export const moveApprovalItem = (
   userId,
   approvalItemId,
@@ -635,15 +622,6 @@ export const approveDeliverable = (userId, id, note = "") =>
   axios
     .post(
       `${API}/deliverables/${id}/approve`,
-      { note },
-      { headers: authHeaders(userId) }
-    )
-    .then((r) => r.data);
-
-export const rejectDeliverable = (userId, id, note = "") =>
-  axios
-    .post(
-      `${API}/deliverables/${id}/reject`,
       { note },
       { headers: authHeaders(userId) }
     )

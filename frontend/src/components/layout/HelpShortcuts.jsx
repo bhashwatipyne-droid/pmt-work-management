@@ -17,8 +17,8 @@ export const HelpShortcuts = ({ open, onClose, anchor }) => {
     { label: "Go to Work sheet", keys: "G W" },
     access.canViewApprovals && { label: "Go to Approvals", keys: "G A" },
     access.canActOnApprovals && {
-      label: "Approve / send back",
-      keys: `${MOD_LABEL} A / S`,
+      label: "Approve",
+      keys: `${MOD_LABEL} A`,
     },
     access.canViewApprovals && {
       label: "Next / previous approval",

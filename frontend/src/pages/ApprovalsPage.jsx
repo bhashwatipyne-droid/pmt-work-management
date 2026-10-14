@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO } from "date-fns";
 import {
   Check,
-  Undo2,
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
@@ -21,7 +20,6 @@ import {
   getApprovalBoard,
   approveApprovalItem,
   bulkApproveApprovalItems,
-  sendBackApprovalItem,
   moveApprovalItem,
 } from "@/services/api";
 import { APPROVALS } from "@/constants/testIds";
@@ -190,7 +188,7 @@ export default function ApprovalsPage() {
   // so those are not undoable.
   const { pushUndo } = useUndo();
   const access = useAccess();
-  // Everyone can open Approvals; only managers can approve, send back or
+  // Everyone can open Approvals; only managers can approve or
   // move items between queues (lib/permissions.js, enforced by the API).
   const canAct = access.canActOnApprovals;
 
@@ -384,7 +382,7 @@ export default function ApprovalsPage() {
   // /approvals?deliverable=<id>[&item=<approval item id>] opens straight on
   // that deliverable: its queue is selected, any filters that would hide it
   // are cleared, and its card is highlighted with the detail pane open, ready
-  // to approve or send back.
+  // to approve.
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const targetDeliverable = searchParams.get("deliverable");
@@ -488,23 +486,19 @@ export default function ApprovalsPage() {
   const clearSelection = () => setSelectedIds(new Set());
 
   // ---------- Single-item actions ----------
-  const decide = async (item, action) => {
+  const decide = async (item) => {
     if (!canAct || !item) return;
     const note = notes[item.id] || "";
 
     try {
-      if (action === "approve") {
-        await approveApprovalItem(currentUserId, item.id, note);
-      } else {
-        await sendBackApprovalItem(currentUserId, item.id, note);
-      }
+      await approveApprovalItem(currentUserId, item.id, note);
 
-      trackEvent(action === "approve" ? "approval_approved" : "approval_sent_back", {
+      trackEvent("approval_approved", {
         approval_item_id: item.id,
         approval_type: item.approval_type,
       });
 
-      toast.success(action === "approve" ? "Approval recorded" : "Sent back for changes");
+      toast.success("Approval recorded");
 
       setNotes((prev) => {
         const next = { ...prev };
@@ -602,29 +596,9 @@ export default function ApprovalsPage() {
     }
   };
 
-  const handleBulkSendBack = async () => {
-    const ids = [...selectedIds];
-    if (!canAct || !ids.length) return;
-    setBulkLoading(true);
-    removeFromBoard(ids);
-    clearSelection();
-
-    try {
-      const results = await Promise.allSettled(
-        ids.map((id) => sendBackApprovalItem(currentUserId, id, ""))
-      );
-      const succeeded = results.filter((r) => r.status === "fulfilled").length;
-      toast.success(`${succeeded} of ${ids.length} sent back`);
-    } finally {
-      setBulkLoading(false);
-      fetchBoard({ silent: true });
-    }
-  };
-
   // ---------- Keyboard shortcuts ----------
   // Ctrl/Cmd + J / K  move down / up the list (the arrow keys work too)
   // Ctrl/Cmd + A      approve the selected item
-  // Ctrl/Cmd + S      send the selected item back
   // Inside a text field nothing here fires, so Select All / typing behave
   // normally there.
   useEffect(() => {
@@ -661,10 +635,7 @@ export default function ApprovalsPage() {
         moveSelection(-1);
       } else if (key === "a" && aSel && canAct) {
         event.preventDefault(); // otherwise the browser selects the whole page
-        decide(aSel, "approve");
-      } else if (key === "s" && aSel && canAct) {
-        event.preventDefault(); // otherwise the browser offers to save the page
-        decide(aSel, "send_back");
+        decide(aSel);
       }
     };
 
@@ -700,16 +671,6 @@ export default function ApprovalsPage() {
             </button>
             <button
               type="button"
-              data-testid={APPROVALS.bulkSendBackBtn}
-              onClick={handleBulkSendBack}
-              disabled={bulkLoading}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-white px-2.5 text-xs font-semibold text-foreground shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Undo2 className="h-3.5 w-3.5" />
-              Send back
-            </button>
-            <button
-              type="button"
               aria-label="Clear selection"
               onClick={clearSelection}
               className="flex h-7 w-7 items-center justify-center rounded-md text-[#2b2bb5] hover:bg-[#e4e4fb]"
@@ -738,10 +699,6 @@ export default function ApprovalsPage() {
                 <span className="flex items-center gap-1">
                   <kbd className={KBD_CLASS}>{MOD_LABEL}+A</kbd>
                   approve
-                </span>
-                <span className="flex items-center gap-1">
-                  <kbd className={KBD_CLASS}>{MOD_LABEL}+S</kbd>
-                  send back
                 </span>
               </>
             )}
@@ -964,7 +921,7 @@ export default function ApprovalsPage() {
                 <span className="text-sm font-medium text-foreground">Review note</span>
                 <textarea
                   data-testid={`${APPROVALS.notePrefix}-${aSel.id}`}
-                  placeholder="Optional for approval, required when sending back"
+                  placeholder="Optional note"
                   value={notes[aSel.id] || ""}
                   onChange={(e) =>
                     setNotes((prev) => ({ ...prev, [aSel.id]: e.target.value }))
@@ -978,22 +935,12 @@ export default function ApprovalsPage() {
                 <button
                   type="button"
                   data-testid={`${APPROVALS.approvePrefix}-${aSel.id}`}
-                  onClick={() => decide(aSel, "approve")}
+                  onClick={() => decide(aSel)}
                   disabled={movingId === aSel.id}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-3.5 text-sm font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
                 >
                   <Check className="h-4 w-4" />
                   Approve
-                </button>
-                <button
-                  type="button"
-                  data-testid={`${APPROVALS.rejectPrefix}-${aSel.id}`}
-                  onClick={() => decide(aSel, "send_back")}
-                  disabled={movingId === aSel.id}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-white px-3.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50"
-                >
-                  <Undo2 className="h-4 w-4 text-muted-foreground" />
-                  Send back
                 </button>
               </div>
               </>
@@ -1002,8 +949,8 @@ export default function ApprovalsPage() {
                   data-testid="approvals-read-only-note"
                   className="mt-5 rounded-lg border border-border bg-muted/50 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground"
                 >
-                  You can follow this approval here. Only managers can approve it,
-                  send it back or move it to another queue.
+                  You can follow this approval here. Only managers can approve it
+                  or move it to another queue.
                 </div>
               )}
             </div>

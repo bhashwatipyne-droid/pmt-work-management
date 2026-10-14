@@ -161,20 +161,13 @@ class TestApprovals:
         r = requests.post(f"{API}/deliverables/{did}/approve", headers=MBR1, json={})
         assert r.status_code == 403
 
-    def test_reject_sets_changes_requested(self, project_and_deliv):
+    def test_send_back_endpoints_are_gone(self, project_and_deliv):
+        # Approvals are approve-only: there is no send back / reject.
         did = project_and_deliv["deliv_id"]
-        requests.patch(f"{API}/deliverables/{did}", headers=ADMIN, json={"stage_status": "Ready for Review", "current_stage": "Content"})
         r = requests.post(f"{API}/deliverables/{did}/reject", headers=MGR, json={"note": "redo"})
-        assert r.status_code == 200
-        d = r.json()
-        assert d["stage_status"] == "Changes Requested"
-        assert d["last_review_action"] == "rejected"
-        assert d["last_review_note"] == "redo"
-
-    def test_reject_member_forbidden(self, project_and_deliv):
-        did = project_and_deliv["deliv_id"]
-        r = requests.post(f"{API}/deliverables/{did}/reject", headers=MBR1, json={})
-        assert r.status_code == 403
+        assert r.status_code in (404, 405)
+        r = requests.post(f"{API}/approval-items/nope/send-back", headers=MGR, json={"note": "x"})
+        assert r.status_code in (404, 405)
 
     def test_approvals_excludes_changes_requested(self, project_and_deliv):
         did = project_and_deliv["deliv_id"]

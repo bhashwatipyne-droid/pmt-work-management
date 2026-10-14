@@ -84,12 +84,10 @@ class TestApprovalsViewEveryoneActManager:
     def test_non_managers_cannot_act(self, uid):
         for method, path, body in [
             ("post", "/approval-items/nope/approve", {"note": ""}),
-            ("post", "/approval-items/nope/send-back", {"note": "x"}),
             ("patch", "/approval-items/nope/move", {"approval_type": "LEADERSHIP"}),
             ("post", "/approval-items/nope/hide", None),
             ("post", "/approval-items/bulk-hide", {"approval_item_ids": ["nope"]}),
             ("post", "/deliverables/nope/approve", {"note": ""}),
-            ("post", "/deliverables/nope/reject", {"note": ""}),
         ]:
             r = requests.request(method, f"{API}{path}", json=body, headers=H(uid))
             assert r.status_code == 403, (path, r.status_code, r.text)

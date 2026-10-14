@@ -3374,6 +3374,78 @@ async def review_work_item(
     return updated
 
 
+# Work a manager was asked to review that they never got round to is approved
+# for them after this long (0 turns it off). The clock is the row's last update,
+# the same moment the Bulk Review list shows as "waiting since".
+REVIEW_AUTO_CLOSE_HOURS = float(os.environ.get("REVIEW_AUTO_CLOSE_HOURS", "24"))
+
+
+def _parse_iso_utc(value) -> Optional[datetime]:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+async def auto_close_stale_reviews() -> int:
+    """Approve (-> Closed) every Bulk Review row that has been waiting on a
+    manager for longer than REVIEW_AUTO_CLOSE_HOURS, exactly as the Approve
+    button does: same status change, same activity-log entry, but by "system"
+    and marked as automatic. Rows assigned to admins are not touched. Returns
+    how many were closed."""
+    if REVIEW_AUTO_CLOSE_HOURS <= 0:
+        return 0
+
+    manager_ids = [
+        u["id"]
+        for u in await db.users.find(
+            {"role": "manager"}, {"_id": 0, "id": 1}
+        ).to_list(5000)
+    ]
+    if not manager_ids:
+        return 0
+
+    rows = await db.work_items.find(
+        {"status": "Ready for Review", "reviewer_id": {"$in": manager_ids}},
+        {"_id": 0, "id": 1, "updated_at": 1, "created_at": 1},
+    ).to_list(5000)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=REVIEW_AUTO_CLOSE_HOURS)
+    closed = 0
+    for row in rows:
+        waiting_since = _parse_iso_utc(row.get("updated_at")) or _parse_iso_utc(row.get("created_at"))
+        if not waiting_since or waiting_since > cutoff:
+            continue
+
+        ts = now_iso()
+        result = await db.work_items.update_one(
+            # still waiting: a manager who approved or sent it back a moment ago wins
+            {"id": row["id"], "status": "Ready for Review"},
+            {"$set": {"status": "Closed", "updated_at": ts}},
+        )
+        if result.modified_count != 1:
+            continue
+
+        await log_activity(
+            collection_name="work_item_activity_log",
+            entity_id=row["id"],
+            entity_field="work_item_id",
+            action="WORK_ITEM_APPROVED",
+            changed_by="system",
+            old_value="Ready for Review",
+            new_value="Closed",
+            metadata={
+                "review_note": f"Auto-closed: not reviewed within {REVIEW_AUTO_CLOSE_HOURS:g} hours",
+                "auto_closed": True,
+            },
+        )
+        closed += 1
+    return closed
+
+
 @api_router.patch("/work-items/{item_id}", response_model=WorkItem)
 async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Request):
     user = await get_acting_user(request)
@@ -8217,14 +8289,18 @@ _planning_router = create_planning_router(
 )
 api_router.include_router(_planning_router)
 
-# Task cards nobody answers within the hour are accepted for the person. The
-# sweep itself lives in planning.py; this loop just runs it every minute.
+# Background sweeps. Task cards nobody answers within the hour are accepted for
+# the person (the sweep lives in planning.py); Bulk Review rows a manager never
+# got to are approved after 24 hours (auto_close_stale_reviews). The loop runs
+# the first every minute and the second every fifth minute.
 _auto_accept_due = _planning_router.auto_accept_due
 _AUTO_ACCEPT_SWEEP_SECONDS = 60
+_REVIEW_SWEEP_EVERY_N_TICKS = 5
 _auto_accept_task: Optional["asyncio.Task"] = None
 
 
 async def _auto_accept_loop():
+    tick = 0
     while True:
         try:
             accepted = await _auto_accept_due()
@@ -8234,6 +8310,18 @@ async def _auto_accept_loop():
             raise
         except Exception:
             logger.exception("Auto-accept sweep failed")
+
+        if tick % _REVIEW_SWEEP_EVERY_N_TICKS == 0:
+            try:
+                closed = await auto_close_stale_reviews()
+                if closed:
+                    logger.info("Auto-closed %d review(s) not reviewed in time", closed)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Auto-close of stale reviews failed")
+
+        tick += 1
         await asyncio.sleep(_AUTO_ACCEPT_SWEEP_SECONDS)
 
 # Share a project as a link with a WhatsApp preview (public read-only page).

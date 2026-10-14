@@ -888,3 +888,70 @@ def test_approval_notices_already_stored_for_members_are_hidden_and_then_removed
 
     run(server.migrate_manager_only_approval_notifications())   # safe to run again
     assert len(run(server.db.notifications.find({}).to_list(50))) == 3
+
+
+# ------------------------------- Bulk Review rows a manager never closes: 24 h
+
+def _review_row(row_id, reviewer_id, hours_ago, status="Ready for Review"):
+    stamp = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+    return {
+        "id": row_id, "creator_id": "member-rb", "reviewer_id": reviewer_id, "status": status,
+        "work_date": today_iso(), "stage": "Content", "created_at": stamp, "updated_at": stamp,
+    }
+
+
+def test_a_manager_review_waiting_over_24_hours_is_closed(env):
+    run(server.db.work_items.insert_many([
+        _review_row("old-mgr", "manager-hp", 25),
+        _review_row("fresh-mgr", "manager-hp", 23),
+        _review_row("old-other-mgr", "manager-vs", 100),
+    ]))
+    assert run(server.auto_close_stale_reviews()) == 2
+
+    status = {r["id"]: r["status"] for r in run(server.db.work_items.find({}, {"_id": 0}).to_list(10))}
+    assert status == {"old-mgr": "Closed", "fresh-mgr": "Ready for Review", "old-other-mgr": "Closed"}
+
+    # the same trail the Approve button leaves, by "system" and marked automatic
+    (log,) = run(server.db.work_item_activity_log.find({"work_item_id": "old-mgr"}, {"_id": 0}).to_list(5))
+    assert log["action"] == "WORK_ITEM_APPROVED" and log["changed_by"] == "system"
+    assert log["old_value"] == "Ready for Review" and log["new_value"] == "Closed"
+    assert log["metadata"]["auto_closed"] is True
+    # and it has left that manager's Bulk Review queue
+    assert env.get("/bulk-review/count", "manager-hp").json() == {"count": 1}
+
+
+def test_only_manager_reviews_are_auto_closed_and_other_statuses_are_left_alone(env):
+    run(server.db.work_items.insert_many([
+        _review_row("admin-review", "admin-1", 400),
+        _review_row("no-reviewer", None, 400),
+        _review_row("changes", "manager-hp", 400, status="Changes Requested"),
+        _review_row("ongoing", "manager-hp", 400, status="Ongoing"),
+    ]))
+    assert run(server.auto_close_stale_reviews()) == 0
+    status = {r["id"]: r["status"] for r in run(server.db.work_items.find({}, {"_id": 0}).to_list(10))}
+    assert status == {
+        "admin-review": "Ready for Review", "no-reviewer": "Ready for Review",
+        "changes": "Changes Requested", "ongoing": "Ongoing",
+    }
+
+
+def test_auto_close_runs_once_per_row_and_can_be_turned_off(env, monkeypatch):
+    run(server.db.work_items.insert_one(_review_row("old-mgr", "manager-hp", 30)))
+
+    monkeypatch.setattr(server, "REVIEW_AUTO_CLOSE_HOURS", 0)
+    assert run(server.auto_close_stale_reviews()) == 0
+    assert run(server.db.work_items.find_one({"id": "old-mgr"}))["status"] == "Ready for Review"
+
+    monkeypatch.setattr(server, "REVIEW_AUTO_CLOSE_HOURS", 24)
+    assert run(server.auto_close_stale_reviews()) == 1
+    assert run(server.auto_close_stale_reviews()) == 0
+    assert len(run(server.db.work_item_activity_log.find({"work_item_id": "old-mgr"}).to_list(5))) == 1
+
+
+def test_a_row_with_an_unreadable_date_is_skipped_not_closed(env):
+    row = _review_row("odd-date", "manager-hp", 400)
+    row["updated_at"] = "last tuesday"
+    row["created_at"] = None
+    run(server.db.work_items.insert_one(row))
+    assert run(server.auto_close_stale_reviews()) == 0
+    assert run(server.db.work_items.find_one({"id": "odd-date"}))["status"] == "Ready for Review"

@@ -739,7 +739,12 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        {/* Progress + stage tiles */}
+        {/* Progress + stage tiles. Sticky on desktop so the numbers and stage
+            filters stay in view while scrolling a long deliverables list. */}
+        <div
+          data-testid="project-detail-stats"
+          className="z-20 -mx-4 bg-white px-4 py-2 md:sticky md:top-0 md:-mx-6 md:px-6"
+        >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] md:overflow-x-auto">
           <div
             className={`col-span-2 flex min-w-0 flex-col gap-3 rounded-xl bg-white p-4 md:col-span-1 ${HAIRLINE}`}
@@ -802,6 +807,7 @@ export default function ProjectDetailPage() {
               </button>
             );
           })}
+        </div>
         </div>
 
         {/* Tabs panel */}

@@ -1934,7 +1934,9 @@ async def _send_push_for_notifications(notifications: list[dict]):
 
 
 # ---------------- Notifications ----------------
-async def _production_users_for_stages(stages: List[str]) -> list[dict]:
+async def _production_users_for_stages(
+    stages: List[str], roles: Optional[List[str]] = None
+) -> list[dict]:
     departments = [
         department
         for department, stage in DEPARTMENT_TO_STAGE.items()
@@ -1944,13 +1946,30 @@ async def _production_users_for_stages(stages: List[str]) -> list[dict]:
     if not departments:
         return []
 
+    query: dict = {
+        "active": {"$ne": False},
+        "department": {"$in": departments},
+    }
+    if roles:
+        query["role"] = {"$in": roles}
+
     return await db.users.find(
-        {
-            "active": {"$ne": False},
-            "department": {"$in": departments},
-        },
+        query,
         {"_id": 0, "id": 1, "name": 1, "department": 1},
     ).to_list(1000)
+
+
+# Approval notices ("<stage> approval ready", "New deliverable added ... ready
+# for <stage>") are only something a manager can act on: Approvals actions are
+# manager-only. Team members get none of them, are never sent them, and never
+# see ones that were stored before this rule (see list_notifications and
+# migrate_manager_only_approval_notifications).
+_APPROVAL_NOTICE_QUERY = {
+    "$or": [
+        {"type": "stage_handoff"},
+        {"type": "new_project", "action_type": "add_work_row"},
+    ]
+}
 
 
 async def _admin_users() -> list[dict]:
@@ -2187,7 +2206,11 @@ async def _notify_new_project(
         for deliverable in deliverables
         for stage in stored_stages(deliverable.get("required_stages"))
     }
-    production_users = await _production_users_for_stages(list(all_stages))
+    # Managers only: the per-deliverable "ready for <stage>" notice is an
+    # approval notice, and team members do not act on approvals.
+    production_users = await _production_users_for_stages(
+        list(all_stages), roles=["manager"]
+    )
 
     for deliverable in deliverables:
         if deliverable.get("stage_status") == "Completed":
@@ -3189,6 +3212,20 @@ async def list_work_items(
 @api_router.post("/work-items", response_model=WorkItem)
 async def create_work_item(payload: WorkItemCreate, request: Request):
     user = await get_acting_user(request)
+    return await _create_work_item_as(user, payload)
+
+
+async def _create_work_item_for_user_id(user_id: str, payload: WorkItemCreate):
+    """The same Work Sheet row creation, for a background job that has no
+    logged-in request (auto-accepting a WhatsApp task). Every rule in
+    _create_work_item_as still applies, as that user."""
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not doc or not doc.get("active", True):
+        raise HTTPException(status_code=400, detail="That person cannot be assigned work")
+    return await _create_work_item_as(User(**doc), payload)
+
+
+async def _create_work_item_as(user: User, payload: WorkItemCreate):
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
 
@@ -4908,8 +4945,13 @@ async def list_notifications(request: Request, limit: int = 50):
     _start_notification_scans()
 
     limit = max(1, min(limit, 100))
+    query: dict = {"user_id": user.id}
+    if user.role != "manager":
+        # Approval notices are for managers only; hide any already stored for
+        # someone else (the startup migration also deletes them).
+        query["$nor"] = _APPROVAL_NOTICE_QUERY["$or"]
     rows = await db.notifications.find(
-        {"user_id": user.id},
+        query,
         {"_id": 0},
     ).sort("created_at", -1).to_list(limit)
 
@@ -7581,13 +7623,13 @@ async def configure_approval_workflow(deliverable_id: str, payload: ApprovalWork
 
 
 async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
-    """Tell the next stage's team that a deliverable has just reached them.
+    """Tell the next stage's managers that a deliverable has just reached them.
 
     Managers of that department get an "open Approvals" notice (the approval
-    card is already waiting on their board); the department's members get an
-    "open Work Sheet" notice. One notice per user per hand-off - the key
-    includes the hand-off timestamp so a deliverable that is sent back and
-    approved again notifies the team again.
+    card is already waiting on their board). Team members get nothing: this is
+    an approval notice and they cannot act on approvals. One notice per
+    manager per hand-off - the key includes the hand-off timestamp so a
+    deliverable that is sent back and approved again notifies them again.
     """
     departments = [
         department
@@ -7600,7 +7642,7 @@ async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
     recipients = await db.users.find(
         {
             "active": {"$ne": False},
-            "role": {"$in": ["manager", "member"]},
+            "role": "manager",
             "department": {"$in": departments},
         },
         {"_id": 0, "id": 1, "role": 1},
@@ -7619,22 +7661,17 @@ async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
 
     notifications = []
     for recipient in recipients:
-        is_manager = recipient.get("role") == "manager"
         notifications.append({
             "id": str(uuid.uuid4()),
             "user_id": recipient["id"],
             "type": "stage_handoff",
-            "title": f"{stage} approval ready" if is_manager else f"Ready for {stage}",
-            "message": (
-                f"{label} has moved to {stage} and is waiting in Approvals.{due_note}"
-                if is_manager
-                else f"{label} has moved to {stage}. You can start your work.{due_note}"
-            ),
+            "title": f"{stage} approval ready",
+            "message": f"{label} has moved to {stage} and is waiting in Approvals.{due_note}",
             "project_id": deliverable.get("project_id"),
             "deliverable_id": deliverable.get("id"),
             "client_id": project.get("client_id"),
             "stage": stage,
-            "action_type": "open_approvals" if is_manager else "open_worksheet",
+            "action_type": "open_approvals",
             "created_at": ts,
             "read_at": None,
             "actioned_at": None,
@@ -8166,19 +8203,38 @@ api_router.include_router(
 
 # WhatsApp tasklists -> task cards, Planning page and Work Sheet rows. Accepting
 # a task goes through create_work_item(), so every Work Sheet rule applies.
-api_router.include_router(
-    create_planning_router(
-        db=db,
-        get_acting_user=get_acting_user,
-        create_work_item=create_work_item,
-        work_item_create_model=WorkItemCreate,
-        department_to_stage=DEPARTMENT_TO_STAGE,
-        deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,
-        upsert_notification=_upsert_notification,
-        now_iso=now_iso,
-        log_error=lambda message: logging.getLogger(__name__).warning(message),
-    )
+_planning_router = create_planning_router(
+    db=db,
+    get_acting_user=get_acting_user,
+    create_work_item=create_work_item,
+    create_work_item_for_user_id=_create_work_item_for_user_id,
+    work_item_create_model=WorkItemCreate,
+    department_to_stage=DEPARTMENT_TO_STAGE,
+    deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,
+    upsert_notification=_upsert_notification,
+    now_iso=now_iso,
+    log_error=lambda message: logging.getLogger(__name__).warning(message),
 )
+api_router.include_router(_planning_router)
+
+# Task cards nobody answers within the hour are accepted for the person. The
+# sweep itself lives in planning.py; this loop just runs it every minute.
+_auto_accept_due = _planning_router.auto_accept_due
+_AUTO_ACCEPT_SWEEP_SECONDS = 60
+_auto_accept_task: Optional["asyncio.Task"] = None
+
+
+async def _auto_accept_loop():
+    while True:
+        try:
+            accepted = await _auto_accept_due()
+            if accepted:
+                logger.info("Auto-accepted %d unanswered task card(s)", accepted)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Auto-accept sweep failed")
+        await asyncio.sleep(_AUTO_ACCEPT_SWEEP_SECONDS)
 
 # Share a project as a link with a WhatsApp preview (public read-only page).
 api_router.include_router(
@@ -8300,6 +8356,31 @@ async def migrate_admin_only_notifications():
     })
 
 
+async def migrate_manager_only_approval_notifications():
+    """Approval notices ("<stage> approval ready", "Ready for <stage>", the
+    per-deliverable "ready for <stage>" notice) mean something only to a
+    manager. Remove the ones already delivered to anyone else. Idempotent;
+    going forward they are only created for managers."""
+    other_ids = [
+        u["id"]
+        for u in await db.users.find(
+            {"role": {"$ne": "manager"}}, {"_id": 0, "id": 1}
+        ).to_list(5000)
+    ]
+    if not other_ids:
+        return
+
+    result = await db.notifications.delete_many({
+        "user_id": {"$in": other_ids},
+        **_APPROVAL_NOTICE_QUERY,
+    })
+    if result.deleted_count:
+        logger.info(
+            "Removed %d approval notifications from non-manager queues",
+            result.deleted_count,
+        )
+
+
 async def migrate_orphan_approvals():
     """Remove approval workflows/items (and their notifications) whose
     deliverable no longer exists - left behind by deliverables deleted before
@@ -8326,7 +8407,11 @@ async def run_startup_migrations():
     await migrate_client_contacts()
     await migrate_project_kanban_order()
     await migrate_admin_only_notifications()
+    await migrate_manager_only_approval_notifications()
     await migrate_orphan_approvals()
+    global _auto_accept_task
+    if _auto_accept_task is None or _auto_accept_task.done():
+        _auto_accept_task = asyncio.create_task(_auto_accept_loop())
     # Load firebase-admin in a worker thread now, so the first push doesn't
     # stall a request while the (slow) import runs.
     _fire_and_forget(asyncio.to_thread(_get_firebase_app))
@@ -8413,4 +8498,6 @@ async def run_startup_migrations():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    if _auto_accept_task is not None and not _auto_accept_task.done():
+        _auto_accept_task.cancel()
     client.close()

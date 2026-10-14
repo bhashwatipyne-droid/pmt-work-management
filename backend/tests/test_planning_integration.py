@@ -730,3 +730,161 @@ def test_a_task_with_a_named_client_but_no_project_can_be_accepted(env):
     row = next(x for x in env.work_items(creator_id="member-rb") if x["deliverable_name"] == "PPT first for design approval")
     assert row["project_id"] in (None, "")
     assert row["client_id"] == base["client_id"]
+
+
+# ------------------------------------------- auto-accept after 1 hour unanswered
+
+def age_task(env, seq, minutes, work_date=None):
+    """Make task `seq` look like it was posted `minutes` ago (today by default)."""
+    env.set_item(
+        seq,
+        work_date=work_date or today_iso(),
+        created_at=(datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(),
+    )
+
+
+def test_an_unanswered_card_is_accepted_after_an_hour(env):
+    age_task(env, 2, 61)
+    assert run(server._auto_accept_due()) == 1
+
+    item = env.item(2)
+    assert item["status"] == "accepted" and item["auto_accepted"] is True
+    assert item["history"][-1]["action"] == "auto_accepted" and item["history"][-1]["by"] == "system"
+    (row,) = env.work_items(creator_id="member-rb")
+    assert item["work_item_id"] == row["id"] and row["source_task_id"] == item["id"]
+    assert row["stage"] == "Content" and row["work_date"] == today_iso()
+    # the sticky note is gone, and nobody else was touched (task 1 is from another day)
+    assert env.get("/planning/my-tasks", "member-rb").json() == []
+    assert env.item(1)["status"] == "pending"
+
+
+def test_a_card_younger_than_an_hour_is_left_for_the_person(env):
+    age_task(env, 2, 30)
+    assert run(server._auto_accept_due()) == 0
+    assert env.item(2)["status"] == "pending" and env.work_items(creator_id="member-rb") == []
+
+
+def test_a_task_from_an_earlier_day_is_never_auto_accepted(env):
+    yesterday = (datetime.now(IST).date() - timedelta(days=1)).isoformat()
+    age_task(env, 2, 600, work_date=yesterday)
+    assert run(server._auto_accept_due()) == 0
+    assert env.item(2)["status"] == "pending" and env.work_items(creator_id="member-rb") == []
+
+
+def test_auto_accept_twice_or_after_a_click_makes_one_row(env):
+    age_task(env, 2, 90)
+    assert run(server._auto_accept_due()) == 1
+    assert run(server._auto_accept_due()) == 0
+    assert len(env.work_items(creator_id="member-rb")) == 1
+
+    age_task(env, 1, 90)
+    card = env.get("/planning/my-tasks", "manager-hp").json()[0]
+    assert env.post(f"/planning/my-tasks/{card['id']}/accept", "manager-hp").status_code == 200
+    assert run(server._auto_accept_due()) == 0
+    assert len(env.work_items(creator_id="manager-hp")) == 1
+    assert env.item(1).get("auto_accepted") is None
+
+
+def test_a_declined_card_is_not_auto_accepted(env):
+    age_task(env, 2, 90)
+    task_id = env.item(2)["id"]
+    assert env.post(f"/planning/my-tasks/{task_id}/decline", "member-rb", {"reason": "Too busy"}).status_code == 200
+    assert run(server._auto_accept_due()) == 0
+    assert env.item(2)["status"] == "declined"
+
+
+def test_auto_accept_that_is_refused_keeps_the_card_and_waits_before_retrying(env):
+    run(server.db.projects.update_one({"id": CONTRA_PROJECT}, {"$set": {"hidden": True}}))
+    age_task(env, 2, 90)
+    assert run(server._auto_accept_due()) == 0
+
+    item = env.item(2)
+    assert item["status"] == "pending" and "no longer available" in item["auto_accept_error"]
+    assert env.work_items(creator_id="member-rb") == []
+    first_failure = item["auto_accept_failed_at"]
+
+    assert run(server._auto_accept_due()) == 0           # inside the retry wait: not tried again
+    assert env.item(2)["auto_accept_failed_at"] == first_failure
+
+    run(server.db.projects.update_one({"id": CONTRA_PROJECT}, {"$set": {"hidden": False}}))
+    env.set_item(2, auto_accept_failed_at=(datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat())
+    assert run(server._auto_accept_due()) == 1           # retried once the wait is over
+    assert env.item(2)["status"] == "accepted"
+
+
+def test_reassigning_gives_the_new_person_a_full_hour(env):
+    age_task(env, 2, 90)
+    task_id = env.item(2)["id"]
+    assert env.post(f"/planning/tasks/{task_id}/reassign", "manager-vs", {"to_user_id": "member-km"}).status_code == 200
+    assert run(server._auto_accept_due()) == 0
+    assert env.item(2)["status"] == "pending" and env.item(2)["assignee_user_id"] == "member-km"
+
+    env.set_item(2, released_at=(datetime.now(timezone.utc) - timedelta(minutes=61)).isoformat())
+    assert run(server._auto_accept_due()) == 1
+    assert len(env.work_items(creator_id="member-km")) == 1 and env.work_items(creator_id="member-rb") == []
+
+
+def test_auto_accept_can_be_turned_off(env, monkeypatch):
+    monkeypatch.setattr(planning, "AUTO_ACCEPT_AFTER_MINUTES", 0)
+    age_task(env, 2, 600)
+    assert run(server._auto_accept_due()) == 0
+    assert env.item(2)["status"] == "pending"
+
+
+# ------------------------------------ approval notices are for managers only
+
+STAGE_HANDOFF = {"id": "d-handoff", "name": "Multi Asset PPT", "project_id": PHARMA_PROJECT, "stage_schedule": {}}
+
+
+def test_a_stage_handoff_notifies_the_departments_managers_only(env):
+    run(server._notify_stage_handoff(STAGE_HANDOFF, "Content", "2026-10-14T00:00:00+00:00"))
+    for manager in ("manager-hp", "manager-vs"):
+        (n,) = env.notifications(manager)
+        assert n["type"] == "stage_handoff" and n["title"] == "Content approval ready"
+        assert n["action_type"] == "open_approvals"
+    # members of that team, the other team's manager and admins get nothing
+    for other in ("member-rb", "member-km", "member-test", "manager-ab", "admin-1"):
+        assert env.notifications(other) == [], other
+
+
+def test_a_new_deliverable_notice_goes_to_managers_only(env):
+    project = {"id": PHARMA_PROJECT, "name": "IPru Pharma ETF Campaign", "client_id": "CLIENT - 006"}
+    deliverable = {"id": "d-new", "name": "Teaser", "required_stages": ["Content", "Design"], "stage_schedule": {}}
+    run(server._notify_new_project(project, [deliverable], title="New deliverable added"))
+    for manager in ("manager-hp", "manager-vs", "manager-ab"):
+        (n,) = env.notifications(manager)
+        assert n["type"] == "new_project" and n["title"] == "New deliverable added"
+    for other in ("member-rb", "member-km", "member-an", "admin-1"):
+        assert env.notifications(other) == [], other
+
+
+def _stored_notice(user_id, key, **fields):
+    return {
+        "id": f"n-{key}", "user_id": user_id, "title": "t", "message": "m",
+        "project_id": None, "deliverable_id": "d-old", "client_id": None, "stage": "Design",
+        "created_at": "2026-10-14T00:00:00+00:00", "read_at": None, "actioned_at": None,
+        "dedupe_key": key, **fields,
+    }
+
+
+def test_approval_notices_already_stored_for_members_are_hidden_and_then_removed(env):
+    run(server.db.notifications.insert_many([
+        _stored_notice("member-an", "a1", type="stage_handoff", action_type="open_worksheet"),
+        _stored_notice("member-an", "a2", type="new_project", action_type="add_work_row"),
+        _stored_notice("member-an", "a3", type="task_declined", action_type=None),
+        _stored_notice("manager-ab", "b1", type="stage_handoff", action_type="open_approvals"),
+        _stored_notice("admin-1", "c1", type="new_project", action_type=None, deliverable_id=None),
+    ]))
+
+    # hidden at once, before the cleanup has run
+    member_view = env.get("/notifications", "member-an").json()
+    assert [n["type"] for n in member_view] == ["task_declined"]
+    assert [n["type"] for n in env.get("/notifications", "manager-ab").json()] == ["stage_handoff"]
+    assert [n["type"] for n in env.get("/notifications", "admin-1").json()] == ["new_project"]
+
+    run(server.migrate_manager_only_approval_notifications())
+    kept = {n["dedupe_key"] for n in run(server.db.notifications.find({}, {"_id": 0}).to_list(50))}
+    assert kept == {"a3", "b1", "c1"}
+
+    run(server.migrate_manager_only_approval_notifications())   # safe to run again
+    assert len(run(server.db.notifications.find({}).to_list(50))) == 3

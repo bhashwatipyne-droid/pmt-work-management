@@ -36,6 +36,21 @@ through the existing `create_work_item`). Nothing is migrated or rewritten.
 - A name that exists only in another department goes to review rather than being guessed. Content, Design and Animation tasklists are recognised.
 - The listener builds its known-name list from the live `users` collection, the bundled `teamRoster.json` (in the task_assignment_automation repo) and the optional `ASSIGNEES` env var, so `ASSIGNEES` no longer has to list everyone.
 
+## Auto-accept
+
+A task card nobody accepts or declines is accepted for the person after **60 minutes**, exactly like the
+Accept button: same claim, same Work Sheet rules, one row. Asking a question keeps the card but does not
+stop the clock. A background loop in `server.py` checks every minute.
+
+- The hour starts when the card became visible: posted, released by a manager's review (`resolved_at`), or
+  reassigned (`released_at`).
+- Only tasks whose `work_date` is today are touched; a task from an earlier day is never turned into a row
+  dated today.
+- The task gets `auto_accepted: true` and a `history` entry `auto_accepted` (by `system`).
+- If accepting is refused (project hidden or merged since, a Work Sheet rule), the card stays pending,
+  `auto_accept_failed_at` / `auto_accept_error` are set, and it is retried after 15 minutes.
+- `PLANNING_AUTO_ACCEPT_MINUTES` (backend env, default 60) changes the window; `0` turns it off.
+
 ## Duplicates, failures, retries
 
 - Re-delivered message: upserts with `$setOnInsert`; an already accepted item is never overwritten; `nlp_match_logs.seen_count` increments.

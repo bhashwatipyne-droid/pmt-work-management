@@ -41,6 +41,7 @@ import os
 import re
 import uuid
 from datetime import date, date as date_type, datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -86,6 +87,16 @@ DEFAULT_ESTIMATE_MINUTES = float(os.environ.get("PLANNING_DEFAULT_ESTIMATE_MINUT
 
 # An "accepting" claim older than this is a crashed request, not a live one.
 CLAIM_STALE_SECONDS = 120
+
+# A task card nobody clicks Accept or Decline on is accepted for the person
+# after this long (0 turns it off). The clock starts when the card became
+# visible to them: posted, released by a manager's review, or reassigned.
+AUTO_ACCEPT_AFTER_MINUTES = float(os.environ.get("PLANNING_AUTO_ACCEPT_MINUTES", "60"))
+
+# A task whose auto-accept failed (project hidden or merged since it was queued,
+# a Work Sheet rule refused it) is left on the person's card and tried again
+# only after this long, so one bad task is not retried every minute.
+AUTO_ACCEPT_RETRY_MINUTES = 15
 
 OPEN_STATUSES = ("pending", "accepted")
 WORK_ITEM_DONE = ("Closed", "Scrap")
@@ -401,6 +412,7 @@ def create_planning_router(
     now_iso: Callable[[], str],
     log_error: Optional[Callable[[str], None]] = None,
     clock: Optional[Callable[[], datetime]] = None,
+    create_work_item_for_user_id: Optional[Callable[..., Awaitable[Any]]] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/planning", tags=["planning"])
     items = db[ITEMS]
@@ -623,9 +635,10 @@ def create_planning_router(
             })
         return cards
 
-    async def ensure_work_item(item: dict, user, request: Request) -> str:
+    async def ensure_work_item(item: dict, user, request: Optional[Request]) -> str:
         """The member's Work Sheet row for this task, made through the same
-        create_work_item() the Work Sheet uses so every rule applies."""
+        create_work_item() the Work Sheet uses so every rule applies. With no
+        request (the auto-accept job) the row is made as that user directly."""
         existing = await db.work_items.find_one(
             {"source_task_id": item["id"]}, {"_id": 0, "id": 1}
         )
@@ -680,7 +693,10 @@ def create_planning_router(
             remarks=remarks,
             status="Not Started",
         )
-        created = await create_work_item(payload, request)
+        if request is not None:
+            created = await create_work_item(payload, request)
+        else:
+            created = await create_work_item_for_user_id(user.id, payload)
         await db.work_items.update_one(
             {"id": created.id},
             {"$set": {"source": "whatsapp_task", "source_task_id": item["id"]}},
@@ -803,6 +819,112 @@ def create_planning_router(
         )
         return {"ok": True}
 
+    # ------------------------------------------------ auto-accept after 1 hour
+
+    def pending_since(item: dict) -> Optional[datetime]:
+        """When the card became visible to the assignee."""
+        for field in ("released_at", "resolved_at", "created_at"):
+            moment = _parse_dt(item.get(field))
+            if moment:
+                return moment
+        return None
+
+    async def auto_accept_one(item: dict, current: datetime) -> bool:
+        """Accept one task for its assignee, exactly as the Accept button would
+        (same claim, same Work Sheet rules, one row even if the person clicks
+        at the same moment). A refusal leaves the task pending on their card."""
+        task_id = item["id"]
+        doc = await db.users.find_one({"id": item["assignee_user_id"]}, {"_id": 0})
+        if (
+            not doc
+            or doc.get("active") is False
+            or doc.get("role") in ("admin", "hr")
+            or not department_to_stage.get(doc.get("department") or "")
+        ):
+            return False
+        user = SimpleNamespace(
+            id=doc["id"], name=doc.get("name") or "", role=doc.get("role"),
+            department=doc.get("department"),
+        )
+
+        claim = await items.update_one(
+            {"id": task_id, "status": "pending"},
+            {"$set": {"status": "accepting", "accepting_at": now_iso()}},
+        )
+        if claim.modified_count != 1:
+            return False  # the person accepted, declined or was reassigned just now
+
+        try:
+            work_item_id = await ensure_work_item(item, user, None)
+        except Exception as exc:  # noqa: BLE001
+            detail = getattr(exc, "detail", None) or str(exc)
+            await items.update_one(
+                {"id": task_id, "status": "accepting"},
+                {"$set": {
+                    "status": "pending",
+                    "auto_accept_failed_at": now_iso(),
+                    "auto_accept_error": str(detail)[:300],
+                }},
+            )
+            if log_error:
+                log_error(f"planning: auto-accept of task {task_id} failed: {detail}")
+            return False
+
+        stamp = now_iso()
+        await items.update_one(
+            {"id": task_id},
+            {
+                "$set": {
+                    "status": "accepted",
+                    "work_item_id": work_item_id,
+                    "accepted_at": stamp,
+                    "auto_accepted": True,
+                    "updated_at": stamp,
+                },
+                "$push": {"history": history(
+                    "system", "auto_accepted",
+                    f"not answered within {AUTO_ACCEPT_AFTER_MINUTES:g} min; work item {work_item_id}",
+                )},
+            },
+        )
+        return True
+
+    async def auto_accept_due() -> int:
+        """Accept every task card that has sat unanswered for the whole window.
+        Returns how many were accepted. Only today's tasks are touched: a task
+        from an earlier day was never accepted and must not reappear as a row
+        dated today."""
+        if AUTO_ACCEPT_AFTER_MINUTES <= 0 or create_work_item_for_user_id is None:
+            return 0
+
+        current = now()
+        today = current.astimezone(IST).date().isoformat()
+        cutoff = current - timedelta(minutes=AUTO_ACCEPT_AFTER_MINUTES)
+        retry_after = timedelta(minutes=AUTO_ACCEPT_RETRY_MINUTES)
+
+        rows = await items.find(
+            {
+                "status": "pending",
+                "work_date": today,
+                "assignee_user_id": {"$nin": [None, ""]},
+            },
+            {"_id": 0},
+        ).to_list(500)
+
+        accepted = 0
+        for item in rows:
+            since = pending_since(item)
+            if not since or since > cutoff:
+                continue
+            failed = _parse_dt(item.get("auto_accept_failed_at"))
+            if failed and current - failed < retry_after:
+                continue
+            if await auto_accept_one(item, current):
+                accepted += 1
+        return accepted
+
+    router.auto_accept_due = auto_accept_due  # run by server.py's background loop
+
     # ------------------------------------------------ managers: Planning
 
     @router.get("/overview")
@@ -911,6 +1033,9 @@ def create_planning_router(
                     "plan_note": f"Reassigned from {before.split()[0]}",
                     "declined_at": None,
                     "decline_reason": None,
+                    # the new assignee gets the full window to answer
+                    "released_at": now_iso(),
+                    "auto_accept_failed_at": None,
                     "updated_at": now_iso(),
                 },
                 "$push": {"history": history(user.id, "reassigned", f"{before} -> {target['name']}")},

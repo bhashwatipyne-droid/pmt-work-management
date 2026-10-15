@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { PopoverClose } from "@radix-ui/react-popover";
 import ConfirmDeleteModal from "../ui/ConfirmDeleteModal";
 import { MonthPicker } from "./MonthPicker";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
@@ -1239,6 +1240,32 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
       .catch((err) => toast.error(err?.response?.data?.detail || "Couldn't add a row"));
   };
 
+  // Add row ▾: several blank rows at once.
+  const [addingRows, setAddingRows] = useState(false);
+  const addRows = async (n) => {
+    if (n === 1) {
+      addRow();
+      return;
+    }
+    setAddingRows(true);
+    const made = [];
+    for (let i = 0; i < n; i += 1) {
+      try {
+        made.push(await createProjectTask({ day: refDay }));
+      } catch (err) {
+        toast.error(err?.response?.data?.detail || "Couldn't add a row");
+        break;
+      }
+    }
+    setAddingRows(false);
+    if (made.length) {
+      setQuery("");
+      setFilters({});
+      setTasks((list) => [...list, ...made]);
+      toast(`Added ${made.length} rows`);
+    }
+  };
+
   // --- Row selection + bulk actions -------------------------------------
   const selIds = Object.keys(sel).filter((id) => sel[id] && taskById.get(id));
   const visIds = flatRows.map((t) => t.id);
@@ -1876,13 +1903,39 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
             currentMonth={today.slice(0, 7)}
           />
           {canEdit && (
-            <button
-              type="button"
-              onClick={addRow}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[7px] bg-[#2b2bb5] px-3.5 text-[13px] font-semibold text-white hover:bg-[#3d3dcc]"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add row
-            </button>
+            <div className="inline-flex h-8">
+              <button
+                type="button"
+                onClick={addRow}
+                disabled={addingRows}
+                className="inline-flex h-8 items-center gap-1.5 rounded-l-[7px] bg-[#2b2bb5] px-3.5 text-[13px] font-semibold text-white hover:bg-[#3d3dcc] disabled:opacity-70"
+              >
+                <Plus className="h-3.5 w-3.5" /> {addingRows ? "Adding rows..." : "Add row"}
+              </button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Add multiple rows"
+                    disabled={addingRows}
+                    className="inline-flex h-8 items-center rounded-r-[7px] border-l border-white/20 bg-[#2b2bb5] px-2 text-white hover:bg-[#3d3dcc] disabled:opacity-70"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" sideOffset={4} className={`${MENU} w-[180px]`}>
+                  <div className="flex flex-col gap-px p-1.5">
+                    {[1, 5, 10, 20].map((n) => (
+                      <PopoverClose key={n} asChild>
+                        <button type="button" onClick={() => addRows(n)} className={MENU_ITEM}>
+                          Add {n} row{n === 1 ? "" : "s"}
+                        </button>
+                      </PopoverClose>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           )}
         </div>
         {tabsWithCount}

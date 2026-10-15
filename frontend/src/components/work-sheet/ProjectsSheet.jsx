@@ -87,7 +87,7 @@ const COLS = [
   { key: "type", label: "Task type", w: 160, kind: "select", filter: "type" },
   { key: "client", label: "Client", w: 150, kind: "select", filter: "client" },
   { key: "owner", label: "Stakeholder", w: 150, kind: "people", filter: "owner" },
-  { key: "followup", label: "Follow-up with", w: 190, kind: "followup" },
+  { key: "followup", label: "Follow-up with", w: 190, kind: "followup", filter: "with" },
   { key: "contact", label: "Client contact", w: 130, kind: "text" },
   { key: "count", label: "Deliverables", w: 110, kind: "number" },
   { key: "ifu", label: "Internal FU", w: 104, kind: "date" },
@@ -109,6 +109,7 @@ const FIELDS = [
   { key: "client", label: "Client" },
   { key: "owner", label: "Stakeholder" },
   { key: "status", label: "Tracking status" },
+  { key: "with", label: "Follow-up with" },
   { key: "follow", label: "Follow-up" },
 ];
 
@@ -658,6 +659,11 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
         client: clientById.get(t.client_id)?.name || "",
         owner,
         ownerText: owner ? `${owner}${extra ? ` +${extra}` : ""}` : "",
+        followList: [
+          ...teams,
+          ...(t.follow_up_user_ids || []).map((id) => userById.get(id)?.name?.split(" ")[0]).filter(Boolean),
+          ...(t.follow_up_others ? [t.follow_up_others] : []),
+        ],
         followup: [
           ...teams,
           ...(t.follow_up_user_ids || []).map((id) => userById.get(id)?.name?.split(" ")[0]).filter(Boolean),
@@ -681,7 +687,21 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const views = useMemo(() => new Map(tasks.map((t) => [t.id, view(t)])), [tasks, view]);
 
   const fieldValue = (v, field) =>
-    field === "follow" ? (v.late > 0 ? "Overdue" : v.due ? "Due" : "") : field === "owner" ? v.owner : v[field];
+    field === "follow"
+      ? v.late > 0
+        ? "Overdue"
+        : v.due
+          ? "Due"
+          : ""
+      : field === "with"
+        ? v.followList // several per row: a row matches if any of them is picked
+        : field === "owner"
+          ? v.owner
+          : v[field];
+  const matchesField = (v, field, vals) => {
+    const fv = fieldValue(v, field);
+    return Array.isArray(fv) ? fv.some((x) => vals.includes(x)) : vals.includes(fv);
+  };
 
   const dayTasks = useMemo(() => tasks.filter(inView), [tasks, inView]);
   const monthCount = useMemo(() => tasks.filter(openInMonth).length, [tasks, openInMonth]);
@@ -693,7 +713,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       const v = views.get(t.id);
       if (query.trim() && !match(v.id, v.task, v.type, v.client, v.ownerText, v.followup, v.contact, v.remark, v.meet))
         return false;
-      return Object.entries(filters).every(([f, vals]) => !vals?.length || vals.includes(fieldValue(v, f)));
+      return Object.entries(filters).every(([f, vals]) => !vals?.length || matchesField(v, f, vals));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayTasks, views, query, filters, hiddenRows]);
@@ -977,8 +997,8 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const valuesFor = (field) => {
     const counts = new Map();
     dayTasks.forEach((t) => {
-      const v = fieldValue(views.get(t.id), field);
-      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+      const fv = fieldValue(views.get(t.id), field);
+      (Array.isArray(fv) ? fv : [fv]).forEach((v) => v && counts.set(v, (counts.get(v) || 0) + 1));
     });
     const base =
       field === "status"
@@ -987,6 +1007,8 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           ? options.task_types || []
           : field === "follow"
             ? ["Due", "Overdue"]
+            : field === "with"
+              ? options.teams || []
             : [...counts.keys()].sort((a, b) => a.localeCompare(b));
     const all = [...new Set([...base, ...counts.keys()])];
     return all.map((v) => ({

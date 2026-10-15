@@ -83,6 +83,7 @@ const MANROPE = "Manrope, Inter, -apple-system, sans-serif";
 
 // Columns, widths and frozen offsets as in the redesign's Management sheet.
 const COLS = [
+  { key: "date", label: "Date", w: 84, kind: "date" },
   { key: "task", label: "Task / activity", w: 300, kind: "text", long: 30 },
   { key: "type", label: "Task type", w: 160, kind: "select", filter: "type" },
   { key: "client", label: "Client", w: 150, kind: "select", filter: "client" },
@@ -94,7 +95,6 @@ const COLS = [
   { key: "cfu", label: "Client FU", w: 104, kind: "date" },
   { key: "status", label: "Tracking status", w: 150, kind: "select", filter: "status" },
   { key: "meet", label: "Meeting", w: 110, kind: "text" },
-  { key: "date", label: "Date", w: 84, kind: "date" },
   { key: "remark", label: "Remark", w: 280, kind: "text", long: 34 },
 ];
 const COL_BY_KEY = Object.fromEntries(COLS.map((c) => [c.key, c]));

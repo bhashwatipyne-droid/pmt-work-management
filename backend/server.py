@@ -3501,6 +3501,54 @@ async def auto_close_stale_rows() -> int:
     return closed
 
 
+# Open Management (Projects team) tasks nobody has touched for this many hours
+# are auto-closed (marked Done) by the background sweep. Any edit restarts the
+# clock; already-Done tasks are left alone.
+MGMT_TASK_AUTO_CLOSE_HOURS = float(os.environ.get("MGMT_TASK_AUTO_CLOSE_HOURS", "24"))
+
+
+async def auto_close_stale_project_tasks() -> int:
+    """Mark Done every Management task that is still open and has had no change
+    for MGMT_TASK_AUTO_CLOSE_HOURS. updated_at restarts the clock. Logged in
+    project_task_activity by "system", marked automatic. Returns how many."""
+    if MGMT_TASK_AUTO_CLOSE_HOURS <= 0:
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=MGMT_TASK_AUTO_CLOSE_HOURS)
+    done_day = datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+    ts = now_iso()
+    closed = 0
+    async for task in db.project_tasks.find(
+        {"status": {"$ne": "Done"}},
+        {"_id": 0, "id": 1, "status": 1, "updated_at": 1, "created_at": 1},
+    ):
+        last_change = _parse_iso_utc(task.get("updated_at")) or _parse_iso_utc(task.get("created_at"))
+        if not last_change or last_change > cutoff:
+            continue
+
+        old_status = task.get("status")
+        result = await db.project_tasks.update_one(
+            # untouched since we read it: an edit a moment ago wins
+            {"id": task["id"], "status": old_status, "updated_at": task.get("updated_at")},
+            {"$set": {"status": "Done", "done_date": done_day, "updated_at": ts, "updated_by": "system"}},
+        )
+        if result.modified_count != 1:
+            continue
+
+        await db.project_task_activity.insert_one({
+            "id": str(uuid.uuid4()),
+            "task_id": task["id"],
+            "field": "status",
+            "old_value": old_status,
+            "new_value": "Done",
+            "changed_by": "system",
+            "changed_at": ts,
+            "auto_closed": True,
+        })
+        closed += 1
+    return closed
+
+
 @api_router.patch("/work-items/{item_id}", response_model=WorkItem)
 async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Request):
     user = await get_acting_user(request)
@@ -8330,6 +8378,15 @@ async def _auto_accept_loop():
                 raise
             except Exception:
                 logger.exception("Auto-close of stale rows failed")
+
+            try:
+                done = await auto_close_stale_project_tasks()
+                if done:
+                    logger.info("Auto-closed %d Management task(s) untouched for %g hours", done, MGMT_TASK_AUTO_CLOSE_HOURS)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Auto-close of stale Management tasks failed")
 
         tick += 1
         await asyncio.sleep(_AUTO_ACCEPT_SWEEP_SECONDS)

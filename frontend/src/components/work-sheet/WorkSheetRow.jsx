@@ -888,19 +888,43 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             // a search also looks through every other project's deliverables.
             const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
             if (search.trim().length < 2) return null;
-            const items = [];
+            // The client picked may itself be wrong (e.g. "Aditya Birla Sun
+            // Life" for "Aditya Birla Alternative"), so rank matches: same
+            // client first, then clients whose names share a word with it,
+            // then everyone else.
+            const tokensOf = (name) =>
+              new Set(
+                String(name || "")
+                  .toLowerCase()
+                  .split(/[^a-z0-9]+/)
+                  .filter((t) => t.length > 2 && !["ltd", "pvt", "the", "and", "limited"].includes(t))
+              );
+            const rowClientTokens = tokensOf(clientNameOf(item.client_id));
+            const clientRank = (clientId) => {
+              if (item.client_id && String(clientId) === String(item.client_id)) return 0;
+              for (const t of tokensOf(clientNameOf(clientId))) {
+                if (rowClientTokens.has(t)) return 1;
+              }
+              return 2;
+            };
+            const matches = [];
             for (const project of projects) {
-              if (items.length >= 8) break;
               if (project.id === item.project_id) continue;
               for (const deliverable of deliverablesByProject[project.id] || []) {
-                if (items.length >= 8) break;
-                const hay = `${deliverable.name} ${project.name}`.toLowerCase();
+                const hay = `${deliverable.name} ${project.name} ${clientNameOf(project.client_id)}`.toLowerCase();
                 if (!words.every((w) => hay.includes(w))) continue;
+                matches.push({ project, deliverable, rank: clientRank(project.client_id) });
+              }
+            }
+            matches.sort((a, b) => a.rank - b.rank);
+            const items = [];
+            for (const { project, deliverable } of matches.slice(0, 8)) {
+              {
                 const client = clientNameOf(project.client_id);
                 items.push({
                   key: `other-${project.id}-${deliverable.id}`,
                   label: deliverable.name,
-                  sub: client ? `${project.name} · ${client}` : project.name,
+                  sub: client ? `${client} · ${project.name}` : project.name,
                   chip: deliverable.type || "",
                   onSelect: () => {
                     // Switches the row's project and client along with it.
@@ -912,12 +936,17 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
                         categories: options.deliverable_type_categories || {},
                       }),
                     });
-                    toast(`Project changed to ${project.name}`);
+                    const newClient = clientNameOf(project.client_id);
+                    toast(
+                      String(project.client_id) !== String(item.client_id) && newClient
+                        ? `Client changed to ${newClient}, project to ${project.name}`
+                        : `Project changed to ${project.name}`
+                    );
                   },
                 });
               }
             }
-            return { heading: "In other projects", items };
+            return { heading: "In other projects & clients", items };
           }}
         />
         )}

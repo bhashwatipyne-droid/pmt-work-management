@@ -80,6 +80,7 @@ EDITABLE = [
     "meeting_time",
     "deliverable_count",
     "start_date",
+    "sort_order",
 ]
 
 
@@ -102,6 +103,8 @@ class ProjectTaskIn(BaseModel):
     meeting_time: Optional[str] = None
     deliverable_count: Optional[int] = None
     start_date: Optional[str] = None
+    # Position on the sheet when rows are dragged into an order (lower first).
+    sort_order: Optional[float] = None
     # The day the sheet is showing; a row added or closed there gets that date.
     day: Optional[str] = None
 
@@ -175,6 +178,8 @@ def create_project_tasks_router(
                 value = [t for t in TEAMS if t in (value or [])]
             elif key in ("collaborator_ids", "follow_up_user_ids"):
                 value = _clean_ids(value)
+            elif key == "sort_order":
+                pass
             elif key == "deliverable_count":
                 if value is not None and value < 0:
                     raise HTTPException(status_code=400, detail="Deliverable count can't be negative")
@@ -289,6 +294,7 @@ def create_project_tasks_router(
             "deliverable_count": None,
             "start_date": day,
             "done_date": None,
+            "sort_order": None,
             "created_by": user.id,
             "created_at": ts,
             "updated_at": ts,

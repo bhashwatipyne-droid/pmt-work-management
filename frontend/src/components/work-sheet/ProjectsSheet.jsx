@@ -722,9 +722,18 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayTasks, views, query, filters, hiddenRows, ranges]);
 
+  // Row order: a dragged row keeps its sort_order; the rest follow the order
+  // they were added in.
+  const orderOf = useMemo(() => {
+    const rank = new Map(
+      [...tasks].sort((a, b) => (a.created_at || "").localeCompare(b.created_at || "")).map((t, i) => [t.id, i * 1000])
+    );
+    return (t) => (t.sort_order ?? rank.get(t.id) ?? 0);
+  }, [tasks]);
+
   const groups = useMemo(() => {
     const sortVal = (t) => {
-      if (!sort) return t.created_at || "";
+      if (!sort) return orderOf(t);
       if (DATE_FIELD[sort.key]) return t[DATE_FIELD[sort.key]] || "";
       if (sort.key === "count") return t.deliverable_count ?? -1;
       return String(views.get(t.id)[sort.key === "owner" ? "ownerText" : sort.key] || "").toLowerCase();
@@ -752,7 +761,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     return [...map.entries()]
       .sort(([a], [b]) => (last.has(a) ? 1 : last.has(b) ? -1 : a.localeCompare(b)))
       .map(([key, list]) => ({ key, name: key, rows: list }));
-  }, [visible, views, sort, groupBy]);
+  }, [visible, views, sort, groupBy, orderOf]);
 
   // Rows in screen order (collapsed groups hidden) - for arrow keys and Shift+click.
   const flatRows = useMemo(
@@ -813,6 +822,27 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const dragSelRef = useRef(false);
   const fillRef = useRef(false);
   const checkDragRef = useRef(null); // { on } while dragging down the checkboxes
+  const [rowDrag, setRowDrag] = useState(null); // ids being dragged
+  const [dropAt, setDropAt] = useState(null); // { id, pos: "above" | "below" }
+
+  // Drop dragged rows above / below another row: give them sort_orders
+  // between that row and its neighbour.
+  const dropRows = (targetId, pos) => {
+    const ids = rowDrag || [];
+    setRowDrag(null);
+    setDropAt(null);
+    if (!ids.length || ids.includes(targetId)) return;
+    const rest = flatRows.filter((t) => !ids.includes(t.id));
+    const at = rest.findIndex((t) => t.id === targetId) + (pos === "below" ? 1 : 0);
+    const before = rest[at - 1];
+    const after = rest[at];
+    const lo = before ? orderOf(before) : (after ? orderOf(after) : 0) - 1000;
+    const hi = after ? orderOf(after) : lo + 1000 * (ids.length + 1);
+    const moving = flatRows.filter((t) => ids.includes(t.id));
+    const step = (hi - lo) / (moving.length + 1);
+    inGroup(() => moving.forEach((t, i) => save(t, { sort_order: lo + step * (i + 1) })));
+    toast(`Moved ${moving.length} row${moving.length === 1 ? "" : "s"}`);
+  };
 
   const rowIndex = (id) => flatRows.findIndex((x) => x.id === id);
   const colIndex = (key) => cols.findIndex((c) => c.key === key);
@@ -2182,6 +2212,17 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                             key={t.id}
                             role="row"
                             data-rowid={t.id}
+                            onDragOver={(e) => {
+                              if (!rowDrag) return;
+                              e.preventDefault();
+                              const box = e.currentTarget.getBoundingClientRect();
+                              const pos = e.clientY < box.top + box.height / 2 ? "above" : "below";
+                              if (dropAt?.id !== t.id || dropAt?.pos !== pos) setDropAt({ id: t.id, pos });
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (dropAt) dropRows(dropAt.id, dropAt.pos);
+                            }}
                             aria-selected={isSel}
                             className={`group/row ${isSel ? "" : "hover:bg-[#f9fafb]"}`}
                             style={{
@@ -2222,8 +2263,63 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                                 cursor: "pointer",
                               }}
                             >
+                              {canEdit && !sort && (
+                                <span
+                                  role="button"
+                                  aria-label="Drag to move row"
+                                  title="Drag to move. Selected rows move together."
+                                  draggable
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.effectAllowed = "move";
+                                    e.dataTransfer.setData("text/plain", t.id);
+                                    setRowDrag(isSel ? selIds : [t.id]);
+                                  }}
+                                  onDragEnd={() => {
+                                    setRowDrag(null);
+                                    setDropAt(null);
+                                  }}
+                                  className="hover:!bg-[#f5f6f8] hover:!text-[#4a5878]"
+                                  style={{
+                                    position: "absolute",
+                                    left: 2,
+                                    top: 8,
+                                    width: 14,
+                                    height: 24,
+                                    borderRadius: 4,
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(2, 3px)",
+                                    gridAutoRows: "3px",
+                                    gap: 2,
+                                    alignContent: "center",
+                                    justifyContent: "center",
+                                    color: C.n300,
+                                    cursor: "grab",
+                                  }}
+                                >
+                                  {[0, 1, 2, 3, 4, 5].map((k) => (
+                                    <span key={k} style={{ borderRadius: 9999, background: "currentColor" }} />
+                                  ))}
+                                </span>
+                              )}
                               <Checkbox on={isSel} label="Select row" />
                             </span>
+                            {dropAt?.id === t.id && (
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  position: "absolute",
+                                  left: 0,
+                                  right: 0,
+                                  [dropAt.pos === "above" ? "top" : "bottom"]: -1,
+                                  height: 2,
+                                  background: C.b500,
+                                  zIndex: 6,
+                                  pointerEvents: "none",
+                                }}
+                              />
+                            )}
                             {cols.map((col, ci) => renderCell(t, v, col, ri, ci))}
                           </div>
                         );

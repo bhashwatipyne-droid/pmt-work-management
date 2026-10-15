@@ -1906,6 +1906,7 @@ export default function WorkSheetPage() {
       <ProjectsSheet
         currentUser={currentUser}
         users={users}
+        clients={clients}
         tabs={<WorkSheetTabs activeSheet={activeSheet} onChange={setActiveSheet} counts={tabCounts} />}
       />
     );

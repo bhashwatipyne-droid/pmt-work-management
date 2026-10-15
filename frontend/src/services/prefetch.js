@@ -1,4 +1,4 @@
-import { getWorkItems, getWorksheetLookups } from "@/services/api";
+import { getProjectTasks, getWorkItems, getWorksheetLookups } from "@/services/api";
 
 // Starts the Work Sheet's data requests while the app is still booting.
 //
@@ -29,6 +29,8 @@ const startPrefetch = (key, fetcher) => {
 
 export const prefetchWorksheet = () => {
   startPrefetch("worksheet-lookups", getWorksheetLookups);
+  // The Management tab (admins land on it).
+  startPrefetch("project-tasks", getProjectTasks);
   startPrefetch("worksheet-items-initial", () =>
     getWorkItems("", {
       limit: WORKSHEET_INITIAL_ROW_LIMIT,

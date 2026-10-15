@@ -27,6 +27,7 @@ import { MonthPicker } from "./MonthPicker";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { RangeSelectionBar } from "./RangeSelectionBar";
 import { makeMatcher } from "@/lib/search";
+import { consumePrefetch } from "@/services/prefetch";
 import {
   createProjectTask,
   deleteProjectTask,
@@ -499,9 +500,11 @@ let sheetCache = null;
 let sheetRequest = null;
 export function prefetchProjectSheet() {
   if (!sheetRequest) {
-    sheetRequest = Promise.all([getProjectTasks(), getClients().catch(() => null)])
-      .then(([data, clients]) => {
-        sheetCache = { data, clients: clients || sheetCache?.clients || [] };
+    // Started at boot on the Work Sheet (services/prefetch); clients are not
+    // waited for - the page already has them.
+    sheetRequest = consumePrefetch("project-tasks", getProjectTasks)
+      .then((data) => {
+        sheetCache = { data };
         return sheetCache;
       })
       .finally(() => {
@@ -511,11 +514,12 @@ export function prefetchProjectSheet() {
   return sheetRequest;
 }
 
-export function ProjectsSheet({ currentUser, users = [], tabs }) {
+export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, tabs }) {
   const [tasks, setTasks] = useState([]);
   const [updates, setUpdates] = useState([]);
   const [options, setOptions] = useState({ task_types: [], statuses: [], teams: [], meeting_types: [] });
-  const [clients, setClients] = useState([]);
+  const [fetchedClients, setClients] = useState([]);
+  const clients = clientsProp?.length ? clientsProp : fetchedClients;
   const [today, setToday] = useState(() => addDays(new Date().toISOString().slice(0, 10), 0));
   const [month, setMonth] = useState(null); // "2026-10"; null = this month
   const [pickedDay, setPickedDay] = useState(null); // null = the month's default day
@@ -601,12 +605,11 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const inView = useCallback((t) => (allDays ? openInMonth(t) : openOnDay(t)), [allDays, openInMonth, openOnDay]);
 
   const load = useCallback(() => {
-    const apply = ({ data, clients: c }) => {
+    const apply = ({ data }) => {
       setTasks(data.tasks || []);
       setUpdates(data.updates || []);
       setOptions(data.options || {});
       if (data.today) setToday(data.today);
-      setClients(c || []);
     };
     if (sheetCache) apply(sheetCache);
     return prefetchProjectSheet()
@@ -618,6 +621,13 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Only when the page didn't pass its client list.
+  useEffect(() => {
+    if (clientsProp?.length) return;
+    getClients().then((c) => setClients(c || [])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const activeUsers = useMemo(
@@ -2143,11 +2153,28 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
               {cols.map(headerCell)}
             </div>
 
-            {loading && (
-              <div className="sticky left-0 w-[min(100vw,720px)] px-5 py-12 text-center text-[13px] text-[#546490]">
-                Loading the Management sheet…
-              </div>
-            )}
+            {loading &&
+              Array.from({ length: 14 }, (_, i) => (
+                <div
+                  key={i}
+                  aria-hidden="true"
+                  style={{ display: "grid", gridTemplateColumns: GRID, height: 40 }}
+                >
+                  <span style={{ background: C.n50, boxShadow: `inset -1px -1px 0 ${C.line}` }} />
+                  {cols.map((c, j) => (
+                    <span
+                      key={c.key}
+                      className="flex items-center px-2.5"
+                      style={{ boxShadow: `inset -1px -1px 0 ${C.cellLine}` }}
+                    >
+                      <span
+                        className="h-3 animate-pulse rounded bg-slate-200/70"
+                        style={{ width: `${[70, 85, 55, 65, 75, 60, 80][(i + j) % 7]}%` }}
+                      />
+                    </span>
+                  ))}
+                </div>
+              ))}
 
             {!loading &&
               groups.map((g) => {

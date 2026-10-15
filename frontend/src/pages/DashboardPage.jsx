@@ -434,12 +434,6 @@ export default function DashboardPage() {
               <p className="m-0 text-[14px] text-[rgb(84,100,144)] [text-wrap:pretty]">
                 {label} · {scopeNote} · {h.total} deliverables · {h.projectCount} projects started this month · {activeN} active
               </p>
-              <p className="m-0 text-[12px] text-[rgb(84,100,144)]">
-                Also this month (all teams, not counted above): {h.month.due} due · {h.month.spilledIn} spilled in from
-                earlier · {h.month.delayed} delayed · {h.month.spillingOut} spilling out
-                {h.month.staleBacklog > 0 &&
-                  ` · ${h.month.staleBacklog} open item${h.month.staleBacklog === 1 ? "" : "s"} overdue 90+ days`}
-              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

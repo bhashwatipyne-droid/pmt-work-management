@@ -255,20 +255,8 @@ export function buildHome({ data, team, filters, userName }) {
     avgRevisions: total ? revTotal / total : 0,
   };
 
-  // The month's scope is only work that started in it (see home_dashboard.py
-  // "month scope"); due / spilled in / delayed / spilling out are side counts
-  // from the server, for all teams.
-  const side = data.month_summary || {};
-  const month = {
-    due: side.due || 0,
-    spilledIn: side.spilled_in || 0,
-    delayed: side.delayed || 0,
-    spillingOut: side.spilling_out || 0,
-    staleBacklog: data.stale_backlog || 0,
-  };
-
   return {
-    total, active, on, risk, delay, ready, billed, projectsOf, month,
+    total, active, on, risk, delay, ready, billed, projectsOf,
     projectCount: projectsOf(scoped),
     signals, actions, next, nextCount, delayAll, delayTeams, portfolio, quality,
   };

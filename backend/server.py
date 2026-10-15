@@ -3503,8 +3503,8 @@ async def auto_close_stale_rows() -> int:
 
 # Open Management (Projects team) tasks nobody has touched for this many hours
 # are auto-closed (marked Done) by the background sweep. Any edit restarts the
-# clock; already-Done tasks are left alone.
-MGMT_TASK_AUTO_CLOSE_HOURS = float(os.environ.get("MGMT_TASK_AUTO_CLOSE_HOURS", "24"))
+# clock; already-Done tasks are left alone. Default 48h (2 days); 0 turns it off.
+MGMT_TASK_AUTO_CLOSE_HOURS = float(os.environ.get("MGMT_TASK_AUTO_CLOSE_HOURS", "48"))
 
 
 async def auto_close_stale_project_tasks() -> int:

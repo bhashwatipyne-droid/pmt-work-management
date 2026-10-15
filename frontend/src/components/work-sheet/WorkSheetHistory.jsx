@@ -36,10 +36,13 @@ const getActionLabel = (action) => {
   );
 };
 
+// load / subtitle are optional: the Management sheet passes its own.
 export const WorkSheetHistory = ({
   open,
   onClose,
   stage,
+  load,
+  subtitle,
 }) => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -51,7 +54,7 @@ export const WorkSheetHistory = ({
       setLoading(true);
 
       try {
-        const data = await getWorkItemHistory(stage);
+        const data = await (load ? load() : getWorkItemHistory(stage));
         setLogs(data || []);
       } catch (error) {
         console.error(
@@ -95,9 +98,9 @@ export const WorkSheetHistory = ({
                 </h2>
 
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {stage === "Master"
+                  {subtitle || (stage === "Master"
                     ? "All work items"
-                    : `${stage} sheet`}
+                    : `${stage} sheet`)}
                 </p>
               </div>
             </div>

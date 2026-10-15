@@ -20,10 +20,10 @@ def call(env, method, path, user_id, body=None):
 
 
 def test_a_new_row_starts_blank_owned_by_its_creator_and_open_on_its_day(env):
-    res = call(env, "post", "", "member-rb", {"day": "2026-10-15"})
+    res = call(env, "post", "", "admin-1", {"day": "2026-10-15"})
     assert res.status_code == 200, res.text
     task = res.json()
-    assert task["owner_id"] == "member-rb" and task["start_date"] == "2026-10-15"
+    assert task["owner_id"] == "admin-1" and task["start_date"] == "2026-10-15"
     assert task["status"] == "On track" and task["done_date"] is None
 
     listing = call(env, "get", "", "member-km").json()
@@ -32,19 +32,19 @@ def test_a_new_row_starts_blank_owned_by_its_creator_and_open_on_its_day(env):
 
 
 def test_rows_live_in_their_own_collection_not_work_items(env):
-    call(env, "post", "", "member-rb", {"task": "Cost proposal", "task_type": "Cost Proposal"})
+    call(env, "post", "", "admin-1", {"task": "Cost proposal", "task_type": "Cost Proposal"})
     assert run(server.db.project_tasks.count_documents({})) == 1
     assert run(server.db.work_items.count_documents({})) == 0
 
 
 def test_editing_cells_validates_and_logs_each_change(env):
-    task = call(env, "post", "", "member-rb", {}).json()
-    res = call(env, "patch", f"/{task['id']}", "member-rb", {
+    task = call(env, "post", "", "admin-1", {}).json()
+    res = call(env, "patch", f"/{task['id']}", "admin-1", {
         "task": "Summit NFO deliverables",
         "task_type": "Internal Follow-up",
         "client_id": INVESCO_CLIENT,
         "project_id": INVESCO_CONTRA,
-        "collaborator_ids": ["member-km", "member-rb"],
+        "collaborator_ids": ["member-km", "manager-hp"],
         "follow_up_teams": ["Design", "Content"],
         "internal_follow_up_date": "2026-10-16",
     })
@@ -58,41 +58,47 @@ def test_editing_cells_validates_and_logs_each_change(env):
     assert {"task", "client_id", "project_id", "internal_follow_up_date"} <= fields
     assert run(server.db.work_item_activity_log.count_documents({})) == 0
 
-    assert call(env, "patch", f"/{task['id']}", "member-rb", {"task_type": "Party"}).status_code == 400
-    assert call(env, "patch", f"/{task['id']}", "member-rb", {"internal_follow_up_date": "16-10-2026"}).status_code == 400
-    assert call(env, "patch", f"/{task['id']}", "member-rb", {"project_id": "nope"}).status_code == 400
+    assert call(env, "patch", f"/{task['id']}", "admin-1", {"task_type": "Party"}).status_code == 400
+    assert call(env, "patch", f"/{task['id']}", "admin-1", {"internal_follow_up_date": "16-10-2026"}).status_code == 400
+    assert call(env, "patch", f"/{task['id']}", "admin-1", {"project_id": "nope"}).status_code == 400
 
 
 def test_a_project_from_another_client_is_refused_and_a_new_client_clears_it(env):
-    task = call(env, "post", "", "member-rb", {"client_id": INVESCO_CLIENT, "project_id": INVESCO_CONTRA}).json()
-    bad = call(env, "patch", f"/{task['id']}", "member-rb", {"client_id": "CLIENT - 006", "project_id": INVESCO_CONTRA})
+    task = call(env, "post", "", "admin-1", {"client_id": INVESCO_CLIENT, "project_id": INVESCO_CONTRA}).json()
+    bad = call(env, "patch", f"/{task['id']}", "admin-1", {"client_id": "CLIENT - 006", "project_id": INVESCO_CONTRA})
     assert bad.status_code == 400
-    moved = call(env, "patch", f"/{task['id']}", "member-rb", {"client_id": "CLIENT - 006"}).json()
+    moved = call(env, "patch", f"/{task['id']}", "admin-1", {"client_id": "CLIENT - 006"}).json()
     assert moved["client_id"] == "CLIENT - 006" and moved["project_id"] is None
 
 
 def test_done_stamps_the_day_and_reopening_clears_it(env):
-    task = call(env, "post", "", "member-rb", {"day": "2026-10-01"}).json()
-    done = call(env, "patch", f"/{task['id']}", "member-rb", {"status": "Done", "day": "2026-10-09"}).json()
+    task = call(env, "post", "", "admin-1", {"day": "2026-10-01"}).json()
+    done = call(env, "patch", f"/{task['id']}", "admin-1", {"status": "Done", "day": "2026-10-09"}).json()
     assert done["done_date"] == "2026-10-09"
-    reopened = call(env, "patch", f"/{task['id']}", "member-rb", {"status": "Delayed"}).json()
+    reopened = call(env, "patch", f"/{task['id']}", "admin-1", {"status": "Delayed"}).json()
     assert reopened["done_date"] is None
 
 
 def test_one_update_note_per_task_per_day(env):
-    task = call(env, "post", "", "member-rb", {}).json()
+    task = call(env, "post", "", "admin-1", {}).json()
     path = f"/{task['id']}/updates/2026-10-15"
-    assert call(env, "put", path, "member-rb", {"note": "Sent script"}).status_code == 200
+    assert call(env, "put", path, "admin-1", {"note": "Sent script"}).status_code == 200
     call(env, "put", path, "member-km", {"note": "Sent revised script"})
-    notes = call(env, "get", "", "member-rb").json()["updates"]
+    notes = call(env, "get", "", "admin-1").json()["updates"]
     assert [(n["day"], n["note"], n["user_id"]) for n in notes] == [("2026-10-15", "Sent revised script", "member-km")]
-    call(env, "put", path, "member-rb", {"note": "  "})
-    assert call(env, "get", "", "member-rb").json()["updates"] == []
+    call(env, "put", path, "admin-1", {"note": "  "})
+    assert call(env, "get", "", "admin-1").json()["updates"] == []
 
 
-def test_hr_cannot_edit_and_only_owner_or_manager_deletes(env):
-    task = call(env, "post", "", "member-rb", {}).json()
+def test_only_admins_edit_the_management_sheet(env):
+    task = call(env, "post", "", "admin-1", {}).json()
+    # Everyone can read it...
+    assert call(env, "get", "", "member-km").status_code == 200
+    # ...but only admins create, edit or delete.
+    assert call(env, "post", "", "member-rb", {}).status_code == 403
+    assert call(env, "post", "", "manager-hp", {}).status_code == 403
     assert call(env, "post", "", "hr-1", {}).status_code == 403
+    assert call(env, "patch", f"/{task['id']}", "manager-hp", {"status": "Delayed"}).status_code == 403
     assert call(env, "delete", f"/{task['id']}", "member-km").status_code == 403
-    assert call(env, "delete", f"/{task['id']}", "manager-hp").status_code == 200
+    assert call(env, "delete", f"/{task['id']}", "admin-1").status_code == 200
     assert run(server.db.project_tasks.count_documents({})) == 0

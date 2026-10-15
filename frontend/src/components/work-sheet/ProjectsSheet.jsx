@@ -12,6 +12,7 @@ import {
   EyeOff,
   Filter,
   Hand,
+  History,
   LayoutList,
   Maximize2,
   Plus,
@@ -26,6 +27,10 @@ import { PopoverClose } from "@radix-ui/react-popover";
 import ConfirmDeleteModal from "../ui/ConfirmDeleteModal";
 import { MonthPicker } from "./MonthPicker";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
+import { WorkSheetHistory } from "./WorkSheetHistory";
+import { ExportIconButton } from "../ui/ExportIconButton";
+import { Input } from "../ui/input";
+import { downloadCsv, todayStamp } from "@/lib/exportCsv";
 import { RangeSelectionBar } from "./RangeSelectionBar";
 import { makeMatcher } from "@/lib/search";
 import { consumePrefetch } from "@/services/prefetch";
@@ -33,6 +38,7 @@ import {
   createProjectTask,
   deleteProjectTask,
   getClients,
+  getProjectTaskHistory,
   getProjectTasks,
   setProjectTaskUpdate,
   updateProjectTask,
@@ -86,7 +92,7 @@ const MANROPE = "Manrope, Inter, -apple-system, sans-serif";
 
 // Columns, widths and frozen offsets as in the redesign's Management sheet.
 const COLS = [
-  { key: "date", label: "Date", w: 118, kind: "date" },
+  { key: "date", label: "Date", w: 150, kind: "date" },
   { key: "task", label: "Task / activity", w: 300, kind: "text", long: 30 },
   { key: "type", label: "Task type", w: 160, kind: "select", filter: "type" },
   { key: "client", label: "Client", w: 150, kind: "select", filter: "client" },
@@ -94,8 +100,8 @@ const COLS = [
   { key: "followup", label: "Follow-up with", w: 190, kind: "followup", filter: "with" },
   { key: "contact", label: "Client contact", w: 130, kind: "text" },
   { key: "count", label: "Deliverables", w: 110, kind: "number" },
-  { key: "ifu", label: "Internal FU", w: 118, kind: "date" },
-  { key: "cfu", label: "Client FU", w: 118, kind: "date" },
+  { key: "ifu", label: "Internal FU", w: 150, kind: "date" },
+  { key: "cfu", label: "Client FU", w: 150, kind: "date" },
   { key: "status", label: "Tracking status", w: 150, kind: "select", filter: "status" },
   { key: "meet", label: "Meeting", w: 110, kind: "text" },
   { key: "remark", label: "Remark", w: 280, kind: "text", long: 34 },
@@ -529,6 +535,9 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState("owner");
   const [collapsed, setCollapsed] = useState({});
+  // On load the member groups start collapsed, so an admin sees the roll-up
+  // (who has how many tasks) first and opens the ones they want.
+  const didCollapseOnLoad = useRef(false);
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState(null); // { key, dir }
   const [loading, setLoading] = useState(!sheetCache);
@@ -578,12 +587,14 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
   const GRID = `48px ${cols.map((c) => `${c.w}px`).join(" ")}`;
   const [statusMenu, setStatusMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const gridRef = useRef(null);
   const lastSelRef = useRef(null);
   const pendingEditRef = useRef(null);
 
-  const canEdit = currentUser?.role !== "hr";
+  // Only admins edit the Management sheet; everyone else can read it.
+  const canEdit = currentUser?.role === "admin";
 
   // The sheet shows one month. "Late" and the Remark (that day's update note)
   // work off one day of it: the day on the stepper, or with "All days" today in
@@ -773,6 +784,12 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
       .sort(([a], [b]) => (last.has(a) ? 1 : last.has(b) ? -1 : a.localeCompare(b)))
       .map(([key, list]) => ({ key, name: key, rows: list }));
   }, [visible, views, sort, groupBy, orderOf]);
+
+  useEffect(() => {
+    if (didCollapseOnLoad.current || loading || groupBy === "none" || !groups.length) return;
+    didCollapseOnLoad.current = true;
+    setCollapsed(Object.fromEntries(groups.map((g) => [g.key, true])));
+  }, [loading, groups, groupBy]);
 
   // Rows in screen order (collapsed groups hidden) - for arrow keys and Shift+click.
   const flatRows = useMemo(
@@ -1125,7 +1142,11 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
     const t = taskById.get(taskId);
     if (!t || !canEdit || col.kind === "ro") return;
     setCell({ r: taskId, c: key });
-    if (["text", "number", "date"].includes(col.kind)) {
+    if (col.kind === "date") {
+      requestAnimationFrame(() => document.querySelector(`[data-cell="${taskId}:${key}"] input`)?.focus());
+      return;
+    }
+    if (["text", "number"].includes(col.kind)) {
       setEditing({ r: taskId, c: key, draft: initial ?? editValue(t, key) });
     } else {
       setMenu({ r: taskId, c: key, kind: "pick" });
@@ -1389,6 +1410,17 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
   const allCollapsed = groups.length > 0 && groupBy !== "none" && groups.every((g) => collapsed[g.key]);
   const toggleAll = () =>
     setCollapsed(allCollapsed ? {} : Object.fromEntries(groups.map((g) => [g.key, true])));
+
+  // Export: the rows on screen, in the columns on screen.
+  const exportSheet = () => {
+    const header = cols.map((c) => c.label);
+    const rows = flatRows.map((t) => {
+      const v = views.get(t.id);
+      return cols.map((c) => (c.key === "owner" ? v.ownerText : v[c.key]) ?? "");
+    });
+    downloadCsv(`worksheet-management-${viewMonth}-${todayStamp()}.csv`, header, rows);
+    toast.success(`Exported ${rows.length} row${rows.length === 1 ? "" : "s"}`);
+  };
 
   // --- Formula bar ------------------------------------------------------
   const activeTask = cell ? taskById.get(cell.r) : null;
@@ -1800,7 +1832,31 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
             <StatusBadge status={text} />
           </span>
         )}
-        {!isEditing && col.key !== "status" && (
+        {!isEditing && col.kind === "date" && (
+          // Same always-on date input as the other sheets' Date column.
+          <Input
+            key={t[DATE_FIELD[col.key]] || ""}
+            type="date"
+            aria-label={col.label}
+            defaultValue={t[DATE_FIELD[col.key]] || ""}
+            disabled={!canEdit}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setCell({ r: t.id, c: col.key });
+              setRangeEnd(null);
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+            }}
+            onBlur={(e) => {
+              commitText(t, col.key, e.target.value);
+              requestAnimationFrame(focusGrid);
+            }}
+            className="sheet-date-input h-8 w-[130px] pl-7 pr-1 text-[13px]"
+          />
+        )}
+        {!isEditing && col.key !== "status" && col.kind !== "date" && (
           <span
             style={{
               flex: 1,
@@ -1893,6 +1949,14 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
           <h1 className="min-w-[120px] flex-1 text-xl font-semibold tracking-tight text-[#0d1b3e] md:min-w-[160px] md:text-2xl">
             Work sheet
           </h1>
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-[#f5f6f8] px-3.5 text-[13px] font-semibold text-[#4a5878] shadow-[inset_0_0_0_1px_#eff0f2] hover:bg-[#eef0f3]"
+          >
+            <History className="h-3.5 w-3.5" />
+            History
+          </button>
           <MonthPicker
             value={viewMonth}
             allowAll={false}
@@ -2084,6 +2148,11 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
           <span className="text-[12px] text-[#546490]">
             {visible.length.toLocaleString("en-IN")} of {monthCount.toLocaleString("en-IN")} rows
           </span>
+          <ExportIconButton
+            onClick={exportSheet}
+            disabled={!visible.length}
+            className="h-8 w-8 rounded-[7px] border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
+          />
         </div>
 
         {(activeFields.length > 0 || query) && (
@@ -2566,6 +2635,14 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
           />
         );
       })()}
+
+      <WorkSheetHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        stage="Projects"
+        load={getProjectTaskHistory}
+        subtitle="Management sheet"
+      />
 
       <ConfirmDeleteModal
         open={confirmDelete}

@@ -15,6 +15,7 @@ work_items / work_item_activity_log and never counts toward efficiency.
   PATCH  /project-tasks/{id}                 edit cells
   DELETE /project-tasks/{id}                 remove a row (creator, owner, manager, admin)
   PUT    /project-tasks/{id}/updates/{day}   set that day's update note ("" clears it)
+  GET    /project-tasks/history              latest changes, newest first (History panel)
 
 Collections:
   project_tasks          one document per task (fields below)
@@ -151,8 +152,8 @@ def create_project_tasks_router(
 
     async def editor(request: Request):
         user = await get_acting_user(request)
-        if user.role == "hr":
-            raise HTTPException(status_code=403, detail="HR can't edit the Projects sheet")
+        if user.role != "admin":
+            raise HTTPException(status_code=403, detail="Only admins can edit the Management sheet")
         return user
 
     def validate(fields: dict) -> dict:
@@ -265,6 +266,74 @@ def create_project_tasks_router(
                 "teams": TEAMS,
             },
         }
+
+    FIELD_LABELS = {
+        "task": "Task",
+        "task_type": "Task type",
+        "client_id": "Client",
+        "project_id": "Project",
+        "spoc": "Client contact",
+        "owner_id": "Stakeholder",
+        "collaborator_ids": "Stakeholder (others)",
+        "follow_up_teams": "Follow-up teams",
+        "follow_up_user_ids": "Follow-up people",
+        "follow_up_others": "Follow-up others",
+        "internal_follow_up_date": "Internal FU",
+        "client_follow_up_date": "Client FU",
+        "status": "Tracking status",
+        "delay_reason": "Delay reason",
+        "meeting_time": "Meeting",
+        "deliverable_count": "Deliverables",
+        "start_date": "Date",
+        "done_date": "Done date",
+        "sort_order": "Row order",
+    }
+
+    @router.get("/history")
+    async def history(request: Request, limit: int = 300):
+        await get_acting_user(request)
+        limit = max(1, min(limit, 1000))
+        logs = await activity.find({}, {"_id": 0}).sort("changed_at", -1).to_list(limit)
+        task_ids = list({l.get("task_id") for l in logs if l.get("task_id")})
+        names = {
+            t["id"]: t.get("task") or "Untitled task"
+            for t in await tasks.find({"id": {"$in": task_ids}}, {"_id": 0, "id": 1, "task": 1}).to_list(len(task_ids) or 1)
+        }
+        user_ids, client_ids = set(), set()
+        for l in logs:
+            if l.get("changed_by"):
+                user_ids.add(l["changed_by"])
+            for v in (l.get("old_value"), l.get("new_value")):
+                vals = v if isinstance(v, list) else [v]
+                if l.get("field") in ("owner_id", "collaborator_ids", "follow_up_user_ids"):
+                    user_ids.update(x for x in vals if isinstance(x, str))
+                if l.get("field") == "client_id":
+                    client_ids.update(x for x in vals if isinstance(x, str))
+        users = {u["id"]: u.get("name", "") for u in await db.users.find({"id": {"$in": list(user_ids)}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(user_ids) or 1)}
+        clients = {c["id"]: c.get("name", "") for c in await db.clients.find({"id": {"$in": list(client_ids)}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(client_ids) or 1)}
+
+        def show(field, value):
+            if value is None or value == "" or value == []:
+                return ""
+            lookup = users if field in ("owner_id", "collaborator_ids", "follow_up_user_ids") else clients if field == "client_id" else None
+            vals = value if isinstance(value, list) else [value]
+            if lookup is not None:
+                vals = [lookup.get(v, v) for v in vals]
+            return ", ".join(str(v) for v in vals)
+
+        out = []
+        for l in logs:
+            field = l.get("field")
+            deleted = field == "deleted"
+            out.append({
+                "id": l.get("id"),
+                "changed_at": l.get("changed_at"),
+                "changed_by_name": users.get(l.get("changed_by"), "Someone") if l.get("changed_by") else "Import",
+                "action": "Row deleted" if deleted else f"{FIELD_LABELS.get(field, field)} changed",
+                "work_item_name": l.get("old_value") if deleted else names.get(l.get("task_id"), "Deleted task"),
+                **({} if deleted else {"old_value": show(field, l.get("old_value")), "new_value": show(field, l.get("new_value"))}),
+            })
+        return out
 
     @router.post("")
     async def create_task(payload: ProjectTaskIn, request: Request):

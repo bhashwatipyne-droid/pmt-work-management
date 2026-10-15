@@ -765,6 +765,9 @@ export const updateProjectTask = (id, fields) =>
 export const deleteProjectTask = (id) =>
   axios.delete(`${API}/project-tasks/${id}`).then((r) => r.data);
 
+export const getProjectTaskHistory = () =>
+  axios.get(`${API}/project-tasks/history`).then((r) => r.data);
+
 export const setProjectTaskUpdate = (id, day, note) =>
   axios.put(`${API}/project-tasks/${id}/updates/${day}`, { note }).then((r) => r.data);
 

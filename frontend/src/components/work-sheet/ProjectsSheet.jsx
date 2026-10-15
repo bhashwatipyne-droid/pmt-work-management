@@ -127,8 +127,6 @@ const addDays = (day, n) => {
 const daysBetween = (a, b) => Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 864e5);
 const shortDate = (day) =>
   day ? new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "";
-const weekdayDate = (day) =>
-  `${new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short" })} ${shortDate(day)}`;
 const initials = (name = "") =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
 
@@ -511,7 +509,8 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [today, setToday] = useState(() => addDays(new Date().toISOString().slice(0, 10), 0));
   const [month, setMonth] = useState(null); // "2026-10"; null = this month
   const [pickedDay, setPickedDay] = useState(null); // null = the month's default day
-  const [allDays, setAllDays] = useState(false);
+  // The sheet always shows the whole month (no day stepper).
+  const allDays = true;
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState("owner");
   const [collapsed, setCollapsed] = useState({});
@@ -1457,50 +1456,6 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           className="flex flex-wrap items-center gap-2 px-3 py-2.5 md:px-5"
           style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}
         >
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center rounded-[7px] bg-white" style={control}>
-              <button
-                type="button"
-                aria-label="Previous day"
-                disabled={allDays || stepDay <= monthStart}
-                onClick={() => setPickedDay(addDays(stepDay, -1))}
-                className="flex h-8 w-8 items-center justify-center rounded-l-[7px] text-[#4a5878] hover:bg-[#f9fafb] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="flex min-w-[120px] items-center justify-center gap-1.5 whitespace-nowrap text-[13px] font-semibold text-[#0d1b3e]">
-                <CalendarDays className="h-3.5 w-3.5" />
-                {allDays ? `${shortDate(monthStart)} – ${shortDate(rangeEnd)}` : weekdayDate(stepDay)}
-              </span>
-              <button
-                type="button"
-                aria-label="Next day"
-                disabled={allDays || stepDay >= monthEnd}
-                onClick={() => setPickedDay(addDays(stepDay, 1))}
-                className="flex h-8 w-8 items-center justify-center rounded-r-[7px] text-[#4a5878] hover:bg-[#f9fafb] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-            <button
-              type="button"
-              aria-pressed={allDays}
-              onClick={() => {
-                setAllDays((a) => !a);
-                setCell(null);
-              }}
-              className="h-8 whitespace-nowrap rounded-[7px] px-3 text-[12px] font-semibold"
-              style={{
-                background: allDays ? C.b50 : "#fff",
-                color: allDays ? C.b700 : C.n700,
-                boxShadow: `inset 0 0 0 1px ${allDays ? C.b200 : C.n200}`,
-              }}
-            >
-              All days
-            </button>
-            <span className="h-5 w-px" style={{ background: C.cellLine }} />
-          </div>
-
           <label
             className="flex h-8 min-w-[240px] items-center gap-2 rounded-[7px] bg-white px-2.5 text-[#546490]"
             style={{ ...control, flex: "0 1 320px" }}

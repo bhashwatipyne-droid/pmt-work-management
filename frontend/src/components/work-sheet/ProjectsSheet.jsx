@@ -83,7 +83,7 @@ const MANROPE = "Manrope, Inter, -apple-system, sans-serif";
 
 // Columns, widths and frozen offsets as in the redesign's Management sheet.
 const COLS = [
-  { key: "date", label: "Date", w: 84, kind: "date" },
+  { key: "date", label: "Date", w: 104, kind: "date" },
   { key: "task", label: "Task / activity", w: 300, kind: "text", long: 30 },
   { key: "type", label: "Task type", w: 160, kind: "select", filter: "type" },
   { key: "client", label: "Client", w: 150, kind: "select", filter: "client" },

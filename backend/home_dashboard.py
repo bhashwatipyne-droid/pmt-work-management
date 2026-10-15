@@ -19,7 +19,7 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
                  new          its start_dt falls in the month
                  due          its due falls in the month
                  spilled in   started (or, with no start, due) before the month
-                              and still open when the month began
+                              and still open (not finished)
                Work due after the month is NOT scope unless it started in it.
   spilling out in scope and still open after the month ends (current month:
                open and due after the month)
@@ -335,15 +335,10 @@ def create_home_dashboard_router(
                 trend_first_pass[completed_on[:7]].append(revs == 0)
 
             start = _day(d.get("start_dt"))
-            # Was it still open on a given day? Without a stored completed-at,
-            # a done deliverable's last update stands in for when it finished;
-            # one finished only through its billed project has no date and
-            # counts as closed.
-            def open_on(day_s: str) -> bool:
-                if not finished:
-                    return True
-                return bool(completed_on) and completed_on >= day_s
-
+            # Spill-over only counts work that is STILL open. There is no
+            # stored completed-at, and updated_at is not one: bulk edits and
+            # data cleanups touch long-finished deliverables, which would make
+            # hundreds of old rows look "open at the start of the month".
             is_new = bool(start) and m_start_s <= start <= m_end_s
             in_month = bool(due) and m_start_s <= due <= m_end_s
             started_before = (start or due or "") < m_start_s and not is_new
@@ -356,14 +351,13 @@ def create_home_dashboard_router(
             )
             spilled_in = (
                 started_before and not in_month and not stale
-                and bool(start or due) and open_on(m_start_s)
+                and bool(start or due) and not finished
             )
             scoped = is_new or in_month or spilled_in
-            # Spilling out: in this month's scope and still open after it ends
-            # (for the current month: open and due after the month).
-            spilling_out = scoped and (
-                (not finished and bool(due) and due > m_end_s)
-                if month == this_month else open_on((m_end + timedelta(days=1)).isoformat())
+            # Spilling out: in this month's scope, still open, and not due
+            # until after the month (or, for a past month, still open now).
+            spilling_out = scoped and not finished and (
+                (bool(due) and due > m_end_s) if month == this_month else True
             )
             if stale:
                 stale_backlog += 1

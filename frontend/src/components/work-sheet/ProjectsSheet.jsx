@@ -528,6 +528,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [hiddenCols, setHiddenCols] = useState([]);
   const [frozenThrough, setFrozenThrough] = useState(null); // nothing frozen until asked
   const [hiddenRows, setHiddenRows] = useState({});
+  const [ranges, setRanges] = useState({}); // date column key -> { from, to } (YYYY-MM-DD)
   const [dragCol, setDragCol] = useState(null);
   const [widths, setWidths] = useState({}); // column key -> px, after a drag-resize
 
@@ -710,13 +711,18 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     const match = makeMatcher(query);
     return dayTasks.filter((t) => {
       if (hiddenRows[t.id]) return false;
+      for (const [key, { from, to } = {}] of Object.entries(ranges)) {
+        if (!from && !to) continue;
+        const day = t[DATE_FIELD[key]];
+        if (!day || (from && day < from) || (to && day > to)) return false;
+      }
       const v = views.get(t.id);
       if (query.trim() && !match(v.id, v.task, v.type, v.client, v.ownerText, v.followup, v.contact, v.remark, v.meet))
         return false;
       return Object.entries(filters).every(([f, vals]) => !vals?.length || matchesField(v, f, vals));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayTasks, views, query, filters, hiddenRows]);
+  }, [dayTasks, views, query, filters, hiddenRows, ranges]);
 
   const groups = useMemo(() => {
     const sortVal = (t) => {
@@ -1024,6 +1030,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     });
   const activeFields = FIELDS.filter((f) => filters[f.key]?.length);
   const clearFilters = () => {
+    setRanges({});
     setFilters({});
     setQuery("");
   };
@@ -1053,7 +1060,8 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
 
   const headerCell = (col) => {
     const sorted = sort?.key === col.key;
-    const filtered = col.filter && filters[col.filter]?.length;
+    const range = ranges[col.key];
+    const filtered = (col.filter && filters[col.filter]?.length) || !!(range?.from || range?.to);
     const Icon = sorted ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : filtered ? Filter : ChevronDown;
     const frozen = col.left != null;
     return (
@@ -1181,6 +1189,40 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
               </button>
             )}
           </div>
+          {col.kind === "date" && (
+            <div className="flex flex-col gap-2 p-2.5" style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}>
+              <div className="flex items-center gap-2 font-semibold">
+                <Filter className="h-3.5 w-3.5" />
+                Filter by date
+              </div>
+              <div className="flex gap-2">
+                {[
+                  ["from", "From"],
+                  ["to", "To"],
+                ].map(([k, label]) => (
+                  <label key={k} className="flex min-w-0 flex-1 flex-col gap-1 text-[12px] text-[#546490]">
+                    {label}
+                    <input
+                      type="date"
+                      value={range?.[k] || ""}
+                      onChange={(e) => setRanges((r) => ({ ...r, [col.key]: { ...r[col.key], [k]: e.target.value } }))}
+                      className="h-8 w-full rounded-[7px] border-0 px-2 text-[13px] text-[#0d1b3e] outline-none"
+                      style={{ boxShadow: `inset 0 0 0 1px ${C.n200}` }}
+                    />
+                  </label>
+                ))}
+              </div>
+              {(range?.from || range?.to) && (
+                <button
+                  type="button"
+                  onClick={() => setRanges((r) => ({ ...r, [col.key]: {} }))}
+                  className="self-start text-[12px] font-medium text-[#2b2bb5] hover:underline"
+                >
+                  Clear dates
+                </button>
+              )}
+            </div>
+          )}
           {col.filter && (
             <ValuesPanel
               title={col.label}

@@ -23,7 +23,7 @@ import {
 } from "@/services/api";
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
-import { ProjectsSheet } from "@/components/work-sheet/ProjectsSheet";
+import { ProjectsSheet, prefetchProjectSheet } from "@/components/work-sheet/ProjectsSheet";
 import { WorkSheetTable, SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/WorkSheetTable";
 import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
@@ -1873,6 +1873,11 @@ export default function WorkSheetPage() {
     deleteTarget,
     bulkDeleteConfirmOpen,
   ]);
+
+  // Start loading the Management tab now so it opens instantly later.
+  useEffect(() => {
+    prefetchProjectSheet().catch(() => {});
+  }, []);
 
   if (userLoading || !currentUser) {
     return <WorkSheetSkeleton />;

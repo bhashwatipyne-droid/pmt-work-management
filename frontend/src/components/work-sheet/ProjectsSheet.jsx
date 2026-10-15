@@ -484,6 +484,25 @@ function ExpandEditor({ value, onSave, readOnly }) {
   );
 }
 
+// The sheet's data is fetched once and kept for the session: the Work Sheet
+// page starts the request as soon as it opens (prefetchProjectSheet), so the
+// Management tab shows straight away, then refreshes quietly in the background.
+let sheetCache = null;
+let sheetRequest = null;
+export function prefetchProjectSheet() {
+  if (!sheetRequest) {
+    sheetRequest = Promise.all([getProjectTasks(), getClients().catch(() => null)])
+      .then(([data, clients]) => {
+        sheetCache = { data, clients: clients || sheetCache?.clients || [] };
+        return sheetCache;
+      })
+      .finally(() => {
+        sheetRequest = null;
+      });
+  }
+  return sheetRequest;
+}
+
 export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [tasks, setTasks] = useState([]);
   const [updates, setUpdates] = useState([]);
@@ -498,7 +517,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [collapsed, setCollapsed] = useState({});
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState(null); // { key, dir }
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!sheetCache);
   const [cell, setCell] = useState(null); // { r: taskId, c: colKey }
   const [editing, setEditing] = useState(null); // { r, c, draft }
   const [menu, setMenu] = useState(null); // { r, c, kind: "pick" | "expand" }
@@ -556,20 +575,22 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const inView = useCallback((t) => (allDays ? openInMonth(t) : openOnDay(t)), [allDays, openInMonth, openOnDay]);
 
   const load = useCallback(() => {
-    return getProjectTasks()
-      .then((data) => {
-        setTasks(data.tasks || []);
-        setUpdates(data.updates || []);
-        setOptions(data.options || {});
-        if (data.today) setToday(data.today);
-      })
+    const apply = ({ data, clients: c }) => {
+      setTasks(data.tasks || []);
+      setUpdates(data.updates || []);
+      setOptions(data.options || {});
+      if (data.today) setToday(data.today);
+      setClients(c || []);
+    };
+    if (sheetCache) apply(sheetCache);
+    return prefetchProjectSheet()
+      .then(apply)
       .catch(() => toast.error("Couldn't load the Management sheet. Refresh to try again."))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     load();
-    getClients().then((c) => setClients(c || [])).catch(() => {});
   }, [load]);
 
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);

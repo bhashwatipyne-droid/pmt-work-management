@@ -175,8 +175,10 @@ export default function WorkSheetPage() {
   // Admins open on "All"; everyone else opens on their own department's sheet
   // (Content -> Content, Design -> Design, Animation -> Animation). They can
   // still switch tabs.
+  // Admins land on the Management sheet; everyone else on their team's sheet.
   const defaultSheetFor = (user) =>
-    (user && user.role !== "admin" && DEPARTMENT_TO_STAGE[user.department]) ||
+    (user?.role === "admin" && "Projects") ||
+    (user && DEPARTMENT_TO_STAGE[user.department]) ||
     "Master";
   const [activeSheet, setActiveSheet] = useState(() => defaultSheetFor(currentUser));
   const defaultSheetApplied = useRef(Boolean(currentUser));
@@ -190,6 +192,8 @@ export default function WorkSheetPage() {
   const [options, setOptions] = useState({});
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
+  // Management sheet tasks, for its tab count (the sheet loads them itself).
+  const [projectTasks, setProjectTasks] = useState(null);
   const [deliverables, setDeliverables] = useState([]);
 
   // Filters are scoped to each worksheet tab so a filter applied on one
@@ -777,8 +781,18 @@ export default function WorkSheetPage() {
       else if (stage === "Animate") counts.Animate += 1;
     });
 
+    // Management: tasks open at any point in the month on screen.
+    if (projectTasks) {
+      const m = month || (projectTasks.today || "").slice(0, 7);
+      const start = `${m}-01`;
+      const end = `${m}-31`;
+      counts.Projects = (projectTasks.tasks || []).filter(
+        (t) => (t.start_date || "") <= end && !(t.done_date && t.done_date < start)
+      ).length;
+    }
+
     return counts;
-  }, [items, month]);
+  }, [items, month, projectTasks]);
 
   const sortedItems = useMemo(() => {
     return [...filteredItems].sort((a, b) => {
@@ -1876,7 +1890,9 @@ export default function WorkSheetPage() {
 
   // Start loading the Management tab now so it opens instantly later.
   useEffect(() => {
-    prefetchProjectSheet().catch(() => {});
+    prefetchProjectSheet()
+      .then((cache) => setProjectTasks(cache.data))
+      .catch(() => {});
   }, []);
 
   if (userLoading || !currentUser) {

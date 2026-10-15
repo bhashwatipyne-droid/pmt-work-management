@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from "lucide-react";
+import { Check, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { SearchableSelect } from "./SearchableSelect";
+import { MonthPicker } from "./MonthPicker";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { makeMatcher } from "@/lib/search";
 import {
@@ -44,18 +45,10 @@ const addDays = (day, n) => {
 const daysBetween = (a, b) => Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 864e5);
 const shortDate = (day) =>
   day ? new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "";
-const longDate = (day) =>
-  new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 const initials = (name = "") =>
   name.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
 
 const nextFollowUp = (t) => [t.internal_follow_up_date, t.client_follow_up_date].filter(Boolean).sort()[0] || "";
-const openOn = (t, day) => (t.start_date || "") <= day && !(t.done_date && t.done_date <= day);
 const lateBy = (t, day) => {
   if (t.status === "Done") return 0;
   const next = nextFollowUp(t);
@@ -264,7 +257,7 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
   const [options, setOptions] = useState({ task_types: [], statuses: [], teams: [], meeting_types: [] });
   const [clients, setClients] = useState([]);
   const [today, setToday] = useState(() => addDays(new Date().toISOString().slice(0, 10), 0));
-  const [day, setDay] = useState(null);
+  const [month, setMonth] = useState(null); // "2026-10"; null = this month
   const [view, setView] = useState("day");
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState("client");
@@ -273,7 +266,15 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
   const focusTaskRef = useRef(null);
 
   const canEdit = currentUser?.role !== "hr";
-  const viewDay = day || today;
+  // The sheet shows a month: every task open at any point in it. "Late" and
+  // the Update cell work off one day of that month - today in the current
+  // month, the last day of a past month, the first day of a future one.
+  const viewMonth = month || today.slice(0, 7);
+  const monthStart = `${viewMonth}-01`;
+  const monthEnd = addDays(`${addDays(`${viewMonth}-28`, 4).slice(0, 7)}-01`, -1);
+  const viewDay = today >= monthStart && today <= monthEnd ? today : today > monthEnd ? monthEnd : monthStart;
+  const openInMonth = (t) => (t.start_date || "") <= monthEnd && !(t.done_date && t.done_date < monthStart);
+  const doneInMonth = (t) => t.done_date && t.done_date >= monthStart && t.done_date <= monthEnd;
 
   const load = useCallback(() => {
     return getProjectTasks()
@@ -367,13 +368,13 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
   const isMeeting = (t) => (options.meeting_types || []).includes(t.task_type);
 
   const counts = useMemo(() => {
-    const open = tasks.filter((t) => openOn(t, viewDay));
+    const open = tasks.filter((t) => openInMonth(t) && t.status !== "Done");
     return {
-      day: open.length,
+      day: tasks.filter(openInMonth).length,
       due: open.filter((t) => nextFollowUp(t) && nextFollowUp(t) <= viewDay).length,
       overdue: open.filter((t) => lateBy(t, viewDay) > 0).length,
       meetings: open.filter(isMeeting).length,
-      done: tasks.filter((t) => t.done_date === viewDay).length,
+      done: tasks.filter(doneInMonth).length,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, viewDay, options]);
@@ -399,9 +400,9 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
         )
           return false;
       }
-      if (view === "done") return t.done_date === viewDay;
-      // Rows added on this day stay visible while they're being filled in.
-      if (!openOn(t, viewDay)) return false;
+      if (view === "done") return doneInMonth(t);
+      if (!openInMonth(t)) return false;
+      if (view !== "day" && t.status === "Done") return false;
       if (view === "due") return nextFollowUp(t) && nextFollowUp(t) <= viewDay;
       if (view === "overdue") return lateBy(t, viewDay) > 0;
       if (view === "meetings") return isMeeting(t);
@@ -431,11 +432,11 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
   }, [tasks, query, view, viewDay, groupBy, userById, clientById, projectById, options]);
 
   const VIEWS = [
-    ["day", "Day sheet", counts.day],
+    ["day", "All this month", counts.day],
     ["due", "Follow-ups due", counts.due],
     ["overdue", "Overdue", counts.overdue, true],
     ["meetings", "Meetings & calls", counts.meetings],
-    ["done", "Done this day", counts.done],
+    ["done", "Done this month", counts.done],
   ];
 
   const clientOptions = useMemo(
@@ -448,26 +449,7 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
       <div className="border-b border-[#eaeef4] bg-white">
         <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-4 md:gap-3 md:px-5 md:pt-5">
           <h1 className="min-w-[120px] flex-1 text-xl font-semibold tracking-tight text-[#0d1b3e] md:text-2xl">Work sheet</h1>
-          <span className="rounded-full border border-[#e2e6f0] px-2.5 py-1 text-[11px] text-[#546490]">
-            Projects tab · <b className="font-semibold text-[#0d1b3e]">not counted in efficiency</b>
-          </span>
-          <div className="inline-flex h-8 items-center rounded-md border border-[#e2e6f0] bg-white">
-            <button type="button" aria-label="Previous day" onClick={() => setDay(addDays(viewDay, -1))} className="px-2 text-[#546490] hover:text-[#0d1b3e]">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="min-w-[150px] text-center text-[13px] font-semibold text-[#0d1b3e]">
-              {longDate(viewDay)}
-              {viewDay === today && <span className="font-normal text-[#2b2bb5]"> · Today</span>}
-            </span>
-            <button type="button" aria-label="Next day" onClick={() => setDay(addDays(viewDay, 1))} className="px-2 text-[#546490] hover:text-[#0d1b3e]">
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          {viewDay !== today && (
-            <button type="button" onClick={() => setDay(null)} className="h-8 rounded-md border border-[#e2e6f0] px-3 text-[13px] text-[#0d1b3e] hover:bg-[#f5f6fb]">
-              Today
-            </button>
-          )}
+          <MonthPicker value={viewMonth} onChange={(m) => setMonth(m || null)} currentMonth={today.slice(0, 7)} />
           {canEdit && (
             <button
               type="button"
@@ -554,7 +536,7 @@ export function ProjectsSheet({ currentUser, users = [], projects = [], tabs }) 
             {!loading && !groups.length && (
               <tr>
                 <td colSpan={13} className="px-5 py-10 text-center text-[13px] text-[#546490]">
-                  {query ? "No task matches your search." : view === "day" ? "No open tasks on this day. Use Add row to start one." : "Nothing in this view for this day."}
+                  {query ? "No task matches your search." : view === "day" ? "No tasks this month. Use Add row to start one." : "Nothing in this view this month."}
                 </td>
               </tr>
             )}

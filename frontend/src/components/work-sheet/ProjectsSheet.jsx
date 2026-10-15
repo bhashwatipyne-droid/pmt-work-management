@@ -125,6 +125,8 @@ const addDays = (day, n) => {
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+// Dates in cells read like the other sheets: 15-10-2026.
+const sheetDate = (day) => (day ? day.split("-").reverse().join("-") : "");
 const daysBetween = (a, b) => Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 864e5);
 const shortDate = (day) =>
   day ? new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "";
@@ -662,11 +664,11 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
         ].join(", "),
         contact: t.spoc || "",
         count: t.deliverable_count ?? "",
-        ifu: shortDate(t.internal_follow_up_date),
-        cfu: shortDate(t.client_follow_up_date),
+        ifu: sheetDate(t.internal_follow_up_date),
+        cfu: sheetDate(t.client_follow_up_date),
         status: t.status || "",
         meet: t.meeting_time || "",
-        date: shortDate(t.start_date),
+        date: sheetDate(t.start_date),
         remark: [late ? `${late}d late` : "", t.delay_reason, note].filter(Boolean).join(" · "),
         late,
         due: !!nextFollowUp(t) && nextFollowUp(t) <= refDay && t.status !== "Done",
@@ -1397,7 +1399,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
             style={{
               flex: 1,
               minWidth: 0,
-              textAlign: col.kind === "number" ? "right" : "left",
+              textAlign: col.kind === "number" || col.kind === "date" ? "right" : "left",
               fontVariantNumeric: "tabular-nums",
               whiteSpace: "nowrap",
               overflow: "hidden",

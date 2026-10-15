@@ -1878,14 +1878,13 @@ export default function WorkSheetPage() {
     return <WorkSheetSkeleton />;
   }
 
-  // The Projects tab is a different sheet (its own rows and columns, not work
-  // items), so it replaces everything below the tabs.
+  // The Management tab (key "Projects") is a different sheet - its own rows
+  // and columns, not work items - so it replaces everything below the tabs.
   if (activeSheet === "Projects") {
     return (
       <ProjectsSheet
         currentUser={currentUser}
         users={users}
-        projects={projects}
         tabs={<WorkSheetTabs activeSheet={activeSheet} onChange={setActiveSheet} counts={tabCounts} />}
       />
     );

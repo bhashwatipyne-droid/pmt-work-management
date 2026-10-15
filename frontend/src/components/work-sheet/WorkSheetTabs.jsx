@@ -6,7 +6,8 @@ const SHEETS = [
   { key: "Design", label: "Design" },
   { key: "Animate", label: "Animation" },
   // The Projects team's follow-up sheet: its own rows (not work items).
-  { key: "Projects", label: "Projects" },
+  // The key stays "Projects" so a saved tab choice keeps working.
+  { key: "Projects", label: "Management" },
 ];
 
 // counts is optional — { [sheetKey]: number }. Omit it and the tabs

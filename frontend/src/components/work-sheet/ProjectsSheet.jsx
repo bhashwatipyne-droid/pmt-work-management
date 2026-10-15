@@ -507,7 +507,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [sel, setSel] = useState({});
   const [order, setOrder] = useState(() => COLS.map((c) => c.key));
   const [hiddenCols, setHiddenCols] = useState([]);
-  const [frozenThrough, setFrozenThrough] = useState("task");
+  const [frozenThrough, setFrozenThrough] = useState(null); // nothing frozen until asked
   const [hiddenRows, setHiddenRows] = useState({});
   const [dragCol, setDragCol] = useState(null);
 
@@ -810,7 +810,15 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     const t = taskById.get(cell.r);
     const col = COLS.find((c) => c.key === cell.c);
     const moves = { ArrowDown: [1, 0], ArrowUp: [-1, 0], ArrowRight: [0, 1], ArrowLeft: [0, -1] };
-    if (moves[e.key]) {
+    if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      // Shift+Down / Shift+Up selects rows, like Shift+click on the checkboxes.
+      e.preventDefault();
+      const ri = flatRows.findIndex((x) => x.id === cell.r);
+      const next = flatRows[ri + (e.key === "ArrowDown" ? 1 : -1)];
+      setSel((cur) => ({ ...cur, [cell.r]: true, ...(next ? { [next.id]: true } : {}) }));
+      lastSelRef.current = next ? next.id : cell.r;
+      if (next) setCell({ r: next.id, c: cell.c });
+    } else if (moves[e.key]) {
       e.preventDefault();
       moveCell(...moves[e.key]);
     } else if (e.key === "Tab") {
@@ -1076,12 +1084,12 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
               type="button"
               className={MENU_ITEM}
               onClick={() => {
-                setFrozenThrough(frozenThrough === col.key ? "task" : col.key);
+                setFrozenThrough(frozenThrough === col.key ? null : col.key);
                 setHeadMenu(null);
               }}
             >
               <Snowflake className="h-3.5 w-3.5" />
-              <span className="flex-1">{frozenThrough === col.key && col.key !== "task" ? "Unfreeze columns" : "Freeze up to this column"}</span>
+              <span className="flex-1">{frozenThrough === col.key ? "Unfreeze columns" : "Freeze up to this column"}</span>
             </button>
             {col.key !== "task" && (
               <button
@@ -1089,7 +1097,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                 className={MENU_ITEM}
                 onClick={() => {
                   setHiddenCols((h) => [...h, col.key]);
-                  if (frozenThrough === col.key) setFrozenThrough("task");
+                  if (frozenThrough === col.key) setFrozenThrough(null);
                   if (cell?.c === col.key) setCell(null);
                   setHeadMenu(null);
                 }}
@@ -1783,6 +1791,8 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 toggleRow(t.id, e.shiftKey);
+                                setCell((c) => ({ r: t.id, c: c?.c || cols[0]?.key }));
+                                focusGrid();
                               }}
                               title="Click or Shift+click to select several"
                               style={{

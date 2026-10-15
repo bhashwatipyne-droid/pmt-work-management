@@ -41,6 +41,7 @@ try:
     from invoicing import create_invoicing_router  # noqa: F401
     from planning import create_planning_router  # noqa: F401
     from project_share import create_project_share_router  # noqa: F401
+    from project_tasks import create_project_tasks_router, ensure_project_task_indexes  # noqa: F401
     import deliverable_import  # noqa: F401
     import project_duplicates  # noqa: F401
 except ImportError:
@@ -51,6 +52,7 @@ except ImportError:
     from backend.invoicing import create_invoicing_router  # noqa: F401
     from backend.planning import create_planning_router  # noqa: F401
     from backend.project_share import create_project_share_router  # noqa: F401
+    from backend.project_tasks import create_project_tasks_router, ensure_project_task_indexes  # noqa: F401
     from backend import deliverable_import  # noqa: F401
     from backend import project_duplicates  # noqa: F401
 
@@ -8348,6 +8350,16 @@ api_router.include_router(
     )
 )
 
+# Projects team task sheet (Work Sheet > Projects tab). Its own collections;
+# never part of work items or efficiency.
+api_router.include_router(
+    create_project_tasks_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        now_iso=now_iso,
+    )
+)
+
 app.include_router(api_router)
 
 @app.middleware("http")
@@ -8516,6 +8528,7 @@ async def run_startup_migrations():
     # and deliverable lookup. Non-unique on purpose: this must never fail
     # startup on a database that already holds an odd duplicate.
     await db.users.create_index("id")
+    await ensure_project_task_indexes(db)
     await db.clients.create_index("id")
     await db.projects.create_index("id")
     await db.projects.create_index("code")

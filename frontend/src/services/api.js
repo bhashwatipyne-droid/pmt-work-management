@@ -750,3 +750,20 @@ export const stopProjectShare = (userId, id) =>
   axios
     .delete(`${API}/projects/${id}/share`, { headers: authHeaders(userId) })
     .then((r) => r.data);
+
+// -------- Projects team task sheet (Work Sheet > Projects tab) --------
+// Its own collection on the server; never part of work items or efficiency.
+export const getProjectTasks = () =>
+  axios.get(`${API}/project-tasks`).then((r) => r.data);
+
+export const createProjectTask = (fields) =>
+  axios.post(`${API}/project-tasks`, fields).then((r) => r.data);
+
+export const updateProjectTask = (id, fields) =>
+  axios.patch(`${API}/project-tasks/${id}`, fields).then((r) => r.data);
+
+export const deleteProjectTask = (id) =>
+  axios.delete(`${API}/project-tasks/${id}`).then((r) => r.data);
+
+export const setProjectTaskUpdate = (id, day, note) =>
+  axios.put(`${API}/project-tasks/${id}/updates/${day}`, { note }).then((r) => r.data);

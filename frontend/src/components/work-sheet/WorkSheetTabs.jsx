@@ -5,6 +5,8 @@ const SHEETS = [
   { key: "Content", label: "Content" },
   { key: "Design", label: "Design" },
   { key: "Animate", label: "Animation" },
+  // The Projects team's follow-up sheet: its own rows (not work items).
+  { key: "Projects", label: "Projects" },
 ];
 
 // counts is optional — { [sheetKey]: number }. Omit it and the tabs

@@ -23,6 +23,7 @@ import {
 } from "@/services/api";
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
+import { ProjectsSheet } from "@/components/work-sheet/ProjectsSheet";
 import { WorkSheetTable, SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/WorkSheetTable";
 import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
@@ -1875,6 +1876,19 @@ export default function WorkSheetPage() {
 
   if (userLoading || !currentUser) {
     return <WorkSheetSkeleton />;
+  }
+
+  // The Projects tab is a different sheet (its own rows and columns, not work
+  // items), so it replaces everything below the tabs.
+  if (activeSheet === "Projects") {
+    return (
+      <ProjectsSheet
+        currentUser={currentUser}
+        users={users}
+        projects={projects}
+        tabs={<WorkSheetTabs activeSheet={activeSheet} onChange={setActiveSheet} counts={tabCounts} />}
+      />
+    );
   }
 
   return (

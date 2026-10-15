@@ -83,8 +83,11 @@ const BADGE = {
   Warning: { bg: "#fef3c7", ring: "#fef3c7", fg: "rgb(146,64,14)", dot: "#f59e0b" },
   Error: { bg: "#fff5f5", ring: "#fff5f5", fg: "#ef4444", dot: "#ef4444" },
   Neutral: { bg: C.n100, ring: C.n200, fg: C.n700, dot: C.n400 },
+  // Done gets its own colour so a finished task doesn't look like an
+  // on-track one (both were green).
+  Done: { bg: "#eef2ff", ring: "#e0e7ff", fg: "#4338ca", dot: "#6366f1" },
 };
-const STATUS_BADGE = { "On track": "Success", Done: "Success", "At risk": "Warning", Delayed: "Error" };
+const STATUS_BADGE = { "On track": "Success", Done: "Done", "At risk": "Warning", Delayed: "Error" };
 
 const THREE_TEAMS = ["Content", "Design", "Animation"];
 const NONE = "__none__";

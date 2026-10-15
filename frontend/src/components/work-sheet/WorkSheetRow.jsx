@@ -780,7 +780,9 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
             onUpdate(item.id, patch);
 
             const twins = lookalikes?.get(picked.id) || [];
-            if (twins.length) {
+            if (item.client_id && String(picked.client_id) !== String(item.client_id)) {
+              toast(`Client changed to ${clientNameOf(picked.client_id)}`);
+            } else if (twins.length) {
               toast(`Set to ${picked.name}, not ${twins[0].name}`);
             }
           }}

@@ -108,6 +108,13 @@ export function ProjectPicker({
       return tokens.some((t) => name.includes(t) || compact.includes(t));
     };
 
+    const clientWords = (name) =>
+      normalizeText(name)
+        .split(" ")
+        .filter((w) => w.length > 2 && !["ltd", "pvt", "the", "and", "limited"].includes(w));
+    const rowClientWords = new Set(clientWords(clientName));
+    const sharesClientWord = (name) => clientWords(name).some((w) => rowClientWords.has(w));
+
     projects.forEach((project) => {
       const ownClient = clientNameOf(project.client_id);
       const projectHit = matchProject(project.name, ownClient, project.description);
@@ -122,10 +129,16 @@ export function ProjectPicker({
 
       let group;
       if (clientId) {
-        // A client is already chosen on the row, so only its projects are
-        // offered (clear the client to search across all of them).
-        if (project.client_id !== clientId) return;
-        group = isRecent(project.id) ? 0 : 1;
+        // A client is already chosen on the row, so its projects come first.
+        // The client itself may be the wrong one, though (e.g. "Aditya Birla
+        // Sun Life" for "Aditya Birla Alternative"), so a search also lists
+        // other clients' projects after them: look-alike clients, then the rest.
+        if (project.client_id !== clientId) {
+          if (!q) return;
+          group = sharesClientWord(ownClient) ? 2 : 3;
+        } else {
+          group = isRecent(project.id) ? 0 : 1;
+        }
       } else {
         group = isRecent(project.id) ? 0 : 1;
       }
@@ -138,6 +151,8 @@ export function ProjectPicker({
       ? [
           `Recently used for ${clientName}`,
           `Other projects for ${clientName}`,
+          "Similar clients",
+          "Other clients",
         ]
       : ["Recently used", "All projects", ""];
 
@@ -439,7 +454,7 @@ export function ProjectPicker({
             <span className="p-2 text-xs text-muted-foreground">
               {search.trim()
                 ? clientId
-                  ? `No active project for ${clientName} matches. Delivered and scrapped projects aren't listed.`
+                  ? "No active project matches for any client. Delivered and scrapped projects aren't listed."
                   : "No active project matches. Delivered and scrapped projects aren't listed."
                 : clientId
                   ? `No active projects for ${clientName}. Clear the client to search all projects.`

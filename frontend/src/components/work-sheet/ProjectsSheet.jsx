@@ -100,6 +100,12 @@ const COLS = [
 const COL_BY_KEY = Object.fromEntries(COLS.map((c) => [c.key, c]));
 // Only Shruti and Sakshi run the Projects team's follow-ups.
 const STAKEHOLDERS = ["shruti", "sakshi"];
+// Same first name, but on the Content team - not a Management stakeholder.
+const NOT_STAKEHOLDERS = ["sakshi agrawal"];
+const isStakeholder = (u) => {
+  const name = (u.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return STAKEHOLDERS.includes(name.split(" ")[0]) && !NOT_STAKEHOLDERS.includes(name);
+};
 const TEXT_FIELD = { task: "task", contact: "spoc", meet: "meeting_time" };
 const DATE_FIELD = { ifu: "internal_follow_up_date", cfu: "client_follow_up_date", date: "start_date" };
 
@@ -1273,7 +1279,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       return (
         <PeoplePicker
           task={t}
-          users={activeUsers.filter((u) => STAKEHOLDERS.includes((u.name || "").trim().split(/\s+/)[0].toLowerCase()))}
+          users={activeUsers.filter(isStakeholder)}
           onSave={(f) => save(t, f)}
         />
       );

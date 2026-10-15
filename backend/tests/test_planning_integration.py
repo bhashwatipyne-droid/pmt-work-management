@@ -955,3 +955,37 @@ def test_a_row_with_an_unreadable_date_is_skipped_not_closed(env):
     run(server.db.work_items.insert_one(row))
     assert run(server.auto_close_stale_reviews()) == 0
     assert run(server.db.work_items.find_one({"id": "odd-date"}))["status"] == "Ready for Review"
+
+
+def test_open_rows_untouched_for_5_days_are_closed_but_on_hold_is_kept(env):
+    days = 24
+    run(server.db.work_items.insert_many([
+        _review_row("old-ongoing", None, 6 * days, status="Ongoing"),
+        _review_row("old-not-started", None, 6 * days, status="Not Started"),
+        _review_row("old-rework", "admin-1", 6 * days, status="Rework"),
+        _review_row("fresh-ongoing", None, 4 * days, status="Ongoing"),
+        _review_row("old-on-hold", None, 30 * days, status="On Hold"),
+        _review_row("old-scrap", None, 30 * days, status="Scrap"),
+    ]))
+    assert run(server.auto_close_stale_rows()) == 3
+
+    status = {r["id"]: r["status"] for r in run(server.db.work_items.find({}, {"_id": 0}).to_list(10))}
+    assert status == {
+        "old-ongoing": "Closed", "old-not-started": "Closed", "old-rework": "Closed",
+        "fresh-ongoing": "Ongoing", "old-on-hold": "On Hold", "old-scrap": "Scrap",
+    }
+
+    (log,) = run(server.db.work_item_activity_log.find({"work_item_id": "old-ongoing"}, {"_id": 0}).to_list(5))
+    assert log["action"] == "WORK_ITEM_STATUS_CHANGED" and log["changed_by"] == "system"
+    assert log["old_value"] == "Ongoing" and log["new_value"] == "Closed"
+    assert log["metadata"]["auto_closed"] is True
+
+    # once per row
+    assert run(server.auto_close_stale_rows()) == 0
+
+
+def test_stale_row_close_can_be_turned_off(env, monkeypatch):
+    run(server.db.work_items.insert_one(_review_row("old", None, 24 * 10, status="Ongoing")))
+    monkeypatch.setattr(server, "STALE_ROW_AUTO_CLOSE_DAYS", 0)
+    assert run(server.auto_close_stale_rows()) == 0
+    assert run(server.db.work_items.find_one({"id": "old"}))["status"] == "Ongoing"

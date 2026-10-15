@@ -3446,6 +3446,57 @@ async def auto_close_stale_reviews() -> int:
     return closed
 
 
+# Open Work Sheet rows nobody has touched for this many days are closed by the
+# background sweep. On Hold is paused work, so it is left open.
+STALE_ROW_AUTO_CLOSE_DAYS = float(os.environ.get("STALE_ROW_AUTO_CLOSE_DAYS", "5"))
+_STALE_ROW_KEEP_OPEN = ["Closed", "Scrap", "On Hold"]
+
+
+async def auto_close_stale_rows() -> int:
+    """Close (-> Closed) every Work Sheet row that is still open and has had no
+    change for STALE_ROW_AUTO_CLOSE_DAYS. Any edit to the row (updated_at)
+    restarts the clock. Logged as a status change by "system", marked as
+    automatic. Returns how many were closed."""
+    if STALE_ROW_AUTO_CLOSE_DAYS <= 0:
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=STALE_ROW_AUTO_CLOSE_DAYS)
+    closed = 0
+    async for row in db.work_items.find(
+        {"status": {"$nin": _STALE_ROW_KEEP_OPEN}},
+        {"_id": 0, "id": 1, "status": 1, "updated_at": 1, "created_at": 1},
+    ):
+        last_change = _parse_iso_utc(row.get("updated_at")) or _parse_iso_utc(row.get("created_at"))
+        if not last_change or last_change > cutoff:
+            continue
+
+        old_status = row.get("status")
+        ts = now_iso()
+        result = await db.work_items.update_one(
+            # untouched since we read it: an edit a moment ago wins
+            {"id": row["id"], "status": old_status, "updated_at": row.get("updated_at")},
+            {"$set": {"status": "Closed", "updated_at": ts}},
+        )
+        if result.modified_count != 1:
+            continue
+
+        await log_activity(
+            collection_name="work_item_activity_log",
+            entity_id=row["id"],
+            entity_field="work_item_id",
+            action="WORK_ITEM_STATUS_CHANGED",
+            changed_by="system",
+            old_value=old_status,
+            new_value="Closed",
+            metadata={
+                "note": f"Auto-closed: no change for {STALE_ROW_AUTO_CLOSE_DAYS:g} days",
+                "auto_closed": True,
+            },
+        )
+        closed += 1
+    return closed
+
+
 @api_router.patch("/work-items/{item_id}", response_model=WorkItem)
 async def update_work_item(item_id: str, payload: WorkItemUpdate, request: Request):
     user = await get_acting_user(request)
@@ -8236,8 +8287,9 @@ api_router.include_router(_planning_router)
 
 # Background sweeps. Task cards nobody answers within the hour are accepted for
 # the person (the sweep lives in planning.py); Bulk Review rows a manager never
-# got to are approved after 24 hours (auto_close_stale_reviews). The loop runs
-# the first every minute and the second every fifth minute.
+# got to are approved after 24 hours (auto_close_stale_reviews), and open rows
+# untouched for 5 days are closed (auto_close_stale_rows). The loop runs the
+# first every minute and the other two every fifth minute.
 _auto_accept_due = _planning_router.auto_accept_due
 _AUTO_ACCEPT_SWEEP_SECONDS = 60
 _REVIEW_SWEEP_EVERY_N_TICKS = 5
@@ -8265,6 +8317,15 @@ async def _auto_accept_loop():
                 raise
             except Exception:
                 logger.exception("Auto-close of stale reviews failed")
+
+            try:
+                closed = await auto_close_stale_rows()
+                if closed:
+                    logger.info("Auto-closed %d row(s) untouched for %g days", closed, STALE_ROW_AUTO_CLOSE_DAYS)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Auto-close of stale rows failed")
 
         tick += 1
         await asyncio.sleep(_AUTO_ACCEPT_SWEEP_SECONDS)

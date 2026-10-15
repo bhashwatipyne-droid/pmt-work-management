@@ -8,11 +8,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Eye,
+  EyeOff,
   Filter,
+  Hand,
   LayoutList,
   Maximize2,
   Plus,
   Search,
+  Snowflake,
   Trash2,
   X,
 } from "lucide-react";
@@ -79,8 +83,7 @@ const MANROPE = "Manrope, Inter, -apple-system, sans-serif";
 
 // Columns, widths and frozen offsets as in the redesign's Management sheet.
 const COLS = [
-  { key: "id", label: "ID", w: 84, kind: "ro", left: 48 },
-  { key: "task", label: "Task / activity", w: 300, kind: "text", left: 132, edge: true, long: 30 },
+  { key: "task", label: "Task / activity", w: 300, kind: "text", long: 30 },
   { key: "type", label: "Task type", w: 160, kind: "select", filter: "type" },
   { key: "client", label: "Client", w: 150, kind: "select", filter: "client" },
   { key: "owner", label: "Stakeholder", w: 150, kind: "people", filter: "owner" },
@@ -94,7 +97,9 @@ const COLS = [
   { key: "date", label: "Date", w: 84, kind: "date" },
   { key: "remark", label: "Remark", w: 280, kind: "text", long: 34 },
 ];
-const GRID = `48px ${COLS.map((c) => `${c.w}px`).join(" ")}`;
+const COL_BY_KEY = Object.fromEntries(COLS.map((c) => [c.key, c]));
+// Only Shruti and Sakshi run the Projects team's follow-ups.
+const STAKEHOLDERS = ["shruti", "sakshi"];
 const TEXT_FIELD = { task: "task", contact: "spoc", meet: "meeting_time" };
 const DATE_FIELD = { ifu: "internal_follow_up_date", cfu: "client_follow_up_date", date: "start_date" };
 
@@ -500,6 +505,26 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [headMenu, setHeadMenu] = useState(null); // column key
   const [filterMenu, setFilterMenu] = useState(null); // null | "fields" | field key
   const [sel, setSel] = useState({});
+  const [order, setOrder] = useState(() => COLS.map((c) => c.key));
+  const [hiddenCols, setHiddenCols] = useState([]);
+  const [frozenThrough, setFrozenThrough] = useState("task");
+  const [hiddenRows, setHiddenRows] = useState({});
+  const [dragCol, setDragCol] = useState(null);
+
+  // Visible columns in order; the frozen ones (up to frozenThrough) get their
+  // sticky left offsets, and the last frozen one draws the thicker edge.
+  const cols = useMemo(() => {
+    const list = order.filter((k) => !hiddenCols.includes(k)).map((k) => COL_BY_KEY[k]);
+    const fi = list.findIndex((c) => c.key === frozenThrough);
+    let left = 48;
+    return list.map((c, i) => {
+      if (i > fi) return { ...c, left: null, edge: false };
+      const out = { ...c, left, edge: i === fi };
+      left += c.w;
+      return out;
+    });
+  }, [order, hiddenCols, frozenThrough]);
+  const GRID = `48px ${cols.map((c) => `${c.w}px`).join(" ")}`;
   const [statusMenu, setStatusMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -627,13 +652,14 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const visible = useMemo(() => {
     const match = makeMatcher(query);
     return dayTasks.filter((t) => {
+      if (hiddenRows[t.id]) return false;
       const v = views.get(t.id);
       if (query.trim() && !match(v.id, v.task, v.type, v.client, v.ownerText, v.followup, v.contact, v.remark, v.meet))
         return false;
       return Object.entries(filters).every(([f, vals]) => !vals?.length || vals.includes(fieldValue(v, f)));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayTasks, views, query, filters]);
+  }, [dayTasks, views, query, filters, hiddenRows]);
 
   const groups = useMemo(() => {
     const sortVal = (t) => {
@@ -730,9 +756,9 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const moveCell = (dr, dc) => {
     if (!cell) return;
     const ri = flatRows.findIndex((t) => t.id === cell.r);
-    const ci = COLS.findIndex((c) => c.key === cell.c);
+    const ci = cols.findIndex((c) => c.key === cell.c);
     const nr = flatRows[Math.max(0, Math.min(flatRows.length - 1, ri + dr))];
-    const nc = COLS[Math.max(0, Math.min(COLS.length - 1, ci + dc))];
+    const nc = cols[Math.max(0, Math.min(cols.length - 1, ci + dc))];
     if (nr && nc) setCell({ r: nr.id, c: nc.key });
   };
 
@@ -969,8 +995,26 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           <button
             type="button"
             aria-haspopup="menu"
-            title={`Sort and filter ${col.label}`}
-            className="hover:!text-[#0d1b3e]"
+            title={`Sort and filter ${col.label} · drag to move`}
+            draggable
+            onDragStart={(e) => {
+              setDragCol(col.key);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => dragCol && dragCol !== col.key && e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (!dragCol || dragCol === col.key) return;
+              setOrder((o) => {
+                const after = o.indexOf(dragCol) < o.indexOf(col.key);
+                const next = o.filter((k) => k !== dragCol);
+                next.splice(next.indexOf(col.key) + (after ? 1 : 0), 0, dragCol);
+                return next;
+              });
+              setDragCol(null);
+            }}
+            onDragEnd={() => setDragCol(null)}
+            className="group/head hover:!text-[#0d1b3e]"
             style={{
               position: frozen ? "sticky" : "relative",
               left: frozen ? col.left : "auto",
@@ -994,7 +1038,10 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
               textAlign: "left",
             }}
           >
-            <span>{col.label}</span>
+            <span className="flex min-w-0 items-center gap-1" style={{ opacity: dragCol === col.key ? 0.5 : 1 }}>
+              <Hand className="h-3 w-3 shrink-0 cursor-grab opacity-0 group-hover/head:opacity-100" />
+              <span className="truncate">{col.label}</span>
+            </span>
             <Icon className="h-3 w-3 shrink-0" />
           </button>
         </PopoverTrigger>
@@ -1023,6 +1070,34 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                 </button>
               );
             })}
+          </div>
+          <div className="flex flex-col gap-px p-1.5" style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}>
+            <button
+              type="button"
+              className={MENU_ITEM}
+              onClick={() => {
+                setFrozenThrough(frozenThrough === col.key ? "task" : col.key);
+                setHeadMenu(null);
+              }}
+            >
+              <Snowflake className="h-3.5 w-3.5" />
+              <span className="flex-1">{frozenThrough === col.key && col.key !== "task" ? "Unfreeze columns" : "Freeze up to this column"}</span>
+            </button>
+            {col.key !== "task" && (
+              <button
+                type="button"
+                className={MENU_ITEM}
+                onClick={() => {
+                  setHiddenCols((h) => [...h, col.key]);
+                  if (frozenThrough === col.key) setFrozenThrough("task");
+                  if (cell?.c === col.key) setCell(null);
+                  setHeadMenu(null);
+                }}
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                <span className="flex-1">Hide column</span>
+              </button>
+            )}
           </div>
           {col.filter && (
             <ValuesPanel
@@ -1079,7 +1154,13 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
         />
       );
     if (col.key === "owner")
-      return <PeoplePicker task={t} users={activeUsers} onSave={(f) => save(t, f)} />;
+      return (
+        <PeoplePicker
+          task={t}
+          users={activeUsers.filter((u) => STAKEHOLDERS.includes((u.name || "").trim().split(/\s+/)[0].toLowerCase()))}
+          onSave={(f) => save(t, f)}
+        />
+      );
     if (col.key === "followup")
       return <FollowUpPicker task={t} users={activeUsers} teams={options.teams || []} onSave={(f) => save(t, f)} />;
     return null;
@@ -1476,6 +1557,26 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           )}
 
           <div className="flex-1" />
+          {hiddenCols.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setHiddenCols([])}
+              className="flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[12px] font-semibold text-[#2b2bb5] hover:bg-[#f0f0fd]"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {hiddenCols.length} hidden column{hiddenCols.length === 1 ? "" : "s"} · Show
+            </button>
+          )}
+          {Object.values(hiddenRows).some(Boolean) && (
+            <button
+              type="button"
+              onClick={() => setHiddenRows({})}
+              className="flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[12px] font-semibold text-[#2b2bb5] hover:bg-[#f0f0fd]"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {Object.values(hiddenRows).filter(Boolean).length} hidden · Show
+            </button>
+          )}
           <span className="text-[12px] text-[#546490]">
             {visible.length.toLocaleString("en-IN")} of {monthCount.toLocaleString("en-IN")} rows
           </span>
@@ -1534,7 +1635,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
         label={activeTask ? `${activeView.id} · ${activeCol.label}` : null}
         value={formulaValue}
         activeRow={activeTask ? flatRows.findIndex((t) => t.id === activeTask.id) : null}
-        activeCol={activeCol ? COLS.indexOf(activeCol) : null}
+        activeCol={activeCol ? cols.findIndex((c) => c.key === activeCol.key) : null}
         editable={formulaEditable}
         placeholder={activeTask ? "" : "Select a cell to see its value"}
         onCommit={(text) => activeTask && commitText(activeTask, activeCol.key, text)}
@@ -1593,7 +1694,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                   }
                 />
               </span>
-              {COLS.map(headerCell)}
+              {cols.map(headerCell)}
             </div>
 
             {loading && (
@@ -1700,7 +1801,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                             >
                               <Checkbox on={isSel} label="Select row" />
                             </span>
-                            {COLS.map((col, ci) => renderCell(t, v, col, ri, ci))}
+                            {cols.map((col, ci) => renderCell(t, v, col, ri, ci))}
                           </div>
                         );
                       })}
@@ -1795,6 +1896,18 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                 </div>
               </PopoverContent>
             </Popover>
+            <button
+              type="button"
+              onClick={() => {
+                setHiddenRows((h) => ({ ...h, ...Object.fromEntries(selIds.map((id) => [id, true])) }));
+                setSel({});
+                if (cell && selIds.includes(cell.r)) setCell(null);
+              }}
+              className="flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium hover:bg-[rgb(36,46,61)]"
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+              Hide
+            </button>
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}

@@ -781,13 +781,12 @@ export default function WorkSheetPage() {
       else if (stage === "Animate") counts.Animate += 1;
     });
 
-    // Management: tasks open at any point in the month on screen.
+    // Management: tasks whose Date (start date) is in the month on screen,
+    // same as the other sheets place a row by its work date.
     if (projectTasks) {
       const m = month || (projectTasks.today || "").slice(0, 7);
-      const start = `${m}-01`;
-      const end = `${m}-31`;
       counts.Projects = (projectTasks.tasks || []).filter(
-        (t) => (t.start_date || "") <= end && !(t.done_date && t.done_date < start)
+        (t) => (t.start_date || "").slice(0, 7) === m
       ).length;
     }
 

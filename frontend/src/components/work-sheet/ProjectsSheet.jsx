@@ -609,15 +609,16 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
   const stepDay = pickedDay && pickedDay >= monthStart && pickedDay <= monthEnd ? pickedDay : defaultDay;
   const refDay = allDays ? defaultDay : stepDay;
 
-  const openInMonth = useCallback(
-    (t) => (t.start_date || "") <= monthEnd && !(t.done_date && t.done_date < monthStart),
+  // A task belongs to the month of its Date (start date), the same way the
+  // other sheets place a row by its work date - not "open at any point in the
+  // month". So a September follow-up stays under September even while it is
+  // still open.
+  const inMonth = useCallback(
+    (t) => (t.start_date || "") >= monthStart && (t.start_date || "") <= monthEnd,
     [monthStart, monthEnd]
   );
-  const openOnDay = useCallback(
-    (t) => (t.start_date || "") <= stepDay && !(t.done_date && t.done_date < stepDay),
-    [stepDay]
-  );
-  const inView = useCallback((t) => (allDays ? openInMonth(t) : openOnDay(t)), [allDays, openInMonth, openOnDay]);
+  const openInMonth = inMonth;
+  const inView = inMonth;
 
   const load = useCallback(() => {
     const apply = ({ data }) => {

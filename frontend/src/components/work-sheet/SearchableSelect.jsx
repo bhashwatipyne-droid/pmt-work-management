@@ -3,6 +3,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import {
   Command,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
@@ -31,6 +32,9 @@ export function SearchableSelect({
   // plain text (e.g. a colored status chip). Receives the matched option
   // (or undefined) and the raw value.
   renderValue,
+  // Optional: (search) => { heading, items: [{ key, label, sub, chip, onSelect }] }
+  // listed under the regular options, e.g. matches outside the current project.
+  extraGroup,
 }) {
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
@@ -46,6 +50,8 @@ export function SearchableSelect({
         ? { value: option, label: option }
         : option
     );
+
+  const extra = open && extraGroup ? extraGroup(search) : null;
 
   const selectedOption = normalizedOptions.find(
     (option) => String(option.value) === String(value)
@@ -216,7 +222,7 @@ export function SearchableSelect({
             }}
           />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            {!extra?.items.length && <CommandEmpty>{emptyText}</CommandEmpty>}
             {normalizedOptions.map((option) => (
               <CommandItem
                 key={String(option.value)}
@@ -246,6 +252,38 @@ export function SearchableSelect({
                 )}
               </CommandItem>
             ))}
+            {extra?.items.length > 0 && (
+              <CommandGroup
+                heading={extra.heading}
+                className="border-t border-slate-100"
+              >
+                {extra.items.map((item) => (
+                  <CommandItem
+                    key={item.key}
+                    // Carries the search text so the list's own filter keeps it.
+                    value={`${search} ${item.label} ${item.sub || ""} ${item.key}`}
+                    className="items-start"
+                    onSelect={() => {
+                      item.onSelect();
+                      onOpenChange?.(false);
+                    }}
+                  >
+                    <span className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 leading-5">
+                      <span className="block whitespace-normal break-words">{item.label}</span>
+                      {item.sub && (
+                        <span className="block truncate text-[12px] text-slate-500">{item.sub}</span>
+                      )}
+                    </span>
+                    {item.chip && (
+                      <span className="mt-0.5 inline-flex max-w-[35%] shrink-0 rounded-full bg-[#f0f0fd] px-2 py-px text-[11px] font-medium leading-4 text-[#1a1a8a]">
+                        {item.chip}
+                      </span>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

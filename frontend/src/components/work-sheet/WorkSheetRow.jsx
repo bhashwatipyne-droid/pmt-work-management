@@ -882,6 +882,43 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
           triggerProps={sheetCell(3)}
           data-testid={`worksheet-deliverable-select-${item.id}`}
           contentClassName="w-[460px] p-0"
+          extraGroup={(search) => {
+            // People remember the deliverable but not always which project it
+            // sits under (e.g. "ABSL Alternates" vs a similar ABSL project), so
+            // a search also looks through every other project's deliverables.
+            const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+            if (search.trim().length < 2) return null;
+            const items = [];
+            for (const project of projects) {
+              if (items.length >= 8) break;
+              if (project.id === item.project_id) continue;
+              for (const deliverable of deliverablesByProject[project.id] || []) {
+                if (items.length >= 8) break;
+                const hay = `${deliverable.name} ${project.name}`.toLowerCase();
+                if (!words.every((w) => hay.includes(w))) continue;
+                const client = clientNameOf(project.client_id);
+                items.push({
+                  key: `other-${project.id}-${deliverable.id}`,
+                  label: deliverable.name,
+                  sub: client ? `${project.name} · ${client}` : project.name,
+                  chip: deliverable.type || "",
+                  onSelect: () => {
+                    // Switches the row's project and client along with it.
+                    onUpdate(item.id, {
+                      project_id: project.id,
+                      client_id: project.client_id,
+                      ...pickDeliverablePatch(item, deliverable, {
+                        types: options.deliverable_types || [],
+                        categories: options.deliverable_type_categories || {},
+                      }),
+                    });
+                    toast(`Project changed to ${project.name}`);
+                  },
+                });
+              }
+            }
+            return { heading: "In other projects", items };
+          }}
         />
         )}
         {renderFillHandle(3)}

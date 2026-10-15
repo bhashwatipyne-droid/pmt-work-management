@@ -618,15 +618,6 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   );
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
 
-  // A short, stable ID per task (M-001...) in the order the tasks were added.
-  const displayId = useMemo(() => {
-    const map = new Map();
-    [...tasks]
-      .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))
-      .forEach((t, i) => map.set(t.id, `M-${String(i + 1).padStart(3, "0")}`));
-    return map;
-  }, [tasks]);
-
   const notesByTask = useMemo(() => {
     const map = new Map();
     [...updates]
@@ -654,7 +645,6 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       const notes = notesByTask.get(t.id) || [];
       const note = notes.find((n) => n.day === refDay)?.note || [...notes].reverse().find((n) => n.day < refDay)?.note || "";
       return {
-        id: displayId.get(t.id) || "",
         task: t.task || "",
         type: t.task_type || "",
         client: clientById.get(t.client_id)?.name || "",
@@ -682,7 +672,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
         due: !!nextFollowUp(t) && nextFollowUp(t) <= refDay && t.status !== "Done",
       };
     },
-    [userById, clientById, displayId, notesByTask, refDay]
+    [userById, clientById, notesByTask, refDay]
   );
 
   const views = useMemo(() => new Map(tasks.map((t) => [t.id, view(t)])), [tasks, view]);
@@ -717,7 +707,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
         if (!day || (from && day < from) || (to && day > to)) return false;
       }
       const v = views.get(t.id);
-      if (query.trim() && !match(v.id, v.task, v.type, v.client, v.ownerText, v.followup, v.contact, v.remark, v.meet))
+      if (query.trim() && !match(v.task, v.type, v.client, v.ownerText, v.followup, v.contact, v.remark, v.meet))
         return false;
       return Object.entries(filters).every(([f, vals]) => !vals?.length || matchesField(v, f, vals));
     });
@@ -1712,7 +1702,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       </div>
 
       <WorksheetFormulaBar
-        label={activeTask ? `${activeView.id} · ${activeCol.label}` : null}
+        label={activeTask ? activeCol.label : null}
         value={formulaValue}
         activeRow={activeTask ? flatRows.findIndex((t) => t.id === activeTask.id) : null}
         activeCol={activeCol ? cols.findIndex((c) => c.key === activeCol.key) : null}

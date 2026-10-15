@@ -529,11 +529,28 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const [frozenThrough, setFrozenThrough] = useState(null); // nothing frozen until asked
   const [hiddenRows, setHiddenRows] = useState({});
   const [dragCol, setDragCol] = useState(null);
+  const [widths, setWidths] = useState({}); // column key -> px, after a drag-resize
+
+  // Drag a header's right edge to resize that column.
+  const startResize = (e, key, from) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const onMove = (ev) => setWidths((w) => ({ ...w, [key]: Math.max(60, Math.round(from + ev.clientX - x0)) }));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   // Visible columns in order; the frozen ones (up to frozenThrough) get their
   // sticky left offsets, and the last frozen one draws the thicker edge.
   const cols = useMemo(() => {
-    const list = order.filter((k) => !hiddenCols.includes(k)).map((k) => COL_BY_KEY[k]);
+    const list = order.filter((k) => !hiddenCols.includes(k)).map((k) => ({ ...COL_BY_KEY[k], w: widths[k] || COL_BY_KEY[k].w }));
     const fi = list.findIndex((c) => c.key === frozenThrough);
     let left = 48;
     return list.map((c, i) => {
@@ -542,7 +559,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       left += c.w;
       return out;
     });
-  }, [order, hiddenCols, frozenThrough]);
+  }, [order, hiddenCols, frozenThrough, widths]);
   const GRID = `48px ${cols.map((c) => `${c.w}px`).join(" ")}`;
   const [statusMenu, setStatusMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1072,6 +1089,21 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
               <span className="truncate">{col.label}</span>
             </span>
             <Icon className="h-3 w-3 shrink-0" />
+            <span
+              role="separator"
+              aria-label={`Resize ${col.label}`}
+              title="Drag to resize column"
+              draggable={false}
+              onMouseDown={(e) => startResize(e, col.key, col.w)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="group/resize absolute right-0 top-0 z-[5] flex h-full w-2 cursor-col-resize justify-center"
+            >
+              <span className="h-full w-px bg-transparent group-hover/resize:bg-[#8a97b5]" />
+            </span>
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" sideOffset={2} className={MENU}>

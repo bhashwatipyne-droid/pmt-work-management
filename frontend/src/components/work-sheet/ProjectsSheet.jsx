@@ -25,6 +25,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../ui/po
 import ConfirmDeleteModal from "../ui/ConfirmDeleteModal";
 import { MonthPicker } from "./MonthPicker";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
+import { RangeSelectionBar } from "./RangeSelectionBar";
 import { makeMatcher } from "@/lib/search";
 import {
   createProjectTask,
@@ -83,7 +84,7 @@ const MANROPE = "Manrope, Inter, -apple-system, sans-serif";
 
 // Columns, widths and frozen offsets as in the redesign's Management sheet.
 const COLS = [
-  { key: "date", label: "Date", w: 104, kind: "date" },
+  { key: "date", label: "Date", w: 118, kind: "date" },
   { key: "task", label: "Task / activity", w: 300, kind: "text", long: 30 },
   { key: "type", label: "Task type", w: 160, kind: "select", filter: "type" },
   { key: "client", label: "Client", w: 150, kind: "select", filter: "client" },
@@ -91,8 +92,8 @@ const COLS = [
   { key: "followup", label: "Follow-up with", w: 190, kind: "followup", filter: "with" },
   { key: "contact", label: "Client contact", w: 130, kind: "text" },
   { key: "count", label: "Deliverables", w: 110, kind: "number" },
-  { key: "ifu", label: "Internal FU", w: 104, kind: "date" },
-  { key: "cfu", label: "Client FU", w: 104, kind: "date" },
+  { key: "ifu", label: "Internal FU", w: 118, kind: "date" },
+  { key: "cfu", label: "Client FU", w: 118, kind: "date" },
   { key: "status", label: "Tracking status", w: 150, kind: "select", filter: "status" },
   { key: "meet", label: "Meeting", w: 110, kind: "text" },
   { key: "remark", label: "Remark", w: 280, kind: "text", long: 34 },
@@ -588,7 +589,6 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   const defaultDay = today >= monthStart && today <= monthEnd ? today : today > monthEnd ? monthEnd : monthStart;
   const stepDay = pickedDay && pickedDay >= monthStart && pickedDay <= monthEnd ? pickedDay : defaultDay;
   const refDay = allDays ? defaultDay : stepDay;
-  const rangeEnd = today < monthStart ? monthEnd : defaultDay;
 
   const openInMonth = useCallback(
     (t) => (t.start_date || "") <= monthEnd && !(t.done_date && t.done_date < monthStart),
@@ -760,8 +760,31 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     [groups, collapsed]
   );
 
+  // Undo (Ctrl+Z): each change remembers what it replaced. Changes made
+  // together (a paste, a fill, a bulk status) undo together.
+  const undoRef = useRef([]);
+  const groupRef = useRef(null);
+  const record = (entry) => {
+    if (groupRef.current) groupRef.current.push(entry);
+    else {
+      undoRef.current.push([entry]);
+      if (undoRef.current.length > 50) undoRef.current.shift();
+    }
+  };
+  const inGroup = (fn) => {
+    groupRef.current = [];
+    try {
+      fn();
+    } finally {
+      const g = groupRef.current;
+      groupRef.current = null;
+      if (g.length) undoRef.current.push(g);
+    }
+  };
+
   const save = useCallback(
-    (task, fields) => {
+    (task, fields, noUndo) => {
+      if (!noUndo) record({ id: task.id, before: Object.fromEntries(Object.keys(fields).map((k) => [k, task[k] ?? null])) });
       setTasks((list) => list.map((t) => (t.id === task.id ? { ...t, ...fields } : t)));
       return updateProjectTask(task.id, { ...fields, day: refDay })
         .then((saved) => setTasks((list) => list.map((t) => (t.id === task.id ? saved : t))))
@@ -773,7 +796,8 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     [refDay]
   );
 
-  const saveNote = (task, note) => {
+  const saveNote = (task, note, noUndo) => {
+    if (!noUndo) record({ id: task.id, note: noteFor(task.id) });
     setUpdates((list) => [
       ...list.filter((u) => !(u.task_id === task.id && u.day === refDay)),
       ...(note ? [{ task_id: task.id, day: refDay, note, user_id: currentUser?.id }] : []),
@@ -782,6 +806,236 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
   };
 
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+
+  // --- Cell ranges, fill, copy / paste, undo (as on the other sheets) ---
+  const [rangeEnd, setRangeEnd] = useState(null); // other corner of a block, { r, c }
+  const [fillTo, setFillTo] = useState(null); // row id the fill handle is dragged to
+  const dragSelRef = useRef(false);
+  const fillRef = useRef(false);
+  const checkDragRef = useRef(null); // { on } while dragging down the checkboxes
+
+  const rowIndex = (id) => flatRows.findIndex((x) => x.id === id);
+  const colIndex = (key) => cols.findIndex((c) => c.key === key);
+  const block = (() => {
+    if (!cell) return null;
+    const a = rowIndex(cell.r);
+    const b = colIndex(cell.c);
+    if (a < 0 || b < 0) return null;
+    const end = rangeEnd ? { r: rowIndex(rangeEnd.r), c: colIndex(rangeEnd.c) } : { r: a, c: b };
+    if (end.r < 0 || end.c < 0) return { r1: a, r2: a, c1: b, c2: b };
+    return { r1: Math.min(a, end.r), r2: Math.max(a, end.r), c1: Math.min(b, end.c), c2: Math.max(b, end.c) };
+  })();
+  const isMulti = !!block && (block.r1 !== block.r2 || block.c1 !== block.c2);
+  const fillIdx = fillTo ? rowIndex(fillTo) : -1;
+
+  const parseDay = (text) => {
+    const v = (text || "").trim();
+    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (m) return v;
+    m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(v);
+    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    return undefined;
+  };
+  const pickName = (list, text) => list.find((o) => o.toLowerCase() === text.trim().toLowerCase());
+
+  // What a pasted / typed value means for a column: { fields } or { note }.
+  const fromText = (t, key, text) => {
+    const v = (text ?? "").trim();
+    if (TEXT_FIELD[key]) return { fields: { [TEXT_FIELD[key]]: v } };
+    if (key === "remark") return { note: v };
+    if (key === "count") return /^\d*$/.test(v) ? { fields: { deliverable_count: v ? Number(v) : null } } : null;
+    if (DATE_FIELD[key]) {
+      if (!v) return key === "date" ? null : { fields: { [DATE_FIELD[key]]: null } };
+      const day = parseDay(v);
+      return day ? { fields: { [DATE_FIELD[key]]: day } } : null;
+    }
+    if (key === "type") {
+      const type = v ? pickName(options.task_types || [], v) : "";
+      return type === undefined ? null : { fields: { task_type: type } };
+    }
+    if (key === "status") {
+      const st = pickName(options.statuses || [], v);
+      return st ? { fields: { status: st } } : null;
+    }
+    if (key === "client") {
+      if (!v) return { fields: { client_id: null } };
+      const c = clients.find((x) => (x.name || "").toLowerCase() === v.toLowerCase());
+      return c ? { fields: { client_id: c.id } } : null;
+    }
+    if (key === "owner") {
+      const name = v.replace(/\s*\+\d+$/, "").toLowerCase();
+      const u = activeUsers.filter(isStakeholder).find((x) => (x.name || "").toLowerCase() === name);
+      return u ? { fields: { owner_id: u.id } } : null;
+    }
+    if (key === "followup") {
+      const teams = [];
+      const people = [];
+      const others = [];
+      v.split(",").map((x) => x.trim()).filter(Boolean).forEach((part) => {
+        const team = pickName(options.teams || [], part);
+        const person = activeUsers.find(
+          (u) => (u.name || "").toLowerCase() === part.toLowerCase() || (u.name || "").split(" ")[0].toLowerCase() === part.toLowerCase()
+        );
+        if (team) teams.push(team);
+        else if (person) people.push(person.id);
+        else others.push(part);
+      });
+      return { fields: { follow_up_teams: teams, follow_up_user_ids: people, follow_up_others: others.join(", ") } };
+    }
+    return null;
+  };
+
+  // A cell's raw value, to copy it onto other rows with the fill handle.
+  const rawOf = (t, key) => {
+    if (TEXT_FIELD[key]) return { fields: { [TEXT_FIELD[key]]: t[TEXT_FIELD[key]] || "" } };
+    if (DATE_FIELD[key]) return t[DATE_FIELD[key]] || key !== "date" ? { fields: { [DATE_FIELD[key]]: t[DATE_FIELD[key]] || null } } : null;
+    if (key === "remark") return { note: noteFor(t.id) };
+    if (key === "count") return { fields: { deliverable_count: t.deliverable_count ?? null } };
+    if (key === "type") return { fields: { task_type: t.task_type || "" } };
+    if (key === "status") return { fields: { status: t.status } };
+    if (key === "client") return { fields: { client_id: t.client_id || null } };
+    if (key === "owner") return { fields: { owner_id: t.owner_id || null, collaborator_ids: t.collaborator_ids || [] } };
+    if (key === "followup")
+      return {
+        fields: {
+          follow_up_teams: t.follow_up_teams || [],
+          follow_up_user_ids: t.follow_up_user_ids || [],
+          follow_up_others: t.follow_up_others || "",
+        },
+      };
+    return null;
+  };
+
+  const apply = (t, change) => {
+    if (!change || !t) return 0;
+    if (change.note !== undefined) {
+      if (change.note === noteFor(t.id)) return 0;
+      saveNote(t, change.note);
+      return 1;
+    }
+    const changed = Object.entries(change.fields).some(([k, val]) => JSON.stringify(t[k] ?? null) !== JSON.stringify(val ?? null));
+    if (!changed) return 0;
+    save(t, change.fields);
+    return 1;
+  };
+
+  const blockText = () => {
+    if (!block) return "";
+    return flatRows
+      .slice(block.r1, block.r2 + 1)
+      .map((t) => {
+        const v = views.get(t.id);
+        return cols
+          .slice(block.c1, block.c2 + 1)
+          .map((c) => String((c.key === "owner" ? v.ownerText : v[c.key]) ?? "").replace(/[\t\n]/g, " "))
+          .join("\t");
+      })
+      .join("\n");
+  };
+
+  const copyBlock = () => {
+    const text = blockText();
+    if (!navigator.clipboard) {
+      toast.error("Clipboard access isn't available here");
+      return;
+    }
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        const n = (block.r2 - block.r1 + 1) * (block.c2 - block.c1 + 1);
+        toast(`Copied ${n} cell${n === 1 ? "" : "s"}`);
+      })
+      .catch(() => toast.error("Couldn't copy"));
+  };
+
+  const pasteText = (text) => {
+    if (!block || !canEdit) return;
+    const grid = text.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").map((line) => line.split("\t"));
+    const single = grid.length === 1 && grid[0].length === 1;
+    // One value pasted over a block fills the block, as in a spreadsheet.
+    const rowsN = single ? block.r2 - block.r1 + 1 : grid.length;
+    const colsN = single ? block.c2 - block.c1 + 1 : grid[0].length;
+    let changed = 0;
+    let skipped = 0;
+    inGroup(() => {
+      for (let i = 0; i < rowsN; i += 1) {
+        const t = flatRows[block.r1 + i];
+        if (!t) break;
+        for (let j = 0; j < colsN; j += 1) {
+          const col = cols[block.c1 + j];
+          if (!col) break;
+          const value = single ? grid[0][0] : grid[i]?.[j];
+          if (value === undefined) continue;
+          const change = fromText(t, col.key, value);
+          if (!change) skipped += 1;
+          else changed += apply(t, change);
+        }
+      }
+    });
+    if (changed) toast(`Pasted into ${changed} cell${changed === 1 ? "" : "s"}`);
+    if (skipped) toast.error(`${skipped} value${skipped === 1 ? "" : "s"} didn't fit the column and ${skipped === 1 ? "was" : "were"} skipped`);
+  };
+
+  const clearBlock = () => {
+    if (!block || !canEdit) return;
+    inGroup(() => {
+      flatRows.slice(block.r1, block.r2 + 1).forEach((t) =>
+        cols.slice(block.c1, block.c2 + 1).forEach((c) => {
+          if (["owner", "status", "date"].includes(c.key)) return; // can't be empty
+          apply(t, fromText(t, c.key, ""));
+        })
+      );
+    });
+  };
+
+  const undo = () => {
+    const group = undoRef.current.pop();
+    if (!group) {
+      toast("Nothing to undo");
+      return;
+    }
+    [...group].reverse().forEach((e) => {
+      const t = taskById.get(e.id);
+      if (!t) return;
+      if (e.note !== undefined) saveNote(t, e.note, true);
+      else save(t, e.before, true);
+    });
+    toast(`Undid ${group.length} change${group.length === 1 ? "" : "s"}`);
+  };
+
+  // The fill handle: copy the selected cell(s) down (or up) the rows dragged over.
+  const finishFill = () => {
+    const to = fillTo ? rowIndex(fillTo) : -1;
+    fillRef.current = false;
+    setFillTo(null);
+    if (!block || to < 0 || (to >= block.r1 && to <= block.r2)) return;
+    const n = block.r2 - block.r1 + 1;
+    const targets = to > block.r2 ? [...Array(to - block.r2).keys()].map((k) => block.r2 + 1 + k) : [...Array(block.r1 - to).keys()].map((k) => to + k);
+    let changed = 0;
+    inGroup(() => {
+      targets.forEach((i) => {
+        const src = flatRows[block.r1 + ((((i - block.r1) % n) + n) % n)];
+        cols.slice(block.c1, block.c2 + 1).forEach((c) => {
+          changed += apply(flatRows[i], rawOf(src, c.key));
+        });
+      });
+    });
+    if (changed) toast(`Filled ${changed} cell${changed === 1 ? "" : "s"}`);
+    setRangeEnd({ r: flatRows[Math.max(...targets, block.r2)].id, c: cols[block.c2].key });
+    setCell({ r: flatRows[Math.min(...targets, block.r1)].id, c: cols[block.c1].key });
+  };
+  const finishFillRef = useRef(finishFill);
+  finishFillRef.current = finishFill;
+
+  useEffect(() => {
+    const up = () => {
+      dragSelRef.current = false;
+      checkDragRef.current = null;
+      if (fillRef.current) finishFillRef.current();
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
 
   // The raw value a cell edits (not what it shows).
   const editValue = (t, key) => {
@@ -821,6 +1075,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     const nr = flatRows[Math.max(0, Math.min(flatRows.length - 1, ri + dr))];
     const nc = cols[Math.max(0, Math.min(cols.length - 1, ci + dc))];
     if (nr && nc) setCell({ r: nr.id, c: nc.key });
+    setRangeEnd(null);
   };
 
   // Enter / double click on a cell: type in it, or open its picker.
@@ -871,6 +1126,33 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
     const t = taskById.get(cell.r);
     const col = COLS.find((c) => c.key === cell.c);
     const moves = { ArrowDown: [1, 0], ArrowUp: [-1, 0], ArrowRight: [0, 1], ArrowLeft: [0, -1] };
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      copyBlock();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "z" && canEdit) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      const r = mod ? flatRows[e.key === "Home" ? 0 : flatRows.length - 1] : taskById.get(cell.r);
+      const c = cols[e.key === "Home" ? 0 : cols.length - 1];
+      if (r && c) setCell({ r: r.id, c: c.key });
+      setRangeEnd(null);
+      return;
+    }
+    if (e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      // Shift+Left / Shift+Right widen the block of selected cells.
+      e.preventDefault();
+      const end = rangeEnd || cell;
+      const ci = colIndex(end.c) + (e.key === "ArrowRight" ? 1 : -1);
+      if (cols[ci]) setRangeEnd({ r: end.r, c: cols[ci].key });
+      return;
+    }
     if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       // Shift+Down / Shift+Up selects rows, like Shift+click on the checkboxes.
       e.preventDefault();
@@ -890,7 +1172,11 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       if ((e.metaKey || e.ctrlKey) && col.long) setMenu({ r: cell.r, c: cell.c, kind: "expand" });
       else startEdit(cell.r, cell.c);
     } else if (e.key === "Escape") {
-      setCell(null);
+      if (rangeEnd) setRangeEnd(null);
+      else setCell(null);
+    } else if ((e.key === "Delete" || e.key === "Backspace") && canEdit && t && isMulti) {
+      e.preventDefault();
+      clearBlock();
     } else if ((e.key === "Delete" || e.key === "Backspace") && canEdit && t) {
       if (["text", "number"].includes(col.kind) || (col.kind === "date" && col.key !== "date")) {
         e.preventDefault();
@@ -941,7 +1227,7 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
 
   const bulkStatus = (status) => {
     setStatusMenu(false);
-    selIds.forEach((id) => save(taskById.get(id), { status }));
+    inGroup(() => selIds.forEach((id) => save(taskById.get(id), { status })));
     toast(`Set ${selIds.length} task${selIds.length === 1 ? "" : "s"} to ${status}`);
   };
 
@@ -1300,6 +1586,14 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
       !isEditing && col.long && (isAct || (!empty && text.length > col.long));
     const menuOpen = menu?.r === t.id && menu?.c === col.key;
     const muted = col.kind === "ro" || col.key === "date";
+    const inBlock = isMulti && ri >= block.r1 && ri <= block.r2 && ci >= block.c1 && ci <= block.c2;
+    const inFill =
+      fillIdx >= 0 &&
+      ci >= block.c1 &&
+      ci <= block.c2 &&
+      ((fillIdx > block.r2 && ri > block.r2 && ri <= fillIdx) || (fillIdx < block.r1 && ri < block.r1 && ri >= fillIdx));
+    // The fill handle sits on the bottom-right corner of the selection.
+    const showFill = canEdit && !editing && !!block && ri === block.r2 && ci === block.c2;
     return (
       <div
         key={col.key}
@@ -1313,23 +1607,37 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           if (isEditing || !e.currentTarget.contains(e.target)) return;
           e.preventDefault();
           if (editing) finishEdit(true);
-          const wasActive = isAct;
+          if (e.shiftKey && cell) {
+            // Shift+click: select the block from the active cell to here.
+            setRangeEnd({ r: t.id, c: col.key });
+            focusGrid();
+            return;
+          }
+          const wasActive = isAct && !isMulti;
           setCell({ r: t.id, c: col.key });
+          setRangeEnd(null);
+          dragSelRef.current = true;
           focusGrid();
           if (wasActive && ["select", "people", "followup"].includes(col.kind)) startEdit(t.id, col.key);
+        }}
+        onMouseEnter={() => {
+          if (fillRef.current) setFillTo(t.id);
+          else if (dragSelRef.current) setRangeEnd({ r: t.id, c: col.key });
         }}
         onDoubleClick={(e) => e.currentTarget.contains(e.target) && startEdit(t.id, col.key)}
         className={frozen ? "bg-white group-hover/row:bg-[#f9fafb]" : ""}
         style={{
           position: frozen ? "sticky" : "relative",
           left: frozen ? col.left : "auto",
-          zIndex: frozen ? 2 : isAct ? 1 : 0,
+          zIndex: frozen ? (showFill ? 3 : 2) : isAct || showFill ? 1 : 0,
           display: "flex",
           alignItems: "center",
           gap: 6,
           minWidth: 0,
           padding: "0 10px",
           ...(frozen && sel[t.id] ? { background: C.b50 } : {}),
+          ...(inBlock && !isAct ? { background: "rgba(43,43,181,0.08)" } : {}),
+          ...(inFill ? { outline: `1px dashed ${C.b500}`, outlineOffset: -1 } : {}),
           boxShadow: isAct
             ? `inset 0 0 0 2px ${C.b500}`
             : col.edge
@@ -1340,6 +1648,31 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           cursor: "cell",
         }}
       >
+        {showFill && (
+          <span
+            role="button"
+            aria-label="Drag to fill cells"
+            title="Drag up or down to fill"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              fillRef.current = true;
+              setFillTo(t.id);
+            }}
+            style={{
+              position: "absolute",
+              right: -4,
+              bottom: -4,
+              zIndex: 4,
+              width: 8,
+              height: 8,
+              borderRadius: 2,
+              background: C.b500,
+              boxShadow: "0 0 0 2px #fff",
+              cursor: "ns-resize",
+            }}
+          />
+        )}
         {isEditing && (
           <input
             autoFocus
@@ -1731,6 +2064,11 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           ref={gridRef}
           tabIndex={0}
           onKeyDown={onGridKey}
+          onPaste={(e) => {
+            if (e.target !== e.currentTarget || editing || menu) return;
+            e.preventDefault();
+            pasteText(e.clipboardData.getData("text/plain"));
+          }}
           className="h-full overflow-auto outline-none"
           style={{ userSelect: "none" }}
         >
@@ -1860,11 +2198,16 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
                             <span
                               onMouseDown={(e) => {
                                 e.preventDefault();
+                                if (!e.shiftKey) checkDragRef.current = { on: !sel[t.id] };
                                 toggleRow(t.id, e.shiftKey);
                                 setCell((c) => ({ r: t.id, c: c?.c || cols[0]?.key }));
                                 focusGrid();
                               }}
-                              title="Click or Shift+click to select several"
+                              onMouseEnter={() => {
+                                const drag = checkDragRef.current;
+                                if (drag) setSel((cur) => ({ ...cur, [t.id]: drag.on }));
+                              }}
+                              title="Click, drag or Shift+click to select several"
                               style={{
                                 position: "sticky",
                                 left: 0,
@@ -2009,6 +2352,44 @@ export function ProjectsSheet({ currentUser, users = [], tabs }) {
           </div>
         )}
       </div>
+
+      {isMulti && !selIds.length && (() => {
+        const rowsB = flatRows.slice(block.r1, block.r2 + 1);
+        const colsB = cols.slice(block.c1, block.c2 + 1);
+        let filled = 0;
+        const unique = new Set();
+        const statuses = new Map();
+        rowsB.forEach((t) => {
+          const v = views.get(t.id);
+          colsB.forEach((c) => {
+            const val = String((c.key === "owner" ? v.ownerText : v[c.key]) ?? "");
+            if (val) {
+              filled += 1;
+              unique.add(val);
+            }
+            if (c.key === "status" && t.status) statuses.set(t.status, (statuses.get(t.status) || 0) + 1);
+          });
+        });
+        const count = rowsB.length * colsB.length;
+        return (
+          <RangeSelectionBar
+            stats={{
+              rows: rowsB.length,
+              cols: colsB.length,
+              count,
+              filled,
+              empty: count - filled,
+              unique: unique.size,
+              times: [],
+              statusCounts: [...statuses.entries()],
+              block,
+            }}
+            left={(gridRef.current?.getBoundingClientRect().left || 0) + 16}
+            onCopy={copyBlock}
+            onClear={() => setRangeEnd(null)}
+          />
+        );
+      })()}
 
       <ConfirmDeleteModal
         open={confirmDelete}

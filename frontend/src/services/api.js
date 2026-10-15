@@ -767,3 +767,13 @@ export const deleteProjectTask = (id) =>
 
 export const setProjectTaskUpdate = (id, day, note) =>
   axios.put(`${API}/project-tasks/${id}/updates/${day}`, { note }).then((r) => r.data);
+
+// -------- Meetings (synced from Google Calendar) --------
+export const getMeetings = (start, end) =>
+  axios.get(`${API}/meetings`, { params: { start, end } }).then((r) => r.data);
+
+export const getMeetingsStatus = () =>
+  axios.get(`${API}/meetings/status`).then((r) => r.data);
+
+export const syncMeetingsNow = () =>
+  axios.post(`${API}/meetings/sync`).then((r) => r.data);

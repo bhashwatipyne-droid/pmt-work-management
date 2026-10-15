@@ -46,6 +46,7 @@ export const getAccess = (user) => {
     canViewApprovals: staff,
     canViewEfficiency: staff,
     canViewPlanning: admin || manager,
+    canViewMeetings: staff,
     canViewInvoicing: hr || admin,
     canViewClients: admin,
     canViewTeam: admin,
@@ -65,6 +66,7 @@ export const getAccess = (user) => {
 // signed-in user (work sheet, profile).
 const ROUTE_RULES = [
   { prefix: "/planning", allow: (a) => a.canViewPlanning, label: "Planning" },
+  { prefix: "/meetings", allow: (a) => a.canViewMeetings, label: "Meetings" },
   { prefix: "/invoicing", allow: (a) => a.canViewInvoicing, label: "Ready to invoice" },
   { prefix: "/dashboard", allow: (a) => a.canViewHome, label: "Home" },
   { prefix: "/clients", allow: (a) => a.canViewClients, label: "Clients" },

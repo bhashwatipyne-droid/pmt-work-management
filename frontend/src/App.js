@@ -33,6 +33,7 @@ const ApprovalsPage = lazy(() => import("@/pages/ApprovalsPage"));
 const ClientsPage = lazy(() => import("@/pages/ClientsPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const PlanningPage = lazy(() => import("@/pages/PlanningPage"));
+const MeetingsPage = lazy(() => import("@/pages/MeetingsPage"));
 const InvoicingPage = lazy(() => import("@/pages/InvoicingPage"));
 const EfficiencyPage = lazy(() => import("@/pages/EfficiencyPage"));
 const EfficiencyMonthlyCapacityPage = lazy(() =>
@@ -153,6 +154,10 @@ function AppShell() {
             <Route
               path="/planning"
               element={<RequireAccess><PlanningPage /></RequireAccess>}
+            />
+            <Route
+              path="/meetings"
+              element={<RequireAccess><MeetingsPage /></RequireAccess>}
             />
             <Route
               path="/invoicing"

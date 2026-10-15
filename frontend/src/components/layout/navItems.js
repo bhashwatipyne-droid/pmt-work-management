@@ -8,6 +8,7 @@ import {
   List,
   Receipt,
   User,
+  Video,
 } from "lucide-react";
 
 import { LAYOUT } from "@/constants/testIds";
@@ -34,6 +35,16 @@ export const NAV_ITEMS = [
     chord: "L",
     testId: "sidebar-nav-planning",
     allow: (a) => a.canViewPlanning,
+  },
+  {
+    key: "meetings",
+    label: "Meetings",
+    to: "/meetings",
+    section: "Workspace",
+    icon: Video,
+    chord: "M",
+    testId: "sidebar-nav-meetings",
+    allow: (a) => a.canViewMeetings,
   },
   {
     key: "worksheet",

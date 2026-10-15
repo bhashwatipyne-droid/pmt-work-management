@@ -42,6 +42,7 @@ try:
     from planning import create_planning_router  # noqa: F401
     from project_share import create_project_share_router  # noqa: F401
     from project_tasks import create_project_tasks_router, ensure_project_task_indexes  # noqa: F401
+    from meetings import calendar_sync_loop, create_meetings_router, ensure_meeting_indexes  # noqa: F401
     import deliverable_import  # noqa: F401
     import project_duplicates  # noqa: F401
 except ImportError:
@@ -53,6 +54,7 @@ except ImportError:
     from backend.planning import create_planning_router  # noqa: F401
     from backend.project_share import create_project_share_router  # noqa: F401
     from backend.project_tasks import create_project_tasks_router, ensure_project_task_indexes  # noqa: F401
+    from backend.meetings import calendar_sync_loop, create_meetings_router, ensure_meeting_indexes  # noqa: F401
     from backend import deliverable_import  # noqa: F401
     from backend import project_duplicates  # noqa: F401
 
@@ -8360,6 +8362,15 @@ api_router.include_router(
     )
 )
 
+# Meetings: three company Google Calendars, synced every 10 minutes.
+_meetings_router = create_meetings_router(
+    db=db,
+    get_acting_user=get_acting_user,
+    now_iso=now_iso,
+)
+api_router.include_router(_meetings_router)
+_calendar_sync_task: Optional["asyncio.Task"] = None
+
 app.include_router(api_router)
 
 @app.middleware("http")
@@ -8518,6 +8529,9 @@ async def run_startup_migrations():
     global _auto_accept_task
     if _auto_accept_task is None or _auto_accept_task.done():
         _auto_accept_task = asyncio.create_task(_auto_accept_loop())
+    global _calendar_sync_task
+    if _calendar_sync_task is None or _calendar_sync_task.done():
+        _calendar_sync_task = asyncio.create_task(calendar_sync_loop(_meetings_router.sync_all))
     # Load firebase-admin in a worker thread now, so the first push doesn't
     # stall a request while the (slow) import runs.
     _fire_and_forget(asyncio.to_thread(_get_firebase_app))
@@ -8529,6 +8543,7 @@ async def run_startup_migrations():
     # startup on a database that already holds an odd duplicate.
     await db.users.create_index("id")
     await ensure_project_task_indexes(db)
+    await ensure_meeting_indexes(db)
     await db.clients.create_index("id")
     await db.projects.create_index("id")
     await db.projects.create_index("code")

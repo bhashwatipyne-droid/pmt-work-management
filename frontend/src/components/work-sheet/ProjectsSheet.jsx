@@ -1969,6 +1969,7 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
               setPickedDay(null);
             }}
             currentMonth={today.slice(0, 7)}
+            maxMonth={today.slice(0, 7)}
           />
           {canEdit && (
             <div className="inline-flex h-8">

@@ -15,14 +15,15 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
   no deadline  an open deliverable with no stage / deliverable end date uses its
                project's end date; if that is missing too it is reported as
                "unscheduled" instead of being dropped silently
-  month scope  a deliverable is in a month's scope if it is any of:
-                 new          its start_dt falls in the month
+  month scope  only deliverables whose start_dt falls in the month ("new").
+               Everything on the page (cards, tabs, project counts) is built
+               from these. Side counts in month_summary, not part of scope:
                  due          its due falls in the month
                  spilled in   started (or, with no start, due) before the month
                               and still open (not finished)
-               Work due after the month is NOT scope unless it started in it.
-  spilling out in scope and still open after the month ends (current month:
-               open and due after the month)
+                 delayed      open and past due (due on or before month end)
+                 spilling out started in the month and still open after it
+                              (current month: open and due after the month)
   stale        open work overdue more than STALE_DAYS before the month: left
                out of scope, reported as the stale_backlog count
   bucket       billed   project Raised Invoice / Completed, or the deliverable
@@ -301,6 +302,7 @@ def create_home_dashboard_router(
         unscheduled: List[dict] = []
         stale_before_s = (m_start - timedelta(days=STALE_DAYS)).isoformat()
         stale_backlog = 0
+        month_summary = {"due": 0, "spilled_in": 0, "delayed": 0, "spilling_out": 0}
 
         for d in deliverables:
             project = project_by_id.get(d.get("project_id"))
@@ -353,12 +355,23 @@ def create_home_dashboard_router(
                 started_before and not in_month and not stale
                 and bool(start or due) and not finished
             )
-            scoped = is_new or in_month or spilled_in
-            # Spilling out: in this month's scope, still open, and not due
-            # until after the month (or, for a past month, still open now).
-            spilling_out = scoped and not finished and (
+            # The month's scope is the work that STARTED in it. Due / spilled
+            # in / delayed / spilling out are side counts in month_summary.
+            scoped = is_new
+            # Spilling out: started in the month, still open, and not due
+            # until after it (or, for a past month, still open now).
+            spilling_out = is_new and not finished and (
                 (bool(due) and due > m_end_s) if month == this_month else True
             )
+            delayed_side = (
+                not finished and bool(due) and due < today_s and due <= m_end_s and not stale
+            )
+            for key, hit in (
+                ("due", in_month), ("spilled_in", spilled_in),
+                ("delayed", delayed_side), ("spilling_out", spilling_out),
+            ):
+                if hit:
+                    month_summary[key] += 1
             if stale:
                 stale_backlog += 1
 
@@ -527,6 +540,10 @@ def create_home_dashboard_router(
             # Open work overdue for more than STALE_DAYS before the month - left
             # out of the month's scope, counted here instead.
             "stale_backlog": stale_backlog,
+            # Side counts for the header (not part of the month's scope, which
+            # is only work that started in the month): due in the month,
+            # spilled in from earlier, delayed, and new work spilling out.
+            "month_summary": month_summary,
             "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,

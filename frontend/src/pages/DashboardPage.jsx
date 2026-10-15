@@ -432,14 +432,13 @@ export default function DashboardPage() {
             <div className="flex min-w-[240px] flex-1 flex-col gap-1">
               <h1 className="m-0 text-[28px] font-bold leading-9 text-[rgb(13,27,62)]">Home</h1>
               <p className="m-0 text-[14px] text-[rgb(84,100,144)] [text-wrap:pretty]">
-                {label} · {scopeNote} · <span className="font-semibold text-[rgb(13,27,62)]">{h.month.new.length} new</span>
-                {" "}({h.projectsOf(h.month.new)} projects) · {h.month.due.length} due · {h.month.spilledIn.length} spilled in
-                {" "}· {h.delay.length} delayed · {h.month.spillingOut.length} spilling out
+                {label} · {scopeNote} · {h.total} deliverables · {h.projectCount} projects started this month · {activeN} active
               </p>
               <p className="m-0 text-[12px] text-[rgb(84,100,144)]">
-                {h.total} deliverables across {h.projectCount} projects in this month's view
+                Also this month (all teams, not counted above): {h.month.due} due · {h.month.spilledIn} spilled in from
+                earlier · {h.month.delayed} delayed · {h.month.spillingOut} spilling out
                 {h.month.staleBacklog > 0 &&
-                  ` · ${h.month.staleBacklog} older open item${h.month.staleBacklog === 1 ? "" : "s"} (overdue 90+ days) not counted`}
+                  ` · ${h.month.staleBacklog} open item${h.month.staleBacklog === 1 ? "" : "s"} overdue 90+ days`}
               </p>
             </div>
 

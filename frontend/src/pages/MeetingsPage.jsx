@@ -6,7 +6,7 @@ import { useUser } from "@/context/UserContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { getMeetings, getMeetingsStatus, syncMeetingsNow } from "@/services/api";
 
-// Meetings: the company calendars (content@, projects@, product@, animate@) in a Google
+// Meetings: the company calendars (content@, projects@, product@, animate@, info@) in a Google
 // Calendar style Day / Week / Month view. Read-only: the events come from
 // Google every ~10 minutes (backend/meetings.py) and are changed in Google.
 
@@ -19,6 +19,7 @@ const CALENDARS = {
   "projects@finace.co": { label: "Projects", dot: "#0f9d6b", bg: "#e2f5ec", text: "#0b5a3e" },
   "product@finace.co": { label: "Product", dot: "#e08a00", bg: "#fdf0d9", text: "#7a4a00" },
   "animate@finace.co": { label: "Animation", dot: "#8b4fd8", bg: "#f1e8fd", text: "#4f2588" },
+  "info@finace.co": { label: "Info", dot: "#d6336c", bg: "#fde7ef", text: "#8a1f47" },
 };
 const FALLBACK = { dot: "#64748b", bg: "#eef1f6", text: "#334155" };
 const calStyle = (c) => CALENDARS[c] || { ...FALLBACK, label: c.split("@")[0] };

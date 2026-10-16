@@ -195,7 +195,7 @@ def test_a_member_sees_only_their_own_certain_tasks(env):
 def test_high_priority_shows_as_p1_and_a_manager_assignee_gets_a_card_too(env):
     cards = env.get("/planning/my-tasks", "manager-hp").json()
     assert len(cards) == 1 and cards[0]["pri"] == "P1"
-    assert cards[0]["task"] == "From Lab to Life"
+    assert cards[0]["task"] == "From Lab To Life - Product Explainer"   # the matched PMT deliverable, not the typed words
 
 
 def test_lines_waiting_for_review_never_reach_anyone(env):
@@ -219,7 +219,7 @@ def test_accepting_puts_the_task_in_that_members_work_sheet(env):
     assert row["project_id"] == CONTRA_PROJECT and row["client_id"] == "CLIENT - 006"
     assert row["stage"] == "Content" and row["status"] == "Not Started"
     assert row["work_date"] == today_iso()
-    assert row["deliverable_name"] == "investing blog"
+    assert row["deliverable_name"] == ""            # "Deliverable Name" is never filled; the dropdown says it
     assert "WhatsApp task from Vanshika Shah" in row["remarks"]
     # no such deliverable under the project: the Work Sheet's own "Not available"
     assert row["deliverable_not_available"] is True and row["deliverable_id"] is None
@@ -240,7 +240,7 @@ def test_a_matched_db_deliverable_is_linked_by_id(env):
     assert row["deliverable_id"] == PHARMA_DELIVERABLE
     assert row["deliverable_not_available"] is False
     assert row["deliverable_type"] == "Newsletters"
-    assert row["deliverable_name"] == "From Lab To Life - Product Explainer"
+    assert row["deliverable_name"] == ""
 
 
 def test_accepting_twice_makes_one_row(env):
@@ -341,7 +341,7 @@ def test_overview_returns_what_the_planning_screen_draws(env):
     assert set(data) == {"ctx", "tasks", "people"}
     assert len(data["ctx"]["days"]) == 5 and 0 <= data["ctx"]["today"] <= 4
     tasks = {t["task"]: t for t in data["tasks"]}
-    assert set(tasks) == {"From Lab to Life", "investing blog"}      # not the review-queue lines
+    assert set(tasks) == {"From Lab To Life - Product Explainer", "investing blog"}      # not the review-queue lines
     row = tasks["investing blog"]
     # exactly the fields planningLogic.taskFromRow maps
     assert set(row) == {"id", "who", "task", "proj", "d0", "d1", "est", "cat", "note", "sh", "status"}
@@ -553,7 +553,7 @@ def test_a_row_typed_into_the_work_sheet_appears_on_the_planning_page(env):
     row = sheet_row()
     add_sheet_rows(row)
     task = plan_for(env)[row["id"]]
-    assert task["who"] == "Ratnesh Bor" and task["task"] == "Weekly newsletter"
+    assert task["who"] == "Ratnesh Bor" and task["task"] == "Newsletters"       # no dropdown deliverable: its type, not the typed name
     assert task["proj"] == "ICICI Prudential Contra Fund"
     assert task["est"] == 1.5                       # the time logged on the row
     assert task["status"] == "todo" and task["cat"] == "planned" and task["note"] == "Logged today"
@@ -727,7 +727,8 @@ def test_a_task_with_a_named_client_but_no_project_can_be_accepted(env):
     assert card["proj"] == "Project to be confirmed"
     r = env.post("/planning/my-tasks/noproj/accept", "member-rb")
     assert r.status_code == 200, r.text
-    row = next(x for x in env.work_items(creator_id="member-rb") if x["deliverable_name"] == "PPT first for design approval")
+    row = next(x for x in env.work_items(creator_id="member-rb") if x.get("source_task_id") == "noproj")
+    assert row["deliverable_name"] == ""
     assert row["project_id"] in (None, "")
     assert row["client_id"] == base["client_id"]
 

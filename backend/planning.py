@@ -236,8 +236,13 @@ def brief_text(item: dict) -> str:
 
 
 def task_title(item: dict) -> str:
+    """What a task is called on the Gantt and in lists. The deliverable chosen in
+    PMT (the dropdown) wins; the free-text "Deliverable Name" is only a last
+    resort, because it is whatever somebody typed ("AV") and says little."""
     return (
-        item.get("deliverable_name")
+        item.get("deliverable_label")
+        or item.get("db_deliverable")
+        or item.get("deliverable_name")
         or item.get("project_text")
         or item.get("raw_line")
         or "Task"
@@ -275,7 +280,10 @@ def is_plannable_sheet_row(row: dict) -> bool:
 
 
 def sheet_rows_as_items(
-    rows: List[dict], names: Dict[str, str], project_names: Dict[str, str]
+    rows: List[dict],
+    names: Dict[str, str],
+    project_names: Dict[str, str],
+    deliverable_names: Optional[Dict[str, str]] = None,
 ) -> tuple:
     """Work Sheet rows -> (items, work_status) in the shape build_plan_rows reads
     for WhatsApp tasks, so a row typed straight into the sheet lands on the same
@@ -293,9 +301,11 @@ def sheet_rows_as_items(
             "status": "accepted",
             "work_item_id": row["id"],
             "assignee_pmt_name": names.get(row["creator_id"], ""),
-            "deliverable_name": (row.get("deliverable_name") or "").strip()
+            # the dropdown deliverable, else its type; the typed name is a last resort
+            "deliverable_label": (deliverable_names or {}).get(row.get("deliverable_id") or "")
             or row.get("deliverable_type")
             or "",
+            "deliverable_name": (row.get("deliverable_name") or "").strip(),
             "project_name": project_names.get(row.get("project_id") or "", ""),
             "work_date": row["work_date"],
             "created_at": row.get("created_at"),
@@ -505,7 +515,16 @@ def create_planning_router(
                     {"id": {"$in": project_ids}}, {"_id": 0, "id": 1, "name": 1}
                 ).to_list(len(project_ids))
             }
-        return sheet_rows_as_items(rows, names, project_names)
+        deliverable_ids = list({r["deliverable_id"] for r in rows if r.get("deliverable_id")})
+        deliverable_names: Dict[str, str] = {}
+        if deliverable_ids:
+            deliverable_names = {
+                d["id"]: d.get("name") or ""
+                for d in await db.deliverables.find(
+                    {"id": {"$in": deliverable_ids}}, {"_id": 0, "id": 1, "name": 1}
+                ).to_list(len(deliverable_ids))
+            }
+        return sheet_rows_as_items(rows, names, project_names, deliverable_names)
 
     def history(by: str, action: str, detail: str = "") -> dict:
         return {"at": now_iso(), "by": by, "action": action, "detail": detail}
@@ -679,7 +698,8 @@ def create_planning_router(
 
         payload = work_item_create_model(
             work_date=now().astimezone(IST).date().isoformat(),
-            deliverable_name=(deliverable or {}).get("name") or title,
+            # "Deliverable Name" is never filled: the deliverable dropdown says it
+            deliverable_name="",
             deliverable_type=d_type,
             work_category=deliverable_type_categories.get(d_type, "Core"),
             creator_id=user.id,

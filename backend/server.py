@@ -3450,21 +3450,22 @@ async def auto_close_stale_reviews() -> int:
     return closed
 
 
-# Open Work Sheet rows nobody has touched for this many days are closed by the
-# background sweep. On Hold is paused work, so it is left open.
-STALE_ROW_AUTO_CLOSE_DAYS = float(os.environ.get("STALE_ROW_AUTO_CLOSE_DAYS", "5"))
+# Open Work Sheet rows nobody has touched for this many hours are closed by the
+# background sweep (every status except On Hold; 0 turns it off). On Hold is
+# paused work, so it is left open. Closed and Scrap are already finished.
+STALE_ROW_AUTO_CLOSE_HOURS = float(os.environ.get("STALE_ROW_AUTO_CLOSE_HOURS", "2"))
 _STALE_ROW_KEEP_OPEN = ["Closed", "Scrap", "On Hold"]
 
 
 async def auto_close_stale_rows() -> int:
     """Close (-> Closed) every Work Sheet row that is still open and has had no
-    change for STALE_ROW_AUTO_CLOSE_DAYS. Any edit to the row (updated_at)
+    change for STALE_ROW_AUTO_CLOSE_HOURS. Any edit to the row (updated_at)
     restarts the clock. Logged as a status change by "system", marked as
     automatic. Returns how many were closed."""
-    if STALE_ROW_AUTO_CLOSE_DAYS <= 0:
+    if STALE_ROW_AUTO_CLOSE_HOURS <= 0:
         return 0
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=STALE_ROW_AUTO_CLOSE_DAYS)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_ROW_AUTO_CLOSE_HOURS)
     closed = 0
     async for row in db.work_items.find(
         {"status": {"$nin": _STALE_ROW_KEEP_OPEN}},
@@ -3493,7 +3494,7 @@ async def auto_close_stale_rows() -> int:
             old_value=old_status,
             new_value="Closed",
             metadata={
-                "note": f"Auto-closed: no change for {STALE_ROW_AUTO_CLOSE_DAYS:g} days",
+                "note": f"Auto-closed: no change for {STALE_ROW_AUTO_CLOSE_HOURS:g} hours",
                 "auto_closed": True,
             },
         )
@@ -8340,7 +8341,7 @@ api_router.include_router(_planning_router)
 # Background sweeps. Task cards nobody answers within the hour are accepted for
 # the person (the sweep lives in planning.py); Bulk Review rows a manager never
 # got to are approved after 24 hours (auto_close_stale_reviews), and open rows
-# untouched for 5 days are closed (auto_close_stale_rows). The loop runs the
+# (any status but On Hold) untouched for 2 hours are closed (auto_close_stale_rows). The loop runs the
 # first every minute and the other two every fifth minute.
 _auto_accept_due = _planning_router.auto_accept_due
 _AUTO_ACCEPT_SWEEP_SECONDS = 60
@@ -8373,7 +8374,7 @@ async def _auto_accept_loop():
             try:
                 closed = await auto_close_stale_rows()
                 if closed:
-                    logger.info("Auto-closed %d row(s) untouched for %g days", closed, STALE_ROW_AUTO_CLOSE_DAYS)
+                    logger.info("Auto-closed %d row(s) untouched for %g hours", closed, STALE_ROW_AUTO_CLOSE_HOURS)
             except asyncio.CancelledError:
                 raise
             except Exception:

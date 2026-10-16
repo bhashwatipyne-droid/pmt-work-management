@@ -3,6 +3,7 @@
 PMT's **Meetings** page shows the Google Calendars of:
 
 - content@finace.co
+- projects@finace.co
 - product@finace.co
 - animate@finace.co
 
@@ -46,7 +47,7 @@ On the backend host, Render or wherever `server.py` runs, add these environment 
 | Variable | Value |
 |---|---|
 | `GOOGLE_CALENDAR_SERVICE_ACCOUNT` | The whole contents of the JSON key file. If the host doesn't accept multi-line values, paste it base64-encoded instead. |
-| `CALENDAR_IDS` | Optional. Defaults to `content@finace.co,product@finace.co,animate@finace.co` |
+| `CALENDAR_IDS` | Optional. Defaults to `content@finace.co,projects@finace.co,product@finace.co,animate@finace.co` |
 | `CALENDAR_SYNC_MINUTES` | Optional. Defaults to `10` |
 
 To get the base64 version on Windows (PowerShell):

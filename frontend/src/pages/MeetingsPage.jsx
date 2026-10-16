@@ -6,7 +6,7 @@ import { useUser } from "@/context/UserContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { getMeetings, getMeetingsStatus, syncMeetingsNow } from "@/services/api";
 
-// Meetings: the company calendars (content@, product@, animate@) in a Google
+// Meetings: the company calendars (content@, projects@, product@, animate@) in a Google
 // Calendar style Day / Week / Month view. Read-only: the events come from
 // Google every ~10 minutes (backend/meetings.py) and are changed in Google.
 
@@ -16,7 +16,8 @@ const FIRST_HOUR = 8; // the week view opens scrolled here
 // Friendly names and colours per calendar; unknown calendars get the fallback.
 const CALENDARS = {
   "content@finace.co": { label: "Content", dot: "#2b6de8", bg: "#e7efff", text: "#123a8c" },
-  "product@finace.co": { label: "Product", dot: "#0f9d6b", bg: "#e2f5ec", text: "#0b5a3e" },
+  "projects@finace.co": { label: "Projects", dot: "#0f9d6b", bg: "#e2f5ec", text: "#0b5a3e" },
+  "product@finace.co": { label: "Product", dot: "#e08a00", bg: "#fdf0d9", text: "#7a4a00" },
   "animate@finace.co": { label: "Animation", dot: "#8b4fd8", bg: "#f1e8fd", text: "#4f2588" },
 };
 const FALLBACK = { dot: "#64748b", bg: "#eef1f6", text: "#334155" };

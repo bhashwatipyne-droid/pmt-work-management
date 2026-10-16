@@ -165,3 +165,79 @@ def test_ical_links_are_read_per_calendar(monkeypatch):
     monkeypatch.setenv("CALENDAR_ICAL_URLS", f"{CAL}=https://example.com/a.ics, bad entry")
     assert meetings.ical_urls() == {CAL: "https://example.com/a.ics"}
     assert meetings.is_connected()
+
+
+# --- Google change notifications (push) ------------------------------------
+def push_router(google, monkeypatch):
+    monkeypatch.setenv("PUBLIC_API_URL", "https://pmt.example.com")
+    calls = {"watch": [], "stop": []}
+
+    async def fetch(calendar, time_min, time_max):
+        return google.get(calendar, [])
+
+    async def watch(calendar, body):
+        calls["watch"].append((calendar, body))
+        return {"resourceId": "res-" + body["id"][:6], "expiration": str(int((__import__("time").time() + 6 * 86400) * 1000))}
+
+    async def stop(calendar, body):
+        calls["stop"].append((calendar, body))
+
+    router = meetings.create_meetings_router(
+        server.db, server.get_acting_user, server.now_iso,
+        fetch_events=fetch, watch_api=watch, stop_api=stop,
+    )
+    return router, calls
+
+
+def test_each_calendar_subscribes_once_and_renews_when_close_to_expiry(env, monkeypatch):
+    router, calls = push_router({}, monkeypatch)
+    assert run(router.ensure_watches()) == {CAL: None}
+    (calendar, body), = calls["watch"]
+    assert calendar == CAL and body["address"] == "https://pmt.example.com/api/meetings/webhook"
+    assert body["type"] == "web_hook" and len(body["token"]) >= 32
+
+    run(router.ensure_watches())                       # still fresh: nothing new
+    assert len(calls["watch"]) == 1
+
+    run(server.db.calendar_watch_channels.update_one({"calendar": CAL}, {"$set": {"expiration_ms": 1}}))
+    run(router.ensure_watches())                       # about to expire: renewed, old one stopped
+    assert len(calls["watch"]) == 2 and len(calls["stop"]) == 1
+
+
+def test_a_ping_with_the_right_token_syncs_that_calendar(env, monkeypatch):
+    import time
+    from datetime import datetime, timedelta, timezone
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).replace(microsecond=0)
+    router, _ = push_router({CAL: [event("n", soon.isoformat(), (soon + timedelta(hours=1)).isoformat(), summary="New call")]}, monkeypatch)
+    run(router.ensure_watches())
+    ch = run(server.db.calendar_watch_channels.find_one({"calendar": CAL}))
+    hdr = {"x-goog-channel-id": ch["channel_id"], "x-goog-channel-token": ch["token"]}
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    with TestClient(app) as c:
+        # wrong token / unknown channel: refused, nothing synced
+        assert c.post("/api/meetings/webhook", headers={**hdr, "x-goog-channel-token": "nope"}).status_code == 404
+        assert c.post("/api/meetings/webhook", headers={"x-goog-channel-id": "zzz", "x-goog-channel-token": "x"}).status_code == 404
+        # Google confirming the subscription is not a change
+        assert c.post("/api/meetings/webhook", headers={**hdr, "x-goog-resource-state": "sync"}).status_code == 200
+        time.sleep(0.3)
+        assert run(server.db.calendar_events.count_documents({})) == 0
+        # a real change
+        assert c.post("/api/meetings/webhook", headers={**hdr, "x-goog-resource-state": "exists"}).status_code == 200
+        for _ in range(40):
+            if run(server.db.calendar_events.count_documents({})):
+                break
+            time.sleep(0.1)
+    assert run(server.db.calendar_events.count_documents({})) == 1
+    assert run(server.db.calendar_watch_channels.find_one({"calendar": CAL}))["last_ping_at"]
+
+
+def test_status_reports_whether_push_is_live(env, monkeypatch):
+    router, _ = push_router({}, monkeypatch)
+    run(router.ensure_watches())
+    (cal,) = env.get("/meetings/status", "member-rb").json()["calendars"]
+    assert cal["push"]["active"] is True and cal["push"]["expires_at"]

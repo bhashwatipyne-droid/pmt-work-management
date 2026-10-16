@@ -413,19 +413,36 @@ export default function MeetingsPage() {
 
   const [from, to] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const load = useCallback((quiet = false) => {
+    if (!quiet) setLoading(true);
     return Promise.all([getMeetings(ymd(from), ymd(to)), getMeetingsStatus()])
       .then(([events, s]) => {
         setRows(events || []);
         setStatus(s);
       })
-      .catch(() => toast.error("Couldn't load meetings. Refresh to try again."))
+      .catch(() => {
+        if (!quiet) toast.error("Couldn't load meetings. Refresh to try again.");
+      })
       .finally(() => setLoading(false));
   }, [from, to]);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Pick up new meetings without a manual refresh: quietly re-read every 2 minutes
+  // and when the tab comes back into view (the server hears about changes from
+  // Google within seconds, so this is all that is needed here).
+  useEffect(() => {
+    const again = () => {
+      if (document.visibilityState === "visible") load(true);
+    };
+    const t = setInterval(again, 120_000);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", again);
+    };
   }, [load]);
 
   const events = useMemo(
@@ -485,6 +502,7 @@ export default function MeetingsPage() {
         <h2 className="min-w-0 flex-1 truncate text-[16px] font-medium text-[#0d1b3e] md:text-[18px]">{rangeTitle(view, anchor)}</h2>
         <span className="hidden text-[12px] text-[#94a0bf] md:inline">
           {loading ? "Loading…" : `Synced ${ago(lastSync)}`}
+          {!loading && status?.calendars?.length > 0 && status.calendars.every((c) => c.push?.active) ? " · live updates on" : ""}
         </span>
         {currentUser?.role === "admin" && status?.configured && (
           <button

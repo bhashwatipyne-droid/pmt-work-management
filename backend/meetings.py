@@ -20,6 +20,11 @@ Env:
                                    instead of the service account.
   CALENDAR_SYNC_MINUTES            how often to sync (default 10)
 
+  PUBLIC_API_URL                   optional: this API's public https address, for Google's
+                                   change notifications (defaults to RENDER_EXTERNAL_URL)
+
+  POST /meetings/webhook       Google's "this calendar changed" ping (push, no login:
+                                   checked against a secret token kept per channel)
   GET  /meetings?start=&end=   events overlapping [start, end) (ISO dates/times)
   GET  /meetings/status        calendars, last sync, errors, configured?
   POST /meetings/sync          sync now (admin)
@@ -32,19 +37,23 @@ import asyncio
 import base64
 import json
 import logging
+import hmac
 import os
 import re
+import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 logger = logging.getLogger(__name__)
 
 EVENTS = "calendar_events"
 STATE = "calendar_sync_state"
+WATCHES = "calendar_watch_channels"
 SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 API = "https://www.googleapis.com/calendar/v3"
 
@@ -59,6 +68,23 @@ MAX_DESCRIPTION = 4000
 def calendar_ids() -> List[str]:
     raw = os.environ.get("CALENDAR_IDS", DEFAULT_CALENDARS)
     return [c.strip().lower() for c in raw.split(",") if c.strip()]
+
+
+# Google's change notifications: a "channel" per calendar. Google caps them at
+# about a week; they are renewed once less than RENEW_BEFORE_HOURS are left.
+RENEW_BEFORE_HOURS = 24
+CHANNEL_TTL_SECONDS = 6 * 24 * 3600
+
+
+def public_api_url() -> str:
+    """Where Google can reach this API (https only), without a trailing slash."""
+    url = (os.environ.get("PUBLIC_API_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
+    return url if url.startswith("https://") else ""
+
+
+def webhook_address() -> str:
+    base = public_api_url()
+    return f"{base}/api/meetings/webhook" if base else ""
 
 
 def ical_urls() -> Dict[str, str]:
@@ -243,12 +269,17 @@ def create_meetings_router(
     get_acting_user: Callable[[Request], Awaitable[Any]],
     now_iso: Callable[[], str],
     fetch_events: Optional[Callable[[str, str, str], Awaitable[List[dict]]]] = None,
+    watch_api: Optional[Callable[[str, dict], Awaitable[dict]]] = None,
+    stop_api: Optional[Callable[[str, dict], Awaitable[None]]] = None,
 ) -> APIRouter:
     """fetch_events(calendar, time_min, time_max) -> Google event dicts. Tests
-    pass a fake; by default it calls the Google Calendar API."""
+    pass a fake; by default it calls the Google Calendar API. watch_api(calendar,
+    body) / stop_api(calendar, body) subscribe to / cancel Google's change
+    notifications (fakes in tests)."""
     router = APIRouter(prefix="/meetings", tags=["meetings"])
     events = db[EVENTS]
     state = db[STATE]
+    watches = db[WATCHES]
 
     async def ical_fetch(url: str, time_min: str, time_max: str) -> List[dict]:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
@@ -333,6 +364,119 @@ def create_meetings_router(
     async def sync_all() -> Dict[str, int]:
         return {c: await sync_calendar(c) for c in calendar_ids()}
 
+    # ---- Google change notifications (push) ---------------------------------
+    async def google_watch(calendar: str, body: dict) -> dict:
+        info = service_account_info()
+        token = await asyncio.to_thread(_access_token, info, calendar)
+        async with httpx.AsyncClient(timeout=30) as client:
+            res = await client.post(
+                f"{API}/calendars/{quote(calendar)}/events/watch",
+                json=body,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if res.status_code != 200:
+            raise RuntimeError(f"Google said {res.status_code}: {res.text[:300]}")
+        return res.json()
+
+    async def google_stop(calendar: str, body: dict) -> None:
+        info = service_account_info()
+        token = await asyncio.to_thread(_access_token, info, calendar)
+        async with httpx.AsyncClient(timeout=30) as client:
+            await client.post(
+                f"{API}/channels/stop",
+                json=body,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    watch = watch_api or google_watch
+    stop = stop_api or google_stop
+
+    async def ensure_watch(calendar: str) -> Optional[str]:
+        """Make sure Google will tell us when `calendar` changes. Returns an error
+        text, or None when it is fine (or push is not available here)."""
+        address = webhook_address()
+        if not address or (watch_api is None and service_account_info() is None):
+            return None
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        current = await watches.find_one({"calendar": calendar}, {"_id": 0})
+        if (
+            current
+            and current.get("address") == address
+            and int(current.get("expiration_ms") or 0) - now_ms > RENEW_BEFORE_HOURS * 3600 * 1000
+        ):
+            return None
+        channel_id = uuid.uuid4().hex
+        secret = secrets.token_urlsafe(32)
+        try:
+            res = await watch(calendar, {
+                "id": channel_id,
+                "type": "web_hook",
+                "address": address,
+                "token": secret,
+                "params": {"ttl": str(CHANNEL_TTL_SECONDS)},
+            })
+        except Exception as exc:
+            logger.warning("Calendar push subscription failed for %s: %s", calendar, exc)
+            await watches.update_one(
+                {"calendar": calendar}, {"$set": {"calendar": calendar, "last_error": str(exc)[:300]}}, upsert=True
+            )
+            return str(exc)[:300]
+        await watches.replace_one({"calendar": calendar}, {
+            "calendar": calendar,
+            "channel_id": channel_id,
+            "token": secret,
+            "resource_id": res.get("resourceId") or "",
+            "expiration_ms": int(res.get("expiration") or 0),
+            "address": address,
+            "created_at": now_iso(),
+            "last_ping_at": (current or {}).get("last_ping_at"),
+            "last_error": "",
+        }, upsert=True)
+        if current and current.get("channel_id"):
+            try:  # the old channel would keep pinging until it expires
+                await stop(calendar, {"id": current["channel_id"], "resourceId": current.get("resource_id") or ""})
+            except Exception:
+                pass
+        return None
+
+    async def ensure_watches() -> Dict[str, Optional[str]]:
+        return {c: await ensure_watch(c) for c in calendar_ids()}
+
+    # one sync at a time per calendar; pings that arrive meanwhile cause one more
+    running: set = set()
+    again: set = set()
+
+    async def sync_soon(calendar: str):
+        if calendar in running:
+            again.add(calendar)
+            return
+        running.add(calendar)
+        try:
+            while True:
+                again.discard(calendar)
+                await sync_calendar(calendar)
+                if calendar not in again:
+                    return
+        except Exception:
+            logger.exception("Calendar sync after a push failed for %s", calendar)
+        finally:
+            running.discard(calendar)
+
+    @router.post("/webhook")
+    async def webhook(request: Request):
+        """Google: "something in this calendar changed". No login (Google cannot
+        have one), so the per-channel secret token is what is checked."""
+        channel = request.headers.get("x-goog-channel-id") or ""
+        given = request.headers.get("x-goog-channel-token") or ""
+        row = await watches.find_one({"channel_id": channel}, {"_id": 0}) if channel else None
+        if not row or not hmac.compare_digest(str(row.get("token") or ""), given):
+            raise HTTPException(status_code=404, detail="Unknown channel")
+        await watches.update_one({"channel_id": channel}, {"$set": {"last_ping_at": now_iso()}})
+        # "sync" is only Google confirming the subscription; anything else is a change
+        if (request.headers.get("x-goog-resource-state") or "") != "sync":
+            asyncio.create_task(sync_soon(row["calendar"]))
+        return Response(status_code=200)
+
     async def staff(request: Request):
         user = await get_acting_user(request)
         if user.role not in ("admin", "manager", "member"):
@@ -375,9 +519,24 @@ def create_meetings_router(
     async def status(request: Request):
         await staff(request)
         states = {s["calendar"]: s for s in await state.find({}, {"_id": 0}).to_list(100)}
+        channels = {w["calendar"]: w for w in await watches.find({}, {"_id": 0}).to_list(100)}
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+        def push(c: str) -> dict:
+            w = channels.get(c) or {}
+            return {
+                "active": int(w.get("expiration_ms") or 0) > now_ms,
+                "expires_at": (
+                    datetime.fromtimestamp(int(w["expiration_ms"]) / 1000, timezone.utc).isoformat()
+                    if w.get("expiration_ms") else None
+                ),
+                "last_ping_at": w.get("last_ping_at"),
+                "error": w.get("last_error") or "",
+            }
+
         return {
             "configured": is_connected() or fetch_events is not None,
-            "calendars": [{"calendar": c, **states.get(c, {})} for c in calendar_ids()],
+            "calendars": [{"calendar": c, **states.get(c, {}), "push": push(c)} for c in calendar_ids()],
         }
 
     @router.post("/sync")
@@ -385,19 +544,27 @@ def create_meetings_router(
         user = await get_acting_user(request)
         if user.role != "admin":
             raise HTTPException(status_code=403, detail="Only admins can start a sync")
-        return {"synced": await sync_all()}
+        synced = await sync_all()
+        await ensure_watches()
+        return {"synced": synced}
 
     router.sync_all = sync_all  # for the background loop and tests
+    router.ensure_watches = ensure_watches
     return router
 
 
-async def calendar_sync_loop(sync_all: Callable[[], Awaitable[Dict[str, int]]]):
+async def calendar_sync_loop(
+    sync_all: Callable[[], Awaitable[Dict[str, int]]],
+    ensure_watches: Optional[Callable[[], Awaitable[Dict[str, Optional[str]]]]] = None,
+):
     minutes = max(1.0, float(os.environ.get("CALENDAR_SYNC_MINUTES", "10")))
     while True:
         if is_connected():
             try:
                 counts = await sync_all()
                 logger.info("Calendar sync: %s", counts)
+                if ensure_watches:
+                    await ensure_watches()  # subscribe / renew Google's change notifications
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -406,6 +573,7 @@ async def calendar_sync_loop(sync_all: Callable[[], Awaitable[Dict[str, int]]]):
 
 
 async def ensure_meeting_indexes(db):
+    await db[WATCHES].create_index("channel_id")
     await db[EVENTS].create_index("id")
     await db[EVENTS].create_index([("calendar", 1), ("start", 1)])
     await db[EVENTS].create_index([("start", 1), ("end", 1)])

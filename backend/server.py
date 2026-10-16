@@ -8589,7 +8589,7 @@ async def run_startup_migrations():
         _auto_accept_task = asyncio.create_task(_auto_accept_loop())
     global _calendar_sync_task
     if _calendar_sync_task is None or _calendar_sync_task.done():
-        _calendar_sync_task = asyncio.create_task(calendar_sync_loop(_meetings_router.sync_all))
+        _calendar_sync_task = asyncio.create_task(calendar_sync_loop(_meetings_router.sync_all, _meetings_router.ensure_watches))
     # Load firebase-admin in a worker thread now, so the first push doesn't
     # stall a request while the (slow) import runs.
     _fire_and_forget(asyncio.to_thread(_get_firebase_app))

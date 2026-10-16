@@ -41,7 +41,7 @@ STATE = "calendar_sync_state"
 SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 API = "https://www.googleapis.com/calendar/v3"
 
-DEFAULT_CALENDARS = "content@finace.co,projects@finace.co,gaurav@finace.co"
+DEFAULT_CALENDARS = "content@finace.co,product@finace.co,animate@finace.co"
 # Window kept in sync: a month back (for looking back) and a quarter ahead.
 PAST_DAYS = 31
 FUTURE_DAYS = 92

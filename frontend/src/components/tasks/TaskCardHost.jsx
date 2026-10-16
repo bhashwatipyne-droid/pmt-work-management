@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Calendar,
@@ -16,6 +16,14 @@ import { toast } from "sonner";
 
 import { NOTE_REASONS } from "@/lib/planning/seed";
 import { fmtH, initials } from "@/lib/planning/planningLogic";
+import {
+  REMINDER_EVERY_MS,
+  playLoudAlert,
+  showTaskNotification,
+  startTitleFlash,
+  stopTitleFlash,
+  unseenIds,
+} from "@/lib/taskAlert";
 import { acceptTask, askAboutTask, declineTask, usePlanningStore } from "@/services/planningApi";
 
 // "Task assigned to you": a sticky-note card that stacks pending assignments,
@@ -423,6 +431,38 @@ function TaskCard({ queue, onMinimise }) {
 export default function TaskCardHost() {
   const { notes } = usePlanningStore("cards");
   const [open, setOpen] = useState(true);
+  const alertedIds = useRef(new Set());
+
+  const noteIds = notes.map((n) => n.id).join("|");
+
+  // Loud alert: sound + browser notification when a card the person has not
+  // been alerted about shows up, and again every REMINDER_EVERY_MS while any
+  // card is still unanswered.
+  useEffect(() => {
+    const ids = noteIds ? noteIds.split("|") : [];
+
+    if (!ids.length) {
+      alertedIds.current = new Set();
+      stopTitleFlash();
+      return undefined;
+    }
+
+    const alertNow = () => {
+      playLoudAlert();
+      showTaskNotification(ids.length);
+      startTitleFlash(ids.length);
+    };
+
+    if (unseenIds(ids, alertedIds.current).length) {
+      ids.forEach((id) => alertedIds.current.add(id));
+      alertNow();
+    }
+
+    const reminder = setInterval(alertNow, REMINDER_EVERY_MS);
+    return () => clearInterval(reminder);
+  }, [noteIds]);
+
+  useEffect(() => stopTitleFlash, []);
 
   if (!notes.length) return null;
 

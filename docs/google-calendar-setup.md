@@ -67,3 +67,15 @@ Redeploy the backend. Within a minute or so the Meetings page shows the meetings
 - **If one calendar fails** (for example a mailbox was renamed), the page shows a red bar naming it and keeps showing its last copy.
 - **To add or remove a calendar,** change `CALENDAR_IDS` and redeploy. To give a calendar a friendly name and colour on the page, edit `CALENDARS` at the top of `frontend/src/pages/MeetingsPage.jsx`.
 - **Meetings are tagged with a client** when a guest's email domain matches a contact saved on that client in PMT.
+
+
+## Shortcut: iCal links (no Google Cloud project, no admin step)
+
+Instead of the service account you can give PMT each calendar's iCal link.
+
+1. In Google Calendar open the calendar's **Settings → Integrate calendar** and copy the iCal address (the "Secret address in iCal format", or the public one if the calendar is shared publicly with event details).
+2. On `pmt-backend` set `CALENDAR_ICAL_URLS` to comma-separated `mailbox=link` pairs, e.g.
+
+   `projects@finace.co=https://calendar.google.com/calendar/ical/projects%40finace.co/public/basic.ics,content@finace.co=https://...`
+
+A calendar listed there is read from its link; any other calendar in `CALENDAR_IDS` still uses the service account. Treat secret links like passwords (reset them in the same settings screen). A *public* link only shows what the calendar shares publicly - if events are missing, check the calendar's "Access permissions" are set to "See all event details".

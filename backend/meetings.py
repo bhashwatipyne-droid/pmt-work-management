@@ -12,6 +12,12 @@ Env:
   GOOGLE_CALENDAR_SERVICE_ACCOUNT  the service account's JSON key (raw JSON or
                                    base64 of it). Unset = sync is off.
   CALENDAR_IDS                     comma-separated mailboxes to read
+  CALENDAR_ICAL_URLS               optional, no Google Cloud needed: comma-separated
+                                   mailbox=iCal-link pairs, e.g.
+                                   projects@finace.co=https://calendar.google.com/.../basic.ics
+                                   A calendar listed here is read from its iCal link
+                                   (Google Calendar -> Settings -> Integrate calendar)
+                                   instead of the service account.
   CALENDAR_SYNC_MINUTES            how often to sync (default 10)
 
   GET  /meetings?start=&end=   events overlapping [start, end) (ISO dates/times)
@@ -27,6 +33,7 @@ import base64
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import quote
@@ -52,6 +59,91 @@ MAX_DESCRIPTION = 4000
 def calendar_ids() -> List[str]:
     raw = os.environ.get("CALENDAR_IDS", DEFAULT_CALENDARS)
     return [c.strip().lower() for c in raw.split(",") if c.strip()]
+
+
+def ical_urls() -> Dict[str, str]:
+    """mailbox -> iCal link, from CALENDAR_ICAL_URLS ("mailbox=url,mailbox=url")."""
+    out = {}
+    for part in (os.environ.get("CALENDAR_ICAL_URLS") or "").split(","):
+        mailbox, sep, url = part.strip().partition("=")
+        if sep and mailbox.strip() and url.strip().startswith("http"):
+            out[mailbox.strip().lower()] = url.strip()
+    return out
+
+
+_MEET_RE = re.compile(r"https://meet\.google\.com/[a-z0-9\-]+", re.I)
+
+
+def _ical_when(value) -> dict:
+    """An iCal DTSTART/DTEND value -> Google's {dateTime} / {date}."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return {"dateTime": value.isoformat()}
+    return {"date": value.isoformat()}
+
+
+def ical_to_events(ics: bytes, time_min: str, time_max: str) -> List[dict]:
+    """An .ics file -> Google-style event dicts (recurring meetings expanded to
+    separate occurrences) so the rest of the sync does not care where they came from."""
+    import icalendar
+    import recurring_ical_events
+
+    cal = icalendar.Calendar.from_ical(ics)
+    lo = datetime.fromisoformat(time_min)
+    hi = datetime.fromisoformat(time_max)
+    # the library stamps every occurrence with RECURRENCE-ID, so ask the source events
+    repeating = {
+        str(e.get("UID")) for e in cal.walk("VEVENT")
+        if e.get("RRULE") is not None or e.get("RDATE") is not None or e.get("RECURRENCE-ID") is not None
+    }
+    out = []
+    for ev in recurring_ical_events.of(cal).between(lo, hi):
+        start = _ical_when(ev.get("DTSTART").dt)
+        end_prop = ev.get("DTEND")
+        end = _ical_when(end_prop.dt) if end_prop else start
+        uid = str(ev.get("UID") or "")
+        if not uid:
+            continue
+        stamp = start.get("dateTime") or start.get("date")
+        recurring = uid in repeating
+        description = str(ev.get("DESCRIPTION") or "")
+        location = str(ev.get("LOCATION") or "")
+        organizer = ev.get("ORGANIZER")
+        attendees = ev.get("ATTENDEE") or []
+        if not isinstance(attendees, list):
+            attendees = [attendees]
+        meet = _MEET_RE.search(f"{location} {description} {ev.get('X-GOOGLE-CONFERENCE') or ''}")
+        out.append({
+            "id": f"{uid}_{stamp}",   # one stable id per occurrence
+            "iCalUID": uid,
+            "status": str(ev.get("STATUS") or "confirmed").lower(),
+            "summary": str(ev.get("SUMMARY") or ""),
+            "description": description,
+            "location": location,
+            "start": start,
+            "end": end,
+            "visibility": "private" if str(ev.get("CLASS") or "").upper() in ("PRIVATE", "CONFIDENTIAL") else "default",
+            "organizer": {"email": str(organizer).replace("mailto:", "").lower()} if organizer else {},
+            "attendees": [
+                {
+                    "email": str(a).replace("mailto:", "").lower(),
+                    "displayName": str(a.params.get("CN", "")),
+                    "responseStatus": {"ACCEPTED": "accepted", "DECLINED": "declined", "TENTATIVE": "tentative"}.get(
+                        str(a.params.get("PARTSTAT", "")).upper(), "needsAction"),
+                }
+                for a in attendees
+            ],
+            "hangoutLink": meet.group(0) if meet else "",
+            "recurringEventId": uid if recurring else "",
+            "updated": "",
+        })
+    return out
+
+
+def is_connected() -> bool:
+    """Is there any way to read calendars (service account or iCal links)?"""
+    return bool(ical_urls()) or service_account_info() is not None
 
 
 def service_account_info() -> Optional[dict]:
@@ -158,10 +250,21 @@ def create_meetings_router(
     events = db[EVENTS]
     state = db[STATE]
 
+    async def ical_fetch(url: str, time_min: str, time_max: str) -> List[dict]:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            res = await client.get(url)
+        if res.status_code != 200:
+            raise RuntimeError(f"The iCal link answered {res.status_code} (is the calendar shared / the link current?)")
+        if b"BEGIN:VCALENDAR" not in res.content[:2000]:
+            raise RuntimeError("The iCal link did not return a calendar")
+        return await asyncio.to_thread(ical_to_events, res.content, time_min, time_max)
+
     async def google_fetch(calendar: str, time_min: str, time_max: str) -> List[dict]:
+        if calendar in ical_urls():
+            return await ical_fetch(ical_urls()[calendar], time_min, time_max)
         info = service_account_info()
         if not info:
-            raise RuntimeError("Google Calendar is not connected (GOOGLE_CALENDAR_SERVICE_ACCOUNT is not set)")
+            raise RuntimeError("Google Calendar is not connected (set CALENDAR_ICAL_URLS for this calendar, or GOOGLE_CALENDAR_SERVICE_ACCOUNT)")
         token = await asyncio.to_thread(_access_token, info, calendar)
         out, page = [], None
         async with httpx.AsyncClient(timeout=30) as client:
@@ -273,7 +376,7 @@ def create_meetings_router(
         await staff(request)
         states = {s["calendar"]: s for s in await state.find({}, {"_id": 0}).to_list(100)}
         return {
-            "configured": service_account_info() is not None or fetch_events is not None,
+            "configured": is_connected() or fetch_events is not None,
             "calendars": [{"calendar": c, **states.get(c, {})} for c in calendar_ids()],
         }
 
@@ -291,7 +394,7 @@ def create_meetings_router(
 async def calendar_sync_loop(sync_all: Callable[[], Awaitable[Dict[str, int]]]):
     minutes = max(1.0, float(os.environ.get("CALENDAR_SYNC_MINUTES", "10")))
     while True:
-        if service_account_info():
+        if is_connected():
             try:
                 counts = await sync_all()
                 logger.info("Calendar sync: %s", counts)

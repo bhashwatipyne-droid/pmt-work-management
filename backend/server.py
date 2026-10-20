@@ -67,6 +67,9 @@ try:
         _upsert_notifications_batch,
     )
     from auth_routes import create_auth_router  # noqa: F401
+    from dashboard_routes import create_dashboard_router  # noqa: F401
+    from notification_routes import create_notification_router  # noqa: F401
+    from lookups import create_lookups_router  # noqa: F401
     from clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -161,6 +164,9 @@ except ImportError:
         _upsert_notifications_batch,
     )
     from backend.auth_routes import create_auth_router  # noqa: F401
+    from backend.dashboard_routes import create_dashboard_router  # noqa: F401
+    from backend.notification_routes import create_notification_router  # noqa: F401
+    from backend.lookups import create_lookups_router  # noqa: F401
     from backend.clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -914,25 +920,6 @@ def _record_login_failure(ip: str, login: str) -> None:
             _recent_fails(key, now_s)
 
 
-@api_router.get("/config/options")
-async def get_options():
-    return {
-        "deliverable_types": DELIVERABLE_TYPES,
-        "deliverable_type_categories": DELIVERABLE_TYPE_CATEGORIES,
-        "deliverable_type_units": DELIVERABLE_TYPE_UNITS,
-        "work_categories": WORK_CATEGORIES,
-        "statuses": STATUSES,
-        "member_forward_statuses": MEMBER_FORWARD_STATUSES,
-        "project_statuses": PROJECT_STATUSES,
-        "stages": STAGES,
-        "stage_statuses": STAGE_STATUSES,
-        "client_statuses": CLIENT_STATUSES,
-        "departments": DEPARTMENTS,
-        "roles": ROLES,
-        "approval_types": APPROVAL_TYPES,
-    }
-
-
 @api_router.post("/work-items", response_model=WorkItem)
 async def create_work_item(payload: WorkItemCreate, request: Request):
     user = await get_acting_user(request)
@@ -1259,303 +1246,7 @@ def collab_row_has_identity(row: dict) -> bool:
 
 
 # ---------------- Dashboard ----------------
-@api_router.get("/dashboard/summary")
-async def dashboard_summary(request: Request):
-    await require_admin(request)
-    all_items = await db.work_items.find({}, {"_id": 0}).to_list(10000)
-    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-    status_counts = {s: 0 for s in STATUSES}
-    total_minutes = 0.0
-    items_this_month = 0
-    closed_this_month = 0
-    creators = set()
-    for it in all_items:
-        status_counts[it.get("status", "Not Started")] = status_counts.get(it.get("status", "Not Started"), 0) + 1
-        total_minutes += max(0.0, _valid_minutes(it.get("time_taken_minutes")) or 0.0)
-        if it.get("creator_id"):
-            creators.add(it["creator_id"])
-        if it.get("month") == current_month:
-            items_this_month += 1
-            if it.get("status") in DONE_STATUSES:
-                closed_this_month += 1
-    needs_attention = status_counts.get("Ready for Review", 0) + status_counts.get("Changes Requested", 0)
-    return {
-        "total_items": len(all_items),
-        "status_counts": status_counts,
-        "total_hours_logged": round(total_minutes / 60, 1),
-        "items_this_month": items_this_month,
-        "closed_this_month": closed_this_month,
-        "active_members": len(creators),
-        "needs_attention_count": needs_attention,
-    }
-
-
-@api_router.get("/dashboard/team-summary")
-async def dashboard_team_summary(request: Request):
-    await require_admin(request)
-    users = await db.users.find({"role": {"$nin": NON_TEAM_ROLES}}, {"_id": 0}).to_list(1000)
-    all_items = await db.work_items.find({}, {"_id": 0}).to_list(10000)
-    result = []
-    for u in users:
-        user_items = [it for it in all_items if it.get("creator_id") == u["id"]]
-        status_counts = {s: 0 for s in STATUSES}
-        total_minutes = 0.0
-        for it in user_items:
-            status_counts[it.get("status", "Not Started")] = status_counts.get(it.get("status", "Not Started"), 0) + 1
-            total_minutes += max(0.0, _valid_minutes(it.get("time_taken_minutes")) or 0.0)
-        result.append({
-            "user_id": u["id"],
-            "name": u["name"],
-            "role": u["role"],
-            "total_items": len(user_items),
-            "status_counts": status_counts,
-            "total_hours": round(total_minutes / 60, 1),
-        })
-    return result
-
-
-@api_router.get("/dashboard/attention-items")
-async def dashboard_attention_items(request: Request):
-    await require_admin(request)
-    items = await db.work_items.find(
-        {"status": {"$in": ["Ready for Review", "Changes Requested"]}}, {"_id": 0}
-    ).sort("updated_at", 1).to_list(50)
-    users = {u["id"]: u["name"] for u in await db.users.find({}, {"_id": 0}).to_list(1000)}
-    for it in items:
-        it["creator_name"] = users.get(it.get("creator_id"), "Unassigned")
-    return items
-
-@api_router.get("/dashboard/overview")
-async def dashboard_overview(request: Request):
-    await require_admin(request)
-
-    today = datetime.now(timezone.utc).date()
-    return await cached_read(
-        f"dashboard-overview:{today.isoformat()}", lambda: _dashboard_overview(today)
-    )
-
-
-async def _dashboard_overview(today) -> dict:
-    week_end = today + timedelta(days=7)
-
-    project_status_task = db.projects.aggregate([
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
-    ]).to_list(None)
-
-    deliverable_stage_task = db.deliverables.aggregate([
-        {"$group": {"_id": "$current_stage", "count": {"$sum": 1}}}
-    ]).to_list(None)
-
-    deliverable_review_task = db.deliverables.count_documents({
-        "stage_status": {"$in": ["Ready for Review", "Changes Requested"]}
-    })
-
-    project_due_task = db.projects.count_documents({
-        "end_date": {"$gte": today.isoformat(), "$lte": week_end.isoformat()},
-        "status": {"$ne": "Completed"}
-    })
-
-    total_projects_task = db.projects.count_documents({})
-    total_deliverables_task = db.deliverables.count_documents({})
-    total_work_items_task = db.work_items.count_documents({})
-
-    work_item_hours_task = db.work_items.aggregate([
-        {"$group": {"_id": None, "total_minutes": {"$sum": {"$ifNull": ["$time_taken_minutes", 0]}}}}
-    ]).to_list(1)
-
-    (
-        project_status_rows,
-        deliverable_stage_rows,
-        needs_review,
-        due_this_week,
-        total_projects,
-        total_deliverables,
-        total_work_items,
-        work_item_hours_rows,
-    ) = await asyncio.gather(
-        project_status_task,
-        deliverable_stage_task,
-        deliverable_review_task,
-        project_due_task,
-        total_projects_task,
-        total_deliverables_task,
-        total_work_items_task,
-        work_item_hours_task,
-    )
-
-    project_status_counts = {s: 0 for s in PROJECT_STATUSES}
-    for row in project_status_rows:
-        status = row.get("_id") or "Planning"
-        project_status_counts[status] = row["count"]
-
-    deliv_stage_counts = {s: 0 for s in STAGES}
-    for row in deliverable_stage_rows:
-        stage = row.get("_id") or "Content"
-        deliv_stage_counts[stage] = row["count"]
-
-    total_minutes = 0
-    if work_item_hours_rows:
-        total_minutes = work_item_hours_rows[0].get("total_minutes", 0) or 0
-
-    return {
-        "active_projects": project_status_counts.get("Active", 0),
-        "in_rework": project_status_counts.get("In Rework", 0),
-        "completed_projects": project_status_counts.get("Completed", 0),
-        "planning_projects": project_status_counts.get("Planning", 0),
-        "total_projects": total_projects,
-        "total_deliverables": total_deliverables,
-        "deliv_stage_counts": deliv_stage_counts,
-        "needs_review": needs_review,
-        "due_this_week": due_this_week,
-        "total_hours_logged": round(total_minutes / 60, 1),
-        "total_work_items": total_work_items,
-        "project_status_counts": project_status_counts,
-    }
-
-
-async def migrate_client_contacts():
-    """
-    Ensure all clients use the contact_persons structure
-    and that every contact has a stable ID.
-
-    Safe to run multiple times.
-    """
-    clients = await db.clients.find(
-        {},
-        {"_id": 0}
-    ).to_list(1000)
-
-    for client in clients:
-        existing_contacts = client.get("contact_persons") or []
-
-        # Existing contact_persons may have been imported without IDs.
-        # Add IDs only where they are missing.
-        if existing_contacts:
-            normalized_contacts = []
-            changed = False
-
-            for contact in existing_contacts:
-                normalized_contact = dict(contact)
-
-                if not normalized_contact.get("id"):
-                    normalized_contact["id"] = (
-                        f"contact-{uuid.uuid4().hex[:8]}"
-                    )
-                    changed = True
-
-                normalized_contacts.append(normalized_contact)
-
-            if changed:
-                await db.clients.update_one(
-                    {"id": client["id"]},
-                    {
-                        "$set": {
-                            "contact_persons": normalized_contacts
-                        }
-                    }
-                )
-
-            continue
-
-        # Legacy single-contact field.
-        legacy_contact = (
-            client.get("contact_person") or ""
-        ).strip()
-
-        if not legacy_contact:
-            continue
-
-        contact = {
-            "id": f"contact-{uuid.uuid4().hex[:8]}",
-            "name": legacy_contact,
-            "email": "",
-            "phone": "",
-            "designation": "",
-        }
-
-        await db.clients.update_one(
-            {"id": client["id"]},
-            {
-                "$set": {
-                    "contact_persons": [contact]
-                }
-            }
-        )
-
-
 # ---------------- Clients ----------------
-@api_router.get("/worksheet/deliverable-names")
-async def worksheet_deliverable_names(request: Request):
-    """project_id -> lowercase deliverable names, for the Projects page search.
-
-    /worksheet/lookups returns at most 5000 deliverables, oldest first, so once
-    the database grew past that the newest deliverables were cut off and could
-    never be found by search. This groups in the database instead: one entry
-    per project, no cap on deliverables, and only the name strings travel."""
-    await get_acting_user(request)
-
-    rows = await db.deliverables.aggregate([
-        {"$match": {"project_id": {"$ne": None}, "name": {"$type": "string"}}},
-        {"$group": {"_id": "$project_id", "names": {"$push": {"$toLower": "$name"}}}},
-    ]).to_list(None)
-
-    return {row["_id"]: row["names"] for row in rows}
-
-
-@api_router.get("/worksheet/lookups")
-async def worksheet_lookups(request: Request):
-    """Everything the Work Sheet needs to fill its Client / Project /
-    Deliverable dropdowns, in one request.
-
-    The sheet used to call /clients, /projects and /deliverables separately.
-    /projects returned every project with all of its deliverables nested
-    inside, and /deliverables then returned the same deliverables again (each
-    with an approval-workflow lookup) - thousands of full documents to build
-    three dropdowns that only show a name. Here the database projects just
-    the few fields the sheet reads, the three queries run at the same time,
-    and there is a single round trip instead of three.
-
-    Same scoping as the endpoints it replaces: visible (non-hidden) projects
-    only, every deliverable.
-    """
-    await get_acting_user(request)
-
-    visible_projects = {
-        "$or": [{"hidden": False}, {"hidden": {"$exists": False}}]
-    }
-
-    clients, projects, deliverables = await asyncio.gather(
-        db.clients.find({}, {"_id": 0, "id": 1, "name": 1})
-        .sort("name", 1)
-        .to_list(None),
-        # status: the sheet's pickers leave out delivered/scrapped projects.
-        # code / description: tell look-alike project names apart.
-        db.projects.find(
-            visible_projects,
-            {"_id": 0, "id": 1, "name": 1, "client_id": 1, "code": 1, "status": 1, "description": 1},
-        )
-        .sort("created_at", -1)
-        .batch_size(1000)
-        .to_list(None),
-        # type: the chip next to each deliverable name, and the Deliverable Type
-        # a pick fills in. current_stage / stage_status: the dot and status
-        # pill in the project hover list.
-        db.deliverables.find(
-            {},
-            {"_id": 0, "id": 1, "name": 1, "project_id": 1, "type": 1, "current_stage": 1, "stage_status": 1},
-        )
-        .sort("created_at", 1)
-        .batch_size(5000)
-        .to_list(None),
-    )
-
-    return {
-        "clients": clients,
-        "projects": projects,
-        "deliverables": deliverables,
-    }
-
-
 # ---------------- Notifications routes ----------------
 _notification_scan_task: Optional["asyncio.Task"] = None
 
@@ -1577,218 +1268,6 @@ def _start_notification_scans():
     if _notification_scan_task is not None and not _notification_scan_task.done():
         return
     _notification_scan_task = asyncio.create_task(_run_notification_scans())
-
-
-@api_router.get("/notifications")
-async def list_notifications(request: Request, limit: int = 50):
-    user = await get_acting_user(request)
-    # The periodic scans (overdue deadlines, reminders) used to run inside
-    # whichever request happened to land outside their throttle window, which
-    # made that one bell poll take 3-4 seconds. They now run in the
-    # background; anything they create shows up on the next poll.
-    _start_notification_scans()
-
-    limit = max(1, min(limit, 100))
-    query: dict = {"user_id": user.id}
-    if user.role != "manager":
-        # Approval notices are for managers only; hide any already stored for
-        # someone else (the startup migration also deletes them).
-        query["$nor"] = _APPROVAL_NOTICE_QUERY["$or"]
-    rows = await db.notifications.find(
-        query,
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(limit)
-
-    # The bell opens the exact item a notification is about (the deliverable
-    # in Approvals, its rows in the work sheet), and the work sheet finds it
-    # by name. Notifications saved before names were stored get theirs here,
-    # with one lookup for the whole list.
-    missing = {
-        row["deliverable_id"]
-        for row in rows
-        if row.get("deliverable_id") and not row.get("deliverable_name")
-    }
-    if missing:
-        names = {
-            d["id"]: d.get("name") or ""
-            for d in await db.deliverables.find(
-                {"id": {"$in": list(missing)}}, {"_id": 0, "id": 1, "name": 1}
-            ).to_list(len(missing))
-        }
-        for row in rows:
-            if row.get("deliverable_id") and not row.get("deliverable_name"):
-                row["deliverable_name"] = names.get(row["deliverable_id"], "")
-
-    # Every open tab asks for this list every few seconds, and almost every
-    # time nothing has changed. Tag the response with a hash of its content:
-    # the browser sends it back as If-None-Match and gets an empty 304 when
-    # the list is identical, instead of downloading the same list again.
-    # `no-cache` makes the browser revalidate every time, so a new
-    # notification still shows up on the very next poll.
-    body = json.dumps(rows, separators=(",", ":"), default=str)
-    etag = '"' + hashlib.md5(body.encode("utf-8")).hexdigest() + '"'
-    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
-    if request.headers.get("if-none-match") == etag:
-        return Response(status_code=304, headers=headers)
-    return Response(content=body, media_type="application/json", headers=headers)
-
-
-@api_router.post("/notifications/{notification_id}/read")
-async def mark_notification_read(notification_id: str, request: Request):
-    user = await get_acting_user(request)
-    result = await db.notifications.update_one(
-        {"id": notification_id, "user_id": user.id},
-        {"$set": {"read_at": now_iso()}},
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    return {"success": True}
-
-
-@api_router.post("/notifications/read-all")
-async def mark_all_notifications_read(request: Request):
-    user = await get_acting_user(request)
-    result = await db.notifications.update_many(
-        {"user_id": user.id, "read_at": None},
-        {"$set": {"read_at": now_iso()}},
-    )
-    return {"success": True, "count": result.modified_count}
-
-
-class PushTokenPayload(BaseModel):
-    token: str = Field(..., min_length=20, max_length=4096)
-    platform: str = "web"
-
-
-@api_router.post("/push/register")
-async def register_push_token(payload: PushTokenPayload, request: Request):
-    """Attach this browser's FCM token to the logged-in user. Keyed by token,
-    so a browser that switches accounts is simply re-assigned."""
-    user = await get_acting_user(request)
-    now = now_iso()
-
-    for attempt in range(2):
-        try:
-            await db.push_tokens.update_one(
-                {"token": payload.token},
-                {
-                    "$set": {
-                        "user_id": user.id,
-                        "platform": payload.platform,
-                        "last_seen_at": now,
-                    },
-                    "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now},
-                },
-                upsert=True,
-            )
-            break
-        except DuplicateKeyError:
-            # Two concurrent registrations of a brand-new token raced on the
-            # unique index; the retry takes the update path.
-            if attempt == 1:
-                raise
-    return {"success": True}
-
-
-@api_router.post("/push/unregister")
-async def unregister_push_token(payload: PushTokenPayload, request: Request):
-    user = await get_acting_user(request)
-    await db.push_tokens.delete_one({"token": payload.token, "user_id": user.id})
-    return {"success": True}
-
-
-@api_router.post("/notifications/{notification_id}/add-row")
-async def add_work_row_from_notification(notification_id: str, request: Request):
-    user = await get_acting_user(request)
-    if user.role == "admin":
-        raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
-
-    notification = await db.notifications.find_one(
-        {"id": notification_id, "user_id": user.id},
-        {"_id": 0},
-    )
-    if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    if notification.get("action_type") != "add_work_row":
-        raise HTTPException(status_code=400, detail="This notification has no row action")
-
-    if notification.get("actioned_at"):
-        raise HTTPException(status_code=409, detail="A worksheet row has already been added from this notification")
-
-    project = await db.projects.find_one(
-        {"id": notification.get("project_id")},
-        {"_id": 0},
-    )
-    deliverable = await db.deliverables.find_one(
-        {"id": notification.get("deliverable_id")},
-        {"_id": 0},
-    )
-
-    if not project or not deliverable:
-        raise HTTPException(status_code=404, detail="Project or deliverable no longer exists")
-
-    stage = notification.get("stage") or DEPARTMENT_TO_STAGE.get(user.department)
-    if not can_user_create_stage(user, stage):
-        raise HTTPException(status_code=403, detail="You can only add rows for your production stage")
-
-    work_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    item = WorkItem(
-        work_date=work_date,
-        month=work_date[:7],
-        deliverable_name=deliverable.get("name", ""),
-        deliverable_type=deliverable.get("type", ""),
-        work_category=DELIVERABLE_TYPE_CATEGORIES.get(
-            deliverable.get("type") or "",
-            "Core",
-        ),
-        creator_id=user.id,
-        reviewer_id=None,
-        manager_id=None,
-        client_id=project.get("client_id"),
-        project_id=project.get("id"),
-        deliverable_id=deliverable.get("id"),
-        stage=stage,
-        remarks="",
-        status="Not Started",
-        created_at=now_iso(),
-        updated_at=now_iso(),
-    )
-
-    # The row already has its deliverable type, so fill the time from this
-    # person's own benchmark for it (Non-Core types simply have none).
-    benchmark = await get_time_benchmark([user.id], item.deliverable_type)
-    if benchmark:
-        item.time_taken_minutes = benchmark
-        item.time_source = "auto"
-        item.time_benchmark_minutes = benchmark
-
-    validate_work_category_rules(item.model_dump())
-
-    # Reserve the notification action atomically so two rapid clicks/tabs
-    # cannot create duplicate worksheet rows.
-    actioned_at = now_iso()
-    reserved = await db.notifications.update_one(
-        {"id": notification_id, "user_id": user.id, "actioned_at": None},
-        {"$set": {"actioned_at": actioned_at, "read_at": actioned_at}},
-    )
-    if reserved.matched_count == 0:
-        raise HTTPException(
-            status_code=409,
-            detail="A worksheet row has already been added from this notification",
-        )
-
-    try:
-        await db.work_items.insert_one(item.model_dump())
-    except Exception:
-        # Allow a retry if the actual row insert failed.
-        await db.notifications.update_one(
-            {"id": notification_id, "user_id": user.id, "actioned_at": actioned_at},
-            {"$set": {"actioned_at": None, "read_at": None}},
-        )
-        raise
-
-    return item
 
 
 # ---------------- Projects ----------------
@@ -2635,6 +2114,126 @@ api_router.include_router(
         LoginResponse=LoginResponse,
         User=User,
         ACCESS_TOKEN_HOURS=ACCESS_TOKEN_HOURS,
+    )
+)
+
+async def migrate_client_contacts():
+    """
+    Ensure all clients use the contact_persons structure
+    and that every contact has a stable ID.
+
+    Safe to run multiple times.
+    """
+    clients = await db.clients.find(
+        {},
+        {"_id": 0}
+    ).to_list(1000)
+
+    for client in clients:
+        existing_contacts = client.get("contact_persons") or []
+
+        # Existing contact_persons may have been imported without IDs.
+        # Add IDs only where they are missing.
+        if existing_contacts:
+            normalized_contacts = []
+            changed = False
+
+            for contact in existing_contacts:
+                normalized_contact = dict(contact)
+
+                if not normalized_contact.get("id"):
+                    normalized_contact["id"] = (
+                        f"contact-{uuid.uuid4().hex[:8]}"
+                    )
+                    changed = True
+
+                normalized_contacts.append(normalized_contact)
+
+            if changed:
+                await db.clients.update_one(
+                    {"id": client["id"]},
+                    {
+                        "$set": {
+                            "contact_persons": normalized_contacts
+                        }
+                    }
+                )
+
+            continue
+
+        # Legacy single-contact field.
+        legacy_contact = (
+            client.get("contact_person") or ""
+        ).strip()
+
+        if not legacy_contact:
+            continue
+
+        contact = {
+            "id": f"contact-{uuid.uuid4().hex[:8]}",
+            "name": legacy_contact,
+            "email": "",
+            "phone": "",
+            "designation": "",
+        }
+
+        await db.clients.update_one(
+            {"id": client["id"]},
+            {
+                "$set": {
+                    "contact_persons": [contact]
+                }
+            }
+        )
+
+
+api_router.include_router(
+    create_dashboard_router(
+        db=db,
+        DONE_STATUSES=DONE_STATUSES,
+        NON_TEAM_ROLES=NON_TEAM_ROLES,
+        PROJECT_STATUSES=PROJECT_STATUSES,
+        STAGES=STAGES,
+        STATUSES=STATUSES,
+        _valid_minutes=_valid_minutes,
+        cached_read=cached_read,
+        require_admin=require_admin,
+    )
+)
+
+api_router.include_router(
+    create_notification_router(
+        db=db,
+        DELIVERABLE_TYPE_CATEGORIES=DELIVERABLE_TYPE_CATEGORIES,
+        DEPARTMENT_TO_STAGE=DEPARTMENT_TO_STAGE,
+        WorkItem=WorkItem,
+        _APPROVAL_NOTICE_QUERY=_APPROVAL_NOTICE_QUERY,
+        _start_notification_scans=_start_notification_scans,
+        can_user_create_stage=can_user_create_stage,
+        get_acting_user=get_acting_user,
+        get_time_benchmark=get_time_benchmark,
+        now_iso=now_iso,
+        validate_work_category_rules=validate_work_category_rules,
+    )
+)
+
+api_router.include_router(
+    create_lookups_router(
+        db=db,
+        APPROVAL_TYPES=APPROVAL_TYPES,
+        CLIENT_STATUSES=CLIENT_STATUSES,
+        DELIVERABLE_TYPES=DELIVERABLE_TYPES,
+        DELIVERABLE_TYPE_CATEGORIES=DELIVERABLE_TYPE_CATEGORIES,
+        DELIVERABLE_TYPE_UNITS=DELIVERABLE_TYPE_UNITS,
+        DEPARTMENTS=DEPARTMENTS,
+        MEMBER_FORWARD_STATUSES=MEMBER_FORWARD_STATUSES,
+        PROJECT_STATUSES=PROJECT_STATUSES,
+        ROLES=ROLES,
+        STAGES=STAGES,
+        STAGE_STATUSES=STAGE_STATUSES,
+        STATUSES=STATUSES,
+        WORK_CATEGORIES=WORK_CATEGORIES,
+        get_acting_user=get_acting_user,
     )
 )
 

@@ -2727,9 +2727,62 @@ class LoginResponse(User):
     access_token: Optional[str] = None
 
 
+# Failed-login throttle. Kept in this process's memory (no extra collection or
+# dependency), so each server instance counts on its own and a restart clears it:
+# it stops casual password guessing, it is not a distributed lockout.
+LOGIN_MAX_FAILS_PER_LOGIN = int(os.environ.get("LOGIN_MAX_FAILS_PER_LOGIN", "5"))
+LOGIN_MAX_FAILS_PER_IP = int(os.environ.get("LOGIN_MAX_FAILS_PER_IP", "30"))
+LOGIN_FAIL_WINDOW_SECONDS = int(os.environ.get("LOGIN_FAIL_WINDOW_SECONDS", "900"))
+_login_fails: dict = {}
+
+
+def _client_ip(request: Request) -> str:
+    # Behind Render/Vercel the real caller is the first X-Forwarded-For entry.
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _recent_fails(key: str, now_s: float) -> list:
+    cutoff = now_s - LOGIN_FAIL_WINDOW_SECONDS
+    recent = [t for t in _login_fails.get(key, []) if t > cutoff]
+    if recent:
+        _login_fails[key] = recent
+    else:
+        _login_fails.pop(key, None)
+    return recent
+
+
+def _check_login_throttle(ip: str, login: str) -> None:
+    now_s = time.monotonic()
+    by_login = _recent_fails(f"login:{ip}:{login}", now_s)
+    by_ip = _recent_fails(f"ip:{ip}", now_s)
+    if len(by_login) >= LOGIN_MAX_FAILS_PER_LOGIN or len(by_ip) >= LOGIN_MAX_FAILS_PER_IP:
+        oldest = min(by_login or by_ip)
+        retry_after = max(1, int(LOGIN_FAIL_WINDOW_SECONDS - (now_s - oldest)))
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed sign-in attempts. Try again in a few minutes.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _record_login_failure(ip: str, login: str) -> None:
+    now_s = time.monotonic()
+    _login_fails.setdefault(f"login:{ip}:{login}", []).append(now_s)
+    _login_fails.setdefault(f"ip:{ip}", []).append(now_s)
+    if len(_login_fails) > 5000:
+        # Bound memory: drop entries whose attempts have all aged out.
+        for key in list(_login_fails):
+            _recent_fails(key, now_s)
+
+
 @api_router.post("/auth/login", response_model=LoginResponse)
-async def login(payload: LoginPayload, response: Response):
+async def login(payload: LoginPayload, request: Request, response: Response):
     login = payload.login.strip().lower()
+    ip = _client_ip(request)
+    _check_login_throttle(ip, login)
     doc = await db.users.find_one(
         {
             "$or": [
@@ -2740,9 +2793,11 @@ async def login(payload: LoginPayload, response: Response):
         {"_id": 0},
     )
     if not doc or not verify_password(payload.password, doc.get("password_hash", "")):
+        _record_login_failure(ip, login)
         raise HTTPException(status_code=401, detail="Invalid username or password")
     if not doc.get("active", True):
         raise HTTPException(status_code=403, detail="Account deactivated")
+    _login_fails.pop(f"login:{ip}:{login}", None)
     token = create_access_token(doc["id"])
     response.set_cookie(
         key="access_token",
@@ -3229,7 +3284,22 @@ async def _create_work_item_for_user_id(user_id: str, payload: WorkItemCreate):
     return await _create_work_item_as(User(**doc), payload)
 
 
-async def _create_work_item_as(user: User, payload: WorkItemCreate):
+async def _create_work_item_for_task(user_id: str, payload: WorkItemCreate, source_task_id: str):
+    """Work Sheet row for an accepted WhatsApp task. source_task_id is written
+    in the same insert as the row, and a unique index on it makes a retry
+    (or a manual accept racing the auto-accept job) return the existing row
+    instead of creating a second one."""
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not doc or not doc.get("active", True):
+        raise HTTPException(status_code=400, detail="That person cannot be assigned work")
+    return await _create_work_item_as(
+        User(**doc),
+        payload,
+        extra_fields={"source": "whatsapp_task", "source_task_id": source_task_id},
+    )
+
+
+async def _create_work_item_as(user: User, payload: WorkItemCreate, extra_fields: Optional[dict] = None):
     if user.role == "admin":
         raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
 
@@ -3277,7 +3347,23 @@ async def _create_work_item_as(user: User, payload: WorkItemCreate):
 
     ts = now_iso()
     item = WorkItem(work_date=work_date, month=month, created_at=ts, updated_at=ts, **data)
-    await db.work_items.insert_one(item.model_dump())
+    row = item.model_dump()
+    if extra_fields:
+        row.update(extra_fields)
+    try:
+        await db.work_items.insert_one(row)
+    except DuplicateKeyError:
+        # Only the unique source_task_id index can trip here: this task already
+        # has its row, so hand that one back rather than making a second.
+        source_task_id = (extra_fields or {}).get("source_task_id")
+        existing = (
+            await db.work_items.find_one({"source_task_id": source_task_id}, {"_id": 0})
+            if source_task_id
+            else None
+        )
+        if not existing:
+            raise
+        return WorkItem(**existing)
 
     if item.deliverable_not_available:
         await _notify_admins_deliverable_missing(user, item.model_dump())
@@ -3339,9 +3425,11 @@ async def review_work_item(
         else "Changes Requested"
     )
 
-    # Update work item status
-    await db.work_items.update_one(
-        {"id": item_id},
+    # Update work item status. The filter repeats the checks above so a second
+    # reviewer (or the auto-close job) acting at the same moment cannot also
+    # succeed: only the request that still finds the row waiting wins.
+    result = await db.work_items.update_one(
+        {"id": item_id, "status": "Ready for Review", "reviewer_id": user.id},
         {
             "$set": {
                 "status": new_status,
@@ -3349,6 +3437,11 @@ async def review_work_item(
             }
         },
     )
+    if result.matched_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="This work item was just changed by someone else. Reload and try again.",
+        )
 
     # Log review action + note
     review_action = (
@@ -6418,6 +6511,61 @@ async def bulk_update_project_status(
     }
 
 
+async def _delete_project_and_children(existing: dict, user: User) -> None:
+    """Delete one project, its deliverables and their approvals, keeping every
+    historical work entry.
+
+    Order matters because Mongo has no transaction here: each step leaves the
+    data in a state that a second delete attempt can finish.
+      1. Work entries are detached AND stamped with the project's id, code and
+         name in one write, so the link is never lost even if a later step
+         fails (and the project is still there to retry).
+      2. Deliverables and their approvals go next.
+      3. The project document goes last, so a half-finished delete is still
+         visible in the app instead of leaving orphans nobody can find."""
+    project_id = existing["id"]
+
+    await db.work_items.update_many(
+        {"project_id": project_id},
+        {
+            "$set": {
+                "deleted_project_id": project_id,
+                "deleted_project_code": existing.get("code"),
+                "deleted_project_name": existing.get("name"),
+                "project_id": None,
+                "deliverable_id": None,
+            }
+        },
+    )
+
+    deliverable_ids = [
+        d["id"]
+        for d in await db.deliverables.find(
+            {"project_id": project_id}, {"_id": 0, "id": 1}
+        ).to_list(None)
+    ]
+
+    await db.deliverables.delete_many({"project_id": project_id})
+    await _delete_approvals_for_deliverables(deliverable_ids)
+    await db.projects.delete_one({"id": project_id})
+
+    await log_activity(
+        collection_name="project_activity_log",
+        entity_id=project_id,
+        entity_field="project_id",
+        action="PROJECT_DELETED",
+        changed_by=user.id,
+        old_value={
+            "code": existing.get("code"),
+            "name": existing.get("name"),
+            "client_id": existing.get("client_id"),
+            "start_date": existing.get("start_date"),
+            "end_date": existing.get("end_date"),
+            "status": existing.get("status"),
+        },
+    )
+
+
 @api_router.post("/projects/bulk-delete")
 async def bulk_delete_projects(payload: BulkProjectIdsPayload, request: Request):
     user = await require_admin(request)
@@ -6430,27 +6578,12 @@ async def bulk_delete_projects(payload: BulkProjectIdsPayload, request: Request)
             detail="No projects selected"
         )
 
-    # Preserve historical work entries.
-    await db.work_items.update_many(
-        {"project_id": {"$in": project_ids}},
-        {
-            "$set": {
-                "project_id": None,
-                "deliverable_id": None,
-            }
-        },
-    )
+    projects = await db.projects.find(
+        {"id": {"$in": project_ids}}, {"_id": 0}
+    ).to_list(None)
 
-    deliverable_ids = [
-        d["id"]
-        for d in await db.deliverables.find(
-            {"project_id": {"$in": project_ids}}, {"_id": 0, "id": 1}
-        ).to_list(20000)
-    ]
-
-    await db.projects.delete_many({"id": {"$in": project_ids}})
-    await db.deliverables.delete_many({"project_id": {"$in": project_ids}})
-    await _delete_approvals_for_deliverables(deliverable_ids)
+    for existing in projects:
+        await _delete_project_and_children(existing, user)
 
     return {
         "success": True,
@@ -6473,45 +6606,7 @@ async def delete_project(project_id: str, request: Request):
             detail="Project not found"
         )
 
-    # Preserve historical work entries.
-    # Remove their references to this project/deliverables,
-    # but NEVER delete the work entries themselves.
-    await db.work_items.update_many(
-        {"project_id": project_id},
-        {
-            "$set": {
-                "project_id": None,
-                "deliverable_id": None,
-            }
-        },
-    )
-
-    deliverable_ids = [
-        d["id"]
-        for d in await db.deliverables.find(
-            {"project_id": project_id}, {"_id": 0, "id": 1}
-        ).to_list(5000)
-    ]
-
-    await db.projects.delete_one({"id": project_id})
-    await db.deliverables.delete_many({"project_id": project_id})
-    await _delete_approvals_for_deliverables(deliverable_ids)
-
-    await log_activity(
-        collection_name="project_activity_log",
-        entity_id=project_id,
-        entity_field="project_id",
-        action="PROJECT_DELETED",
-        changed_by=user.id,
-        old_value={
-            "code": existing.get("code"),
-            "name": existing.get("name"),
-            "client_id": existing.get("client_id"),
-            "start_date": existing.get("start_date"),
-            "end_date": existing.get("end_date"),
-            "status": existing.get("status"),
-        },
-    )
+    await _delete_project_and_children(existing, user)
 
     return {"success": True}
 
@@ -8329,6 +8424,7 @@ _planning_router = create_planning_router(
     get_acting_user=get_acting_user,
     create_work_item=create_work_item,
     create_work_item_for_user_id=_create_work_item_for_user_id,
+    create_work_item_for_task=_create_work_item_for_task,
     work_item_create_model=WorkItemCreate,
     department_to_stage=DEPARTMENT_TO_STAGE,
     deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,
@@ -8465,10 +8561,19 @@ async def server_timing_middleware(request: Request, call_next):
 # part of the page-load time.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
+# Cookies are sent cross-site (SameSite=None), so CORS must name the real
+# frontend origin(s). Starlette answers a wildcard by echoing back whichever
+# origin sent a cookie, which would let any website call the API as the user.
+# CORS_ORIGINS wins; otherwise FRONTEND_URL (already required for reset links);
+# the wildcard is only the last resort and is logged loudly.
+_cors_raw = os.environ.get("CORS_ORIGINS") or os.environ.get("FRONTEND_URL") or "*"
+_cors_origins = [o.strip().rstrip("/") for o in _cors_raw.split(",") if o.strip()] or ["*"]
+_cors_wildcard = "*" in _cors_origins
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -8478,6 +8583,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+if _cors_wildcard:
+    logger.warning(
+        "CORS is open to every origin with credentials. Set CORS_ORIGINS to the "
+        "frontend address(es), e.g. https://your-app.vercel.app"
+    )
 
 
 async def migrate_project_kanban_order():
@@ -8658,6 +8768,18 @@ async def run_startup_migrations():
     await db.work_items.create_index([("project_id", 1)])
     await db.work_items.create_index([("deliverable_id", 1)])
     await db.work_items.create_index([("month", 1)])
+    # One Work Sheet row per accepted WhatsApp task. Partial, so every row that
+    # did not come from a task is ignored. If old data already holds a duplicate
+    # the index cannot build; that is logged and start-up carries on, and the
+    # code path still checks source_task_id before inserting.
+    try:
+        await db.work_items.create_index(
+            "source_task_id",
+            unique=True,
+            partialFilterExpression={"source_task_id": {"$type": "string"}},
+        )
+    except Exception:
+        logger.exception("Could not create the unique source_task_id index (duplicates already exist?)")
     # Collaborators: one row per (person, piece of work). The partial unique
     # index is what makes tagging idempotent when two requests race - rows
     # that are not collaborator copies have no collab_key and are not covered.

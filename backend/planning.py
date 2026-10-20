@@ -423,6 +423,7 @@ def create_planning_router(
     log_error: Optional[Callable[[str], None]] = None,
     clock: Optional[Callable[[], datetime]] = None,
     create_work_item_for_user_id: Optional[Callable[..., Awaitable[Any]]] = None,
+    create_work_item_for_task: Optional[Callable[..., Awaitable[Any]]] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/planning", tags=["planning"])
     items = db[ITEMS]
@@ -713,14 +714,19 @@ def create_planning_router(
             remarks=remarks,
             status="Not Started",
         )
-        if request is not None:
-            created = await create_work_item(payload, request)
+        if create_work_item_for_task is not None:
+            # source_task_id is part of the insert itself (and unique), so there
+            # is no window where the row exists without it.
+            created = await create_work_item_for_task(user.id, payload, item["id"])
         else:
-            created = await create_work_item_for_user_id(user.id, payload)
-        await db.work_items.update_one(
-            {"id": created.id},
-            {"$set": {"source": "whatsapp_task", "source_task_id": item["id"]}},
-        )
+            if request is not None:
+                created = await create_work_item(payload, request)
+            else:
+                created = await create_work_item_for_user_id(user.id, payload)
+            await db.work_items.update_one(
+                {"id": created.id},
+                {"$set": {"source": "whatsapp_task", "source_task_id": item["id"]}},
+            )
         return created.id
 
     @router.post("/my-tasks/{task_id}/accept")

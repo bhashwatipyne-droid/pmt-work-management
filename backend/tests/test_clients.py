@@ -1,4 +1,5 @@
 """Clients and contact persons (clients.py), on an in-memory database."""
+import asyncio
 import os
 import sys
 
@@ -10,6 +11,14 @@ from mongomock_motor import AsyncMongoMockClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from clients import create_clients_router, validate_contact_phone  # noqa: E402
+
+
+def _run(coro):
+    loop = asyncio.new_event_loop()  # never touch the shared default loop
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 @pytest.fixture()
@@ -66,13 +75,11 @@ def test_update_validates_status(env):
 def test_delete_is_refused_with_an_active_project_then_detaches_finished_ones(env):
     c, db, logged = env
     cid = c.post("/clients", json={"name": "A"}, headers=ADMIN).json()["id"]
-    import asyncio
-
-    asyncio.run(db.projects.insert_one({"id": "p1", "client_id": cid, "status": "Active", "poc_id": "x"}))
+    _run(db.projects.insert_one({"id": "p1", "client_id": cid, "status": "Active", "poc_id": "x"}))
     assert c.delete(f"/clients/{cid}", headers=ADMIN).status_code == 400
-    asyncio.run(db.projects.update_one({"id": "p1"}, {"$set": {"status": "Completed"}}))
+    _run(db.projects.update_one({"id": "p1"}, {"$set": {"status": "Completed"}}))
     assert c.delete(f"/clients/{cid}", headers=ADMIN).json() == {"success": True}
-    p = asyncio.run(db.projects.find_one({"id": "p1"}))
+    p = _run(db.projects.find_one({"id": "p1"}))
     assert p["client_id"] is None and p["poc_id"] is None
     assert logged and logged[0]["action"] == "CLIENT_DELETED"
 
@@ -88,13 +95,11 @@ def test_contact_lifecycle_and_phone_rules(env):
     assert r.json()["designation"] == "CFO"
     assert c.patch(f"/clients/{cid}/contacts/missing", json={"name": "x"}, headers=ADMIN).status_code == 404
 
-    import asyncio
-
-    asyncio.run(db.projects.insert_one({"id": "p1", "poc_id": contact["id"]}))
+    _run(db.projects.insert_one({"id": "p1", "poc_id": contact["id"]}))
     assert c.delete(f"/clients/{cid}/contacts/{contact['id']}", headers=ADMIN).status_code == 400
-    asyncio.run(db.projects.delete_one({"id": "p1"}))
+    _run(db.projects.delete_one({"id": "p1"}))
     assert c.delete(f"/clients/{cid}/contacts/{contact['id']}", headers=ADMIN).status_code == 200
-    assert asyncio.run(db.clients.find_one({"id": cid}))["contact_persons"] == []
+    assert _run(db.clients.find_one({"id": cid}))["contact_persons"] == []
 
 
 def test_phone_validator():

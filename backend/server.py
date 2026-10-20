@@ -70,6 +70,68 @@ try:
     from dashboard_routes import create_dashboard_router  # noqa: F401
     from notification_routes import create_notification_router  # noqa: F401
     from lookups import create_lookups_router  # noqa: F401
+    from constants import (  # noqa: F401
+        APPROVAL_STATUSES,
+        APPROVAL_TYPES,
+        DELIVERABLE_TYPES,
+        DELIVERABLE_TYPE_UNITS,
+        DEPARTMENTS,
+        HR_ALLOWED_PREFIXES,
+        MAX_UNIT_ROWS,
+        MEMBER_FORWARD_STATUSES,
+        PROJECT_LIST_LIMIT,
+        PROJECT_STATUSES,
+        ROLES,
+        STAGE_STATUSES,
+        STATUSES,
+        UNIT_ROWS_DEPARTMENT,
+        WORK_CATEGORIES,
+        search_clauses,
+    )
+    from models import (  # noqa: F401
+        BulkCreatePayload,
+        BulkDeletePayload,
+        BulkProjectIdsPayload,
+        BulkProjectStatusPayload,
+        BulkUpdatePayload,
+        Deliverable,
+        DeliverableInput,
+        Project,
+        ProjectCreate,
+        ProjectReorderPayload,
+        ProjectUpdate,
+        User,
+        UserCreate,
+        UserUpdate,
+        WorkItem,
+        WorkItemCreate,
+        WorkItemUpdate,
+    )
+    from security import (  # noqa: F401
+        ACCESS_TOKEN_HOURS,
+        JWT_ALGORITHM,
+        MEMBER_APPROVAL_STAGE_SCOPE,
+        _USER_CACHE_TTL_SECONDS,
+        _activity_doc,
+        _approvals_view_all,
+        _invalidate_cached_user,
+        _member_approval_stage,
+        _member_can_view_approval,
+        _user_cache,
+        can_user_create_stage,
+        create_access_token,
+        gen_project_code,
+        get_acting_user,
+        get_user_department,
+        get_user_role,
+        hash_password,
+        log_activity,
+        require_admin,
+        require_approver,
+        require_manager,
+        require_manager_or_admin,
+        verify_password,
+    )
     from clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -167,6 +229,68 @@ except ImportError:
     from backend.dashboard_routes import create_dashboard_router  # noqa: F401
     from backend.notification_routes import create_notification_router  # noqa: F401
     from backend.lookups import create_lookups_router  # noqa: F401
+    from backend.constants import (  # noqa: F401
+        APPROVAL_STATUSES,
+        APPROVAL_TYPES,
+        DELIVERABLE_TYPES,
+        DELIVERABLE_TYPE_UNITS,
+        DEPARTMENTS,
+        HR_ALLOWED_PREFIXES,
+        MAX_UNIT_ROWS,
+        MEMBER_FORWARD_STATUSES,
+        PROJECT_LIST_LIMIT,
+        PROJECT_STATUSES,
+        ROLES,
+        STAGE_STATUSES,
+        STATUSES,
+        UNIT_ROWS_DEPARTMENT,
+        WORK_CATEGORIES,
+        search_clauses,
+    )
+    from backend.models import (  # noqa: F401
+        BulkCreatePayload,
+        BulkDeletePayload,
+        BulkProjectIdsPayload,
+        BulkProjectStatusPayload,
+        BulkUpdatePayload,
+        Deliverable,
+        DeliverableInput,
+        Project,
+        ProjectCreate,
+        ProjectReorderPayload,
+        ProjectUpdate,
+        User,
+        UserCreate,
+        UserUpdate,
+        WorkItem,
+        WorkItemCreate,
+        WorkItemUpdate,
+    )
+    from backend.security import (  # noqa: F401
+        ACCESS_TOKEN_HOURS,
+        JWT_ALGORITHM,
+        MEMBER_APPROVAL_STAGE_SCOPE,
+        _USER_CACHE_TTL_SECONDS,
+        _activity_doc,
+        _approvals_view_all,
+        _invalidate_cached_user,
+        _member_approval_stage,
+        _member_can_view_approval,
+        _user_cache,
+        can_user_create_stage,
+        create_access_token,
+        gen_project_code,
+        get_acting_user,
+        get_user_department,
+        get_user_role,
+        hash_password,
+        log_activity,
+        require_admin,
+        require_approver,
+        require_manager,
+        require_manager_or_admin,
+        verify_password,
+    )
     from backend.clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -248,608 +372,6 @@ async def cached_read(key: str, compute, ttl: Optional[float] = None):
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
-
-# ---------------- Constants ----------------
-DELIVERABLE_TYPES = [
-    # Core
-    "Other Initiatives",
-    "Client Meets & Discussions",
-    "Team Reviews and Feedback",
-    "Campaign Ideation Plan (Includes Keywords)",
-    "Campaign Ideation Plan (Quantitative Analysis)",
-    "Campaign Ideation Plan (Content Peer Analysis)",
-    "Campaign Ideation Plan (Key Visuals / Taglines)",
-    "Teaser",
-    "Minimalist",
-    "Emailers",
-    "Newsletters",
-    "Carousel",
-    "One Pager / Infographic",
-    "Brochure",
-    "Booklet",
-    "Presentation (PPT) - Per Slide",
-    "Typeform / Polls / Quiz",
-    "Collateral",
-    "GIF",
-    "Reel / Short Video",
-    "Long Video",
-    "Video Storyboard",
-    "Poster",
-    "Data Research and Analysis (SMI)",
-    "Data Research and Analysis (Web)",
-    "Data Updation",
-    "Changes",
-    "Two Pager",
-    "Teaser Short Video",
-
-    # Non-Core
-    "Project Briefing",
-    "Campaign Ideation Discussions",
-    "Clarity / Query / Doubt / Feedback Discussions",
-    "Core Team / Content Team / CEO Discussions",
-    "Trainings / Committee / Reviews Meetings",
-    "SOP and Process Improvements - Documentation",
-    "Hiring and Interviews",
-    "Follow Up (Over 10-15 mins)",
-]
-
-WORK_CATEGORIES = ["Core", "Non-Core"]
-
-# Deliverable types that are measured one unit at a time (the "Activity
-# Potential" unit basis). Value = what one unit is called; the Work Sheet's Qty
-# column uses it to say "23 slides" / "4 pages" (Animate rows always count
-# scenes instead). The older "one row per unit" endpoint reads it too.
-DELIVERABLE_TYPE_UNITS = {
-    "Presentation (PPT) - Per Slide": "Slide",
-    "Carousel": "Slide",
-    "Reel / Short Video": "Reel",
-    "Booklet": "Page",
-    "Brochure": "Page",
-    "Two Pager": "Page",
-    "Video Storyboard": "Frame",
-    "Teaser": "Video",
-    "Teaser Short Video": "Video",
-    "Long Video": "Video",
-    "Poster": "Post",
-    "Minimalist": "Post",
-    "GIF": "GIF",
-}
-MAX_UNIT_ROWS = 100
-# Only this department gets the per-unit editor (members and managers).
-UNIT_ROWS_DEPARTMENT = "Design"
-
-STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review", "Changes Requested", "Rework", "Closed", "Scrap"]
-# "On Hold" is a pause a member can set on their own row (e.g. waiting on a
-# client), same as Ongoing/Ready for Review - it does not need a reviewer.
-# "Scrap" is work thrown away; the row's owner can set it without a review.
-MEMBER_FORWARD_STATUSES = ["Not Started", "Ongoing", "On Hold", "Ready for Review", "Scrap"]
-PROJECT_STATUSES = [
-    "Active",
-    "Approval Pending",
-    "Completed",
-    "Ready for Invoice",
-    "Raised Invoice",
-    "On Hold",
-    "Scrapped",
-]
-# How many projects one list call may return. The Projects board, the Work
-# Sheet pickers and the command palette all want the whole portfolio; a low
-# default (it used to be 100) silently hid every project past the newest 100.
-PROJECT_LIST_LIMIT = 5000
-
-
-def search_clauses(search: str, fields: List[str]) -> List[dict]:
-    """Forgiving text search: one clause per word typed, each of which must
-    match one of `fields`. Punctuation and spacing in the query are ignored,
-    and the words may sit apart in the stored text, so "absl -spl" finds
-    "ABSL - SPL Campaign". Returns [] when the query has no searchable words."""
-    words = re.findall(r"\w+", search or "", re.UNICODE)[:8]
-    return [
-        {"$or": [{f: {"$regex": re.escape(w), "$options": "i"}} for f in fields]}
-        for w in words
-    ]
-
-
-STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
-DEPARTMENTS = ["Content", "Design", "Animation", "Administration"]
-# "hr" (Finance) is its own role, separate from admin, manager and member: it only
-# sees the invoicing screens (see HR_ALLOWED_PREFIXES) and is not part of the
-# production team, so it is left out of team, efficiency and workload lists.
-ROLES = ["admin", "manager", "member", "hr"]
-HR_ALLOWED_PREFIXES = (
-    "/api/auth/",
-    "/api/invoicing/",
-    "/api/notifications",
-    "/api/push/",
-    "/api/config/",
-)
-APPROVAL_TYPES = ["MANAGER", "LEADERSHIP", "CLIENT_SPOC", "COMPLIANCE"]
-APPROVAL_STATUSES = ["NOT_STARTED", "PENDING", "APPROVED", "CHANGES_REQUESTED"]
-
-# ---------------- Models ----------------
-class User(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    name: str
-    username: Optional[str] = ""
-    role: str
-    email: Optional[str] = ""
-    department: Optional[str] = ""
-    active: Optional[bool] = True
-
-
-class UserCreate(BaseModel):
-    name: str
-    username: str
-    email: str
-    password: str
-    role: str
-    department: Optional[str] = ""
-    active: Optional[bool] = True
-
-
-class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    username: Optional[str] = None
-    email: Optional[str] = None
-    password: Optional[str] = None
-    role: Optional[str] = None
-    department: Optional[str] = None
-    active: Optional[bool] = None
-
-
-class WorkItem(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    work_date: str
-    month: str
-    deliverable_name: str = ""
-    deliverable_type: str = ""
-    deliverable_link: str = ""
-    work_category: str = "Core"
-    version: str = ""
-    time_taken_minutes: float = 0
-    # Where time_taken_minutes came from. "auto" = filled from the worker's
-    # own benchmark (efficiency_employee_targets.time_per_unit_minutes) for the
-    # chosen deliverable type; "manual" = typed by a person. Server-managed:
-    # clients cannot set it (it is not in WorkItemCreate/WorkItemUpdate).
-    time_source: str = "manual"
-    # The benchmark that applied when the type was chosen, kept so the UI can
-    # show how far an edited time is from it. None = no benchmark exists.
-    time_benchmark_minutes: Optional[float] = None
-    # Design/Animate rows: how many units (slides, pages, scenes...) this one
-    # row covers, e.g. 23 for a 23-slide deck. Efficiency counts it for Closed
-    # rows. Always 1 for any other stage.
-    quantity: float = 1.0
-    # Minutes per unit, in order (None = not logged yet). Empty when the row
-    # has no per-unit breakdown. When any is logged, time_taken_minutes is
-    # their total (see apply_quantity_rules).
-    quantity_items: List[Optional[float]] = Field(default_factory=list)
-    # Campaign Ideation Plan rows (Content) only: every deliverable of the row's
-    # project that this one row covers, in the order they were ticked.
-    # deliverable_id is always the first; quantity is the number of
-    # deliverables and quantity_items[i] is the time for deliverable_ids[i]
-    # (see apply_deliverable_list_rules). Empty on every other row.
-    deliverable_ids: List[str] = Field(default_factory=list)
-    # Animate rows only: length of the finished video. SECONDS are the source
-    # of truth; the minutes field is kept in step (seconds / 60) for older
-    # readers and rows saved before seconds existed (see the validator below).
-    video_duration_seconds: Optional[int] = None
-    video_duration_minutes: Optional[float] = None
-    creator_id: Optional[str] = None
-    reviewer_id: Optional[str] = None
-    manager_id: Optional[str] = None
-    client_id: Optional[str] = None
-    project_id: Optional[str] = None
-    deliverable_id: Optional[str] = None
-    # True when the user picked "Not available" in the Deliverable dropdown
-    # (the project has no matching deliverable yet). Kept separate from
-    # deliverable_id so every existing join on deliverable_id keeps working.
-    deliverable_not_available: bool = False
-    stage: Optional[str] = None
-    remarks: str = ""
-    status: str = "Not Started"
-    # Collaborators: when one person tags teammates on an entry, each teammate
-    # gets their own row (own time, own status) and every row of that entry
-    # shares collab_group_id. Server-managed - clients cannot set these.
-    collab_group_id: Optional[str] = None
-    collab_source_id: Optional[str] = None  # the row this copy was made from
-    collab_added_by: Optional[str] = None  # user who tagged this person
-    created_at: str
-    updated_at: str
-
-    @model_validator(mode="after")
-    def _fill_video_duration_seconds(self):
-        # Rows saved before seconds existed only carry minutes.
-        if self.video_duration_seconds is None and self.video_duration_minutes is not None:
-            self.video_duration_seconds = int(round(self.video_duration_minutes * 60))
-        return self
-
-
-class WorkItemCreate(BaseModel):
-    work_date: Optional[str] = None
-    deliverable_name: Optional[str] = ""
-    deliverable_type: Optional[str] = ""
-    deliverable_link: Optional[str] = ""
-    work_category: Optional[str] = "Core"
-    version: Optional[str] = ""
-    time_taken_minutes: Optional[float] = 0
-    quantity: Optional[float] = 1.0
-    quantity_items: Optional[List[Optional[float]]] = None
-    deliverable_ids: Optional[List[str]] = None
-    video_duration_seconds: Optional[float] = None
-    video_duration_minutes: Optional[float] = None
-    creator_id: Optional[str] = None
-    reviewer_id: Optional[str] = None
-    manager_id: Optional[str] = None
-    client_id: Optional[str] = None
-    project_id: Optional[str] = None
-    deliverable_id: Optional[str] = None
-    deliverable_not_available: Optional[bool] = False
-    stage: Optional[str] = None
-    remarks: Optional[str] = ""
-    status: Optional[str] = "Not Started"
-
-
-class WorkItemUpdate(BaseModel):
-    work_date: Optional[str] = None
-    deliverable_name: Optional[str] = None
-    deliverable_type: Optional[str] = None
-    deliverable_link: Optional[str] = None
-    work_category: Optional[str] = None
-    version: Optional[str] = None
-    time_taken_minutes: Optional[float] = None
-    quantity: Optional[float] = None
-    quantity_items: Optional[List[Optional[float]]] = None
-    deliverable_ids: Optional[List[str]] = None
-    video_duration_seconds: Optional[float] = None
-    video_duration_minutes: Optional[float] = None
-    creator_id: Optional[str] = None
-    reviewer_id: Optional[str] = None
-    manager_id: Optional[str] = None
-    client_id: Optional[str] = None
-    project_id: Optional[str] = None
-    deliverable_id: Optional[str] = None
-    deliverable_not_available: Optional[bool] = None
-    stage: Optional[str] = None
-    remarks: Optional[str] = None
-    status: Optional[str] = None
-
-
-class BulkUpdatePayload(BaseModel):
-    ids: List[str]
-    patch: WorkItemUpdate
-
-
-class BulkDeletePayload(BaseModel):
-    ids: List[str]
-
-
-class BulkCreatePayload(BaseModel):
-    count: int = 100
-    template: Optional[WorkItemCreate] = None
-
-
-class BulkProjectIdsPayload(BaseModel):
-    project_ids: List[str]
-
-
-class BulkProjectStatusPayload(BaseModel):
-    project_ids: List[str]
-    status: str
-
-
-class ProjectReorderPayload(BaseModel):
-    project_id: str
-    target_status: str
-    target_index: int = 0
-
-
-class DeliverableInput(BaseModel):
-    name: str
-    type: Optional[str] = ""
-    start_dt: Optional[str] = None
-    end_dt: Optional[str] = None
-    # Per-stage deadline windows, e.g. {"Content": {"start_dt": "2026-09-22",
-    # "end_dt": "2026-09-24"}, "Design": {...}}. When given, this is what the
-    # overall start_dt/end_dt above are derived from (see
-    # derive_deliverable_dates) - a stage need not have an entry, in which
-    # case that stage's deadline simply isn't tracked yet.
-    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
-    required_stages: List[str] = Field(
-        default_factory=lambda: ["Content"]
-    )
-    approval_types: Optional[List[str]] = None
-    current_stage: Optional[str] = None
-
-
-class ProjectCreate(BaseModel):
-    name: str
-    client_id: str
-    # One line the team sees when picking the project on the Work Sheet,
-    # e.g. "Oct 2026 edition, Gujarati versions" - tells similar projects apart.
-    description: Optional[str] = ""
-    # Selected contact person for this project
-    poc_id: Optional[str] = None
-    # Both dates are optional: a project can be created before its window is known.
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    status: Optional[str] = "Active"
-    deliverables: Optional[List[DeliverableInput]] = []
-
-
-class ProjectUpdate(BaseModel):
-    name: Optional[str] = None
-    client_id: Optional[str] = None
-    description: Optional[str] = None
-    # Selected contact person for this project
-    poc_id: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    status: Optional[str] = None
-
-
-class Project(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    code: str
-    name: str
-    client_id: str
-    description: str = ""
-    # Selected contact person for this project
-    poc_id: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    status: str = "Active"
-
-    # Kanban ordering. Lower values render first within a status column.
-    kanban_order: int = 0
-    status_changed_at: Optional[str] = None
-
-    # Visibility
-    hidden: bool = False
-    hidden_at: Optional[str] = None
-    hidden_by: Optional[str] = None
-
-    created_at: str
-    updated_at: str
-
-
-class Deliverable(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    project_id: str
-    name: str
-    type: str = ""
-    # Always derived from stage_schedule when it has any entries (see
-    # derive_deliverable_dates) - not directly editable once a per-stage
-    # window exists. Kept for sorting, the overdue-deadline job, and any
-    # deliverable that only has the old-style single overall range.
-    start_dt: Optional[str] = None
-    end_dt: Optional[str] = None
-    # Per-stage deadline window: {"Content": {"start_dt": ..., "end_dt": ...}}.
-    # A stage with no entry here has no tracked deadline.
-    stage_schedule: Dict[str, Dict[str, Optional[str]]] = Field(default_factory=dict)
-    required_stages: List[str] = Field(
-        default_factory=lambda: ["Content"]
-    )
-    current_stage: str = "Content"
-    stage_status: str = "Not Started"
-    approval_types: List[str] = Field(default_factory=list)
-    created_at: str
-    updated_at: str
-
-
-# ---------------- Auth helpers ----------------
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_HOURS = 24
-
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    if not hashed_password:
-        return False
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
-
-
-def create_access_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_HOURS)}
-    return jwt.encode(payload, os.environ["JWT_SECRET"], algorithm=JWT_ALGORITHM)
-
-
-# ---------------- Helpers ----------------
-# Every authenticated request used to start with a users.find_one round trip to
-# the database. Repeated polls and page loads from the same person now reuse the
-# document for a short time. Any write to the users collection below drops the
-# entry, so the only lag is for changes made by another server instance
-# (bounded by the TTL).
-_USER_CACHE_TTL_SECONDS = 30
-_user_cache: dict = {}
-
-
-def _invalidate_cached_user(user_id: Optional[str] = None) -> None:
-    if user_id is None:
-        _user_cache.clear()
-    else:
-        _user_cache.pop(user_id, None)
-
-
-async def get_acting_user(request: Request) -> User:
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, os.environ["JWT_SECRET"], algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Session expired, please log in again")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid session")
-    user_id = payload["sub"]
-    cached = _user_cache.get(user_id)
-    if cached and cached[0] > time.monotonic():
-        doc = cached[1]
-    else:
-        doc = await db.users.find_one({"id": user_id}, {"_id": 0})
-        if doc:
-            _user_cache[user_id] = (time.monotonic() + _USER_CACHE_TTL_SECONDS, doc)
-    if not doc:
-        raise HTTPException(status_code=401, detail="User not found")
-    if not doc.get("active", True):
-        raise HTTPException(status_code=401, detail="Account deactivated")
-    if doc.get("role") == "hr" and not request.url.path.startswith(HR_ALLOWED_PREFIXES):
-        # HR works only in invoicing; keep every production endpoint closed to it.
-        raise HTTPException(status_code=403, detail="HR accounts can only use invoicing")
-    return User(**doc)
-
-
-def _activity_doc(
-    entity_id: str,
-    action: str,
-    changed_by: str,
-    old_value=None,
-    new_value=None,
-    metadata=None,
-    entity_field: str = "entity_id",
-) -> dict:
-    return {
-        "id": str(uuid.uuid4()),
-        entity_field: entity_id,
-        "action": action,
-        "old_value": old_value,
-        "new_value": new_value,
-        "changed_by": changed_by,
-        "changed_at": now_iso(),
-        "metadata": metadata or {},
-    }
-
-
-async def log_activity(
-    collection_name: str,
-    entity_id: str,
-    action: str,
-    changed_by: str,
-    old_value=None,
-    new_value=None,
-    metadata=None,
-    entity_field: str = "entity_id",
-):
-    activity = _activity_doc(
-        entity_id,
-        action,
-        changed_by,
-        old_value=old_value,
-        new_value=new_value,
-        metadata=metadata,
-        entity_field=entity_field,
-    )
-
-    await db[collection_name].insert_one(activity)
-
-
-def gen_project_code() -> str:
-    return "proj" + "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
-
-
-
-async def require_admin(request: Request) -> User:
-    user = await get_acting_user(request)
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access only")
-    return user
-
-
-async def require_manager(request: Request) -> User:
-    """Manager-only actions (approvals, efficiency capacity). Admins and members
-    can open those screens read-only but cannot act."""
-    user = await get_acting_user(request)
-    if user.role != "manager":
-        raise HTTPException(
-            status_code=403,
-            detail="Only managers can take this action"
-        )
-    return user
-
-
-def _approvals_view_all(user: User) -> bool:
-    """Admins and members see every pending approval. Admins can also act on
-    them; members are read-only. Managers see the queue they can actually act
-    on (see _approval_item_can_act)."""
-    return user.role in ("admin", "member")
-
-
-# Members of these departments only see approvals for deliverables currently
-# in their own production stage (e.g. the Content team sees Content approvals
-# only). Department -> stage.
-MEMBER_APPROVAL_STAGE_SCOPE = {"Content": "Content"}
-
-
-def _member_approval_stage(user: User) -> Optional[str]:
-    """The only stage a member may see approvals for, or None if unscoped."""
-    if user.role != "member":
-        return None
-    return MEMBER_APPROVAL_STAGE_SCOPE.get(user.department or "")
-
-
-def _member_can_view_approval(user: User, deliverable: Optional[dict]) -> bool:
-    stage = _member_approval_stage(user)
-    if stage is None:
-        return True
-    return bool(deliverable) and deliverable.get("current_stage", "Content") == stage
-
-
-async def require_approver(request: Request) -> User:
-    """Approvals actions (approve, move, hide). Managers and admins
-    may act; members stay read-only."""
-    user = await get_acting_user(request)
-    if user.role not in {"manager", "admin"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Only managers and admins can take this action"
-        )
-    return user
-
-
-async def require_manager_or_admin(request: Request) -> User:
-    user = await get_acting_user(request)
-    if user.role not in {"admin", "manager"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Manager or admin access required"
-        )
-    return user
-
-
-
-def can_user_create_stage(user: User, stage: str) -> bool:
-    if user.role == "admin":
-        return False
-
-    user_stage = DEPARTMENT_TO_STAGE.get(user.department)
-
-    # Managers and members can create rows only for their own department.
-    return bool(user_stage and stage == user_stage)
-
-
-async def get_user_department(user_id: Optional[str]) -> Optional[str]:
-    if not user_id:
-        return None
-    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "department": 1})
-    return doc.get("department") if doc else None
-
-
-async def get_user_role(user_id: Optional[str]) -> Optional[str]:
-    if not user_id:
-        return None
-    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
-    return doc.get("role") if doc else None
-
 
 # ---------------- Routes ----------------
 @api_router.get("/")

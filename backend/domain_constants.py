@@ -63,3 +63,5 @@ DEPARTMENT_TO_STAGE = {
     "Design": "Design",
     "Animation": "Animate",
 }
+
+CLIENT_STATUSES = ["Active", "Inactive"]

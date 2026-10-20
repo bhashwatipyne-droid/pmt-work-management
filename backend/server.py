@@ -36,6 +36,7 @@ from datetime import datetime, timezone, timedelta
 
 try:
     # Works when the working directory is backend/ (e.g. `uvicorn server:app`)
+    from clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
     from invoicing import create_invoicing_router  # noqa: F401
@@ -48,6 +49,7 @@ try:
     from ttl_cache import VersionedTTLCache  # noqa: F401
     from db_client import client, db  # noqa: F401
     from domain_constants import (  # noqa: F401
+        CLIENT_STATUSES,
         DELIVERABLE_TYPE_CATEGORIES,
         DEPARTMENT_TO_STAGE,
         DONE_STATUSES,
@@ -95,6 +97,7 @@ try:
 except ImportError:
     # Works when uvicorn imports this as a package member from the repo root
     # (e.g. Render's `uvicorn backend.server:app`)
+    from backend.clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
     from backend.invoicing import create_invoicing_router  # noqa: F401
@@ -107,6 +110,7 @@ except ImportError:
     from backend.ttl_cache import VersionedTTLCache  # noqa: F401
     from backend.db_client import client, db  # noqa: F401
     from backend.domain_constants import (  # noqa: F401
+        CLIENT_STATUSES,
         DELIVERABLE_TYPE_CATEGORIES,
         DEPARTMENT_TO_STAGE,
         DONE_STATUSES,
@@ -454,7 +458,6 @@ def derive_deliverable_dates(
 
 
 STAGE_STATUSES = ["Not Started", "In Progress", "Ready for Review", "Changes Requested", "Completed"]
-CLIENT_STATUSES = ["Active", "Inactive"]
 DEPARTMENTS = ["Content", "Design", "Animation", "Administration"]
 # "hr" (Finance) is its own role, separate from admin, manager and member: it only
 # sees the invoicing screens (see HR_ALLOWED_PREFIXES) and is not part of the
@@ -648,26 +651,6 @@ class ProjectReorderPayload(BaseModel):
     project_id: str
     target_status: str
     target_index: int = 0
-
-
-class Client(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: f"client-{uuid.uuid4().hex[:8]}")
-    name: str
-    # Legacy field - kept temporarily for backward compatibility
-    contact_person: str = ""
-    # New multiple-contact structure
-    contact_persons: List[dict] = Field(default_factory=list)
-    status: str = "Active"
-
-
-class ClientCreate(BaseModel):
-    name: str
-    # Legacy field - kept temporarily for backward compatibility
-    contact_person: Optional[str] = ""
-    # New multiple-contact structure
-    contact_persons: Optional[List[dict]] = Field(default_factory=list)
-    status: Optional[str] = "Active"
 
 
 class DeliverableInput(BaseModel):
@@ -4072,12 +4055,6 @@ async def migrate_client_contacts():
 
 
 # ---------------- Clients ----------------
-@api_router.get("/clients", response_model=List[Client])
-async def list_clients(request: Request):
-    await get_acting_user(request)
-    return await db.clients.find({}, {"_id": 0}).sort("name", 1).to_list(None)
-
-
 @api_router.get("/worksheet/deliverable-names")
 async def worksheet_deliverable_names(request: Request):
     """project_id -> lowercase deliverable names, for the Projects page search.
@@ -4148,316 +4125,6 @@ async def worksheet_lookups(request: Request):
         "projects": projects,
         "deliverables": deliverables,
     }
-
-
-@api_router.post("/clients", response_model=Client)
-async def create_client(payload: ClientCreate, request: Request):
-    await require_admin(request)
-    c = Client(**payload.model_dump())
-    await db.clients.insert_one(c.model_dump())
-    return c
-
-
-class ClientUpdate(BaseModel):
-    name: Optional[str] = None
-    # Legacy field - kept temporarily for backward compatibility
-    contact_person: Optional[str] = None
-    # New multiple-contact structure
-    contact_persons: Optional[List[dict]] = None
-    status: Optional[str] = None
-
-
-@api_router.patch("/clients/{client_id}", response_model=Client)
-async def update_client(client_id: str, payload: ClientUpdate, request: Request):
-    await require_admin(request)
-    existing = await db.clients.find_one({"id": client_id}, {"_id": 0})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Client not found")
-    update_fields = payload.model_dump(exclude_unset=True)
-    if "status" in update_fields and update_fields["status"] not in CLIENT_STATUSES:
-        raise HTTPException(status_code=400, detail="Invalid client status")
-    await db.clients.update_one({"id": client_id}, {"$set": update_fields})
-    return Client(**{**existing, **update_fields})
-
-
-@api_router.delete("/clients/{client_id}")
-async def delete_client(
-    client_id: str,
-    request: Request
-):
-    user = await require_admin(request)
-
-    client = await db.clients.find_one(
-        {"id": client_id},
-        {"_id": 0}
-    )
-
-    if not client:
-        raise HTTPException(
-            status_code=404,
-            detail="Client not found"
-        )
-
-    # Do not allow deletion while the client has active projects.
-    active_projects = await db.projects.find(
-        {
-            "client_id": client_id,
-            "status": {"$ne": "Completed"},
-        },
-        {
-            "_id": 0,
-            "id": 1,
-            "name": 1,
-            "code": 1,
-            "status": 1,
-        },
-    ).to_list(100)
-
-    if active_projects:
-        raise HTTPException(
-            status_code=400,
-            detail="This client has active projects. Complete them before deleting the client."
-        )
-
-    # Preserve completed projects and ALL historical work entries.
-    # Only detach completed projects from this client.
-    await db.projects.update_many(
-        {"client_id": client_id},
-        {
-            "$set": {
-                "client_id": None,
-                "poc_id": None,
-            }
-        },
-    )
-
-    await db.clients.delete_one(
-        {"id": client_id}
-    )
-
-    await log_activity(
-        collection_name="project_activity_log",
-        entity_id=client_id,
-        entity_field="client_id",
-        action="CLIENT_DELETED",
-        changed_by=user.id,
-        old_value={
-            "name": client.get("name"),
-            "status": client.get("status"),
-            "contact_persons": client.get("contact_persons") or [],
-        },
-    )
-
-    return {"success": True}
-
-
-_PHONE_ALLOWED_RE = re.compile(r"^\+?[0-9\s\-()]+$")
-
-
-def validate_contact_phone(phone: Optional[str]) -> str:
-    """Return the trimmed phone number, or raise 400 if it is not a plausible
-    one: digits with an optional leading +, spaces/dashes/brackets allowed,
-    7-15 digits in all. Empty is fine - phone is optional."""
-    text = (phone or "").strip()
-    if not text:
-        return ""
-    digits = re.sub(r"\D", "", text)
-    if not _PHONE_ALLOWED_RE.match(text) or not 7 <= len(digits) <= 15:
-        raise HTTPException(
-            status_code=400,
-            detail="Enter a valid phone number (7-15 digits; only numbers, +, spaces, - and brackets)",
-        )
-    return text
-
-
-class ContactPersonCreate(BaseModel):
-    name: str
-    email: Optional[str] = ""
-    phone: Optional[str] = ""
-    designation: Optional[str] = ""
-
-
-class ContactPersonUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    designation: Optional[str] = None
-
-
-@api_router.post("/clients/{client_id}/contacts")
-async def create_contact_person(
-    client_id: str,
-    payload: ContactPersonCreate,
-    request: Request
-):
-    await require_admin(request)
-
-    client = await db.clients.find_one(
-        {"id": client_id},
-        {"_id": 0}
-    )
-
-    if not client:
-        raise HTTPException(
-            status_code=404,
-            detail="Client not found"
-        )
-
-    if not payload.name.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Contact name is required"
-        )
-
-    contact = {
-        "id": f"contact-{uuid.uuid4().hex[:8]}",
-        "name": payload.name.strip(),
-        "email": (payload.email or "").strip(),
-        "phone": validate_contact_phone(payload.phone),
-        "designation": (payload.designation or "").strip(),
-    }
-
-    existing_contacts = client.get("contact_persons") or []
-
-    await db.clients.update_one(
-        {"id": client_id},
-        {
-            "$push": {
-                "contact_persons": contact
-            }
-        }
-    )
-
-    return contact
-
-
-@api_router.patch("/clients/{client_id}/contacts/{contact_id}")
-async def update_contact_person(
-    client_id: str,
-    contact_id: str,
-    payload: ContactPersonUpdate,
-    request: Request
-):
-    await require_admin(request)
-
-    client = await db.clients.find_one(
-        {"id": client_id},
-        {"_id": 0}
-    )
-
-    if not client:
-        raise HTTPException(
-            status_code=404,
-            detail="Client not found"
-        )
-
-    contacts = client.get("contact_persons") or []
-
-    contact = next(
-        (c for c in contacts if c.get("id") == contact_id),
-        None
-    )
-
-    if not contact:
-        raise HTTPException(
-            status_code=404,
-            detail="Contact person not found"
-        )
-
-    update_fields = payload.model_dump(exclude_unset=True)
-
-    if "name" in update_fields:
-        if not update_fields["name"].strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Contact name is required"
-            )
-        update_fields["name"] = update_fields["name"].strip()
-
-    for field in ["email", "phone", "designation"]:
-        if field in update_fields and update_fields[field] is not None:
-            update_fields[field] = update_fields[field].strip()
-
-    if update_fields.get("phone"):
-        update_fields["phone"] = validate_contact_phone(update_fields["phone"])
-
-    for field, value in update_fields.items():
-        await db.clients.update_one(
-            {
-                "id": client_id,
-                "contact_persons.id": contact_id
-            },
-            {
-                "$set": {
-                    f"contact_persons.$.{field}": value
-                }
-            }
-        )
-
-    updated_client = await db.clients.find_one(
-        {"id": client_id},
-        {"_id": 0}
-    )
-
-    updated_contact = next(
-        c for c in updated_client.get("contact_persons", [])
-        if c.get("id") == contact_id
-    )
-
-    return updated_contact
-
-
-@api_router.delete("/clients/{client_id}/contacts/{contact_id}")
-async def delete_contact_person(
-    client_id: str,
-    contact_id: str,
-    request: Request
-):
-    await require_admin(request)
-
-    client = await db.clients.find_one(
-        {"id": client_id},
-        {"_id": 0}
-    )
-
-    if not client:
-        raise HTTPException(
-            status_code=404,
-            detail="Client not found"
-        )
-
-    contacts = client.get("contact_persons") or []
-
-    if not any(c.get("id") == contact_id for c in contacts):
-        raise HTTPException(
-            status_code=404,
-            detail="Contact person not found"
-        )
-
-    # Don't allow deletion if a project is currently using this POC.
-    project_using_contact = await db.projects.find_one(
-        {"poc_id": contact_id},
-        {"_id": 0}
-    )
-
-    if project_using_contact:
-        raise HTTPException(
-            status_code=400,
-            detail="This contact is assigned to a project. Reassign the project before deleting the contact."
-        )
-
-    await db.clients.update_one(
-        {"id": client_id},
-        {
-            "$pull": {
-                "contact_persons": {
-                    "id": contact_id
-                }
-            }
-        }
-    )
-
-    return {"message": "Contact person deleted"}
 
 
 # ---------------- Notifications routes ----------------
@@ -7715,6 +7382,15 @@ api_router.include_router(
 
 # WhatsApp tasklists -> task cards, Planning page and Work Sheet rows. Accepting
 # a task goes through create_work_item(), so every Work Sheet rule applies.
+api_router.include_router(
+    create_clients_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        require_admin=require_admin,
+        log_activity=log_activity,
+    )
+)
+
 _planning_router = create_planning_router(
     db=db,
     get_acting_user=get_acting_user,

@@ -989,3 +989,25 @@ def test_stale_row_close_can_be_turned_off(env, monkeypatch):
     monkeypatch.setattr(server, "STALE_ROW_AUTO_CLOSE_HOURS", 0)
     assert run(server.auto_close_stale_rows()) == 0
     assert run(server.db.work_items.find_one({"id": "old"}))["status"] == "Ongoing"
+
+
+# ------------------------------------------------- read cache on polled counts
+
+def test_pending_count_is_cached_but_any_write_request_refreshes_it(env):
+    """The sidebar badge is polled by every open tab: repeated reads share one
+    answer, yet a person's own write request must show up on the very next read."""
+    server.read_cache.clear()
+    user = run(server.db.users.find_one({"id": "member-rb"}, {"_id": 0}))
+    stage = server.DEPARTMENT_TO_STAGE.get(user["department"])
+
+    def count():
+        return env.get("/work-items/pending-count", "member-rb").json()["count"]
+
+    before = count()
+    # A row written behind the app's back (like a background job or the listener)
+    run(server.db.work_items.insert_one({
+        "id": "cache-probe-1", "status": "Not Started", "stage": stage, "creator_id": "member-rb",
+    }))
+    assert count() == before          # still the cached answer
+    env.post("/auth/logout", "member-rb")   # any non-GET request drops the cache
+    assert count() == before + 1

@@ -129,13 +129,26 @@ def create_home_dashboard_router(
     require_admin,
     deliverable_required_for,
     time_gated_statuses,
+    cached_read=None,
 ) -> APIRouter:
+    """cached_read(key, compute, ttl=None) is optional: when given, the two
+    dashboard reads below are served from it (they run a dozen queries each)."""
     router = APIRouter()
+
+    async def cached(key, compute, ttl=60):
+        if cached_read is None:
+            return await compute()
+        return await cached_read(key, compute, ttl)
 
     @router.get("/dashboard/home")
     async def dashboard_home(request: Request, month: Optional[str] = Query(None)):
         await require_admin(request)
+        return await cached(
+            f"dashboard-home:{month or ''}:{datetime.now(IST).date().isoformat()}",
+            lambda: build_dashboard_home(month),
+        )
 
+    async def build_dashboard_home(month: Optional[str]):
         today = datetime.now(IST).date()
         this_month = today.strftime("%Y-%m")
         month = month or this_month
@@ -559,7 +572,12 @@ def create_home_dashboard_router(
     @router.get("/dashboard/team-activity")
     async def dashboard_team_activity(request: Request):
         await require_admin(request)
+        return await cached(
+            f"dashboard-team-activity:{datetime.now(IST).date().isoformat()}",
+            build_team_activity,
+        )
 
+    async def build_team_activity():
         today = datetime.now(IST).date()
         today_s = today.isoformat()
 

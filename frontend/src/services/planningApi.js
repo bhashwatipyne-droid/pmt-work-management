@@ -17,9 +17,12 @@ import { toast } from "sonner";
 
 import { API } from "@/services/api";
 
-// New WhatsApp tasklists should show up within seconds, not minutes. Polling
-// only runs while the tab is visible (see tick), so a short interval is cheap.
-const POLL_MS = 10 * 1000;
+// New WhatsApp tasklists should show up within a minute. Polling only runs
+// while the tab is visible (see tick). The task cards are polled by every
+// signed-in person all day, so they get the slower interval; the Planning page
+// is only open for managers who are looking at it.
+const TICK_MS = 10 * 1000;
+const SCOPE_MS = { plan: 20 * 1000, cards: 30 * 1000 };
 
 const listeners = new Set();
 
@@ -108,27 +111,40 @@ const REFRESH = { plan: refreshPlan, cards: refreshCards };
 const watchers = { plan: 0, cards: 0 };
 let timer = null;
 
-const tick = () => {
+const lastRun = { plan: 0, cards: 0 };
+
+const runScope = (scope) => {
+  lastRun[scope] = Date.now();
+  REFRESH[scope]();
+};
+
+// force: the person just came back to the tab, so catch up straight away.
+const tick = (force) => {
   if (document.hidden) return;
+  const now = Date.now();
   Object.keys(watchers).forEach((scope) => {
-    if (watchers[scope] > 0) REFRESH[scope]();
+    if (watchers[scope] > 0 && (force === true || now - lastRun[scope] >= SCOPE_MS[scope])) {
+      runScope(scope);
+    }
   });
 };
 
+const catchUp = () => tick(true);
+
 const startWatching = (scope) => {
   watchers[scope] += 1;
-  REFRESH[scope]();
+  runScope(scope);
   if (!timer) {
-    timer = setInterval(tick, POLL_MS);
-    window.addEventListener("focus", tick);
-    document.addEventListener("visibilitychange", tick);
+    timer = setInterval(tick, TICK_MS);
+    window.addEventListener("focus", catchUp);
+    document.addEventListener("visibilitychange", catchUp);
   }
   return () => {
     watchers[scope] -= 1;
     if (Object.values(watchers).every((n) => n <= 0) && timer) {
       clearInterval(timer);
-      window.removeEventListener("focus", tick);
-      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", catchUp);
+      document.removeEventListener("visibilitychange", catchUp);
       timer = null;
     }
   };

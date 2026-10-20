@@ -45,6 +45,7 @@ try:
     from meetings import calendar_sync_loop, create_meetings_router, ensure_meeting_indexes  # noqa: F401
     import deliverable_import  # noqa: F401
     import project_duplicates  # noqa: F401
+    from ttl_cache import VersionedTTLCache  # noqa: F401
 except ImportError:
     # Works when uvicorn imports this as a package member from the repo root
     # (e.g. Render's `uvicorn backend.server:app`)
@@ -57,6 +58,7 @@ except ImportError:
     from backend.meetings import calendar_sync_loop, create_meetings_router, ensure_meeting_indexes  # noqa: F401
     from backend import deliverable_import  # noqa: F401
     from backend import project_duplicates  # noqa: F401
+    from backend.ttl_cache import VersionedTTLCache  # noqa: F401
 
 
 ROOT_DIR = Path(__file__).parent
@@ -75,6 +77,20 @@ client = AsyncIOMotorClient(
     maxPoolSize=int(os.environ.get("MONGO_MAX_POOL_SIZE", "50")),
 )
 db = client[os.environ['DB_NAME']]
+
+# Short-lived cache for the read endpoints the browser polls and for the heavy
+# dashboard reads (see ttl_cache.py). Dropped on every write request, and by
+# time for writes that bypass requests (background sweeps, the WhatsApp listener).
+# Set READ_CACHE_SECONDS=0 to switch it off.
+READ_CACHE_SECONDS = float(os.environ.get("READ_CACHE_SECONDS", "30"))
+read_cache = VersionedTTLCache(ttl=READ_CACHE_SECONDS)
+
+
+async def cached_read(key: str, compute, ttl: Optional[float] = None):
+    """compute() through the read cache (straight through when it is off)."""
+    if READ_CACHE_SECONDS <= 0:
+        return await compute()
+    return await read_cache.get_or_compute(key, compute, ttl)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -3063,9 +3079,14 @@ async def _content_rows_with_real_creator():
     """Mongo clause that hides Content-stage work items whose creator is
     missing OR points at a user that no longer exists (both render as
     "Unassigned" on the Work Sheet). Other stages are untouched."""
-    user_ids = [
-        u["id"] async for u in db.users.find({}, {"_id": 0, "id": 1}) if u.get("id")
-    ]
+    async def load_user_ids():
+        return [
+            u["id"] async for u in db.users.find({}, {"_id": 0, "id": 1}) if u.get("id")
+        ]
+
+    # Polled by every open tab (the sidebar badge) and used by every Work Sheet
+    # load, while the user list almost never changes.
+    user_ids = await cached_read("user-ids", load_user_ids, ttl=60)
     return {
         "$or": [
             {"stage": {"$ne": "Content"}},
@@ -3083,19 +3104,20 @@ async def work_items_pending_count(request: Request):
     see the total across every stage."""
     user = await get_acting_user(request)
 
-    query = {
-        "status": {"$nin": list(DONE_STATUSES)},
-        # Unassigned Content rows are hidden from the sheet, so don't count them.
-        **(await _content_rows_with_real_creator()),
-    }
+    stage = None if user.role == "admin" else DEPARTMENT_TO_STAGE.get(user.department)
 
-    if user.role != "admin":
-        stage = DEPARTMENT_TO_STAGE.get(user.department)
+    async def compute():
+        query = {
+            "status": {"$nin": list(DONE_STATUSES)},
+            # Unassigned Content rows are hidden from the sheet, so don't count them.
+            **(await _content_rows_with_real_creator()),
+        }
         if stage:
             query["stage"] = stage
+        return {"count": await db.work_items.count_documents(query)}
 
-    count = await db.work_items.count_documents(query)
-    return {"count": count}
+    # The answer depends only on the stage, so everyone in a team shares one.
+    return await cached_read(f"wi-pending:{stage or 'all'}", compute)
 
 
 @api_router.get("/work-items", response_model=List[WorkItem])
@@ -4552,6 +4574,12 @@ async def dashboard_overview(request: Request):
     await require_admin(request)
 
     today = datetime.now(timezone.utc).date()
+    return await cached_read(
+        f"dashboard-overview:{today.isoformat()}", lambda: _dashboard_overview(today)
+    )
+
+
+async def _dashboard_overview(today) -> dict:
     week_end = today + timedelta(days=7)
 
     project_status_task = db.projects.aggregate([
@@ -5657,6 +5685,14 @@ async def list_projects(
 @api_router.get("/projects/metrics")
 async def project_metrics(request: Request):
     await get_acting_user(request)
+    today = datetime.now(timezone.utc).date()
+    # Same numbers for everyone, and they depend on the day: one shared copy.
+    return await cached_read(
+        f"project-metrics:{today.isoformat()}", lambda: _project_metrics(today)
+    )
+
+
+async def _project_metrics(today) -> dict:
     # Only two fields per project are needed, and the deliverable total is
     # just a count - this used to download every project and every
     # deliverable document (capped at 5000) only to take len() of the list.
@@ -5665,7 +5701,6 @@ async def project_metrics(request: Request):
         db.projects.find({}, {"_id": 0, "status": 1, "end_date": 1}).to_list(None),
         db.deliverables.count_documents({}),
     )
-    today = datetime.now(timezone.utc).date()
     week_end = today + timedelta(days=7)
     active = sum(1 for p in projects if p.get("status") == "Active")
     in_rework = sum(1 for p in projects if p.get("status") == "In Rework")
@@ -7364,8 +7399,10 @@ async def bulk_review_count(request: Request):
     # Managers and admins only see work explicitly assigned to them as reviewer.
     query = {"status": "Ready for Review", "reviewer_id": user.id}
 
-    count = await db.work_items.count_documents(query)
-    return {"count": count}
+    async def compute():
+        return {"count": await db.work_items.count_documents(query)}
+
+    return await cached_read(f"bulk-review-count:{user.id}", compute)
 
 
 @api_router.get("/bulk-review")
@@ -7656,6 +7693,14 @@ async def approval_pending_count(request: Request):
     one batched deliverable lookup instead of full board hydration."""
     user = await get_acting_user(request)
 
+    # Heaviest call the sidebar polls, and a person's own actions drop the cache
+    # (see read_cache.bump), so the badge still updates the moment they act.
+    return await cached_read(
+        f"approvals-pending:{user.id}", lambda: _approval_pending_count(user)
+    )
+
+
+async def _approval_pending_count(user: User) -> dict:
     query = _approval_visibility_query(user, "visible")
 
     async def explicit_count() -> int:
@@ -8405,6 +8450,7 @@ api_router.include_router(
     create_home_dashboard_router(
         db=db,
         require_admin=require_admin,
+        cached_read=cached_read,
         deliverable_required_for=deliverable_required_for,
         time_gated_statuses=TIME_GATED_STATUSES,
     )
@@ -8438,7 +8484,13 @@ async def server_timing_middleware(request: Request, call_next):
     anything slower than 800ms is written to the server log, so slow endpoints
     can be told apart from a slow network."""
     started = time.perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    finally:
+        # Any request that may have written data drops the read cache, so the
+        # person who just changed something never reads a stale count back.
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            read_cache.bump()
     elapsed_ms = (time.perf_counter() - started) * 1000
     response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.0f}"
     # Bandwidth diagnostics: content-length here is the size BEFORE gzip, so

@@ -235,3 +235,54 @@ async def get_user_role(user_id: Optional[str]) -> Optional[str]:
         return None
     doc = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
     return doc.get("role") if doc else None
+
+
+# Failed-login throttle. Kept in this process's memory (no extra collection or
+# dependency), so each server instance counts on its own and a restart clears it:
+# it stops casual password guessing, it is not a distributed lockout.
+LOGIN_MAX_FAILS_PER_LOGIN = int(os.environ.get("LOGIN_MAX_FAILS_PER_LOGIN", "5"))
+LOGIN_MAX_FAILS_PER_IP = int(os.environ.get("LOGIN_MAX_FAILS_PER_IP", "30"))
+LOGIN_FAIL_WINDOW_SECONDS = int(os.environ.get("LOGIN_FAIL_WINDOW_SECONDS", "900"))
+_login_fails: dict = {}
+
+
+def _client_ip(request: Request) -> str:
+    # Behind Render/Vercel the real caller is the first X-Forwarded-For entry.
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _recent_fails(key: str, now_s: float) -> list:
+    cutoff = now_s - LOGIN_FAIL_WINDOW_SECONDS
+    recent = [t for t in _login_fails.get(key, []) if t > cutoff]
+    if recent:
+        _login_fails[key] = recent
+    else:
+        _login_fails.pop(key, None)
+    return recent
+
+
+def _check_login_throttle(ip: str, login: str) -> None:
+    now_s = time.monotonic()
+    by_login = _recent_fails(f"login:{ip}:{login}", now_s)
+    by_ip = _recent_fails(f"ip:{ip}", now_s)
+    if len(by_login) >= LOGIN_MAX_FAILS_PER_LOGIN or len(by_ip) >= LOGIN_MAX_FAILS_PER_IP:
+        oldest = min(by_login or by_ip)
+        retry_after = max(1, int(LOGIN_FAIL_WINDOW_SECONDS - (now_s - oldest)))
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed sign-in attempts. Try again in a few minutes.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _record_login_failure(ip: str, login: str) -> None:
+    now_s = time.monotonic()
+    _login_fails.setdefault(f"login:{ip}:{login}", []).append(now_s)
+    _login_fails.setdefault(f"ip:{ip}", []).append(now_s)
+    if len(_login_fails) > 5000:
+        # Bound memory: drop entries whose attempts have all aged out.
+        for key in list(_login_fails):
+            _recent_fails(key, now_s)

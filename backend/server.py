@@ -132,6 +132,53 @@ try:
         require_manager_or_admin,
         verify_password,
     )
+    from security import (  # noqa: F401
+        LOGIN_MAX_FAILS_PER_LOGIN,
+        LOGIN_MAX_FAILS_PER_IP,
+        LOGIN_FAIL_WINDOW_SECONDS,
+        _login_fails,
+        _client_ip,
+        _recent_fails,
+        _check_login_throttle,
+        _record_login_failure,
+    )
+    from models import (  # noqa: F401
+        DeliverableCreate,
+        DeliverableUpdate,
+        ApprovalWorkflowCreate,
+        ApprovalDecision,
+        ApprovalMove,
+        BulkApprovalItemIdsPayload,
+    )
+    from approval_helpers import (  # noqa: F401
+        _approval_item_can_act,
+        _complete_approval_workflow,
+        _create_or_sync_approval_workflow,
+        _delete_approvals_for_deliverables,
+        _get_approval_workflow,
+        _hydrate_approval_items,
+        _new_approval_item,
+        _new_approval_workflow,
+        _normalize_approval_types,
+        _notify_stage_handoff,
+        _notify_stage_handoff_safe,
+        _set_approval_items_pending,
+    )
+    from project_helpers import (  # noqa: F401
+        _build_deliverable_batch,
+        _generate_unique_project_code,
+        _hydrate_project,
+        _hydrate_projects,
+        _move_project_to_status,
+        _notify_new_project_safely,
+        _persist_deliverable_batch,
+        _place_new_project_at_top,
+        _project_code_exists_query,
+        _projects_touched_since,
+        _reindex_project_status,
+        _rollback_deliverable_batch,
+        _rollback_new_project,
+    )
     from clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -291,6 +338,53 @@ except ImportError:
         require_manager_or_admin,
         verify_password,
     )
+    from backend.security import (  # noqa: F401
+        LOGIN_MAX_FAILS_PER_LOGIN,
+        LOGIN_MAX_FAILS_PER_IP,
+        LOGIN_FAIL_WINDOW_SECONDS,
+        _login_fails,
+        _client_ip,
+        _recent_fails,
+        _check_login_throttle,
+        _record_login_failure,
+    )
+    from backend.models import (  # noqa: F401
+        DeliverableCreate,
+        DeliverableUpdate,
+        ApprovalWorkflowCreate,
+        ApprovalDecision,
+        ApprovalMove,
+        BulkApprovalItemIdsPayload,
+    )
+    from backend.approval_helpers import (  # noqa: F401
+        _approval_item_can_act,
+        _complete_approval_workflow,
+        _create_or_sync_approval_workflow,
+        _delete_approvals_for_deliverables,
+        _get_approval_workflow,
+        _hydrate_approval_items,
+        _new_approval_item,
+        _new_approval_workflow,
+        _normalize_approval_types,
+        _notify_stage_handoff,
+        _notify_stage_handoff_safe,
+        _set_approval_items_pending,
+    )
+    from backend.project_helpers import (  # noqa: F401
+        _build_deliverable_batch,
+        _generate_unique_project_code,
+        _hydrate_project,
+        _hydrate_projects,
+        _move_project_to_status,
+        _notify_new_project_safely,
+        _persist_deliverable_batch,
+        _place_new_project_at_top,
+        _project_code_exists_query,
+        _projects_touched_since,
+        _reindex_project_status,
+        _rollback_deliverable_batch,
+        _rollback_new_project,
+    )
     from backend.clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -389,57 +483,6 @@ class LoginResponse(User):
     # browser refuses the cross-site cookie (Incognito, Safari, Brave...), and
     # then sends it as "Authorization: Bearer" (see get_acting_user).
     access_token: Optional[str] = None
-
-
-# Failed-login throttle. Kept in this process's memory (no extra collection or
-# dependency), so each server instance counts on its own and a restart clears it:
-# it stops casual password guessing, it is not a distributed lockout.
-LOGIN_MAX_FAILS_PER_LOGIN = int(os.environ.get("LOGIN_MAX_FAILS_PER_LOGIN", "5"))
-LOGIN_MAX_FAILS_PER_IP = int(os.environ.get("LOGIN_MAX_FAILS_PER_IP", "30"))
-LOGIN_FAIL_WINDOW_SECONDS = int(os.environ.get("LOGIN_FAIL_WINDOW_SECONDS", "900"))
-_login_fails: dict = {}
-
-
-def _client_ip(request: Request) -> str:
-    # Behind Render/Vercel the real caller is the first X-Forwarded-For entry.
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
-def _recent_fails(key: str, now_s: float) -> list:
-    cutoff = now_s - LOGIN_FAIL_WINDOW_SECONDS
-    recent = [t for t in _login_fails.get(key, []) if t > cutoff]
-    if recent:
-        _login_fails[key] = recent
-    else:
-        _login_fails.pop(key, None)
-    return recent
-
-
-def _check_login_throttle(ip: str, login: str) -> None:
-    now_s = time.monotonic()
-    by_login = _recent_fails(f"login:{ip}:{login}", now_s)
-    by_ip = _recent_fails(f"ip:{ip}", now_s)
-    if len(by_login) >= LOGIN_MAX_FAILS_PER_LOGIN or len(by_ip) >= LOGIN_MAX_FAILS_PER_IP:
-        oldest = min(by_login or by_ip)
-        retry_after = max(1, int(LOGIN_FAIL_WINDOW_SECONDS - (now_s - oldest)))
-        raise HTTPException(
-            status_code=429,
-            detail="Too many failed sign-in attempts. Try again in a few minutes.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-
-def _record_login_failure(ip: str, login: str) -> None:
-    now_s = time.monotonic()
-    _login_fails.setdefault(f"login:{ip}:{login}", []).append(now_s)
-    _login_fails.setdefault(f"ip:{ip}", []).append(now_s)
-    if len(_login_fails) > 5000:
-        # Bound memory: drop entries whose attempts have all aged out.
-        for key in list(_login_fails):
-            _recent_fails(key, now_s)
 
 
 @api_router.post("/work-items", response_model=WorkItem)
@@ -790,630 +833,6 @@ def _start_notification_scans():
     if _notification_scan_task is not None and not _notification_scan_task.done():
         return
     _notification_scan_task = asyncio.create_task(_run_notification_scans())
-
-
-# ---------------- Projects ----------------
-def _project_code_exists_query(code: str) -> dict:
-    return {"code": code}
-
-
-async def _generate_unique_project_code() -> str:
-    for _ in range(10):
-        code = gen_project_code()
-        if not await db.projects.find_one(_project_code_exists_query(code), {"_id": 0}):
-            return code
-    return gen_project_code()
-
-
-async def _reindex_project_status(status: str, ordered_ids: Optional[List[str]] = None):
-    """Persist a contiguous Kanban order for one status column."""
-    if ordered_ids is None:
-        projects = await db.projects.find(
-            {"status": status},
-            {"_id": 0, "id": 1, "kanban_order": 1, "created_at": 1},
-        ).sort([("kanban_order", 1), ("created_at", -1)]).to_list(5000)
-        ordered_ids = [p["id"] for p in projects]
-
-    if not ordered_ids:
-        return
-
-    await db.projects.bulk_write([
-        UpdateOne(
-            {"id": project_id, "status": status},
-            {"$set": {"kanban_order": index}},
-        )
-        for index, project_id in enumerate(ordered_ids)
-    ])
-
-
-async def _place_new_project_at_top(project_id: str, status: str):
-    """Put a just-created project (already inserted with kanban_order 0) at the
-    top of its status column.
-
-    _move_project_to_status does this by reading the whole column and then
-    rewriting every project's kanban_order one update at a time - hundreds of
-    writes, each a collection scan, on every single create. Shifting the other
-    projects down by one gives the same order in one operation. Falls back to
-    the full re-index if the shift cannot be applied."""
-    try:
-        # A pipeline update, so a missing or null kanban_order counts as 0
-        # instead of making the whole shift fail part-way through.
-        await db.projects.update_many(
-            {"status": status, "id": {"$ne": project_id}},
-            [{"$set": {"kanban_order": {"$add": [{"$ifNull": ["$kanban_order", 0]}, 1]}}}],
-        )
-    except Exception:
-        logger.exception("Fast kanban shift failed; falling back to full re-index")
-        await _move_project_to_status(project_id, status, 0)
-
-
-async def _move_project_to_status(project_id: str, new_status: str, target_index: int = 0):
-    project = await db.projects.find_one({"id": project_id}, {"_id": 0, "status": 1})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    old_status = project.get("status") or new_status
-
-    statuses = [old_status] if old_status == new_status else [old_status, new_status]
-    columns = {}
-
-    for status in statuses:
-        rows = await db.projects.find(
-            {"status": status},
-            {"_id": 0, "id": 1, "kanban_order": 1, "created_at": 1},
-        ).sort([("kanban_order", 1), ("created_at", -1)]).to_list(5000)
-        columns[status] = [row["id"] for row in rows if row.get("id") != project_id]
-
-    if old_status != new_status:
-        target_ids = columns[new_status]
-        target_index = max(0, min(target_index, len(target_ids)))
-        target_ids.insert(target_index, project_id)
-
-        await db.projects.update_one(
-            {"id": project_id},
-            {
-                "$set": {
-                    "status": new_status,
-                    "status_changed_at": now_iso(),
-                    "kanban_order": target_index,
-                    "updated_at": now_iso(),
-                }
-            },
-        )
-
-        await _reindex_project_status(old_status, columns[old_status])
-        await _reindex_project_status(new_status, target_ids)
-        return old_status
-
-    ids = columns[old_status]
-    target_index = max(0, min(target_index, len(ids)))
-    ids.insert(target_index, project_id)
-    await _reindex_project_status(old_status, ids)
-    return old_status
-
-
-async def _hydrate_projects(projects: list, include_deliverables: bool = True) -> list:
-    return await projects_read.hydrate_projects(db, projects, include_deliverables)
-
-
-async def _hydrate_project(p: dict) -> dict:
-    return await projects_read.hydrate_project(db, p)
-
-
-async def _projects_touched_since(client_id: Optional[str], since: datetime) -> list:
-    return await projects_read.projects_touched_since(db, client_id, since)
-
-
-def _build_deliverable_batch(project_id: str, specs: list, changed_by: str, ts: str):
-    """Build every document needed to create a batch of deliverables, without
-    touching the database. `specs` items carry: name, type, required_stages
-    (already normalized), approval_types, and optionally stage_schedule
-    (per-stage {start_dt, end_dt}), current_stage (defaults to the first
-    stage), start_dt/end_dt (used only when stage_schedule is absent), and
-    finished (skips straight to Completed with nothing pending - see the
-    "finished" branch below). Raises HTTPException on a bad approval type, a
-    bad stage schedule, or a current_stage outside the deliverable's own
-    stages - before anything has been written."""
-    deliverable_docs: list = []
-    workflow_docs: list = []
-    item_docs: list = []
-    activity_docs: list = []
-    for spec in specs:
-        approval_types = spec.get("approval_types") or []
-        normalized_types = _normalize_approval_types(approval_types)
-        stages = spec["required_stages"]
-
-        stage_schedule = normalize_stage_schedule(stages, spec.get("stage_schedule"))
-        if stage_schedule:
-            start_dt, end_dt = derive_deliverable_dates(stages, stage_schedule)
-        else:
-            # No per-stage windows: keep whatever plain overall dates the
-            # caller supplied, unchanged (a deliverable can still exist with
-            # no deadline tracking at all).
-            start_dt, end_dt = spec.get("start_dt"), spec.get("end_dt")
-
-        # A deliverable can be created already fully done (e.g. historical
-        # data, or a project brought in from elsewhere) - it skips the normal
-        # "Ready for Review" approval entirely, same end state as one that
-        # was approved all the way through advance_deliverable_stage(). If no
-        # explicit current_stage was given for it, it belongs at the LAST of
-        # its own stages (it went all the way through), not the first.
-        finished = bool(spec.get("finished"))
-        current_stage = spec.get("current_stage") or (stages[-1] if finished else stages[0])
-        if current_stage not in stages:
-            raise HTTPException(
-                status_code=400,
-                detail=f'"{current_stage}" must be one of the deliverable\'s selected stages.',
-            )
-
-        stage_status = "Completed" if finished else "Ready for Review"
-
-        deliv = Deliverable(
-            project_id=project_id,
-            name=spec["name"],
-            type=spec.get("type") or "",
-            start_dt=start_dt,
-            end_dt=end_dt,
-            stage_schedule=stage_schedule,
-            required_stages=stages,
-            current_stage=current_stage,
-            stage_status=stage_status,
-            approval_types=approval_types,
-            created_at=ts,
-            updated_at=ts,
-        )
-        db_doc = deliv.model_dump()
-        db_doc.pop("approval_types", None)
-        deliverable_docs.append(db_doc)
-
-        # Manager approval always exists, even with no additional approval
-        # types selected. (Same documents _create_or_sync_approval_workflow
-        # would create one round trip at a time.) _new_approval_item already
-        # creates NOT_STARTED items rather than PENDING ones whenever
-        # stage_status isn't "Ready for Review", so a finished deliverable's
-        # items come out inert automatically; the workflow's own status is
-        # set to COMPLETED here to match what a naturally-finished deliverable
-        # looks like (see _complete_approval_workflow).
-        workflow = _new_approval_workflow(db_doc, normalized_types, ts)
-        if finished:
-            workflow["status"] = "COMPLETED"
-            workflow["completed_at"] = ts
-        workflow_docs.append(workflow)
-        item_docs.extend(
-            _new_approval_item(workflow["id"], db_doc, approval_type, ts)
-            for approval_type in normalized_types
-        )
-        activity_docs.append(_activity_doc(
-            deliv.id,
-            "DELIVERABLE_CREATED",
-            changed_by,
-            new_value={
-                "name": deliv.name,
-                "type": deliv.type,
-                "project_id": deliv.project_id,
-                "required_stages": deliv.required_stages,
-                "current_stage": deliv.current_stage,
-                "stage_status": deliv.stage_status,
-                "stage_schedule": deliv.stage_schedule,
-            },
-            entity_field="deliverable_id",
-        ))
-    return deliverable_docs, workflow_docs, item_docs, activity_docs
-
-
-async def _persist_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs):
-    """One insert per collection, however many deliverables there are."""
-    if not deliverable_docs:
-        return
-    await db.deliverables.insert_many([dict(doc) for doc in deliverable_docs])
-    await db.approval_workflows.insert_many(workflow_docs)
-    await db.approval_items.insert_many(item_docs)
-    await db.deliverable_activity_log.insert_many(activity_docs)
-
-
-async def _rollback_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs):
-    """Delete whatever part of a deliverable batch _persist_deliverable_batch got
-    written before failing, so a retry starts from nothing. Every delete runs on
-    its own: one failing must not stop the rest."""
-    steps = [
-        db.approval_items.delete_many({"id": {"$in": [d["id"] for d in item_docs]}}),
-        db.approval_workflows.delete_many({"id": {"$in": [d["id"] for d in workflow_docs]}}),
-        db.deliverable_activity_log.delete_many({"id": {"$in": [d["id"] for d in activity_docs]}}),
-        db.deliverables.delete_many({"id": {"$in": [d["id"] for d in deliverable_docs]}}),
-    ]
-    for step in steps:
-        try:
-            await step
-        except Exception:
-            logger.exception("Rollback of a deliverable batch failed at one step")
-
-
-async def _rollback_new_project(project_id, deliverable_docs, workflow_docs, item_docs, activity_docs):
-    """Remove a project that create_project only half saved, with its batch."""
-    await _rollback_deliverable_batch(deliverable_docs, workflow_docs, item_docs, activity_docs)
-    for step in (
-        db.project_activity_log.delete_many({"project_id": project_id}),
-        db.projects.delete_one({"id": project_id}),
-    ):
-        try:
-            await step
-        except Exception:
-            logger.exception("Rollback of project %s failed at one step", project_id)
-
-
-async def _notify_new_project_safely(project: dict, deliverables: list[dict], **kwargs):
-    """Run _notify_new_project as a background task: it must never raise
-    into the event loop, and a notification problem must not be able to fail
-    a project that was already created."""
-    try:
-        await _notify_new_project(project, deliverables, **kwargs)
-    except Exception:
-        logger.exception("Could not send new-project notifications")
-
-
-# ---------------- Deliverables ----------------
-class DeliverableCreate(BaseModel):
-    project_id: str
-    name: str
-    type: Optional[str] = ""
-    start_dt: Optional[str] = None
-    end_dt: Optional[str] = None
-    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
-    required_stages: List[str] = Field(
-        default_factory=lambda: ["Content"]
-    )
-    approval_types: Optional[List[str]] = None
-    current_stage: Optional[str] = None
-
-
-class DeliverableUpdate(BaseModel):
-    name: Optional[str] = None
-    type: Optional[str] = None
-    start_dt: Optional[str] = None
-    end_dt: Optional[str] = None
-    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
-    required_stages: Optional[List[str]] = None
-    approval_types: Optional[List[str]] = None
-
-
-class ApprovalWorkflowCreate(BaseModel):
-    approval_types: List[str] = Field(default_factory=list)
-
-
-class ApprovalDecision(BaseModel):
-    note: Optional[str] = ""
-
-
-class ApprovalMove(BaseModel):
-    approval_type: str
-
-
-class BulkApprovalItemIdsPayload(BaseModel):
-    approval_item_ids: List[str]
-
-
-# ---------------- Approval helpers ----------------
-async def _get_approval_workflow(deliverable_id: str):
-    return await db.approval_workflows.find_one({"deliverable_id": deliverable_id}, {"_id": 0})
-
-
-def _normalize_approval_types(approval_types: Optional[List[str]]) -> List[str]:
-    """Manager approval is mandatory; any additional selected types are
-    optional and run independently, not sequentially."""
-    normalized = ["MANAGER"]
-    for value in approval_types or []:
-        value = str(value).upper().strip()
-        if value not in APPROVAL_TYPES:
-            raise HTTPException(status_code=400, detail=f"Invalid approval type: {value}")
-        if value not in normalized:
-            normalized.append(value)
-    return normalized
-
-
-def _new_approval_item(workflow_id: str, deliverable: dict, approval_type: str, ts: str) -> dict:
-    ready = deliverable.get("stage_status") == "Ready for Review"
-    return {"id": str(uuid.uuid4()), "approval_workflow_id": workflow_id, "deliverable_id": deliverable["id"], "approval_type": approval_type, "status": "PENDING" if ready else "NOT_STARTED", "assigned_to": None, "department": "Administration" if approval_type == "COMPLIANCE" else None, "requested_at": ts if ready else None, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "created_at": ts, "updated_at": ts}
-
-
-def _new_approval_workflow(deliverable: dict, normalized: List[str], ts: str) -> dict:
-    return {"id": str(uuid.uuid4()), "deliverable_id": deliverable["id"], "status": "NOT_STARTED", "required_types": normalized, "created_at": ts, "updated_at": ts}
-
-
-async def _create_or_sync_approval_workflow(deliverable: dict, approval_types: List[str], changed_by: Optional[str] = None):
-    normalized = _normalize_approval_types(approval_types)
-    workflow = await _get_approval_workflow(deliverable["id"])
-    ts = now_iso()
-    # Manager approval is added for new workflows, but a manager may have
-    # deliberately MOVED it to another queue (Leadership, Client SPOC...). The
-    # move drops MANAGER from the workflow's required_types. Saving the
-    # deliverable afterwards must not silently bring it back, or the card ends
-    # up needing both approvals. Only respected when the caller did not ask for
-    # MANAGER explicitly; if nothing else would remain, fall back to MANAGER.
-    if workflow:
-        explicitly_requested = {
-            str(t).upper().strip() for t in (approval_types or [])
-        }
-        if (
-            "MANAGER" not in (workflow.get("required_types") or [])
-            and "MANAGER" not in explicitly_requested
-        ):
-            normalized = [t for t in normalized if t != "MANAGER"] or ["MANAGER"]
-    if not normalized:
-        if workflow:
-            await db.approval_items.delete_many({"approval_workflow_id": workflow["id"]})
-            await db.approval_workflows.delete_one({"id": workflow["id"]})
-        return None
-    if not workflow:
-        workflow = _new_approval_workflow(deliverable, normalized, ts)
-        await db.approval_workflows.insert_one(workflow)
-    else:
-        await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"required_types": normalized, "updated_at": ts}})
-    existing = await db.approval_items.find({"approval_workflow_id": workflow["id"]}, {"_id": 0}).to_list(50)
-    existing_types = {x.get("approval_type") for x in existing}
-    for approval_type in normalized:
-        if approval_type not in existing_types:
-            await db.approval_items.insert_one(_new_approval_item(workflow["id"], deliverable, approval_type, ts))
-    await db.approval_items.delete_many({"approval_workflow_id": workflow["id"], "approval_type": {"$nin": normalized}})
-    return await _get_approval_workflow(deliverable["id"])
-
-
-async def _set_approval_items_pending(deliverable_id: str):
-    workflow = await _get_approval_workflow(deliverable_id)
-    if not workflow:
-        return
-    ts = now_iso()
-    # A new review round must always be visible. `hidden` is a per-round
-    # flag: a card the previous stage's reviewer hid must not stay hidden
-    # for the next stage's reviewer, or it never shows on their board.
-    await db.approval_items.update_many({"approval_workflow_id": workflow["id"]}, {"$set": {"status": "PENDING", "requested_at": ts, "approved_at": None, "sent_back_at": None, "approved_by": None, "sent_back_by": None, "comments": "", "hidden": False, "hidden_at": None, "hidden_by": None, "updated_at": ts}})
-    await db.approval_workflows.update_one({"id": workflow["id"]}, {"$set": {"status": "IN_PROGRESS", "updated_at": ts, "completed_at": None}})
-
-
-async def _complete_approval_workflow(deliverable_id: str):
-    """The deliverable has no stage left to review: park every approval item
-    and mark the workflow COMPLETED."""
-    workflow = await _get_approval_workflow(deliverable_id)
-    if not workflow:
-        return
-    ts = now_iso()
-    await db.approval_items.update_many(
-        {"approval_workflow_id": workflow["id"]},
-        {
-            "$set": {
-                "status": "NOT_STARTED",
-                "requested_at": None,
-                "approved_at": None,
-                "sent_back_at": None,
-                "approved_by": None,
-                "sent_back_by": None,
-                "comments": "",
-                "updated_at": ts,
-            }
-        },
-    )
-    await db.approval_workflows.update_one(
-        {"id": workflow["id"]},
-        {"$set": {"status": "COMPLETED", "completed_at": ts, "updated_at": ts}},
-    )
-
-
-async def _delete_approvals_for_deliverables(deliverable_ids: list[str]):
-    """Deleting a deliverable must also remove its approval workflow/items
-    and the notifications that point at it; otherwise they linger on the
-    Approvals board (shown with no name) and inflate its badge count. The
-    approval_history audit trail is intentionally kept."""
-    if not deliverable_ids:
-        return
-    await db.approval_items.delete_many({"deliverable_id": {"$in": deliverable_ids}})
-    await db.approval_workflows.delete_many({"deliverable_id": {"$in": deliverable_ids}})
-    await db.notifications.delete_many({"deliverable_id": {"$in": deliverable_ids}})
-
-
-# Approval queues that every manager can see and act on (MANAGER stays scoped
-# to the manager whose department owns the deliverable's current stage).
-
-
-async def _approval_item_can_act(user: User, item: dict, deliverable: dict) -> bool:
-    # Admins can act on any approval item. Members are view-only, and
-    # managers are scoped by the rules below.
-    if user.role == "admin":
-        return True
-    if user.role != "manager":
-        return False
-
-    # Explicitly assigned approvals belong only to the assigned user.
-    if item.get("assigned_to"):
-        return item.get("assigned_to") == user.id
-
-    approval_type = item.get("approval_type")
-
-    if approval_type == "MANAGER":
-        if user.role != "manager":
-            return False
-
-        # Manager approvals are scoped to the current production stage.
-        stage_to_department = {
-            "Content": "Content",
-            "Design": "Design",
-            "Animate": "Animation",
-        }
-
-        required_department = stage_to_department.get(
-            deliverable.get("current_stage")
-        )
-
-        return required_department == user.department
-
-    # Leadership, Client SPOC and Compliance are not tied to a production
-    # stage. Managers are the ones who move cards into these queues, and
-    # admins can't approve, so any manager may see and act on them.
-    if approval_type in ANY_MANAGER_APPROVAL_TYPES:
-        return True
-
-    return False
-
-
-async def _hydrate_approval_items(items: list[dict]) -> list[dict]:
-    if not items:
-        return []
-
-    deliverable_ids = list({
-        x.get("deliverable_id")
-        for x in items
-        if x.get("deliverable_id")
-    })
-
-    deliverables = {
-        d["id"]: d
-        for d in await db.deliverables.find(
-            {"id": {"$in": deliverable_ids}},
-            {"_id": 0},
-        ).to_list(len(deliverable_ids) or 1)
-    }
-
-    project_ids = list({
-        d.get("project_id")
-        for d in deliverables.values()
-        if d.get("project_id")
-    })
-
-    projects = {
-        p["id"]: p
-        for p in await db.projects.find(
-            {"id": {"$in": project_ids}},
-            {"_id": 0},
-        ).to_list(len(project_ids) or 1)
-    }
-
-    user_ids = list({
-        uid
-        for uid in (
-            [x.get("assigned_to") for x in items]
-        )
-        if uid
-    })
-
-    users = {
-        u["id"]: u
-        for u in await db.users.find(
-            {"id": {"$in": user_ids}},
-            {"_id": 0},
-        ).to_list(len(user_ids) or 1)
-    }
-
-    client_ids = list({
-        p.get("client_id")
-        for p in projects.values()
-        if p.get("client_id")
-    })
-
-    clients = {
-        c["id"]: c
-        for c in await db.clients.find(
-            {"id": {"$in": client_ids}},
-            {"_id": 0},
-        ).to_list(len(client_ids) or 1)
-    }
-
-    result = []
-
-    for item in items:
-        d = deliverables.get(item.get("deliverable_id"), {})
-        p = projects.get(d.get("project_id"), {})
-        assigned = users.get(item.get("assigned_to"), {})
-        client = clients.get(p.get("client_id"), {})
-
-        result.append({
-            **item,
-            "_deliverable": d,
-            "deliverable_name": d.get("name", ""),
-            "deliverable_type": d.get("type", ""),
-            "current_stage": d.get("current_stage", "Content"),
-            "stage_status": d.get("stage_status", "Not Started"),
-            "required_stages": d.get(
-                "required_stages", [d.get("current_stage", "Content")]
-            ),
-            # Deadline of the stage currently under review (falls back to the
-            # deliverable's overall end date for old-style deliverables).
-            "due_date": (
-                ((d.get("stage_schedule") or {}).get(d.get("current_stage")) or {}).get("end_dt")
-                or d.get("end_dt")
-            ),
-            "assigned_to_name": assigned.get("name", "Unassigned"),
-            "project_name": p.get("name", ""),
-            "project_code": p.get("code", ""),
-            "client_name": client.get("name", ""),
-        })
-
-    return result
-
-
-# ---------------- Approvals (deliverable review queue) ----------------
-async def _notify_stage_handoff(deliverable: dict, stage: str, ts: str):
-    """Tell the next stage's managers that a deliverable has just reached them.
-
-    Managers of that department get an "open Approvals" notice (the approval
-    card is already waiting on their board). Team members get nothing: this is
-    an approval notice and they cannot act on approvals. One notice per
-    manager per hand-off - the key includes the hand-off timestamp so a
-    deliverable that is sent back and approved again notifies them again.
-    """
-    departments = [
-        department
-        for department, dept_stage in DEPARTMENT_TO_STAGE.items()
-        if dept_stage == stage
-    ]
-    if not departments:
-        return
-
-    recipients = await db.users.find(
-        {
-            "active": {"$ne": False},
-            "role": "manager",
-            "department": {"$in": departments},
-        },
-        {"_id": 0, "id": 1, "role": 1},
-    ).to_list(1000)
-    if not recipients:
-        return
-
-    project = await db.projects.find_one(
-        {"id": deliverable.get("project_id")},
-        {"_id": 0, "id": 1, "name": 1, "client_id": 1},
-    ) or {}
-
-    label = f'{project.get("name", "Project")} · {deliverable.get("name", "Deliverable")}'
-    window_text = format_stage_window((deliverable.get("stage_schedule") or {}).get(stage))
-    due_note = f" Due {window_text}." if window_text else ""
-
-    notifications = []
-    for recipient in recipients:
-        notifications.append({
-            "id": str(uuid.uuid4()),
-            "user_id": recipient["id"],
-            "type": "stage_handoff",
-            "title": f"{stage} approval ready",
-            "message": f"{label} has moved to {stage} and is waiting in Approvals.{due_note}",
-            "project_id": deliverable.get("project_id"),
-            "deliverable_id": deliverable.get("id"),
-            "client_id": project.get("client_id"),
-            "stage": stage,
-            "action_type": "open_approvals",
-            "created_at": ts,
-            "read_at": None,
-            "actioned_at": None,
-            "dedupe_key": f'stage-handoff:{deliverable.get("id")}:{stage}:{ts}:{recipient["id"]}',
-        })
-
-    await _upsert_notifications_batch(notifications)
-
-
-async def _notify_stage_handoff_safe(deliverable: dict, stage: str, ts: str):
-    # A notification problem must never fail the approval itself.
-    try:
-        await _notify_stage_handoff(deliverable, stage, ts)
-    except Exception:
-        logger.exception("Could not send stage hand-off notifications")
 
 
 api_router.include_router(

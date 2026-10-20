@@ -276,3 +276,43 @@ class Deliverable(BaseModel):
     approval_types: List[str] = Field(default_factory=list)
     created_at: str
     updated_at: str
+
+
+class DeliverableCreate(BaseModel):
+    project_id: str
+    name: str
+    type: Optional[str] = ""
+    start_dt: Optional[str] = None
+    end_dt: Optional[str] = None
+    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
+    required_stages: List[str] = Field(
+        default_factory=lambda: ["Content"]
+    )
+    approval_types: Optional[List[str]] = None
+    current_stage: Optional[str] = None
+
+
+class DeliverableUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    start_dt: Optional[str] = None
+    end_dt: Optional[str] = None
+    stage_schedule: Optional[Dict[str, Dict[str, Optional[str]]]] = None
+    required_stages: Optional[List[str]] = None
+    approval_types: Optional[List[str]] = None
+
+
+class ApprovalWorkflowCreate(BaseModel):
+    approval_types: List[str] = Field(default_factory=list)
+
+
+class ApprovalDecision(BaseModel):
+    note: Optional[str] = ""
+
+
+class ApprovalMove(BaseModel):
+    approval_type: str
+
+
+class BulkApprovalItemIdsPayload(BaseModel):
+    approval_item_ids: List[str]

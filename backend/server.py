@@ -36,6 +36,7 @@ from datetime import datetime, timezone, timedelta
 
 try:
     # Works when the working directory is backend/ (e.g. `uvicorn server:app`)
+    from users import create_users_router  # noqa: F401
     from clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from efficiency import create_efficiency_router  # noqa: F401
     from home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -97,6 +98,7 @@ try:
 except ImportError:
     # Works when uvicorn imports this as a package member from the repo root
     # (e.g. Render's `uvicorn backend.server:app`)
+    from backend.users import create_users_router  # noqa: F401
     from backend.clients import Client, ClientCreate, ClientUpdate, create_clients_router, validate_contact_phone  # noqa: F401
     from backend.efficiency import create_efficiency_router  # noqa: F401
     from backend.home_dashboard import create_home_dashboard_router  # noqa: F401
@@ -2337,12 +2339,6 @@ async def update_own_profile(payload: ProfileUpdatePayload, request: Request):
 
     updated = await db.users.find_one({"id": user.id}, {"_id": 0})
     return User(**updated)
-
-
-@api_router.get("/users", response_model=List[User])
-async def list_users(request: Request):
-    await get_acting_user(request)
-    return await db.users.find({}, {"_id": 0}).to_list(1000)
 
 
 @api_router.get("/config/options")
@@ -5968,180 +5964,6 @@ async def delete_deliverable(
     return {"success": True}
 
 
-# ---------------- Team management (admin) ----------------
-@api_router.post("/users", response_model=User)
-async def create_user(payload: UserCreate, request: Request):
-    await require_admin(request)
-    if payload.role not in ROLES:
-        raise HTTPException(status_code=400, detail="Invalid role")
-    if not payload.department or payload.department not in DEPARTMENTS:
-        raise HTTPException(status_code=400, detail="Department required")
-
-    username = payload.username.strip().lower()
-    email = payload.email.strip().lower()
-
-    if not username:
-        raise HTTPException(status_code=400, detail="Username required")
-
-    if not email:
-        raise HTTPException(status_code=400, detail="Email required")
-
-    if len(payload.password) < 8:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 8 characters",
-        )
-
-    existing_username = await db.users.find_one({"username": username})
-    if existing_username:
-        raise HTTPException(
-            status_code=400,
-            detail="Username already exists",
-        )
-
-    role_prefix = payload.role
-    uid = f"{role_prefix}-{uuid.uuid4().hex[:6]}"
-    doc = {
-        "id": uid,
-        "name": payload.name.strip(),
-        "username": username,
-        "email": email,
-        "password_hash": hash_password(payload.password),
-        "role": payload.role,
-        "department": payload.department or "",
-        "active": payload.active if payload.active is not None else True,
-    }
-    await db.users.insert_one(doc)
-    return User(**doc)
-
-
-@api_router.patch("/users/{user_id}", response_model=User)
-async def update_user(
-    user_id: str,
-    payload: UserUpdate,
-    request: Request
-):
-    await require_admin(request)
-
-    existing = await db.users.find_one(
-        {"id": user_id},
-        {"_id": 0}
-    )
-
-    if not existing:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found"
-        )
-
-    update_fields = payload.model_dump(
-        exclude_unset=True
-    )
-
-    # Username
-    if "username" in update_fields:
-        username = (
-            update_fields["username"] or ""
-        ).strip().lower()
-
-        if not username:
-            raise HTTPException(
-                status_code=400,
-                detail="Username required"
-            )
-
-        existing_username = await db.users.find_one(
-            {
-                "username": username,
-                "id": {"$ne": user_id}
-            }
-        )
-
-        if existing_username:
-            raise HTTPException(
-                status_code=400,
-                detail="Username already exists"
-            )
-
-        update_fields["username"] = username
-
-    # Email
-    if "email" in update_fields:
-        email = (
-            update_fields["email"] or ""
-        ).strip().lower()
-
-        if not email:
-            raise HTTPException(
-                status_code=400,
-                detail="Email required"
-            )
-
-        update_fields["email"] = email
-
-    # Name
-    if "name" in update_fields:
-        name = (
-            update_fields["name"] or ""
-        ).strip()
-
-        if not name:
-            raise HTTPException(
-                status_code=400,
-                detail="Name required"
-            )
-
-        update_fields["name"] = name
-
-    # Role
-    if "role" in update_fields:
-        if update_fields["role"] not in ROLES:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid role"
-            )
-
-    # Department
-    if "department" in update_fields:
-        if (
-            not update_fields["department"]
-            or update_fields["department"] not in DEPARTMENTS
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="Department required"
-            )
-
-    # Password
-    # Only change it when a new password was supplied.
-    if "password" in update_fields:
-        password = update_fields.pop("password")
-
-        if password:
-            if len(password) < 8:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Password must be at least 8 characters"
-                )
-
-            update_fields["password_hash"] = hash_password(
-                password
-            )
-
-    await db.users.update_one(
-        {"id": user_id},
-        {"$set": update_fields}
-    )
-    _invalidate_cached_user(user_id)
-
-    updated = await db.users.find_one(
-        {"id": user_id},
-        {"_id": 0}
-    )
-
-    return User(**updated)
-
-
 # ---------------- Approval helpers ----------------
 async def _get_approval_workflow(deliverable_id: str):
     return await db.approval_workflows.find_one({"deliverable_id": deliverable_id}, {"_id": 0})
@@ -7388,6 +7210,21 @@ api_router.include_router(
         get_acting_user=get_acting_user,
         require_admin=require_admin,
         log_activity=log_activity,
+    )
+)
+
+api_router.include_router(
+    create_users_router(
+        db=db,
+        get_acting_user=get_acting_user,
+        require_admin=require_admin,
+        hash_password=hash_password,
+        invalidate_cached_user=_invalidate_cached_user,
+        user_model=User,
+        user_create_model=UserCreate,
+        user_update_model=UserUpdate,
+        roles=ROLES,
+        departments=DEPARTMENTS,
     )
 )
 

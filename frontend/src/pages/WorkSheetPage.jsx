@@ -3,23 +3,14 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import { APP_ACTIONS, registerAppAction } from "@/lib/appActions";
 import { refreshCounts } from "@/lib/countsBus";
-import { downloadCsv, slugify, todayStamp } from "@/lib/exportCsv";
-import { makeMatcher, searchTokens } from "@/lib/search";
-import { consumePrefetch, WORKSHEET_INITIAL_ROW_LIMIT } from "@/services/prefetch";
+import { downloadCsv } from "@/lib/exportCsv";
 import {
-  addWorkItemCollaborators,
   bulkDeleteWorkItems,
   bulkUpdateWorkItems,
   bulkCreateWorkItems,
   createWorkItem,
   deleteWorkItem,
-  getOptions,
-  getWorkItems,
   updateWorkItem,
-  getWorksheetLookups,
-  getClients,
-  getProjects,
-  getDeliverables,
 } from "@/services/api";
 import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
@@ -30,6 +21,10 @@ import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
 import { MobileWorkList } from "@/components/work-sheet/MobileWorkList";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useWorksheetUndo } from "@/hooks/useWorksheetUndo";
+import { useWorksheetLookups } from "@/hooks/useWorksheetLookups";
+import { useWorksheetItemsLoader } from "@/hooks/useWorksheetItemsLoader";
+import { useWorksheetCollaborators } from "@/hooks/useWorksheetCollaborators";
 // Lazy — both are closed by default (~1,500 lines combined), so their
 // code only needs to download once someone actually opens one, instead
 // of padding out the Work Sheet page's own initial chunk.
@@ -46,109 +41,25 @@ import {
   isDeliverableMissing,
 } from "@/lib/deliverableRules";
 import {
-  matchesDeliverableFilter,
-  matchesProjectFilter,
-  matchesReviewerFilter,
-} from "@/lib/worksheetFilterOptions";
-import { durationSecondsOf } from "@/lib/quantity";
-import {
   TIME_GATED_STATUSES,
   TIME_REQUIRED_MESSAGE,
   hasTime,
   parseTimeInput,
 } from "@/lib/timeRules";
 import { WorkSheetSkeleton, WorkSheetTableSkeleton } from "@/components/skeletons/Skeletons";
+import {
+  DEPARTMENT_TO_STAGE,
+  LS,
+  anyDialogOpen,
+  buildWorksheetCsv,
+  countActiveFilters,
+  countTabs,
+  emptyFilters,
+  filterWorkItems,
+  sortWorkItems,
+  trackWorksheetContext,
+} from "@/lib/worksheetView";
 
-// Any dialog on screen (Bulk review now lives in the top bar, outside this
-// page, so the page can't track it with its own state any more). Used to keep
-// Delete / "L" from acting on the sheet underneath an open dialog.
-const anyDialogOpen = () =>
-  Boolean(document.querySelector('[role="dialog"], [role="alertdialog"]'));
-
-const emptyFilters = {
-  search: "",
-  status: "",
-  deliverable_type: "",
-  work_category: "",
-  month: "",
-
-  date_from: "",
-  date_to: "",
-
-  project_ids: [],
-  deliverable_ids: [],
-  stages: [],
-  deliverable_types: [],
-  work_categories: [],
-  creator_ids: [],
-  reviewer_ids: [],
-  statuses: [],
-};
-const LS = { client: "ws_last_client_id", project: "ws_last_project_id", deliverable: "ws_last_deliverable_id", stage: "ws_last_stage" };
-const DEPARTMENT_TO_STAGE = {
-  Content: "Content",
-  Design: "Design",
-  Animation: "Animate",
-};
-
-const trackWorksheetContext = (item, previousItem, patch) => {
-  const contextFields = [
-    "client_id",
-    "project_id",
-    "deliverable_id",
-    "deliverable_not_available",
-  ];
-
-  // Do not track unrelated edits such as remarks, status, date, etc.
-  const changedContextField = contextFields.some(
-    (field) => patch[field] !== undefined
-  );
-
-  if (!changedContextField || !item) return;
-
-  const hasClient = Boolean(item.client_id);
-  const hasProject = Boolean(item.project_id);
-  const hasDeliverable = Boolean(
-    item.deliverable_id || item.deliverable_not_available
-  );
-
-  const previousHasClient = Boolean(previousItem?.client_id);
-  const previousHasProject = Boolean(previousItem?.project_id);
-  const previousHasDeliverable = Boolean(
-    previousItem?.deliverable_id || previousItem?.deliverable_not_available
-  );
-
-  const contextStatus =
-    hasClient && hasProject && hasDeliverable
-      ? "complete"
-      : hasClient && !hasProject && !hasDeliverable
-        ? "client_only"
-        : !hasClient
-          ? "missing_client"
-          : "incomplete";
-
-  // Avoid repeatedly tracking the same incomplete state on every edit.
-  const contextChanged =
-    hasClient !== previousHasClient ||
-    hasProject !== previousHasProject ||
-    hasDeliverable !== previousHasDeliverable;
-
-  if (!contextChanged) return;
-
-  trackEvent("worksheet_context_saved", {
-    row_id: item.id,
-    context_status: contextStatus,
-    has_client: hasClient,
-    has_project: hasProject,
-    has_deliverable: hasDeliverable,
-    deliverable_not_available: Boolean(item.deliverable_not_available),
-    missing_fields: [
-      ...(!hasClient ? ["client"] : []),
-      ...(!hasProject ? ["project"] : []),
-      ...(!hasDeliverable ? ["deliverable"] : []),
-    ],
-  });
-};
 
 export default function WorkSheetPage() {
   const { currentUser, currentUserId, users, loading: userLoading } = useUser();
@@ -189,12 +100,9 @@ export default function WorkSheetPage() {
     setActiveSheet(defaultSheetFor(currentUser));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
-  const [options, setOptions] = useState({});
-  const [clients, setClients] = useState([]);
-  const [projects, setProjects] = useState([]);
   // Management sheet tasks, for its tab count (the sheet loads them itself).
   const [projectTasks, setProjectTasks] = useState(null);
-  const [deliverables, setDeliverables] = useState([]);
+  const { options, clients, projects, deliverables } = useWorksheetLookups({ currentUserId });
 
   // Filters are scoped to each worksheet tab so a filter applied on one
   // sheet does not leak into another sheet.
@@ -337,132 +245,21 @@ export default function WorkSheetPage() {
   // Every change made on this sheet pushes an entry that knows how to reverse
   // it; Ctrl/Cmd+Z runs the latest. Typing in a text box keeps the browser's own
   // undo, so this only fires when focus is not in one.
-  const undoStackRef = useRef([]);
-  const undoBusyRef = useRef(false);
   const updateRef = useRef(null);
-
-  const pushUndo = useCallback((label, undo) => {
-    undoStackRef.current.push({ label, undo });
-    if (undoStackRef.current.length > 50) undoStackRef.current.shift();
-  }, []);
-
-  // Rows deleted by an undo of "add", or by the user, come back as new rows
-  // (same content, new id).
-  const restoreRows = async (rows) => {
-    const created = await Promise.all(
-      rows.map((r) =>
-        createWorkItem(currentUser.id, {
-          work_date: r.work_date,
-          deliverable_name: r.deliverable_name || "",
-          deliverable_type: r.deliverable_type || "",
-          deliverable_link: r.deliverable_link || "",
-          work_category: r.work_category || "",
-          version: r.version || "",
-          time_taken_minutes: r.time_taken_minutes || 0,
-          quantity: r.quantity ?? 1.0,
-          quantity_items: r.quantity_items?.length ? r.quantity_items : null,
-          video_duration_seconds: r.video_duration_seconds ?? null,
-          video_duration_minutes: r.video_duration_minutes ?? null,
-          creator_id: r.creator_id || null,
-          reviewer_id: r.reviewer_id || null,
-          manager_id: r.manager_id || null,
-          client_id: r.client_id || null,
-          project_id: r.project_id || null,
-          deliverable_id: r.deliverable_id || null,
-          deliverable_not_available: Boolean(r.deliverable_not_available),
-          stage: r.stage || null,
-          remarks: r.remarks || "",
-          status: r.status || "Not Started",
-        })
-      )
-    );
-    setItems((prev) => [...created, ...prev]);
-    revealMonthOf(created);
-    refreshCounts();
-  };
-
-  const removeRows = async (ids) => {
-    await bulkDeleteWorkItems(currentUser.id, ids);
-    const gone = new Set(ids);
-    setItems((prev) => prev.filter((row) => !gone.has(row.id)));
-    setSelectedIds((prev) => prev.filter((id) => !gone.has(id)));
-    refreshCounts();
-  };
-
-  // Put field values back: `entries` = [{ id, values: { field: oldValue } }].
-  // Rows that had the same old values go back in one request.
-  const revertFields = async (entries) => {
-    const groups = new Map();
-    entries.forEach(({ id, values }) => {
-      const key = JSON.stringify(values);
-      if (!groups.has(key)) groups.set(key, { values, ids: [] });
-      groups.get(key).ids.push(id);
-    });
-
-    for (const { values, ids } of groups.values()) {
-      const updated = await bulkUpdateWorkItems(currentUser.id, ids, values);
-      const byId = Object.fromEntries(updated.map((u) => [u.id, u]));
-      setItems((prev) => prev.map((it) => byId[it.id] || it));
-    }
-    refreshCounts();
-  };
-
-  const snapshotFields = (ids, keys) =>
-    itemsRef.current
-      .filter((it) => ids.includes(it.id))
-      .map((it) => ({
-        id: it.id,
-        values: Object.fromEntries(
-          keys.map((k) => [k, it[k] ?? (typeof it[k] === "string" ? "" : null)])
-        ),
-      }));
-
-  const runUndo = async () => {
-    if (undoBusyRef.current) return;
-    const entry = undoStackRef.current.pop();
-    if (!entry) {
-      toast("Nothing to undo");
-      return;
-    }
-
-    undoBusyRef.current = true;
-    try {
-      await entry.undo();
-      toast.success(`Undid: ${entry.label}`);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || `Could not undo: ${entry.label}`);
-    } finally {
-      undoBusyRef.current = false;
-    }
-  };
-  const runUndoRef = useRef(runUndo);
-  runUndoRef.current = runUndo;
-
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
-      if (String(event.key).toLowerCase() !== "z") return;
-
-      const el = event.target;
-      const tag = el?.tagName;
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        el?.isContentEditable ||
-        el?.getAttribute?.("role") === "combobox"
-      ) {
-        return; // the text box's own undo
-      }
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
-
-      event.preventDefault();
-      runUndoRef.current();
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  const {
+    pushUndo,
+    restoreRows,
+    removeRows,
+    revertFields,
+    snapshotFields,
+    runUndoRef,
+  } = useWorksheetUndo({
+    currentUser,
+    itemsRef,
+    setItems,
+    setSelectedIds,
+    revealMonthOf,
+  });
 
   useEffect(() => {
     localStorage.setItem(
@@ -471,114 +268,12 @@ export default function WorkSheetPage() {
     );
   }, [hiddenRows]);
 
-  useEffect(() => { getOptions().then(setOptions); }, []);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    // One slim request (id/name/client only) instead of three full ones -
-    // /projects used to bring every deliverable nested inside every project
-    // and /deliverables then sent the same deliverables again. Already
-    // started at boot when this is the landing page (see services/prefetch).
-    // The fallback keeps the sheet working if the frontend is deployed before
-    // the backend that has /worksheet/lookups.
-    consumePrefetch("worksheet-lookups", getWorksheetLookups)
-      .catch(() =>
-        Promise.all([
-          getClients(),
-          getProjects(currentUserId, { include_deliverables: false }),
-          getDeliverables(currentUserId),
-        ]).then(([clients, projects, deliverables]) => ({ clients, projects, deliverables }))
-      )
-      .then(({ clients: c, projects: p, deliverables: d }) => {
-        setClients(c || []);
-        setProjects(p || []);
-        setDeliverables(d || []);
-      })
-      .catch(() => {});
-  }, [currentUserId]);
-
-  // How many rows to ask for in the fast initial slice — small enough to
-  // paint quickly even with thousands of total rows, large enough that
-  // most people won't notice the list is still partial for the second
-  // or so before the full set lands.
-  const INITIAL_ROW_LIMIT = WORKSHEET_INITIAL_ROW_LIMIT;
-  const hasLoadedFullListRef = useRef(false);
-
-  const fetchItems = (showLoading = true) => {
-    if (!currentUser) return;
-    if (showLoading) {
-      setLoading(true);
-    }
-
-    // Only the very first load (not a refresh after an edit, not the
-    // periodic background sync) gets the two-phase treatment — those
-    // other callers want the accurate full set directly, not a partial
-    // slice.
-    if (showLoading && !hasLoadedFullListRef.current) {
-      setLoadingFullList(true);
-
-      // Already in flight from boot when this is the landing page.
-      let gotEverything = false;
-
-      consumePrefetch("worksheet-items-initial", () =>
-        getWorkItems(currentUser.id, { limit: INITIAL_ROW_LIMIT, hide_unassigned_content: true })
-      )
-        .then((data) => {
-          const rows = Array.isArray(data) ? data : [];
-          setItems(rows);
-          // Fewer rows than we asked for means that WAS the whole list, so
-          // the second, unbounded request below would only re-download and
-          // re-validate the same rows.
-          gotEverything = rows.length < INITIAL_ROW_LIMIT;
-        })
-        .catch(() => {
-          // Swallowed — the full fetch below still runs and its own
-          // catch surfaces a toast if that fails too.
-        })
-        .finally(() => {
-          setLoading(false);
-
-          if (gotEverything) {
-            hasLoadedFullListRef.current = true;
-            setLoadingFullList(false);
-            return;
-          }
-
-          getWorkItems(currentUser.id, { hide_unassigned_content: true })
-            .then((data) => {
-              setItems(Array.isArray(data) ? data : []);
-              hasLoadedFullListRef.current = true;
-            })
-            .catch(() => toast.error("Could not load work items"))
-            .finally(() => setLoadingFullList(false));
-        });
-
-      return;
-    }
-
-    // Fetches the whole dataset, unfiltered. Every filter and tab switch
-    // below is applied client-side against this single copy — no network
-    // round-trip per filter change, so it's instant instead of waiting
-    // on a request each time (and immune to a slow/sleeping backend
-    // instance).
-    getWorkItems(currentUser.id, { hide_unassigned_content: true })
-      .then((data) => {
-        setItems(Array.isArray(data) ? data : []);
-        hasLoadedFullListRef.current = true;
-      })
-      .catch(() => toast.error("Could not load work items"))
-      .finally(() => {
-        if (showLoading) {
-          setLoading(false);
-        }
-      });
-  };
-
-  useEffect(() => {
-    hasLoadedFullListRef.current = false;
-    fetchItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser]);
+  const { fetchItems } = useWorksheetItemsLoader({
+    currentUser,
+    setItems,
+    setLoading,
+    setLoadingFullList,
+  });
 
   // A notification's "Add row" action creates the work item server-side
   // from a different part of the tree (NotificationCenter, mounted in
@@ -652,101 +347,33 @@ export default function WorkSheetPage() {
     deferredSearch !== (filters.search || "") ||
     (loadingFullList && Boolean((filters.search || "").trim()));
 
-  const filteredItems = useMemo(() => {
-    const sheetStage =
-      activeSheet === "Master"
-        ? null
-        : (DEPARTMENT_TO_STAGE[activeSheet] || activeSheet).trim().toLowerCase();
-
-    const selectedStages =
-      activeSheet === "Master" && filters.stages?.length
-        ? new Set(filters.stages.map((s) => String(s).trim().toLowerCase()))
-        : null;
-
-    // Every word has to match somewhere in the row, in any order, so
-    // "icici contra carousel" finds a carousel in ICICI's Contra Fund
-    // project even though those words sit in different columns.
-    const matchesSearch = makeMatcher(deferredSearch);
-    const search = searchTokens(deferredSearch).length > 0;
-    const projectIds = filters.project_ids?.length ? new Set(filters.project_ids) : null;
-    const deliverableIds = filters.deliverable_ids?.length ? new Set(filters.deliverable_ids) : null;
-    const deliverableTypes = filters.deliverable_types?.length ? new Set(filters.deliverable_types) : null;
-    const workCategories = filters.work_categories?.length ? new Set(filters.work_categories) : null;
-    const creatorIds = filters.creator_ids?.length ? new Set(filters.creator_ids) : null;
-    const reviewerIds = filters.reviewer_ids?.length ? new Set(filters.reviewer_ids) : null;
-    const statuses = filters.statuses?.length ? new Set(filters.statuses) : null;
-
-    return items.filter((item) => {
-      const itemStage = String(item.stage || "").trim().toLowerCase();
-
-      // Department sheets are hard-scoped to their own stage. Master can
-      // optionally scope to a Stage selection from the filter panel.
-      if (sheetStage) {
-        if (itemStage !== sheetStage) return false;
-      } else if (selectedStages && !selectedStages.has(itemStage)) {
-        return false;
-      }
-
-      if (search) {
-        // Same fallback WorkSheetRow uses to resolve a row's client: the
-        // row's own client_id, or failing that, its project's client_id.
-        const project = projectById.get(item.project_id);
-        const effectiveClientId = item.client_id || project?.client_id;
-        const clientName = effectiveClientId
-          ? clientNameById.get(effectiveClientId) || ""
-          : "";
-        const projectName = project?.name || "";
-
-        const owner = userNameById.get(item.creator_id) || "";
-
-        if (
-          !matchesSearch(
-            item.deliverable_name,
-            item.remarks,
-            clientName,
-            projectName,
-            item.deliverable_type,
-            owner
-          )
-        ) {
-          return false;
-        }
-      }
-
-      if (
-        onlyMissing &&
-        !isDeliverableMissing(item, options.deliverable_type_categories)
-      ) {
-        return false;
-      }
-
-      if (filters.date_from && (item.work_date || "") < filters.date_from) return false;
-      if (filters.date_to && (item.work_date || "") > filters.date_to) return false;
-      if (filters.month && item.month !== filters.month) return false;
-      if (month && (item.month || (item.work_date || "").slice(0, 7)) !== month) return false;
-
-      if (projectIds && !matchesProjectFilter(item, projectIds)) return false;
-      if (deliverableIds && !matchesDeliverableFilter(item, deliverableIds)) return false;
-      if (deliverableTypes && !deliverableTypes.has(item.deliverable_type)) return false;
-      if (workCategories && !workCategories.has(item.work_category)) return false;
-      if (creatorIds && !creatorIds.has(item.creator_id)) return false;
-      if (reviewerIds && !matchesReviewerFilter(item, reviewerIds)) return false;
-      if (statuses && !statuses.has(item.status)) return false;
-
-      return true;
-    });
-  }, [
-    items,
-    filters,
-    deferredSearch,
-    month,
-    activeSheet,
-    clientNameById,
-    projectById,
-    userNameById,
-    onlyMissing,
-    options.deliverable_type_categories,
-  ]);
+  const filteredItems = useMemo(
+    () =>
+      filterWorkItems({
+        items,
+        filters,
+        deferredSearch,
+        month,
+        activeSheet,
+        clientNameById,
+        projectById,
+        userNameById,
+        onlyMissing,
+        deliverableTypeCategories: options.deliverable_type_categories,
+      }),
+    [
+      items,
+      filters,
+      deferredSearch,
+      month,
+      activeSheet,
+      clientNameById,
+      projectById,
+      userNameById,
+      onlyMissing,
+      options.deliverable_type_categories,
+    ]
+  );
 
   // Toolbar's "N missing a deliverable" badge — purely informational, so
   // scoped the same as the visible row count (post search/filter) rather
@@ -764,54 +391,15 @@ export default function WorkSheetPage() {
   // row filter uses), independent of any active search/filter, so switching
   // filters doesn't make the tabs themselves jump around. With "every month"
   // selected (month = "") this is the all-time total.
-  const tabCounts = useMemo(() => {
-    const counts = { Master: 0, Content: 0, Design: 0, Animate: 0 };
+  const tabCounts = useMemo(
+    () => countTabs({ items, month, projectTasks }),
+    [items, month, projectTasks]
+  );
 
-    items.forEach((item) => {
-      if (
-        month &&
-        (item.month || (item.work_date || "").slice(0, 7)) !== month
-      ) {
-        return;
-      }
-      counts.Master += 1;
-      const stage = String(item.stage || "").trim();
-      if (stage === "Content") counts.Content += 1;
-      else if (stage === "Design") counts.Design += 1;
-      else if (stage === "Animate") counts.Animate += 1;
-    });
-
-    // Management: tasks whose Date (start date) is in the month on screen,
-    // same as the other sheets place a row by its work date.
-    if (projectTasks) {
-      const m = month || (projectTasks.today || "").slice(0, 7);
-      counts.Projects = (projectTasks.tasks || []).filter(
-        (t) => (t.start_date || "").slice(0, 7) === m
-      ).length;
-    }
-
-    return counts;
-  }, [items, month, projectTasks]);
-
-  const sortedItems = useMemo(() => {
-    return [...filteredItems].sort((a, b) => {
-      const dateA = a.work_date || "";
-      const dateB = b.work_date || "";
-
-      if (dateA !== dateB) {
-        return sortDirection === "desc"
-          ? dateB.localeCompare(dateA)
-          : dateA.localeCompare(dateB);
-      }
-
-      // Same work_date: break the tie by creation time, newest first,
-      // so a just-added row doesn't get lost among older same-day rows
-      // (matters most after a re-fetch, e.g. following hide/unhide).
-      const createdA = a.created_at || "";
-      const createdB = b.created_at || "";
-      return createdB.localeCompare(createdA);
-    });
-  }, [filteredItems, sortDirection]);
+  const sortedItems = useMemo(
+    () => sortWorkItems(filteredItems, sortDirection),
+    [filteredItems, sortDirection]
+  );
 
   // Export the rows currently shown on this sheet (tab, month, search and
   // every filter applied, newest first) as a CSV.
@@ -820,61 +408,20 @@ export default function WorkSheetPage() {
       toast.info("No rows to export");
       return;
     }
-    const allColumns = [
-      "Date", "Client", "Project", "Stage", "Deliverable", "Type", "Qty",
-      "Duration", "Category", "Version", "Time (min)", "Creator",
-      "Reviewer", "Status", "Remarks", "Link",
-    ];
-    // Same columns as the tab on screen (Qty / Duration are left out of the
-    // sheets that don't use them).
-    const excluded = SHEET_EXCLUDED_COLUMNS[activeSheet] || [];
-    const keep = allColumns.map((name) => !excluded.includes(name));
-    // Duration is exported as plain seconds.
-    const header = allColumns
-      .filter((_, i) => keep[i])
-      .map((name) => (name === "Duration" ? "Duration (sec)" : name));
-    const rows = sortedItems.map((item) => {
-      const project = projectById.get(item.project_id);
-      const clientId = item.client_id || project?.client_id;
-      return [
-        item.work_date || "",
-        (clientId && clientNameById.get(clientId)) || "",
-        project?.name || "",
-        item.stage || "",
-        item.deliverable_name || "",
-        item.deliverable_type || "",
-        item.quantity > 1 ? item.quantity : "",
-        durationSecondsOf(item) ?? "",
-        item.work_category || "",
-        item.version || "",
-        item.time_taken_minutes ?? "",
-        userNameById.get(item.creator_id) || "",
-        userNameById.get(item.reviewer_id) || "",
-        item.status || "",
-        item.remarks || "",
-        item.deliverable_link || "",
-      ].filter((_, i) => keep[i]);
+    const { filename, header, rows } = buildWorksheetCsv({
+      sortedItems,
+      activeSheet,
+      excludedColumns: SHEET_EXCLUDED_COLUMNS[activeSheet],
+      month,
+      projectById,
+      clientNameById,
+      userNameById,
     });
-    const name = [
-      "worksheet",
-      slugify(activeSheet),
-      month || "all-months",
-      todayStamp(),
-    ].join("-");
-    downloadCsv(`${name}.csv`, header, rows);
+    downloadCsv(filename, header, rows);
     toast.success(`Exported ${rows.length} row${rows.length === 1 ? "" : "s"}`);
   };
 
-  const activeFilterCount =
-    Number(Boolean(filters.date_from || filters.date_to)) +
-    (filters.project_ids?.length || 0) +
-    (filters.deliverable_ids?.length || 0) +
-    (filters.stages?.length || 0) +
-    (filters.deliverable_types?.length || 0) +
-    (filters.work_categories?.length || 0) +
-    (filters.creator_ids?.length || 0) +
-    (filters.reviewer_ids?.length || 0) +
-    (filters.statuses?.length || 0);
+  const activeFilterCount = countActiveFilters(filters);
 
   const handleAddRow = async () => {
     if (!canAddToActiveSheet) {
@@ -1555,105 +1102,15 @@ export default function WorkSheetPage() {
   // ---- Collaborators ---------------------------------------------------------
   // Every creator on each shared entry, across ALL rows (not just the ones the
   // filters show), so the picker can mark who is already on it.
-  const collabIndex = useMemo(() => {
-    const groups = new Map();
-    for (const row of items) {
-      if (!row.collab_group_id) continue;
-      const list = groups.get(row.collab_group_id);
-      if (list) list.push(row.creator_id);
-      else groups.set(row.collab_group_id, [row.creator_id]);
-    }
-    return groups;
-  }, [items]);
-
-  // Who can be tagged from the bulk bar: people whose team works the selected
-  // rows' stage(s). The server re-checks every pair and says why it skipped one.
-  const bulkCollabPeople = useMemo(() => {
-    if (!selectedIds.length) return [];
-    const picked = new Set(selectedIds);
-    const stages = new Set(
-      items.filter((row) => picked.has(row.id)).map((row) => row.stage || "")
-    );
-    return (users || [])
-      .filter(
-        (u) =>
-          u.role !== "admin" &&
-          u.role !== "hr" &&
-          u.active !== false &&
-          (stages.has("") || stages.has(DEPARTMENT_TO_STAGE[u.department]))
-      )
-      .map((u) => ({ id: u.id, name: u.name, department: u.department }));
-  }, [selectedIds, items, users]);
-
-  const COLLAB_REASONS = {
-    owner: "Owns this entry already",
-    already_has_entry: "Already has this entry",
-    different_stage: "Works in another team",
-    not_available: "Not available",
-  };
-
-  // Tag people on one or more entries. Each person gets their own row; anyone
-  // who already has the entry is skipped by the server, so repeating this adds
-  // nothing. Returns { problems } for the picker to show inline.
-  const handleAddCollaborators = useCallback(
-    async (rowIds, creatorIds) => {
-      let result;
-      try {
-        result = await addWorkItemCollaborators(currentUser.id, rowIds, creatorIds);
-      } catch (e) {
-        throw new Error(e.response?.data?.detail || "Could not add collaborators. Try again.");
-      }
-
-      const created = result.created || [];
-      const sourceById = Object.fromEntries((result.updated_sources || []).map((r) => [r.id, r]));
-      if (created.length || Object.keys(sourceById).length) {
-        setItems((prev) => {
-          const have = new Set(prev.map((r) => r.id));
-          return [
-            ...created.filter((r) => !have.has(r.id)),
-            ...prev.map((r) => sourceById[r.id] || r),
-          ];
-        });
-        refreshCounts();
-      }
-
-      const makers = new Set(created.map((r) => r.creator_id));
-      const problems = [];
-
-      // Whole-entry refusals (not yours, still blank, ...), once each.
-      const rowReasons = new Map();
-      (result.row_errors || []).forEach((e) =>
-        rowReasons.set(e.reason, (rowReasons.get(e.reason) || 0) + 1)
-      );
-      rowReasons.forEach((count, reason) =>
-        problems.push({
-          text: rowIds.length > 1 ? `${count} ${count === 1 ? "entry" : "entries"}: ${reason}` : reason,
-        })
-      );
-
-      // People who got nothing, with the reason.
-      const reasonsByPerson = new Map();
-      (result.skipped || []).forEach((sk) => {
-        if (makers.has(sk.creator_id)) return;
-        reasonsByPerson.set(sk.creator_id, COLLAB_REASONS[sk.reason] || sk.reason);
-      });
-      reasonsByPerson.forEach((text, id) => problems.push({ id, text }));
-
-      const people = makers.size;
-      if (created.length) {
-        const skippedCount = (result.skipped || []).length;
-        toast.success(
-          `Added ${people} ${people === 1 ? "person" : "people"} (${created.length} new ${created.length === 1 ? "row" : "rows"})` +
-            (skippedCount ? ` · ${skippedCount} skipped` : "")
-        );
-      }
-      // Keep the selection (and the picker's inline notes) while anything was refused.
-      if (rowIds.length > 1 && created.length && !problems.length) setSelectedIds([]);
-      return { problems };
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentUser]
-  );
+  const { collabIndex, bulkCollabPeople, handleAddCollaborators } =
+    useWorksheetCollaborators({
+      currentUser,
+      items,
+      users,
+      selectedIds,
+      setItems,
+      setSelectedIds,
+    });
 
   const handleBulkAssign = async (patch) => {
     try {

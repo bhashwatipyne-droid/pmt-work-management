@@ -1,4 +1,14 @@
-import { getProjectTasks, getWorkItems, getWorksheetLookups } from "@/services/api";
+import axios from "axios";
+import {
+  API,
+  getDashboardHome,
+  getEfficiencyOverview,
+  getEfficiencyTrend,
+  getProjectTasks,
+  getWorkItems,
+  getWorksheetLookups,
+} from "@/services/api";
+import { currentMonth } from "@/lib/homeDashboard";
 
 // Starts the Work Sheet's data requests while the app is still booting.
 //
@@ -51,4 +61,51 @@ export const consumePrefetch = (key, fetcher) => {
   }
 
   return fetcher();
+};
+
+// Home dashboard: the three requests it makes on open, for the current month.
+// Keys include the month so a different month never picks up this answer.
+export const prefetchDashboard = () => {
+  const month = currentMonth();
+  startPrefetch(`dashboard-home:${month}`, () => getDashboardHome(month));
+  startPrefetch(`dashboard-eff:${month}`, () => getEfficiencyOverview(month));
+  startPrefetch(`dashboard-trend:${month}`, () => getEfficiencyTrend(month, 6));
+};
+
+// Planning: today's plan (the page's first request).
+export const fetchPlanningOverview = () =>
+  axios.get(`${API}/planning/overview`, { params: {} }).then((r) => r.data);
+
+export const prefetchPlanning = () =>
+  startPrefetch("planning-overview", fetchPlanningOverview);
+
+// Download each page's code at boot, in parallel with the sign-in check,
+// instead of after it. Only the page for the address being opened is fetched.
+const PAGE_CHUNKS = {
+  "/dashboard": () => import("@/pages/DashboardPage"),
+  "/planning": () => import("@/pages/PlanningPage"),
+  "/projects": () => import("@/pages/ProjectsPage"),
+  "/approvals": () => import("@/pages/ApprovalsPage"),
+  "/efficiency": () => import("@/pages/EfficiencyPage"),
+  "/clients": () => import("@/pages/ClientsPage"),
+  "/team": () => import("@/pages/TeamPage"),
+  "/meetings": () => import("@/pages/MeetingsPage"),
+  "/invoicing": () => import("@/pages/InvoicingPage"),
+};
+
+export const prefetchForPath = (pathname) => {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  if (path === "/") {
+    prefetchWorksheet();
+    import("@/pages/WorkSheetPage").catch(() => {});
+    return;
+  }
+  if (path === "/dashboard") prefetchDashboard();
+  if (path === "/planning") prefetchPlanning();
+  if (path.startsWith("/projects/")) {
+    import("@/pages/ProjectDetailPage").catch(() => {});
+    return;
+  }
+  const chunk = PAGE_CHUNKS[path];
+  if (chunk) chunk().catch(() => {});
 };

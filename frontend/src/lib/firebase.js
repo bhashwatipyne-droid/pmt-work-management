@@ -1,10 +1,19 @@
-import { initializeApp, getApp, getApps } from "firebase/app";
-import {
-  getMessaging,
-  getToken,
-  isSupported,
-  onMessage,
-} from "firebase/messaging";
+// The Firebase SDK (~35 kB gzip) is only needed once push is actually used, so
+// it is loaded on demand instead of shipping in the first download for every
+// page. Everything below that touches it goes through loadSdk().
+let sdkPromise = null;
+const loadSdk = () => {
+  if (!sdkPromise) {
+    sdkPromise = Promise.all([
+      import("firebase/app"),
+      import("firebase/messaging"),
+    ]).then(([app, messaging]) => ({ ...app, ...messaging }));
+    sdkPromise.catch(() => {
+      sdkPromise = null; // allow a retry after a failed download
+    });
+  }
+  return sdkPromise;
+};
 
 // Public web-app identifiers for the pmt-finace Firebase project (Firebase
 // console > Project settings > General > Your apps > Web app). They are not
@@ -43,7 +52,7 @@ export const isFirebaseConfigured = () =>
       VAPID_KEY,
   );
 
-const getFirebaseApp = () =>
+const getFirebaseApp = ({ getApps, getApp, initializeApp }) =>
   getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 // True only when this browser can do web push AND Firebase env vars are set.
@@ -59,7 +68,7 @@ export const isPushSupported = async () => {
   }
 
   try {
-    return await isSupported();
+    return await (await loadSdk()).isSupported();
   } catch (_) {
     return false;
   }
@@ -90,7 +99,9 @@ export const getPushToken = async () => {
   );
   await navigator.serviceWorker.ready;
 
-  return getToken(getMessaging(getFirebaseApp()), {
+  const sdk = await loadSdk();
+
+  return sdk.getToken(sdk.getMessaging(getFirebaseApp(sdk)), {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: registration,
   });
@@ -120,10 +131,13 @@ export const listenForPush = (handler) => {
   }
 
   isPushSupported()
-    .then((supported) => {
+    .then(async (supported) => {
       if (!supported || cancelled) return;
 
-      const unsubscribe = onMessage(getMessaging(getFirebaseApp()), (payload) =>
+      const sdk = await loadSdk();
+      if (cancelled) return;
+
+      const unsubscribe = sdk.onMessage(sdk.getMessaging(getFirebaseApp(sdk)), (payload) =>
         handler({
           notification_id: (payload.data && payload.data.notification_id) || "",
           title: payload.data && payload.data.title,

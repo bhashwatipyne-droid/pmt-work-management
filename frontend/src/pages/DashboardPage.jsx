@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
+import { consumePrefetch } from "@/services/prefetch";
 import { getDashboardHome, getEfficiencyOverview, getEfficiencyTrend, getTeamActivity } from "@/services/api";
 import { DashboardSkeleton } from "@/components/skeletons/Skeletons";
 import TeamActivityTab from "@/components/dashboard/TeamActivityTab";
@@ -199,17 +200,18 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
 
-    getDashboardHome(month)
+    // The first open for this month may already be on its way from boot.
+    consumePrefetch(`dashboard-home:${month}`, () => getDashboardHome(month))
       .then((d) => !cancelled && setData(d))
       .catch(() => !cancelled && setError("Could not load Home. Please refresh the page."))
       .finally(() => !cancelled && setLoading(false));
 
     // Capacity + productivity come from the Efficiency module; Home still
     // works if they fail.
-    getEfficiencyOverview(month)
+    consumePrefetch(`dashboard-eff:${month}`, () => getEfficiencyOverview(month))
       .then((d) => !cancelled && setEff(d))
       .catch(() => !cancelled && setEff(null));
-    getEfficiencyTrend(month, 6)
+    consumePrefetch(`dashboard-trend:${month}`, () => getEfficiencyTrend(month, 6))
       .then((d) => !cancelled && setEffTrend(d || []))
       .catch(() => !cancelled && setEffTrend([]));
 

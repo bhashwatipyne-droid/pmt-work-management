@@ -13,6 +13,7 @@
 // Accepting a card creates the row in that member's Work Sheet on the server.
 import { useEffect, useSyncExternalStore } from "react";
 import axios from "axios";
+import { consumePrefetch, fetchPlanningOverview } from "@/services/prefetch";
 import { toast } from "sonner";
 
 import { API } from "@/services/api";
@@ -75,9 +76,10 @@ const planCache = new Map();
 export const refreshPlan = async () => {
   try {
     const asked = state.planDate;
-    const { data } = await axios.get(`${API}/planning/overview`, {
-      params: asked ? { date: asked } : {},
-    });
+    // Today's plan may already be on its way from boot (see prefetch.js).
+    const data = asked
+      ? (await axios.get(`${API}/planning/overview`, { params: { date: asked } })).data
+      : await consumePrefetch("planning-overview", fetchPlanningOverview);
     const view = {
       tasks: data.tasks || [],
       people: toPeopleRows(data.people),

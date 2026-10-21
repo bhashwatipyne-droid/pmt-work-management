@@ -1,32 +1,22 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import posthog from "posthog-js";
 import "@/index.css";
 import "@/styles/mint-tokens.css";
 import App from "@/App";
-import { prefetchWorksheet } from "@/services/prefetch";
+import { prefetchForPath } from "@/services/prefetch";
+import { initAnalytics } from "@/analytics";
+import { installApiTelemetry } from "@/services/apiTelemetry";
 
-// The Work Sheet is the landing page. Start its data requests and download its
-// code right now, in parallel with the "who am I" check, instead of waiting
-// for that check to finish and the page to render first.
-if (window.location.pathname === "/") {
-  prefetchWorksheet();
-  import("@/pages/WorkSheetPage").catch(() => {});
-}
+// PostHog loads after first paint (see analytics.js); events are queued until
+// then. The API telemetry goes in first so it also sees the prefetches below.
+initAnalytics();
+installApiTelemetry();
 
-// Initialize PostHog once when the application starts
-if (
-  process.env.REACT_APP_POSTHOG_KEY &&
-  process.env.REACT_APP_POSTHOG_HOST
-) {
-  posthog.init(process.env.REACT_APP_POSTHOG_KEY, {
-    api_host: process.env.REACT_APP_POSTHOG_HOST,
-    defaults: "2026-05-30",
-    capture_pageview: false,
-    capture_pageleave: true,
-  });
-}
+// Start the opened page's data requests and download its code right now, in
+// parallel with the "who am I" check, instead of waiting for that check to
+// finish and the page to render first (Work Sheet, Home, Planning, ...).
+prefetchForPath(window.location.pathname);
 
 const queryClient = new QueryClient({
   defaultOptions: {

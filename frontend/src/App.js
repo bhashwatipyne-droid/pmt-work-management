@@ -8,7 +8,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { UserProvider, useUser } from "@/context/UserContext";
-import { trackEvent } from "@/analytics";
+import { trackEvent, setAnalyticsContext } from "@/analytics";
 import { APP_ACTIONS, requestAppAction, setQuickLogPreset } from "@/lib/appActions";
 import { Toaster } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -55,6 +55,7 @@ const PAGE_NAMES = {
   "/clients": "Clients",
   "/profile": "Profile",
   "/planning": "Planning",
+  "/meetings": "Meetings",
   "/invoicing": "Ready to invoice",
 };
 
@@ -90,28 +91,39 @@ function AppShell() {
     }
   }, []);
 
+  // Every page view is recorded - including the sign-in screen and shared
+  // links before anyone is signed in - and the current page is attached to
+  // every later event (clicks, errors, API calls) as page_name.
   useEffect(() => {
-    if (!isAuthenticated || !currentUser?.id) return;
+    if (loading) return;
 
     const pathname = location.pathname;
 
     // Prevent duplicate events for the same route.
-    if (lastTrackedPath.current === pathname) return;
+    const signature = `${pathname}|${isAuthenticated ? currentUser?.id : "anon"}`;
+    if (lastTrackedPath.current === signature) return;
+    lastTrackedPath.current = signature;
 
-    lastTrackedPath.current = pathname;
+    const pageName = !isAuthenticated
+      ? "Login"
+      : pathname.startsWith("/projects/")
+        ? "Project Detail"
+        : pathname.startsWith("/share/")
+          ? "Shared Project"
+          : PAGE_NAMES[pathname] || "Unknown Page";
 
-    const pageName = pathname.startsWith("/projects/")
-      ? "Project Detail"
-      : PAGE_NAMES[pathname] || "Unknown Page";
+    setAnalyticsContext({ page_name: pageName, page_path: pathname });
 
     trackEvent("page_view", {
-      user_id: String(currentUser.id),
-      username: currentUser.username,
-      role: currentUser.role,
+      user_id: currentUser?.id ? String(currentUser.id) : undefined,
+      username: currentUser?.username,
+      role: currentUser?.role,
       path: pathname,
       page_name: pageName,
+      authenticated: Boolean(isAuthenticated),
     });
   }, [
+    loading,
     location.pathname,
     isAuthenticated,
     currentUser?.id,

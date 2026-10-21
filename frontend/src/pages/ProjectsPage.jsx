@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Check, ChevronDown, Eye, LayoutGrid, List, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
@@ -29,32 +28,20 @@ import {
   reorderProjects,
 } from "@/services/api";
 
-import { PROJECT_STATUSES, PROJECT_STATUS_STYLE } from "@/constants/projectPalette";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { PROJECT_STATUSES } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
-import { COLUMN_WIDTH, KanbanColumn } from "@/components/projects/KanbanColumn";
-import { ProjectListTable } from "@/components/projects/ProjectListTable";
-import { DEFAULT_SORT, SORT_OPTIONS, sortProjects } from "@/lib/projectSort";
+import { COLUMN_WIDTH } from "@/components/projects/KanbanColumn";
+import { DEFAULT_SORT, sortProjects } from "@/lib/projectSort";
 import { buildLookalikeIndex } from "@/lib/lookalikes";
-import { ProjectBulkActionBar } from "@/components/projects/ProjectBulkActionBar";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
 import { trackEvent } from "../analytics";
-import { ProjectFilterPanel } from "@/components/projects/ProjectFilterPanel";
-import { ExportIconButton } from "@/components/ui/ExportIconButton";
+import { ProjectsContent } from "@/components/projects/page/ProjectsContent";
+import { ProjectsBulkBar } from "@/components/projects/page/ProjectsBulkBar";
+import { ProjectsFilterChips } from "@/components/projects/page/ProjectsFilterChips";
+import { ProjectsToolbar } from "@/components/projects/page/ProjectsToolbar";
 import { downloadCsv, todayStamp } from "@/lib/exportCsv";
 import { makeMatcher } from "@/lib/search";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { ProjectsBoardSkeleton, SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 // A function with a permanent identity that always calls the latest version
 // of `fn`. Lets the page hand the (memoized) project cards handlers that
@@ -889,375 +876,90 @@ export default function ProjectsPage() {
   const boardWidth =
     visibleStatuses.length * COLUMN_WIDTH + Math.max(0, visibleStatuses.length - 1) * 10;
 
+  const ctx = {
+    activeFilterCount,
+    boardWidth,
+    byStatus,
+    canManage,
+    clearFilters,
+    clearSelection,
+    clientFilter,
+    clientOptions,
+    dateFrom,
+    dateTo,
+    dragOverProjectId,
+    dragOverStatus,
+    filtered,
+    filtersOpen,
+    handleBulkHide,
+    handleBulkStatusChange,
+    handleBulkUnhide,
+    handleExport,
+    handleHideProject,
+    handleUnhideProject,
+    handleVisibilityChange,
+    hiddenStatuses,
+    listPage,
+    loading,
+    loadingMore,
+    lookalikeTextById,
+    metrics,
+    pocFilter,
+    pocOptions,
+    projects,
+    search,
+    searchPending,
+    selectAllFiltered,
+    selectPage,
+    selectedProjects,
+    selectionMode,
+    setClientFilter,
+    setDateFrom,
+    setDateTo,
+    setDeleteTarget,
+    setFiltersOpen,
+    setListPage,
+    setModalOpen,
+    setPocFilter,
+    setSearch,
+    setSortBy,
+    setStatusFilter,
+    setView,
+    sortBy,
+    sortedFiltered,
+    stableColumnDragOver,
+    stableColumnDrop,
+    stableDeleteProject,
+    stableDragEnd,
+    stableDragOver,
+    stableDragStart,
+    stableDrop,
+    stableHideProject,
+    stableOpenProject,
+    stableSelectColumn,
+    stableSelectProject,
+    stableToggleColumn,
+    stableUnhideProject,
+    statusFilter,
+    toggleColumnVisibility,
+    toggleProjectSelection,
+    view,
+    visibility,
+    visibleStatuses,
+  };
+
   return (
     <div
       data-testid={PROJECTS.page}
       className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-3 pb-6 pt-[21px] md:px-5"
     >
-      {/* Title + toolbar - a white band under the top bar, as in the redesign:
-          title and counts on the left, Board / List and the solid-blue
-          "New project" on the right, then the search and filters. */}
-      <div className="-mx-3 -mt-[21px] shrink-0 border-b border-[#eaeef4] bg-white px-3 pb-3 pt-4 md:-mx-5 md:px-5 md:pt-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex min-w-[200px] flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-xl font-semibold leading-8 tracking-tight text-[#0d1b3e] md:text-2xl">
-              Projects
-            </h1>
-            <span className="text-[13px] text-[#546490]">
-              <span data-testid="projects-total-count">{projects.length}{loadingMore ? "+" : ""}</span> total
-              {" · "}
-              <span data-testid={PROJECTS.metricDueWeek}>{metrics?.due_this_week ?? 0}</span> due this week
-              {" · "}
-              <span data-testid={PROJECTS.metricRework}>{metrics?.in_rework ?? 0}</span> in rework
-              {loadingMore && " · loading the rest…"}
-            </span>
-          </div>
+      <ProjectsToolbar {...ctx} />
 
-          {/* Board / List */}
-          <div role="radiogroup" aria-label="Layout" className="flex rounded-lg bg-[#f5f6f8] p-0.5">
-            {[
-              ["chart", "Board", LayoutGrid, PROJECTS.chartViewBtn],
-              ["list", "List", List, PROJECTS.listViewBtn],
-            ].map(([key, label, Icon, testId]) => (
-              <button
-                key={key}
-                type="button"
-                role="radio"
-                aria-checked={view === key}
-                data-testid={testId}
-                onClick={() => setView(key)}
-                className={`flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-xs font-semibold outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20 ${
-                  view === key
-                    ? "bg-white text-[#0d1b3e] shadow-[0_1px_2px_rgba(13,28,61,0.05)]"
-                    : "text-[#546490] hover:text-[#0d1b3e]"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
+      <ProjectsFilterChips {...ctx} />
 
-          {canManage && (
-            <button
-              type="button"
-              data-testid={PROJECTS.newProjectBtn}
-              onClick={() => setModalOpen(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[7px] bg-[#2b2bb5] px-3.5 text-[13px] font-semibold text-white outline-none transition-colors hover:bg-[#3d3dcc] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/30"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New project
-            </button>
-          )}
-        </div>
+      <ProjectsBulkBar {...ctx} />
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {/* Search */}
-          <label className="flex h-10 w-full items-center md:h-8 md:w-[320px] md:max-w-full gap-2 rounded-[7px] border border-[#eff0f2] bg-white pl-3 pr-2 focus-within:border-[#2b2bb5] focus-within:ring-[3px] focus-within:ring-[#2b2bb5]/20">
-            <Search className="h-3 w-3 shrink-0 text-[#a2aab6]" strokeWidth={2.5} />
-            <input
-              data-testid={PROJECTS.searchInput}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects or deliverables…"
-              className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-[#11151c] outline-none placeholder:text-[#a2aab6]"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="text-[#a2aab6] hover:text-[#4a5878]"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </label>
-
-          {/* Status - a menu rather than a native select so the button is
-              only as wide as the current choice, as in the design */}
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                data-testid={PROJECTS.statusFilter}
-                aria-label="Filter by status"
-                className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[#eff0f2] bg-white pl-3 pr-[10px] text-[13px] text-[#4a5878] outline-none hover:bg-[#f9fafb] focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20"
-              >
-                {statusFilter && (
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: PROJECT_STATUS_STYLE[statusFilter]?.dot }}
-                  />
-                )}
-                {statusFilter || "All status"}
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              sideOffset={6}
-              className="w-48 rounded-[10px] border-[#e7e9ee] p-1 shadow-[0_6px_20px_rgba(17,21,28,0.1)]"
-            >
-              {["", ...PROJECT_STATUSES].map((s) => (
-                <DropdownMenuItem
-                  key={s || "all"}
-                  onSelect={() => setStatusFilter(s)}
-                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-[#11151c] focus:bg-[#f4f5f7]"
-                >
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: s ? PROJECT_STATUS_STYLE[s]?.dot : "#c3c8d2" }}
-                  />
-                  <span className="flex-1">{s || "All status"}</span>
-                  {statusFilter === s && <Check className="!h-3.5 !w-3.5 text-[#2b2bb5]" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* More filters + sort (not in the design, kept compact) */}
-          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                data-testid={PROJECTS.filtersButton}
-                aria-label="More filters and sorting"
-                title="More filters and sorting"
-                className={`relative flex h-8 w-8 items-center justify-center rounded-[7px] border bg-white outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20 ${
-                  activeFilterCount > 0
-                    ? "border-[#2b2bb5] text-[#2b2bb5] bg-[#f0f0fd]"
-                    : "border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
-                }`}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                {activeFilterCount > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2b2bb5] px-1 text-[9.5px] font-bold text-white">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              sideOffset={8}
-              className="w-[360px] rounded-xl border border-slate-200 bg-white p-0 shadow-xl"
-            >
-              <ProjectFilterPanel
-                sortBy={sortBy}
-                setSortBy={setSortBy}
-                clientFilter={clientFilter}
-                setClientFilter={setClientFilter}
-                pocFilter={pocFilter}
-                setPocFilter={setPocFilter}
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-                setDateFrom={setDateFrom}
-                setDateTo={setDateTo}
-                visibility={visibility}
-                setVisibility={handleVisibilityChange}
-                clients={clientOptions}
-                pocOptions={pocOptions}
-                activeFilterCount={activeFilterCount}
-                canFilterVisibility={canManage}
-                onClear={clearFilters}
-                onClose={() => setFiltersOpen(false)}
-              />
-            </PopoverContent>
-          </Popover>
-
-          {/* Export (icon only) - exports exactly what is listed */}
-          <ExportIconButton
-            data-testid={PROJECTS.exportBtn}
-            onClick={handleExport}
-            disabled={loading || sortedFiltered.length === 0}
-            className="h-8 w-8 rounded-[7px] border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
-          />
-        </div>
-      </div>
-
-      {/* Active filter chips (only when something from the filter panel is on) */}
-      {(pocFilter || clientFilter || dateFrom || dateTo || visibility !== "visible" || sortBy) && (
-        <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1.5">
-          {[
-            clientFilter && {
-              key: "client",
-              label: `Client: ${clientOptions.find((c) => c.id === clientFilter)?.name || clientFilter}`,
-              clear: () => setClientFilter(""),
-            },
-            pocFilter && { key: "poc", label: `POC: ${pocFilter}`, clear: () => setPocFilter("") },
-            (dateFrom || dateTo) && {
-              key: "due",
-              label: `Due: ${dateFrom || "Any"} – ${dateTo || "Any"}`,
-              clear: () => {
-                setDateFrom("");
-                setDateTo("");
-              },
-            },
-            visibility !== "visible" && {
-              key: "vis",
-              label: visibility === "hidden" ? "Hidden projects" : "All projects",
-              clear: () => handleVisibilityChange("visible"),
-            },
-            sortBy && {
-              key: "sort",
-              label: `Sorted: ${SORT_OPTIONS.find((o) => o.value === sortBy)?.label || sortBy}`,
-              clear: () => setSortBy(""),
-            },
-          ]
-            .filter(Boolean)
-            .map((chip) => (
-              <button
-                key={chip.key}
-                type="button"
-                onClick={chip.clear}
-                className="inline-flex h-6 items-center gap-1 rounded-full border border-[#dce6fe] bg-[#f4f7ff] px-2.5 text-[11.5px] font-medium text-[#1d4ed8]"
-              >
-                {chip.label}
-                <X className="h-3 w-3" />
-              </button>
-            ))}
-          <button
-            type="button"
-            onClick={() => {
-              clearFilters();
-              setSearch("");
-            }}
-            className="ml-1 text-[11.5px] font-medium text-[#3b6ef6] hover:underline"
-          >
-            Clear all
-          </button>
-        </div>
-      )}
-
-      {/* Bulk actions (appear once something is selected) */}
-      {canManage && selectionMode && (
-        <div className="mt-4 shrink-0">
-          <ProjectBulkActionBar
-            selectedCount={selectedProjects.size}
-            totalCount={filtered.length}
-            visibility={visibility}
-            statuses={PROJECT_STATUSES}
-            onSelectAll={selectAllFiltered}
-            onHide={handleBulkHide}
-            onUnhide={handleBulkUnhide}
-            onChangeStatus={handleBulkStatusChange}
-            onDelete={() => setDeleteTarget("bulk")}
-            onClear={clearSelection}
-          />
-        </div>
-      )}
-
-      {/* Content: fills the rest of the page's fixed height (the flex column
-          above is capped by AppLayout's <main overflow-hidden>) and scrolls
-          on its own, so this never needs to guess the toolbar's height with
-          a "100vh - Npx" constant - it just gets whatever space is left.
-          The list sits 1px lower than the board, per the design. */}
-      <div
-        className={`min-h-0 flex-1 overflow-auto ${view === "list" ? "mt-[17px]" : "mt-4"}`}
-      >
-        {loading || (filtered.length === 0 && searchPending) ? (
-          view === "chart" ? (
-            <ProjectsBoardSkeleton />
-          ) : (
-            <SettingsTableSkeleton columns={7} rows={9} label="Loading projects" />
-          )
-        ) : filtered.length === 0 ? (
-          <div
-            data-testid={PROJECTS.emptyState}
-            className="rounded-[10px] border border-dashed border-[#dde1e7] bg-white py-16 text-center"
-          >
-            <p className="text-[13px] font-semibold text-[#11151c]">
-              {projects.length === 0 ? "No projects yet" : "No projects match these filters"}
-            </p>
-            {canManage && projects.length === 0 && (
-              <p className="mt-1 text-[12px] text-[#6b7280]">
-                Click "+ New project" to create your first one.
-              </p>
-            )}
-          </div>
-        ) : view === "chart" ? (
-          <>
-            {hiddenStatuses.length > 0 && (
-              <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11.5px] text-[#98a1af]">Hidden columns:</span>
-                {hiddenStatuses.map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => toggleColumnVisibility(status)}
-                    className="inline-flex h-6 items-center gap-1.5 rounded-full border border-[#e1e4ea] bg-white px-2.5 text-[11.5px] font-medium text-[#4b5563] hover:border-[#cfddfc] hover:text-[#1d4ed8]"
-                  >
-                    <Eye className="h-3 w-3" />
-                    {status}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Horizontal scroll only - the board's own height is whatever
-                its tallest column needs; the Content wrapper above supplies
-                the vertical scrollbar, at the page's actual available
-                height rather than a guessed one. */}
-            <div className="pmt-hscroll overflow-x-auto pb-4 max-md:snap-x max-md:snap-mandatory">
-              <div className="flex items-start gap-[10px]" style={{ minWidth: boardWidth }}>
-                {visibleStatuses.map((status) => {
-                  const columnProjects = byStatus[status] || [];
-                  const allColumnProjectsSelected =
-                    columnProjects.length > 0 &&
-                    columnProjects.every((project) => selectedProjects.has(project.id));
-
-                  return (
-                    <KanbanColumn
-                      key={status}
-                      status={status}
-                      projects={columnProjects}
-                      lookalikeTextById={lookalikeTextById}
-                      selectedProjects={selectedProjects}
-                      selectionMode={selectionMode}
-                      onSelectProject={stableSelectProject}
-                      onSelectAll={stableSelectColumn}
-                      allSelected={allColumnProjectsSelected}
-                      onOpenProject={stableOpenProject}
-                      onHideProject={stableHideProject}
-                      onUnhideProject={stableUnhideProject}
-                      onDeleteProject={stableDeleteProject}
-                      onToggleVisibility={stableToggleColumn}
-                      onDragStartProject={stableDragStart}
-                      onDragEndProject={stableDragEnd}
-                      onDragOverProject={stableDragOver}
-                      onDropProject={stableDrop}
-                      onDragOverColumn={stableColumnDragOver}
-                      onDropColumn={stableColumnDrop}
-                      dragOverProjectId={dragOverProjectId}
-                      isDropTarget={dragOverStatus === status}
-                      readOnly={!canManage || loadingMore}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        ) : (
-          <ProjectListTable
-            projects={sortedFiltered}
-            lookalikeTextById={lookalikeTextById}
-            selectedProjects={selectedProjects}
-            selectionMode={selectionMode}
-            onSelectProject={toggleProjectSelection}
-            onSelectPage={selectPage}
-            onOpenProject={stableOpenProject}
-            onHideProject={handleHideProject}
-            onUnhideProject={handleUnhideProject}
-            onDeleteProject={(p) => setDeleteTarget(p)}
-            onNewProject={() => setModalOpen(true)}
-            page={listPage}
-            setPage={setListPage}
-            readOnly={!canManage || loadingMore}
-          />
-        )}
-      </div>
+      <ProjectsContent {...ctx} />
 
       {canManage && (
       <CreateProjectModal

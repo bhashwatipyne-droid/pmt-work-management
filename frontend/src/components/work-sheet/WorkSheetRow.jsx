@@ -1,52 +1,16 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronsUpDown, Lock, Maximize2, RotateCcw, Sparkles, UserPlus } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { TableCell, TableRow } from "../ui/table";
-import { Input } from "../ui/input";
-import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { Checkbox } from "../ui/checkbox";
-import { SearchableSelect } from "./SearchableSelect";
-import { ProjectPicker } from "./ProjectPicker";
-import { DeliverableMultiPicker } from "./DeliverableMultiPicker";
-import { RemarksEditor } from "./RemarksEditor";
-import { CollaboratorPicker } from "./CollaboratorPicker";
-import { StatusBadge } from "./StatusBadge";
-import { WORKSHEET } from "@/constants/testIds";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { createWorksheetKeyHandler, startEditingCell } from "./useWorksheetKeyboardNavigation";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { frozenStyle } from "@/lib/worksheetFreeze";
-import {
-  NOT_AVAILABLE_LABEL,
-  NOT_AVAILABLE_VALUE,
-  isDeliverableMissing,
-} from "@/lib/deliverableRules";
-import {
-  MAX_WORK_DATE,
-  MIN_WORK_DATE,
-  isValidWorkDate,
-} from "@/lib/worksheetDates";
+import { isDeliverableMissing } from "@/lib/deliverableRules";
+import { isValidWorkDate } from "@/lib/worksheetDates";
 import { isTimeMissing, lowTimeMessage, parseTimeInput, timeBadge } from "@/lib/timeRules";
-import { avatarColorClasses } from "@/lib/avatarColors";
-import {
-  DURATION_HINT,
-  MAX_QUANTITY,
-  durationApplies,
-  durationPatch,
-  durationSecondsOf,
-  formatDurationSeconds,
-  deliverableIdsOf,
-  deliverableListPatch,
-  isMultiDeliverableRow,
-  isQtySet,
-  loggedCount,
-  parseDurationSeconds,
-  pickDeliverablePatch,
-  qtyApplies,
-  quantityOf,
-  typeChangePatch,
-  unitName,
-} from "@/lib/quantity";
+import { durationPatch, durationSecondsOf, formatDurationSeconds, deliverableIdsOf, isMultiDeliverableRow, isQtySet } from "@/lib/quantity";
 
 const NONE_VALUE = "__none__";
 const STAGES = ["Content", "Design", "Animate"];
@@ -73,6 +37,24 @@ const QtyPlusIcon = ({ className }) => (
     <path d="M 11 5 L 7 5 L 7 1 C 7 0.735 6.895 0.48 6.707 0.293 C 6.52 0.105 6.265 0 6 0 C 5.735 0 5.48 0.105 5.293 0.293 C 5.105 0.48 5 0.735 5 1 L 5 5 L 1 5 C 0.735 5 0.48 5.105 0.293 5.293 C 0.105 5.48 0 5.735 0 6 C 0 6.265 0.105 6.52 0.293 6.707 C 0.48 6.895 0.735 7 1 7 L 5 7 L 5 11 C 5 11.265 5.105 11.52 5.293 11.707 C 5.48 11.895 5.735 12 6 12 C 6.265 12 6.52 11.895 6.707 11.707 C 6.895 11.52 7 11.265 7 11 L 7 7 L 11 7 C 11.265 7 11.52 6.895 11.707 6.707 C 11.895 6.52 12 6.265 12 6 C 12 5.735 11.895 5.48 11.707 5.293 C 11.52 5.105 11.265 5 11 5 Z" transform="translate(6 6)" fill="currentColor" fillRule="evenodd" />
   </svg>
 );
+
+import { renderDateCell } from "./cells/DateCell";
+import { renderClientCell } from "./cells/ClientCell";
+import { renderProjectCell } from "./cells/ProjectCell";
+import { renderDeliverableCell } from "./cells/DeliverableCell";
+import { renderStageCell } from "./cells/StageCell";
+import { renderDeliverableNameCell } from "./cells/DeliverableNameCell";
+import { renderDeliverableLinkCell } from "./cells/DeliverableLinkCell";
+import { renderDeliverableTypeCell } from "./cells/DeliverableTypeCell";
+import { renderQtyCell } from "./cells/QtyCell";
+import { renderDurationCell } from "./cells/DurationCell";
+import { renderCategoryCell } from "./cells/CategoryCell";
+import { renderVersionCell } from "./cells/VersionCell";
+import { renderTimeMinCell } from "./cells/TimeMinCell";
+import { renderCreatorCell } from "./cells/CreatorCell";
+import { renderReviewerCell } from "./cells/ReviewerCell";
+import { renderRemarksCell } from "./cells/RemarksCell";
+import { renderStatusCell } from "./cells/StatusCell";
 
 export const WorkSheetRow = memo(function WorkSheetRow(props) {
   const {
@@ -690,886 +672,109 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
   };
 
   const renderColumnCell = (column) => {
+    const cellCtx = {
+      NONE_VALUE,
+      QtyListIcon,
+      QtyPlusIcon,
+      STAGES,
+      allowedStatuses,
+      canEditExtra,
+      canEditRow,
+      canTagCollaborators,
+      cellProps,
+      clientName,
+      clientNameOf,
+      clients,
+      closeName,
+      closeRemarks,
+      collabCandidates,
+      collabCount,
+      collabRowReady,
+      commit,
+      commitTime,
+      commitWorkDate,
+      deliverableMissing,
+      deliverableName,
+      deliverablesByProject,
+      durationError,
+      durationText,
+      effectiveClientId,
+      getCollabMemberIds,
+      getInitials,
+      isCellActive,
+      isRecentProject,
+      item,
+      local,
+      lockedForMe,
+      lookalikes,
+      multiDeliverable,
+      nameOf,
+      nameOpen,
+      nameRef,
+      noDeliverables,
+      nonAdminUsers,
+      onAddCollaborators,
+      onOpenQty,
+      onUpdate,
+      openName,
+      openRemarks,
+      openSelect,
+      options,
+      projectDeliverables,
+      projectName,
+      projects,
+      qtyPanelOpen,
+      qtyText,
+      remarksOpen,
+      remarksRef,
+      renderFillHandle,
+      reviewerUsers,
+      setDurationError,
+      setDurationText,
+      setLocal,
+      setOpenSelect,
+      setQtyText,
+      setTimeError,
+      sheetCell,
+      timeError,
+      timeHint,
+      timeMissing,
+    };
     switch (column) {
       case "Date":
-        return (
-<TableCell {...cellProps(0, null, { navShell: true })}>
-        <Input
-          {...sheetCell(0)}
-          data-testid={`${WORKSHEET.dateInput}-${item.id}`}
-          type="date"
-          value={local.work_date}
-          min={MIN_WORK_DATE}
-          max={MAX_WORK_DATE}
-          disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, work_date: e.target.value }))}
-          onBlur={commitWorkDate}
-          className="sheet-date-input h-8 w-[130px] pl-7 pr-1"
-        />
-
-        {renderFillHandle(0)}
-      </TableCell>
-        );
+        return renderDateCell(cellCtx);
       case "Client":
-        return (
-<TableCell {...cellProps(1)}>
-        <SearchableSelect
-          open={openSelect === "client"}
-          onOpenChange={(open) => setOpenSelect(open ? "client" : null)}
-          value={effectiveClientId ? String(effectiveClientId) : NONE_VALUE}
-          onValueChange={(v) => {
-            const nextClientId = v === NONE_VALUE ? null : v;
-            onUpdate(item.id, {
-              client_id: nextClientId,
-              project_id: null,
-              deliverable_id: null,
-              deliverable_not_available: false,
-              ...noDeliverables(),
-            });
-            if (nextClientId) localStorage.setItem("ws_last_client_id", nextClientId);
-            else localStorage.removeItem("ws_last_client_id");
-            localStorage.removeItem("ws_last_project_id");
-            localStorage.removeItem("ws_last_deliverable_id");
-          }}
-          options={[
-            { value: NONE_VALUE, label: "—" },
-            ...clients.map((client) => ({ value: String(client.id), label: client.name })),
-          ]}
-          placeholder="Client"
-          searchPlaceholder="Type client name..."
-          emptyText="No clients found"
-          disabled={!canEditRow}
-          triggerProps={sheetCell(1)}
-          data-testid={`worksheet-client-select-${item.id}`}
-          contentClassName="w-[300px] p-0"
-        />
-        {renderFillHandle(1)}
-      </TableCell>
-        );
+        return renderClientCell(cellCtx);
       case "Project":
-        return (
-<TableCell {...cellProps(2)}>
-        <ProjectPicker
-          open={openSelect === "project"}
-          onOpenChange={(open) => setOpenSelect(open ? "project" : null)}
-          value={item.project_id}
-          projects={projects}
-          clientId={effectiveClientId}
-          clientNameOf={clientNameOf}
-          isRecent={isRecentProject}
-          lookalikes={lookalikes}
-          deliverablesByProject={deliverablesByProject}
-          onPick={(picked, deliverable) => {
-            // Picking a project also sets its client, so a new row can start
-            // from the project.
-            const patch = { project_id: picked.id, client_id: picked.client_id };
-            if (deliverable) {
-              // Project, deliverable and the deliverable's type all at once.
-              Object.assign(
-                patch,
-                pickDeliverablePatch(item, deliverable, {
-                  types: options.deliverable_types || [],
-                  categories: options.deliverable_type_categories || {},
-                })
-              );
-            } else if (picked.id !== item.project_id) {
-              patch.deliverable_id = null;
-              patch.deliverable_not_available = false;
-              Object.assign(patch, noDeliverables());
-            }
-            onUpdate(item.id, patch);
-
-            const twins = lookalikes?.get(picked.id) || [];
-            if (item.client_id && String(picked.client_id) !== String(item.client_id)) {
-              toast(`Client changed to ${clientNameOf(picked.client_id)}`);
-            } else if (twins.length) {
-              toast(`Set to ${picked.name}, not ${twins[0].name}`);
-            }
-          }}
-          disabled={!canEditRow}
-          triggerProps={sheetCell(2)}
-          data-testid={`worksheet-project-select-${item.id}`}
-        />
-        {renderFillHandle(2)}
-      </TableCell>
-        );
+        return renderProjectCell(cellCtx);
       case "Deliverable":
-        return (
-<TableCell {...cellProps(3, deliverableMissing && "shadow-[inset_2px_0_0_#fb7185]")}>
-        {multiDeliverable ? (
-        <DeliverableMultiPicker
-          open={openSelect === "deliverable"}
-          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
-          options={projectDeliverables}
-          selectedIds={deliverableIdsOf(item)}
-          notAvailable={Boolean(item.deliverable_not_available)}
-          missing={deliverableMissing}
-          showNotAvailable={Boolean(item.project_id)}
-          placeholder={item.project_id ? "Deliverable" : "Select project first"}
-          disabled={!canEditRow || !item.project_id}
-          triggerProps={sheetCell(3)}
-          data-testid={`worksheet-deliverable-select-${item.id}`}
-          onCommit={(ids, notAvailable) => {
-            if (notAvailable) {
-              // No matching deliverable exists yet: saving this notifies the
-              // admins to check the project's deliverables and add it.
-              onUpdate(item.id, {
-                deliverable_id: null,
-                deliverable_not_available: true,
-                ...noDeliverables(),
-              });
-              return;
-            }
-            onUpdate(item.id, deliverableListPatch(item, ids));
-          }}
-        />
-        ) : (
-        <SearchableSelect
-          open={openSelect === "deliverable"}
-          onOpenChange={(open) => setOpenSelect(open ? "deliverable" : null)}
-          value={
-            item.deliverable_not_available
-              ? NOT_AVAILABLE_VALUE
-              : item.deliverable_id
-                ? String(item.deliverable_id)
-                : NONE_VALUE
-          }
-          onValueChange={(v) => {
-            if (v === NOT_AVAILABLE_VALUE) {
-              // No matching deliverable exists yet: saving this notifies the
-              // admins to check the project's deliverables and add it.
-              onUpdate(item.id, { deliverable_id: null, deliverable_not_available: true });
-              return;
-            }
-            const picked = v === NONE_VALUE ? null : projectDeliverables.find((d) => String(d.id) === String(v));
-            if (picked) {
-              // The deliverable's type fills the row's Deliverable Type too.
-              onUpdate(
-                item.id,
-                pickDeliverablePatch(item, picked, {
-                  types: options.deliverable_types || [],
-                  categories: options.deliverable_type_categories || {},
-                })
-              );
-              return;
-            }
-            onUpdate(item.id, {
-              deliverable_id: v === NONE_VALUE ? null : v,
-              deliverable_not_available: false,
-            });
-          }}
-          options={[
-            { value: NONE_VALUE, label: "—" },
-            ...projectDeliverables.map((deliverable) => ({
-              value: String(deliverable.id),
-              label: deliverable.name,
-              chip: deliverable.type || "",
-            })),
-            // Last on purpose: people should look for the real deliverable first.
-            ...(item.project_id ? [{ value: NOT_AVAILABLE_VALUE, label: NOT_AVAILABLE_LABEL }] : []),
-          ]}
-          renderValue={(option, value) => {
-            if (value === NOT_AVAILABLE_VALUE) {
-              return <span className="font-medium text-amber-700">{NOT_AVAILABLE_LABEL}</span>;
-            }
-            if (deliverableMissing) {
-              return <span className="text-rose-500">Required</span>;
-            }
-            return option?.label || (value ? String(value) : (item.project_id ? "Deliverable" : "Select project first"));
-          }}
-          placeholder={item.project_id ? "Deliverable" : "Select project first"}
-          searchPlaceholder="Type deliverable name..."
-          emptyText="No deliverables found for this project"
-          disabled={!canEditRow || !item.project_id}
-          triggerProps={sheetCell(3)}
-          data-testid={`worksheet-deliverable-select-${item.id}`}
-          contentClassName="w-[460px] p-0"
-          extraGroup={(search) => {
-            // People remember the deliverable but not always which project it
-            // sits under (e.g. "ABSL Alternates" vs a similar ABSL project), so
-            // a search also looks through every other project's deliverables.
-            const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-            if (search.trim().length < 2) return null;
-            // The client picked may itself be wrong (e.g. "Aditya Birla Sun
-            // Life" for "Aditya Birla Alternative"), so rank matches: same
-            // client first, then clients whose names share a word with it,
-            // then everyone else.
-            const tokensOf = (name) =>
-              new Set(
-                String(name || "")
-                  .toLowerCase()
-                  .split(/[^a-z0-9]+/)
-                  .filter((t) => t.length > 2 && !["ltd", "pvt", "the", "and", "limited"].includes(t))
-              );
-            const rowClientTokens = tokensOf(clientNameOf(item.client_id));
-            const clientRank = (clientId) => {
-              if (item.client_id && String(clientId) === String(item.client_id)) return 0;
-              for (const t of tokensOf(clientNameOf(clientId))) {
-                if (rowClientTokens.has(t)) return 1;
-              }
-              return 2;
-            };
-            const matches = [];
-            for (const project of projects) {
-              if (project.id === item.project_id) continue;
-              for (const deliverable of deliverablesByProject[project.id] || []) {
-                const hay = `${deliverable.name} ${project.name} ${clientNameOf(project.client_id)}`.toLowerCase();
-                if (!words.every((w) => hay.includes(w))) continue;
-                matches.push({ project, deliverable, rank: clientRank(project.client_id) });
-              }
-            }
-            matches.sort((a, b) => a.rank - b.rank);
-            const items = [];
-            for (const { project, deliverable } of matches.slice(0, 8)) {
-              {
-                const client = clientNameOf(project.client_id);
-                items.push({
-                  key: `other-${project.id}-${deliverable.id}`,
-                  label: deliverable.name,
-                  sub: client ? `${client} · ${project.name}` : project.name,
-                  chip: deliverable.type || "",
-                  onSelect: () => {
-                    // Switches the row's project and client along with it.
-                    onUpdate(item.id, {
-                      project_id: project.id,
-                      client_id: project.client_id,
-                      ...pickDeliverablePatch(item, deliverable, {
-                        types: options.deliverable_types || [],
-                        categories: options.deliverable_type_categories || {},
-                      }),
-                    });
-                    const newClient = clientNameOf(project.client_id);
-                    toast(
-                      String(project.client_id) !== String(item.client_id) && newClient
-                        ? `Client changed to ${newClient}, project to ${project.name}`
-                        : `Project changed to ${project.name}`
-                    );
-                  },
-                });
-              }
-            }
-            return { heading: "In other projects & clients", items };
-          }}
-        />
-        )}
-        {renderFillHandle(3)}
-      </TableCell>
-        );
+        return renderDeliverableCell(cellCtx);
       case "Stage":
-        return (
-<TableCell {...cellProps(4)}>
-        <SearchableSelect
-          open={openSelect === "stage"}
-          onOpenChange={(open) => setOpenSelect(open ? "stage" : null)}
-          value={item.stage || NONE_VALUE}
-          onValueChange={(v) => onUpdate(item.id, { stage: v === NONE_VALUE ? null : v })}
-          options={[
-            { value: NONE_VALUE, label: "—" },
-            ...STAGES.map((stage) => ({ value: stage, label: stage })),
-          ]}
-          placeholder="Stage"
-          searchPlaceholder="Type stage..."
-          emptyText="No stages found"
-          disabled={!canEditRow}
-          triggerProps={sheetCell(4)}
-          data-testid={`worksheet-stage-select-${item.id}`}
-          contentClassName="w-[200px] p-0"
-        />
-        {renderFillHandle(4)}
-      </TableCell>
-        );
+        return renderStageCell(cellCtx);
       case "Deliverable Name":
-        return (
-<TableCell {...cellProps(5, null, { onExpand: canEditRow ? openName : undefined })}>
-        {canEditRow ? (
-          <AutoGrowTextarea
-            {...sheetCell(5)}
-            ref={nameRef}
-            data-testid={`${WORKSHEET.deliverableInput}-${item.id}`}
-            value={local.deliverable_name}
-            onChange={(e) =>
-              // A name is one line however long it is; Enter moves down the
-              // sheet, so a pasted line break becomes a space.
-              setLocal((l) => ({ ...l, deliverable_name: e.target.value.replace(/\s*[\r\n]+\s*/g, " ") }))
-            }
-            onBlur={() => commit("deliverable_name", local.deliverable_name)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                event.stopPropagation();
-                openName();
-                return;
-              }
-              sheetCell(5).onKeyDown(event);
-            }}
-            className="pr-8"
-            placeholder="Deliverable name"
-          />
-        ) : (
-          <span className="cell-plain block">{item.deliverable_name || "—"}</span>
-        )}
-        {canEditRow && (isCellActive(5) || (local.deliverable_name || "").length > 30) && (
-          <button
-            type="button"
-            tabIndex={-1}
-            data-testid={`worksheet-name-expand-${item.id}`}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              openName();
-            }}
-            aria-label="Expand deliverable name"
-            title={`Expand (${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘" : "Ctrl"} Enter)`}
-            className={`absolute right-2 top-2 z-[3] flex h-[22px] w-[22px] items-center justify-center rounded-md border border-slate-200 bg-white transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5] ${
-              isCellActive(5) ? "text-[#2b2bb5]" : "text-slate-400"
-            }`}
-          >
-            <Maximize2 className="h-3 w-3" />
-          </button>
-        )}
-        {nameOpen && (
-          <RemarksEditor
-            anchorEl={nameRef.current?.closest("[data-sheet-cell]")}
-            rowLabel={projectName || clientName || ""}
-            title="Deliverable"
-            placeholder="Deliverable name"
-            value={local.deliverable_name}
-            readOnly={!canEditRow}
-            onSave={(next) => {
-              const normalized = next.replace(/\s*[\r\n]+\s*/g, " ").trim();
-              setLocal((l) => ({ ...l, deliverable_name: normalized }));
-              if (normalized !== (item.deliverable_name || "")) {
-                commit("deliverable_name", normalized);
-                toast.success("Deliverable name saved");
-              }
-              closeName();
-            }}
-            onClose={closeName}
-          />
-        )}
-        {renderFillHandle(5)}
-      </TableCell>
-        );
+        return renderDeliverableNameCell(cellCtx);
       case "Deliverable Link":
-        return (
-<TableCell {...cellProps(6)}>
-        {canEditRow ? (
-          <AutoGrowTextarea
-            {...sheetCell(6)}
-            data-testid={`${WORKSHEET.deliverableLinkInput}-${item.id}`}
-            value={local.deliverable_link}
-            onChange={(e) =>
-              setLocal((l) => ({ ...l, deliverable_link: e.target.value.replace(/[\r\n]+/g, "") }))
-            }
-            onBlur={() => commit("deliverable_link", local.deliverable_link)}
-            placeholder="Paste drive link"
-          />
-        ) : item.deliverable_link ? (
-          <a href={item.deliverable_link} target="_blank" rel="noreferrer" className="cell-plain block text-indigo-600 underline">
-            {item.deliverable_link}
-          </a>
-        ) : (
-          <span className="cell-plain block">—</span>
-        )}
-        {renderFillHandle(6)}
-      </TableCell>
-        );
+        return renderDeliverableLinkCell(cellCtx);
       case "Deliverable Type":
-        return (
-<TableCell {...cellProps(7)}>
-        {canEditRow ? (
-          <SearchableSelect
-              open={openSelect === "type"}
-              onOpenChange={(open) => setOpenSelect(open ? "type" : null)}
-              value={item.deliverable_type || NONE_VALUE}
-              onValueChange={(v) => {
-                const nextType = v === NONE_VALUE ? "" : v;
-                onUpdate(item.id, typeChangePatch(item, nextType, options.deliverable_type_categories));
-              }}
-              options={[
-                { value: NONE_VALUE, label: "—" },
-                ...(options.deliverable_types || []).map((type) => ({ value: type, label: type })),
-              ]}
-              placeholder="Deliverable Type"
-              searchPlaceholder="Type to search..."
-              emptyText="No types found"
-              disabled={!canEditRow}
-              triggerProps={sheetCell(7)}
-              data-testid={`${WORKSHEET.typeSelect}-${item.id}`}
-              contentClassName="w-[440px] p-0"
-            />
-        ) : (
-          <span className="cell-plain block">{item.deliverable_type || "—"}</span>
-        )}
-        {renderFillHandle(7)}
-      </TableCell>
-        );
-      case "Qty": {
-        const applies = qtyApplies(item);
-        const isSet = isQtySet(item);
-        const count = quantityOf(item);
-
-        return (
-<TableCell {...cellProps(15)}>
-        {!applies ? (
-          <span
-            className="cell-plain block text-center text-[#d1d5db]"
-            title="Qty applies to Design and Animate rows, and to Content rows on a Core deliverable type (not Non-Core activities)"
-          >
-            —
-          </span>
-        ) : isSet ? (
-          // A number is already entered: this is a button that opens the
-          // side panel (quantity + time for each unit), so it looks like one.
-          <button
-            type="button"
-            {...sheetCell(15)}
-            aria-haspopup="dialog"
-            aria-expanded={qtyPanelOpen}
-            data-testid={`worksheet-qty-chip-${item.id}`}
-            title={
-              multiDeliverable
-                ? `${count} ${unitName(item, options, count)} ticked - click to log time for each`
-                : `${count} ${unitName(item, options, count)} - click to log time for each`
-            }
-            onClick={() => onOpenQty?.(item.id)}
-            className="qty-chip group/qty flex h-[26px] w-full items-center gap-1.5 rounded-[7px] pl-2 pr-1.5 tabular-nums transition-colors"
-          >
-            <span className="text-[13px] font-bold">{count}</span>
-            <span className="flex-1 text-left text-[11px] text-[#2b2bb5] group-aria-expanded/qty:text-[#c8d5f0]">
-              {loggedCount(item)}/{count}
-            </span>
-            <QtyListIcon className="shrink-0" />
-          </button>
-        ) : multiDeliverable ? (
-          // Nothing ticked yet: Qty is filled in from the Deliverable cell.
-          <span
-            data-testid={`worksheet-qty-hint-${item.id}`}
-            className="cell-plain block text-center text-[12px] text-[#9aa4bd]"
-            title="Tick the deliverables this ideation covers in the Deliverable column. Qty fills in automatically."
-          >
-            Pick deliverables
-          </span>
-        ) : (
-          <Input
-            {...sheetCell(15)}
-            data-testid={`worksheet-qty-input-${item.id}`}
-            type="text"
-            inputMode="numeric"
-            placeholder="Qty"
-            title="Type a number, then click it to log time for each one"
-            aria-label="Quantity"
-            value={qtyText}
-            disabled={!canEditRow}
-            onChange={(e) => setQtyText(e.target.value.replace(/[^0-9]/g, ""))}
-            onBlur={() => {
-              const text = qtyText.trim();
-              setQtyText("");
-              if (!text) return;
-              const n = Number(text);
-              if (!Number.isInteger(n) || n < 1 || n > MAX_QUANTITY) {
-                toast.error(`Quantity must be a whole number from 1 to ${MAX_QUANTITY}.`);
-                return;
-              }
-              onUpdate(item.id, { quantity: n, quantity_items: Array(n).fill(null) });
-            }}
-            className="peer qty-add h-[26px] w-full min-w-0 rounded-[7px] border border-[#eff0f2] bg-transparent py-0 pl-4 pr-2 text-center text-[12px] text-[#546490] shadow-none placeholder:text-[#546490] focus:pl-2 [&:not(:placeholder-shown)]:pl-2"
-          />
-        )}
-        {applies && !isSet && !multiDeliverable && (
-          // Plus sign in front of the "Qty" placeholder; gone once typing starts.
-          <QtyPlusIcon className="pointer-events-none absolute left-[calc(50%-17.5px)] top-1/2 -translate-y-1/2 text-[#546490] peer-focus:hidden peer-[:not(:placeholder-shown)]:hidden" />
-        )}
-        {renderFillHandle(15)}
-      </TableCell>
-        );
-      }
-      case "Duration": {
-        const applies = durationApplies(item);
-
-        return (
-<TableCell {...cellProps(16)}>
-        {!applies ? (
-          <span
-            className="cell-plain block text-center text-[#d1d5db]"
-            title="Duration applies to Animate rows only"
-          >
-            —
-          </span>
-        ) : (
-          <Input
-            {...sheetCell(16)}
-            data-testid={`worksheet-duration-input-${item.id}`}
-            type="text"
-            inputMode="text"
-            placeholder="sec"
-            title={`Final video length. ${DURATION_HINT}`}
-            aria-label="Video duration (seconds by default)"
-            value={durationText}
-            disabled={!canEditRow}
-            onChange={(e) => {
-              setDurationText(e.target.value);
-              if (durationError) setDurationError("");
-            }}
-            onBlur={async () => {
-              const current = durationSecondsOf(item);
-              const parsed = parseDurationSeconds(durationText);
-
-              if (!parsed.ok) {
-                // Keep what was typed so it can be fixed; say why under the box.
-                setDurationError(`Not a valid duration. ${DURATION_HINT}`);
-                return;
-              }
-              setDurationError("");
-              // 200 is shown as "3m 20s" whether or not it changed.
-              setDurationText(formatDurationSeconds(parsed.seconds));
-              if (parsed.seconds === current) return;
-              const result = await onUpdate(item.id, durationPatch(parsed.seconds));
-              if (result && result.success === false) {
-                setDurationError("Could not save the duration. Try again.");
-              }
-            }}
-            aria-invalid={Boolean(durationError)}
-            className={`h-7 w-[104px] px-2 ${durationError ? "border-rose-400" : ""}`}
-          />
-        )}
-        {applies && durationError && (
-          <p
-            role="alert"
-            data-testid={`worksheet-duration-error-${item.id}`}
-            className="mt-1 text-[11px] leading-4 text-rose-600"
-          >
-            {durationError}
-          </p>
-        )}
-        {renderFillHandle(16)}
-      </TableCell>
-        );
-      }
+        return renderDeliverableTypeCell(cellCtx);
+      case "Qty":
+        return renderQtyCell(cellCtx);
+      case "Duration":
+        return renderDurationCell(cellCtx);
       case "Category":
-        return (
-<TableCell {...cellProps(8)}>
-        <span
-          data-testid={`${WORKSHEET.categorySelect}-${item.id}`}
-          className="cell-plain block"
-        >
-          {item.work_category || "—"}
-        </span>
-        {renderFillHandle(8)}
-      </TableCell>
-        );
+        return renderCategoryCell(cellCtx);
       case "Version":
-        return (
-<TableCell {...cellProps(9)}>
-        <Input
-          {...sheetCell(9)}
-          data-testid={`${WORKSHEET.versionInput}-${item.id}`}
-          value={local.version}
-          disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, version: e.target.value }))}
-          onBlur={() => commit("version", local.version)}
-          className="h-7 w-[80px]"
-          placeholder="v1"
-        />
-        {renderFillHandle(9)}
-      </TableCell>
-        );
+        return renderVersionCell(cellCtx);
       case "Time (min)":
-        return (
-<TableCell {...cellProps(10)}>
-        <div className="flex items-center gap-1">
-          <Input
-            {...sheetCell(10)}
-            data-testid={`${WORKSHEET.timeInput}-${item.id}`}
-            // Text, not type="number": a number box hides where the cursor
-            // is, so Left/Right could never move on to the next cell from
-            // here. commitTime still checks the value (0-1440 minutes).
-            type="text"
-            inputMode="decimal"
-            required
-            aria-required="true"
-            aria-invalid={timeMissing}
-            placeholder={timeHint?.benchmark ? String(timeHint.benchmark) : "min"}
-            title={
-              timeMissing
-                ? "Time is required. It is filled automatically when your benchmark exists for this deliverable type - otherwise enter the minutes."
-                : undefined
-            }
-            value={local.time_taken_minutes}
-            disabled={!canEditRow}
-            onChange={(e) => {
-              setTimeError("");
-              setLocal((l) => ({ ...l, time_taken_minutes: e.target.value }));
-            }}
-            onBlur={commitTime}
-            aria-invalid={timeMissing || Boolean(timeError)}
-            className={`h-7 w-[64px] px-2 ${
-              timeMissing || timeError
-                ? "border-rose-400 bg-rose-50/70 ring-1 ring-rose-200 focus-visible:ring-rose-300"
-                : ""
-            }`}
-          />
-
-          {timeHint?.kind === "auto" && (
-            <span
-              data-testid={`worksheet-time-auto-${item.id}`}
-              title={`Auto-filled from your benchmark for ${item.deliverable_type}: ${timeHint.benchmark} min. You can edit it if this one was different.`}
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-indigo-500"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-            </span>
-          )}
-
-          {timeHint?.kind === "edited" && canEditRow && (
-            <button
-              type="button"
-              data-testid={`worksheet-time-reset-${item.id}`}
-              title={`Edited. Your benchmark for ${item.deliverable_type} is ${timeHint.benchmark} min - click to use it.`}
-              onClick={() => onUpdate(item.id, { time_taken_minutes: timeHint.benchmark })}
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-amber-600 transition-colors hover:bg-amber-50"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        {timeError && (
-          <p
-            role="alert"
-            data-testid={`worksheet-time-error-${item.id}`}
-            className="mt-1 text-[11px] leading-4 text-rose-600"
-          >
-            {timeError}
-          </p>
-        )}
-        {renderFillHandle(10)}
-      </TableCell>
-        );
-      case "Creator": {
-        const collaboratorButton = canTagCollaborators ? (
-          <CollaboratorPicker
-            people={collabCandidates}
-            addedIds={getCollabMemberIds ? getCollabMemberIds(item.collab_group_id) : []}
-            onSubmit={(ids) => onAddCollaborators([item.id], ids)}
-            blockedReason={
-              collabRowReady
-                ? ""
-                : "Fill in the date and the project, deliverable or type on this entry first, so teammates get something meaningful."
-            }
-            testId={`worksheet-collaborator-picker-${item.id}`}
-          >
-            <button
-              type="button"
-              tabIndex={-1}
-              data-testid={`worksheet-collaborator-btn-${item.id}`}
-              aria-label="Add collaborators"
-              title={
-                collabRowReady
-                  ? collabCount > 0
-                    ? `${collabCount} collaborator${collabCount === 1 ? "" : "s"} - click to add more`
-                    : "Add collaborators"
-                  : "Add collaborators"
-              }
-              className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 rounded-md px-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#2b2bb5] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-            >
-              <UserPlus className="h-3.5 w-3.5" />
-              {collabCount > 0 && (
-                <span className="text-[11px] font-semibold text-[#2b2bb5]">+{collabCount}</span>
-              )}
-            </button>
-          </CollaboratorPicker>
-        ) : collabCount > 0 ? (
-          <span
-            className="inline-flex h-6 shrink-0 items-center rounded-md px-1 text-[11px] font-semibold text-[#2b2bb5]"
-            title={`${collabCount} collaborator${collabCount === 1 ? "" : "s"} on this entry`}
-          >
-            +{collabCount}
-          </span>
-        ) : null;
-
-        return (
-<TableCell {...cellProps(11)}>
-        {canEditExtra ? (
-          <div className="flex min-w-0 items-center gap-1">
-          <div className="min-w-0 flex-1">
-          <SearchableSelect
-              open={openSelect === "creator"}
-              onOpenChange={(open) => setOpenSelect(open ? "creator" : null)}
-              value={item.creator_id || NONE_VALUE}
-              onValueChange={(v) => onUpdate(item.id, { creator_id: v === NONE_VALUE ? null : v })}
-              options={[
-                { value: NONE_VALUE, label: "Unassigned" },
-                ...nonAdminUsers.map((user) => ({ value: user.id, label: user.name })),
-              ]}
-              placeholder="Creator"
-              searchPlaceholder="Type creator name..."
-              emptyText="No users found"
-              disabled={!canEditExtra}
-              triggerProps={sheetCell(11)}
-              data-testid={`${WORKSHEET.creatorSelect}-${item.id}`}
-              contentClassName="w-[280px] p-0"
-              renderValue={(option) => {
-                const name = option?.label || "Unassigned";
-                const initials = getInitials(name);
-
-                return (
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarColorClasses(option?.value)}`}
-                    >
-                      {initials}
-                    </span>
-                    <span className="min-w-0 truncate text-[13px] leading-5 text-slate-700">{name}</span>
-                  </span>
-                );
-              }}
-            />
-          </div>
-          {collaboratorButton}
-          </div>
-        ) : (
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarColorClasses(item.creator_id)}`}
-            >
-              {getInitials(nameOf(item.creator_id))}
-            </span>
-            <span className="cell-plain min-w-0">{nameOf(item.creator_id)}</span>
-            {lockedForMe && (
-              <Lock
-                className="h-3 w-3 shrink-0 text-muted-foreground"
-                aria-label="Locked"
-                title={`This row was created by ${nameOf(item.creator_id)}. Only they (or a manager) can edit it.`}
-              />
-            )}
-            {collaboratorButton && <span className="ml-auto shrink-0">{collaboratorButton}</span>}
-          </span>
-        )}
-        {renderFillHandle(11)}
-      </TableCell>
-        );
-      }
+        return renderTimeMinCell(cellCtx);
+      case "Creator":
+        return renderCreatorCell(cellCtx);
       case "Reviewer":
-        return (
-<TableCell {...cellProps(12)}>
-        {canEditRow ? (
-          <SearchableSelect
-              open={openSelect === "reviewer"}
-              onOpenChange={(open) => setOpenSelect(open ? "reviewer" : null)}
-              value={item.reviewer_id || NONE_VALUE}
-              onValueChange={(v) => onUpdate(item.id, { reviewer_id: v === NONE_VALUE ? null : v })}
-              options={[
-                { value: NONE_VALUE, label: "Unassigned" },
-                ...reviewerUsers.map((user) => ({ value: user.id, label: user.name })),
-              ]}
-              placeholder="Reviewer"
-              searchPlaceholder="Type reviewer name..."
-              emptyText="No reviewers found"
-              disabled={!canEditRow}
-              triggerProps={sheetCell(12)}
-              data-testid={`${WORKSHEET.reviewerSelect}-${item.id}`}
-              contentClassName="w-[280px] p-0"
-            />
-        ) : (
-          <span className="cell-plain block">{item.reviewer_id ? nameOf(item.reviewer_id) : "Unassigned"}</span>
-        )}
-        {renderFillHandle(12)}
-      </TableCell>
-        );
+        return renderReviewerCell(cellCtx);
       case "Remarks":
-        return (
-<TableCell {...cellProps(13, null, { onExpand: openRemarks })}>
-        <AutoGrowTextarea
-          {...sheetCell(13)}
-          ref={remarksRef}
-          data-testid={`${WORKSHEET.remarksInput}-${item.id}`}
-          value={local.remarks}
-          disabled={!canEditRow}
-          onChange={(e) => setLocal((l) => ({ ...l, remarks: e.target.value }))}
-          onBlur={() => commit("remarks", local.remarks)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              event.stopPropagation();
-              openRemarks();
-              return;
-            }
-            sheetCell(13).onKeyDown(event);
-          }}
-          onDoubleClick={openRemarks}
-          className="pr-8"
-        />
-        {(isCellActive(13) || (local.remarks || "").length > 28) && (
-          <button
-            type="button"
-            tabIndex={-1}
-            data-testid={`worksheet-remarks-expand-${item.id}`}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              openRemarks();
-            }}
-            aria-label="Expand remarks"
-            title={`Expand (${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘" : "Ctrl"} Enter)`}
-            className={`absolute right-2 top-2 z-[3] flex h-[22px] w-[22px] items-center justify-center rounded-md border border-slate-200 bg-white transition-colors hover:bg-[#f0f0fd] hover:text-[#2b2bb5] ${
-              isCellActive(13) ? "text-[#2b2bb5]" : "text-slate-400"
-            }`}
-          >
-            <Maximize2 className="h-3 w-3" />
-          </button>
-        )}
-        {remarksOpen && (
-          <RemarksEditor
-            anchorEl={remarksRef.current?.closest("[data-sheet-cell]")}
-            rowLabel={item.deliverable_name || deliverableName || projectName || ""}
-            value={local.remarks}
-            readOnly={!canEditRow}
-            onSave={(next) => {
-              const trimmed = next.trim();
-              setLocal((l) => ({ ...l, remarks: trimmed }));
-              if (trimmed !== (item.remarks || "")) {
-                commit("remarks", trimmed);
-                toast.success("Remarks saved");
-              }
-              closeRemarks();
-            }}
-            onClose={closeRemarks}
-          />
-        )}
-        {renderFillHandle(13)}
-      </TableCell>
-        );
+        return renderRemarksCell(cellCtx);
       case "Status":
-        return (
-<TableCell {...cellProps(14)}>
-        <SearchableSelect
-          open={openSelect === "status"}
-          onOpenChange={(open) => setOpenSelect(open ? "status" : null)}
-          value={item.status || NONE_VALUE}
-          onValueChange={(v) => onUpdate(item.id, { status: v })}
-          options={(options.statuses || []).map((status) => ({
-            value: status,
-            label: status,
-            disabled: !allowedStatuses?.includes(status),
-          }))}
-          renderValue={(_option, value) =>
-            value && value !== NONE_VALUE ? (
-              <StatusBadge status={value} />
-            ) : (
-              "Status"
-            )
-          }
-          placeholder="Status"
-          searchPlaceholder="Type status..."
-          emptyText="No statuses found"
-          disabled={!canEditRow}
-          triggerProps={sheetCell(14)}
-          data-testid={`${WORKSHEET.statusSelect}-${item.id}`}
-          className="border-none bg-transparent shadow-none p-0"
-          contentClassName="w-[280px] p-0"
-        />
-        {renderFillHandle(14)}
-      </TableCell>
-        );
+        return renderStatusCell(cellCtx);
       default:
         return null;
     }

@@ -36,6 +36,7 @@ export function useSheetSave({ currentUser, noteFor, refDay, setTasks, setUpdate
           toast.error(err?.response?.data?.detail || "Couldn't save that change");
         });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [refDay]
   );
 

@@ -79,6 +79,7 @@ export function useSheetEditing({ canEdit, cell, clearBlock, colIndex, cols, cop
     if (!cell) return;
     const el = gridRef.current?.querySelector(`[data-cell="${cell.r}:${cell.c}"]`);
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell]);
 
   // A new row opens straight into its Task cell.
@@ -89,6 +90,7 @@ export function useSheetEditing({ canEdit, cell, clearBlock, colIndex, cols, cop
       setCell({ r: id, c: "task" });
       setEditing({ r: id, c: "task", draft: "" });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskById]);
 
   const onGridKey = (e) => {

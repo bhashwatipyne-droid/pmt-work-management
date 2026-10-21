@@ -224,6 +224,7 @@ export function useSheetClipboard({ activeUsers, canEdit, cell, checkDragRef, cl
     };
     window.addEventListener("mouseup", up);
     return () => window.removeEventListener("mouseup", up);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 

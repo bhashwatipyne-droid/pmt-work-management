@@ -152,6 +152,7 @@ export function useSheetView({ clients, collapsed, didCollapseOnLoad, filters, g
     if (didCollapseOnLoad.current || loading || groupBy === "none" || !groups.length) return;
     didCollapseOnLoad.current = true;
     setCollapsed(Object.fromEntries(groups.map((g) => [g.key, true])));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, groups, groupBy]);
 
   // Rows in screen order (collapsed groups hidden) - for arrow keys and Shift+click.

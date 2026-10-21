@@ -574,7 +574,6 @@ test("management sheet: admin and member scenarios", async () => {
   await run(out);
   await runReadOnly(out);
   const text = out.join("\n");
-  if (process.env.DUMP_PS) require("fs").writeFileSync(process.env.DUMP_PS, text);
   expect(text.length).toBeGreaterThan(1000);
   expect(text).toContain("Send proposal");
 });

@@ -16,6 +16,7 @@ export function useSheetData({ clientsProp, setClients, setLoading, setOptions, 
       .then(apply)
       .catch(() => toast.error("Couldn't load the Management sheet. Refresh to try again."))
       .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

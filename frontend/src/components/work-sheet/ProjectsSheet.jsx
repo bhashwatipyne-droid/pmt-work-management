@@ -1,36 +1,19 @@
 import { cloneElement, useMemo, useRef, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Eye,
-  EyeOff,
-  Filter,
-  Hand,
-  History,
-  LayoutList,
-  Maximize2,
-  Plus,
-  Search,
-  Snowflake,
-  Trash2,
-  X,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { PopoverClose } from "@radix-ui/react-popover";
-import ConfirmDeleteModal from "../ui/ConfirmDeleteModal";
-import { MonthPicker } from "./MonthPicker";
-import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
-import { WorkSheetHistory } from "./WorkSheetHistory";
-import { ExportIconButton } from "../ui/ExportIconButton";
-import { Input } from "../ui/input";
-import { RangeSelectionBar } from "./RangeSelectionBar";
-import { getProjectTaskHistory } from "@/services/api";
+import { renderHeaderCell } from "@/components/work-sheet/projects-sheet/renderHeaderCell";
+
+import { renderSheetCell } from "@/components/work-sheet/projects-sheet/renderSheetCell";
 import { getSheetCache, prefetchProjectSheet } from "@/components/work-sheet/projects-sheet/sheetStore";
+import { SheetDialogs } from "@/components/work-sheet/projects-sheet/sections/SheetDialogs";
+import { SheetRangeBar } from "@/components/work-sheet/projects-sheet/sections/SheetRangeBar";
+import { SheetBulkBar } from "@/components/work-sheet/projects-sheet/sections/SheetBulkBar";
+import { GridEmpty } from "@/components/work-sheet/projects-sheet/sections/GridEmpty";
+import { GridGroups } from "@/components/work-sheet/projects-sheet/sections/GridGroups";
+import { GridSkeleton } from "@/components/work-sheet/projects-sheet/sections/GridSkeleton";
+import { GridHeaderRow } from "@/components/work-sheet/projects-sheet/sections/GridHeaderRow";
+import { SheetFormula } from "@/components/work-sheet/projects-sheet/sections/SheetFormula";
+import { SheetFilterChips } from "@/components/work-sheet/projects-sheet/sections/SheetFilterChips";
+import { SheetToolbar } from "@/components/work-sheet/projects-sheet/sections/SheetToolbar";
+import { SheetTitleRow } from "@/components/work-sheet/projects-sheet/sections/SheetTitleRow";
 import { useSheetMonth } from "@/components/work-sheet/projects-sheet/useSheetMonth";
 import { useSheetData } from "@/components/work-sheet/projects-sheet/useSheetData";
 import { useSheetView } from "@/components/work-sheet/projects-sheet/useSheetView";
@@ -40,11 +23,9 @@ import { useSheetClipboard } from "@/components/work-sheet/projects-sheet/useShe
 import { useSheetEditing } from "@/components/work-sheet/projects-sheet/useSheetEditing";
 import { useSheetRows } from "@/components/work-sheet/projects-sheet/useSheetRows";
 import { useSheetFilters } from "@/components/work-sheet/projects-sheet/useSheetFilters";
-import { BADGE, C, MANROPE, MENU, MENU_ITEM, MENU_LABEL, STATUS_BADGE } from "./projects-sheet/sheetTheme";
-import { COLS, COL_BY_KEY, DATE_FIELD, FIELDS, GROUPS, NONE, isStakeholder } from "./projects-sheet/sheetColumns";
+import { C } from "./projects-sheet/sheetTheme";
+import { COLS, COL_BY_KEY } from "./projects-sheet/sheetColumns";
 import { addDays } from "./projects-sheet/sheetDates";
-import { Avatar, Checkbox, StatusBadge } from "./projects-sheet/SheetBits";
-import { ExpandEditor, FollowUpPicker, OptionList, PeoplePicker, ValuesPanel } from "./projects-sheet/SheetPickers";
 
 // Work Sheet > Management tab: the Projects team's follow-up sheet.
 //
@@ -164,786 +145,134 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
 
   const control = { boxShadow: `inset 0 0 0 1px ${C.n200}` };
 
-  const headerCell = (col) => {
-    const sorted = sort?.key === col.key;
-    const range = ranges[col.key];
-    const filtered = (col.filter && filters[col.filter]?.length) || !!(range?.from || range?.to);
-    const Icon = sorted ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : filtered ? Filter : ChevronDown;
-    const frozen = col.left != null;
-    return (
-      <Popover key={col.key} open={headMenu === col.key} onOpenChange={(o) => setHeadMenu(o ? col.key : null)}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-haspopup="menu"
-            title={`Sort and filter ${col.label} · drag to move`}
-            draggable
-            onDragStart={(e) => {
-              setDragCol(col.key);
-              e.dataTransfer.effectAllowed = "move";
-            }}
-            onDragOver={(e) => dragCol && dragCol !== col.key && e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (!dragCol || dragCol === col.key) return;
-              setOrder((o) => {
-                const after = o.indexOf(dragCol) < o.indexOf(col.key);
-                const next = o.filter((k) => k !== dragCol);
-                next.splice(next.indexOf(col.key) + (after ? 1 : 0), 0, dragCol);
-                return next;
-              });
-              setDragCol(null);
-            }}
-            onDragEnd={() => setDragCol(null)}
-            className="group/head hover:!text-[#0d1b3e]"
-            style={{
-              position: frozen ? "sticky" : "relative",
-              left: frozen ? col.left : "auto",
-              zIndex: frozen ? 3 : 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 6,
-              padding: "0 10px",
-              border: "none",
-              borderRadius: 0,
-              background: sorted || filtered ? C.b50 : C.n50,
-              boxShadow: col.edge
-                ? `inset -2px 0 0 ${C.edge}, inset 0 -1px 0 ${C.line}`
-                : `inset -1px -1px 0 ${C.line}`,
-              color: sorted || filtered ? C.b700 : C.n700,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              textAlign: "left",
-            }}
-          >
-            <span className="flex min-w-0 items-center gap-1" style={{ opacity: dragCol === col.key ? 0.5 : 1 }}>
-              <Hand className="h-3 w-3 shrink-0 cursor-grab opacity-0 group-hover/head:opacity-100" />
-              <span className="truncate">{col.label}</span>
-            </span>
-            <Icon className="h-3 w-3 shrink-0" />
-            <span
-              role="separator"
-              aria-label={`Resize ${col.label}`}
-              title="Drag to resize column"
-              draggable={false}
-              onMouseDown={(e) => startResize(e, col.key, col.w)}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="group/resize absolute right-0 top-0 z-[5] flex h-full w-2 cursor-col-resize justify-center"
-            >
-              <span className="h-full w-px bg-transparent group-hover/resize:bg-[#8a97b5]" />
-            </span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" sideOffset={2} className={MENU}>
-          <div className="flex flex-col gap-px p-1.5" style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}>
-            <div className={MENU_LABEL}>Sort {col.label}</div>
-            {[
-              ["asc", "Sort A → Z", ArrowUp],
-              ["desc", "Sort Z → A", ArrowDown],
-            ].map(([dir, label, I]) => {
-              const on = sort?.key === col.key && sort.dir === dir;
-              return (
-                <button
-                  key={dir}
-                  type="button"
-                  onClick={() => {
-                    setSort(on ? null : { key: col.key, dir });
-                    if (!col.filter) setHeadMenu(null);
-                  }}
-                  className={MENU_ITEM}
-                  style={on ? { background: C.b50, color: C.b700 } : undefined}
-                >
-                  <I className="h-3.5 w-3.5" />
-                  <span className="flex-1">{label}</span>
-                  {on && <Check className="h-3.5 w-3.5" />}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-col gap-px p-1.5" style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}>
-            <button
-              type="button"
-              className={MENU_ITEM}
-              onClick={() => {
-                setFrozenThrough(frozenThrough === col.key ? null : col.key);
-                setHeadMenu(null);
-              }}
-            >
-              <Snowflake className="h-3.5 w-3.5" />
-              <span className="flex-1">{frozenThrough === col.key ? "Unfreeze columns" : "Freeze up to this column"}</span>
-            </button>
-            {col.key !== "task" && (
-              <button
-                type="button"
-                className={MENU_ITEM}
-                onClick={() => {
-                  setHiddenCols((h) => [...h, col.key]);
-                  if (frozenThrough === col.key) setFrozenThrough(null);
-                  if (cell?.c === col.key) setCell(null);
-                  setHeadMenu(null);
-                }}
-              >
-                <EyeOff className="h-3.5 w-3.5" />
-                <span className="flex-1">Hide column</span>
-              </button>
-            )}
-          </div>
-          {col.kind === "date" && (
-            <div className="flex flex-col gap-2 p-2.5" style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}>
-              <div className="flex items-center gap-2 font-semibold">
-                <Filter className="h-3.5 w-3.5" />
-                Filter by date
-              </div>
-              <div className="flex gap-2">
-                {[
-                  ["from", "From"],
-                  ["to", "To"],
-                ].map(([k, label]) => (
-                  <label key={k} className="flex min-w-0 flex-1 flex-col gap-1 text-[12px] text-[#546490]">
-                    {label}
-                    <input
-                      type="date"
-                      value={range?.[k] || ""}
-                      onChange={(e) => setRanges((r) => ({ ...r, [col.key]: { ...r[col.key], [k]: e.target.value } }))}
-                      className="h-8 w-full rounded-[7px] border-0 px-2 text-[13px] text-[#0d1b3e] outline-none"
-                      style={{ boxShadow: `inset 0 0 0 1px ${C.n200}` }}
-                    />
-                  </label>
-                ))}
-              </div>
-              {(range?.from || range?.to) && (
-                <button
-                  type="button"
-                  onClick={() => setRanges((r) => ({ ...r, [col.key]: {} }))}
-                  className="self-start text-[12px] font-medium text-[#2b2bb5] hover:underline"
-                >
-                  Clear dates
-                </button>
-              )}
-            </div>
-          )}
-          {col.filter && (
-            <ValuesPanel
-              title={col.label}
-              values={valuesFor(col.filter)}
-              selected={filters[col.filter] || []}
-              onToggle={(v) => toggleFilter(col.filter, v)}
-              onClear={() => setFilters((f) => ({ ...f, [col.filter]: [] }))}
-              onDone={() => setHeadMenu(null)}
-            />
-          )}
-        </PopoverContent>
-      </Popover>
-    );
-  };
+  const headerCell = (col) => renderHeaderCell(ctx, col);
 
-  const pickerFor = (t, col) => {
-    const close = () => {
-      setMenu(null);
-      requestAnimationFrame(focusGrid);
-    };
-    if (col.key === "type")
-      return (
-        <OptionList
-          value={t.task_type || ""}
-          options={[{ value: "", label: "No type" }, ...(options.task_types || []).map((o) => ({ value: o, label: o }))]}
-          onPick={(v) => {
-            save(t, { task_type: v });
-            close();
-          }}
-        />
-      );
-    if (col.key === "status")
-      return (
-        <OptionList
-          value={t.status}
-          options={(options.statuses || []).map((s) => ({ value: s, label: s, render: <StatusBadge status={s} /> }))}
-          onPick={(v) => {
-            save(t, { status: v }).then(() => v === "Done" && t.status !== "Done" && toast(`Done: ${t.task || "Untitled task"}`));
-            close();
-          }}
-        />
-      );
-    if (col.key === "client")
-      return (
-        <OptionList
-          searchable
-          value={t.client_id || NONE}
-          options={[{ value: NONE, label: "Internal · no client" }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
-          onPick={(v) => {
-            save(t, { client_id: v === NONE ? null : v });
-            close();
-          }}
-        />
-      );
-    if (col.key === "owner")
-      return (
-        <PeoplePicker
-          task={t}
-          users={activeUsers.filter(isStakeholder)}
-          onSave={(f) => save(t, f)}
-        />
-      );
-    if (col.key === "followup")
-      return <FollowUpPicker task={t} users={activeUsers} teams={options.teams || []} onSave={(f) => save(t, f)} />;
-    return null;
-  };
+  const renderCell = (t, v, col, ri, ci) => renderSheetCell(ctx, t, v, col, ri, ci);
 
-  const renderCell = (t, v, col, ri, ci) => {
-    const isAct = cell?.r === t.id && cell?.c === col.key;
-    const isEditing = editing?.r === t.id && editing?.c === col.key;
-    const frozen = col.left != null;
-    const raw = col.key === "owner" ? v.ownerText : v[col.key];
-    const text = raw == null ? "" : String(raw);
-    const empty = !text;
-    const caret = ["select", "people"].includes(col.kind) && !isEditing;
-    const showExpand =
-      !isEditing && col.long && (isAct || (!empty && text.length > col.long));
-    const menuOpen = menu?.r === t.id && menu?.c === col.key;
-    const muted = col.kind === "ro" || col.key === "date";
-    const inBlock = isMulti && ri >= block.r1 && ri <= block.r2 && ci >= block.c1 && ci <= block.c2;
-    const inFill =
-      fillIdx >= 0 &&
-      ci >= block.c1 &&
-      ci <= block.c2 &&
-      ((fillIdx > block.r2 && ri > block.r2 && ri <= fillIdx) || (fillIdx < block.r1 && ri < block.r1 && ri >= fillIdx));
-    // The fill handle sits on the bottom-right corner of the selection.
-    const showFill = canEdit && !editing && !!block && ri === block.r2 && ci === block.c2;
-    return (
-      <div
-        key={col.key}
-        role="gridcell"
-        data-cell={`${t.id}:${col.key}`}
-        aria-selected={isAct}
-        title={empty || isEditing ? undefined : text}
-        onMouseDown={(e) => {
-          // Ignore clicks inside this cell's menu (it is portalled, but React
-          // still bubbles its events here).
-          if (isEditing || !e.currentTarget.contains(e.target)) return;
-          e.preventDefault();
-          if (editing) finishEdit(true);
-          if (e.shiftKey && cell) {
-            // Shift+click: select the block from the active cell to here.
-            setRangeEnd({ r: t.id, c: col.key });
-            focusGrid();
-            return;
-          }
-          const wasActive = isAct && !isMulti;
-          setCell({ r: t.id, c: col.key });
-          setRangeEnd(null);
-          dragSelRef.current = true;
-          focusGrid();
-          if (wasActive && ["select", "people", "followup"].includes(col.kind)) startEdit(t.id, col.key);
-        }}
-        onMouseEnter={() => {
-          if (fillRef.current) setFillTo(t.id);
-          else if (dragSelRef.current) setRangeEnd({ r: t.id, c: col.key });
-        }}
-        onDoubleClick={(e) => e.currentTarget.contains(e.target) && startEdit(t.id, col.key)}
-        className={frozen ? "bg-white group-hover/row:bg-[#f9fafb]" : ""}
-        style={{
-          position: frozen ? "sticky" : "relative",
-          left: frozen ? col.left : "auto",
-          zIndex: frozen ? (showFill ? 3 : 2) : isAct || showFill ? 1 : 0,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          minWidth: 0,
-          padding: "0 10px",
-          ...(frozen && sel[t.id] ? { background: C.b50 } : {}),
-          ...(inBlock && !isAct ? { background: "rgba(43,43,181,0.08)" } : {}),
-          ...(inFill ? { outline: `1px dashed ${C.b500}`, outlineOffset: -1 } : {}),
-          boxShadow: isAct
-            ? `inset 0 0 0 2px ${C.b500}`
-            : col.edge
-              ? `inset -2px 0 0 ${C.edge}, inset 0 -1px 0 ${C.cellLine}`
-              : `inset -1px -1px 0 ${C.cellLine}`,
-          color: muted ? C.n500 : C.n900,
-          fontWeight: col.key === "task" ? 500 : 400,
-          cursor: "cell",
-        }}
-      >
-        {showFill && (
-          <span
-            role="button"
-            aria-label="Drag to fill cells"
-            title="Drag up or down to fill"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              fillRef.current = true;
-              setFillTo(t.id);
-            }}
-            style={{
-              position: "absolute",
-              right: -4,
-              bottom: -4,
-              zIndex: 4,
-              width: 8,
-              height: 8,
-              borderRadius: 2,
-              background: C.b500,
-              boxShadow: "0 0 0 2px #fff",
-              cursor: "ns-resize",
-            }}
-          />
-        )}
-        {isEditing && (
-          <input
-            autoFocus
-            aria-label="Edit cell"
-            type={col.kind === "date" ? "date" : "text"}
-            inputMode={col.kind === "number" ? "numeric" : undefined}
-            data-sheet-cell="1"
-            data-sheet-row={ri}
-            data-sheet-col={ci}
-            value={editing.draft}
-            onChange={(e) => {
-              const draft = e.target.value;
-              setEditing((cur) => (cur ? { ...cur, draft } : cur));
-            }}
-            onFocus={(e) => {
-              if (col.kind !== "date") {
-                const n = e.target.value.length;
-                e.target.setSelectionRange(n, n);
-              }
-            }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Enter") {
-                e.preventDefault();
-                finishEdit(true, e.shiftKey ? "up" : "down");
-              } else if (e.key === "Tab") {
-                e.preventDefault();
-                finishEdit(true, e.shiftKey ? "left" : "right");
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                finishEdit(false);
-              }
-            }}
-            onBlur={() => finishEdit(true)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              boxSizing: "border-box",
-              padding: "0 10px",
-              border: "none",
-              outline: "none",
-              borderRadius: 0,
-              boxShadow: `inset 0 0 0 2px ${C.b500}, 0 3px 6px rgba(13,28,61,0.08)`,
-              background: "#fff",
-              font: "inherit",
-              fontSize: 13,
-              color: C.n900,
-              textAlign: col.kind === "number" ? "right" : "left",
-              zIndex: 3,
-            }}
-          />
-        )}
-        {!isEditing && col.key === "owner" && !empty && <Avatar name={v.owner} />}
-        {!isEditing && col.key === "status" && !empty && (
-          <span style={{ flex: 1, minWidth: 0, display: "flex" }}>
-            <StatusBadge status={text} />
-          </span>
-        )}
-        {!isEditing && col.kind === "date" && (
-          // Same always-on date input as the other sheets' Date column.
-          <Input
-            key={t[DATE_FIELD[col.key]] || ""}
-            type="date"
-            aria-label={col.label}
-            defaultValue={t[DATE_FIELD[col.key]] || ""}
-            disabled={!canEdit}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              setCell({ r: t.id, c: col.key });
-              setRangeEnd(null);
-            }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-            }}
-            onBlur={(e) => {
-              commitText(t, col.key, e.target.value);
-              requestAnimationFrame(focusGrid);
-            }}
-            className="sheet-date-input h-8 w-[130px] pl-7 pr-1 text-[13px]"
-          />
-        )}
-        {!isEditing && col.key !== "status" && col.kind !== "date" && (
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              textAlign: col.kind === "number" || col.kind === "date" ? "right" : "left",
-              fontVariantNumeric: "tabular-nums",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {text}
-          </span>
-        )}
-        {caret && <ChevronDown className="h-3 w-3 shrink-0" style={{ color: isAct ? C.b500 : C.n300 }} />}
-        {showExpand && (
-          <button
-            type="button"
-            aria-label="Expand cell"
-            title="Expand (Ctrl Enter)"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setCell({ r: t.id, c: col.key });
-              setMenu({ r: t.id, c: col.key, kind: "expand" });
-            }}
-            className="hover:!bg-[#f0f0fd] hover:!text-[#2b2bb5]"
-            style={{
-              flexShrink: 0,
-              width: 22,
-              height: 22,
-              border: "none",
-              borderRadius: 6,
-              background: isAct ? C.b50 : "#fff",
-              boxShadow: `inset 0 0 0 1px ${C.cellLine}`,
-              color: isAct ? C.b500 : C.n400,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Maximize2 className="h-3 w-3" />
-          </button>
-        )}
-        {menuOpen && (
-          <Popover
-            open
-            onOpenChange={(o) => {
-              if (!o) {
-                setMenu(null);
-                requestAnimationFrame(focusGrid);
-              }
-            }}
-          >
-            <PopoverAnchor asChild>
-              <span style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
-            </PopoverAnchor>
-            <PopoverContent
-              align="start"
-              sideOffset={2}
-              className={`${MENU} ${menu.kind === "expand" ? "w-[380px]" : col.key === "followup" ? "w-[280px]" : "w-[260px]"}`}
-              onOpenAutoFocus={(e) => {
-                if (!["client", "owner", "followup"].includes(col.key) && menu.kind !== "expand") e.preventDefault();
-              }}
-            >
-              {menu.kind === "expand" ? (
-                col.key === "remark" ? (
-                  <ExpandEditor value={noteFor(t.id)} readOnly={!canEdit} onSave={(note) => saveNote(t, note)} />
-                ) : (
-                  <ExpandEditor value={t.task} readOnly={!canEdit} onSave={(task) => save(t, { task })} />
-                )
-              ) : (
-                pickerFor(t, col)
-              )}
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-    );
+  const ctx = {
+    GRID,
+    activeCol,
+    activeFields,
+    activeTask,
+    activeUsers,
+    addRow,
+    addRows,
+    addingRows,
+    allCollapsed,
+    allDays,
+    allVisSel,
+    block,
+    bulkDelete,
+    bulkDuplicate,
+    bulkStatus,
+    canEdit,
+    cell,
+    checkDragRef,
+    clearFilters,
+    clients,
+    collapsed,
+    cols,
+    commitText,
+    confirmDelete,
+    control,
+    copyBlock,
+    dayTasks,
+    deleting,
+    dragCol,
+    dragSelRef,
+    dropAt,
+    dropRows,
+    editing,
+    exportSheet,
+    fillIdx,
+    fillRef,
+    filterMenu,
+    filters,
+    finishEdit,
+    flatRows,
+    focusGrid,
+    formulaEditable,
+    formulaValue,
+    frozenThrough,
+    gridRef,
+    groupBy,
+    groups,
+    headMenu,
+    headerCell,
+    hiddenCols,
+    hiddenRows,
+    historyOpen,
+    isMulti,
+    loading,
+    menu,
+    monthCount,
+    moveCell,
+    noteFor,
+    options,
+    query,
+    ranges,
+    renderCell,
+    rowDrag,
+    save,
+    saveNote,
+    sel,
+    selIds,
+    setCell,
+    setCollapsed,
+    setConfirmDelete,
+    setDragCol,
+    setDropAt,
+    setEditing,
+    setFillTo,
+    setFilterMenu,
+    setFilters,
+    setFrozenThrough,
+    setGroupBy,
+    setHeadMenu,
+    setHiddenCols,
+    setHiddenRows,
+    setHistoryOpen,
+    setMenu,
+    setMonth,
+    setOrder,
+    setPickedDay,
+    setQuery,
+    setRangeEnd,
+    setRanges,
+    setRowDrag,
+    setSel,
+    setSort,
+    setStatusMenu,
+    someVisSel,
+    sort,
+    startEdit,
+    startResize,
+    statusMenu,
+    today,
+    toggleAll,
+    toggleFilter,
+    toggleRow,
+    valuesFor,
+    viewMonth,
+    views,
+    visIds,
+    visible,
   };
-
   const tabsWithCount =
     tabs && cloneElement(tabs, { counts: { ...(tabs.props.counts || {}), Projects: dayTasks.length } });
 
   return shell(
     <>
       <div className="bg-white">
-        <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-4 md:gap-3 md:px-5 md:pt-5">
-          <h1 className="min-w-[120px] flex-1 text-xl font-semibold tracking-tight text-[#0d1b3e] md:min-w-[160px] md:text-2xl">
-            Work sheet
-          </h1>
-          <button
-            type="button"
-            onClick={() => setHistoryOpen(true)}
-            className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-[#f5f6f8] px-3.5 text-[13px] font-semibold text-[#4a5878] shadow-[inset_0_0_0_1px_#eff0f2] hover:bg-[#eef0f3]"
-          >
-            <History className="h-3.5 w-3.5" />
-            History
-          </button>
-          <MonthPicker
-            value={viewMonth}
-            allowAll={false}
-            onChange={(m) => {
-              setMonth(m || null);
-              setPickedDay(null);
-            }}
-            currentMonth={today.slice(0, 7)}
-            maxMonth={today.slice(0, 7)}
-          />
-          {canEdit && (
-            <div className="inline-flex h-8">
-              <button
-                type="button"
-                onClick={addRow}
-                disabled={addingRows}
-                className="inline-flex h-8 items-center gap-1.5 rounded-l-[7px] bg-[#2b2bb5] px-3.5 text-[13px] font-semibold text-white hover:bg-[#3d3dcc] disabled:opacity-70"
-              >
-                <Plus className="h-3.5 w-3.5" /> {addingRows ? "Adding rows..." : "Add row"}
-              </button>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Add multiple rows"
-                    disabled={addingRows}
-                    className="inline-flex h-8 items-center rounded-r-[7px] border-l border-white/20 bg-[#2b2bb5] px-2 text-white hover:bg-[#3d3dcc] disabled:opacity-70"
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" sideOffset={4} className={`${MENU} w-[180px]`}>
-                  <div className="flex flex-col gap-px p-1.5">
-                    {[1, 5, 10, 20].map((n) => (
-                      <PopoverClose key={n} asChild>
-                        <button type="button" onClick={() => addRows(n)} className={MENU_ITEM}>
-                          Add {n} row{n === 1 ? "" : "s"}
-                        </button>
-                      </PopoverClose>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-          )}
-        </div>
+        <SheetTitleRow {...ctx} />
         {tabsWithCount}
 
-        <div
-          className="flex flex-wrap items-center gap-2 px-3 py-2.5 md:px-5"
-          style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}
-        >
-          <label
-            className="flex h-8 min-w-[240px] items-center gap-2 rounded-[7px] bg-white px-2.5 text-[#546490]"
-            style={{ ...control, flex: "0 1 320px" }}
-          >
-            <Search className="h-3.5 w-3.5 shrink-0" />
-            <input
-              aria-label="Search work sheet"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-              placeholder="Search task, client, remark"
-              className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#0d1b3e] outline-none placeholder:text-[#8a97b5]"
-            />
-            {query && (
-              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="flex text-[#546490]">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </label>
+        <SheetToolbar {...ctx} />
 
-          <Popover open={!!filterMenu} onOpenChange={(o) => setFilterMenu(o ? "fields" : null)}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-haspopup="menu"
-                className="flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[13px] font-medium hover:!bg-[#f0f0fd]"
-                style={{
-                  background: activeFields.length ? C.b50 : "#fff",
-                  color: activeFields.length ? C.b700 : C.n700,
-                  boxShadow: `inset 0 0 0 1px ${activeFields.length ? C.b200 : C.n200}`,
-                }}
-              >
-                <Filter className="h-3.5 w-3.5" />
-                {activeFields.length ? `Filter · ${activeFields.length}` : "Filter"}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" sideOffset={4} className={MENU}>
-              {filterMenu === "fields" ? (
-                <div className="flex flex-col gap-px p-1.5">
-                  <div className={MENU_LABEL}>Filter rows by</div>
-                  {FIELDS.map((f) => (
-                    <button
-                      key={f.key}
-                      type="button"
-                      onClick={() => setFilterMenu(f.key)}
-                      className={`${MENU_ITEM} h-[34px]`}
-                    >
-                      <Filter className="h-3.5 w-3.5 text-[#546490]" />
-                      <span className="flex-1">{f.label}</span>
-                      {filters[f.key]?.length > 0 && (
-                        <span className="h-[18px] rounded-full bg-[#2b2bb5] px-1.5 text-[11px] font-semibold leading-[18px] text-white">
-                          {filters[f.key].length}
-                        </span>
-                      )}
-                      <ChevronRight className="h-3.5 w-3.5 text-[#8a97b5]" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                filterMenu && (
-                  <ValuesPanel
-                    title={FIELDS.find((f) => f.key === filterMenu).label}
-                    values={valuesFor(filterMenu)}
-                    selected={filters[filterMenu] || []}
-                    onToggle={(v) => toggleFilter(filterMenu, v)}
-                    onClear={() => setFilters((f) => ({ ...f, [filterMenu]: [] }))}
-                    onDone={() => setFilterMenu(null)}
-                    onBack={() => setFilterMenu("fields")}
-                  />
-                )
-              )}
-            </PopoverContent>
-          </Popover>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="flex h-8 items-center gap-1.5 rounded-[7px] bg-white px-2.5 text-[13px] text-[#4a5878] hover:bg-[#f9fafb]"
-                style={control}
-              >
-                <LayoutList className="h-3.5 w-3.5" />
-                Group: {GROUPS.find(([k]) => k === groupBy)[1]}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" sideOffset={4} className={`${MENU} w-[200px]`}>
-              <div className="flex flex-col gap-px p-1.5">
-                <div className={MENU_LABEL}>Group rows by</div>
-                {GROUPS.map(([k, label]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => {
-                      setGroupBy(k);
-                      setCollapsed({});
-                    }}
-                    className={MENU_ITEM}
-                  >
-                    <span className="flex-1">{label}</span>
-                    {groupBy === k && <Check className="h-3.5 w-3.5 text-[#2b2bb5]" />}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {groupBy !== "none" && groups.length > 0 && (
-            <button
-              type="button"
-              onClick={toggleAll}
-              className="h-8 rounded-[7px] px-2.5 text-[13px] font-medium text-[#4a5878] hover:bg-[#f9fafb]"
-            >
-              {allCollapsed ? "Expand all" : "Collapse all"}
-            </button>
-          )}
-
-          <div className="flex-1" />
-          {hiddenCols.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setHiddenCols([])}
-              className="flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[12px] font-semibold text-[#2b2bb5] hover:bg-[#f0f0fd]"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              {hiddenCols.length} hidden column{hiddenCols.length === 1 ? "" : "s"} · Show
-            </button>
-          )}
-          {Object.values(hiddenRows).some(Boolean) && (
-            <button
-              type="button"
-              onClick={() => setHiddenRows({})}
-              className="flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[12px] font-semibold text-[#2b2bb5] hover:bg-[#f0f0fd]"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              {Object.values(hiddenRows).filter(Boolean).length} hidden · Show
-            </button>
-          )}
-          <span className="text-[12px] text-[#546490]">
-            {visible.length.toLocaleString("en-IN")} of {monthCount.toLocaleString("en-IN")} rows
-          </span>
-          <ExportIconButton
-            onClick={exportSheet}
-            disabled={!visible.length}
-            className="h-8 w-8 rounded-[7px] border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
-          />
-        </div>
-
-        {(activeFields.length > 0 || query) && (
-          <div
-            className="flex flex-wrap items-center gap-1.5 px-3 py-2 md:px-5"
-            style={{ background: C.n50, boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}
-          >
-            {activeFields.map((f) => {
-              const vals = filters[f.key];
-              const shown = vals.map((x) => (f.key === "follow" ? (x === "Due" ? "Due by this day" : x) : x));
-              return (
-                <div
-                  key={f.key}
-                  className="flex h-7 items-center overflow-hidden rounded-[7px] bg-white text-[12px]"
-                  style={{ boxShadow: `inset 0 0 0 1px ${C.b200}` }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setFilterMenu(f.key)}
-                    className="flex h-full items-center gap-1 pl-2.5 pr-1.5 hover:bg-[#f0f0fd]"
-                  >
-                    <Filter className="h-3 w-3 text-[#2b2bb5]" />
-                    <span className="text-[#4a5878]">{f.label}</span>
-                    <span className="text-[#546490]">{vals.length > 1 ? "is any of" : "is"}</span>
-                    <span className="font-semibold text-[#1a1a8a]">
-                      {shown.length > 2 ? `${shown.slice(0, 2).join(", ")} +${shown.length - 2}` : shown.join(", ")}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Remove"
-                    onClick={() => setFilters((cur) => ({ ...cur, [f.key]: [] }))}
-                    className="flex h-full w-[26px] items-center justify-center text-[#546490] hover:bg-[#f0f0fd] hover:text-[#1a1a8a]"
-                    style={{ boxShadow: `inset 1px 0 0 ${C.b100}` }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              );
-            })}
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="h-7 px-2 text-[12px] font-medium text-[#546490] hover:text-[#0d1b3e]"
-            >
-              Clear all
-            </button>
-          </div>
-        )}
+        <SheetFilterChips {...ctx} />
       </div>
 
-      <WorksheetFormulaBar
-        label={activeTask ? activeCol.label : null}
-        value={formulaValue}
-        activeRow={activeTask ? flatRows.findIndex((t) => t.id === activeTask.id) : null}
-        activeCol={activeCol ? cols.findIndex((c) => c.key === activeCol.key) : null}
-        editable={formulaEditable}
-        placeholder={activeTask ? "" : "Select a cell to see its value"}
-        onCommit={(text) => activeTask && commitText(activeTask, activeCol.key, text)}
-        onFinish={(move) => {
-          if (move === "down") moveCell(1, 0);
-          else if (move === "up") moveCell(-1, 0);
-          else if (move === "right") moveCell(0, 1);
-          else if (move === "left") moveCell(0, -1);
-          focusGrid();
-        }}
-      />
+      <SheetFormula {...ctx} />
 
       <div className="relative min-h-0 flex-1">
         <div
@@ -959,425 +288,22 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
           style={{ userSelect: "none" }}
         >
           <div role="grid" aria-label="Management sheet" style={{ width: "max-content", minWidth: "100%" }}>
-            <div
-              role="row"
-              style={{
-                display: "grid",
-                gridTemplateColumns: GRID,
-                height: 34,
-                position: "sticky",
-                top: 0,
-                zIndex: 4,
-                background: C.n50,
-              }}
-            >
-              <span
-                style={{
-                  position: "sticky",
-                  left: 0,
-                  zIndex: 3,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: C.n50,
-                  boxShadow: `inset -1px -1px 0 ${C.line}`,
-                }}
-              >
-                <Checkbox
-                  on={allVisSel}
-                  partial={someVisSel}
-                  label="Select all rows"
-                  onClick={() =>
-                    setSel((s) => {
-                      const next = { ...s };
-                      visIds.forEach((id) => (next[id] = !allVisSel));
-                      return next;
-                    })
-                  }
-                />
-              </span>
-              {cols.map(headerCell)}
-            </div>
+            <GridHeaderRow {...ctx} />
 
-            {loading &&
-              Array.from({ length: 14 }, (_, i) => (
-                <div
-                  key={i}
-                  aria-hidden="true"
-                  style={{ display: "grid", gridTemplateColumns: GRID, height: 40 }}
-                >
-                  <span style={{ background: C.n50, boxShadow: `inset -1px -1px 0 ${C.line}` }} />
-                  {cols.map((c, j) => (
-                    <span
-                      key={c.key}
-                      className="flex items-center px-2.5"
-                      style={{ boxShadow: `inset -1px -1px 0 ${C.cellLine}` }}
-                    >
-                      <span
-                        className="h-3 animate-pulse rounded bg-slate-200/70"
-                        style={{ width: `${[70, 85, 55, 65, 75, 60, 80][(i + j) % 7]}%` }}
-                      />
-                    </span>
-                  ))}
-                </div>
-              ))}
+            <GridSkeleton {...ctx} />
 
-            {!loading &&
-              groups.map((g) => {
-                const open = !collapsed[g.key];
-                const delayed = g.rows.filter((t) => t.status === "Delayed" || views.get(t.id).late > 0).length;
-                return (
-                  <div role="rowgroup" key={g.key}>
-                    {groupBy !== "none" && (
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        onClick={() => setCollapsed((c) => ({ ...c, [g.key]: open }))}
-                        className="block w-full bg-white text-left hover:bg-[#f9fafb]"
-                        style={{ height: 32, padding: 0, border: "none", boxShadow: `inset 0 -1px 0 ${C.line}` }}
-                      >
-                        <span
-                          style={{
-                            position: "sticky",
-                            left: 0,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                            height: 32,
-                            padding: "0 12px",
-                          }}
-                        >
-                          {open ? (
-                            <ChevronDown className="h-3.5 w-3.5 text-[#546490]" />
-                          ) : (
-                            <ChevronRight className="h-3.5 w-3.5 text-[#546490]" />
-                          )}
-                          {groupBy === "owner" ? (
-                            <Avatar name={g.name} size={22} fontSize={10} />
-                          ) : (
-                            <span style={{ width: 8, height: 8, borderRadius: 9999, background: C.n400 }} />
-                          )}
-                          <span style={{ fontSize: 13, fontWeight: 600, color: C.n900 }}>{g.name}</span>
-                          <span
-                            style={{
-                              whiteSpace: "nowrap",
-                              font: `500 11px/16px ${MANROPE}`,
-                              color: C.n700,
-                              background: C.n100,
-                              padding: "2px 8px",
-                              borderRadius: 9999,
-                            }}
-                          >
-                            {g.rows.length} {g.rows.length === 1 ? "task" : "tasks"}
-                            {delayed ? ` · ${delayed} delayed` : ""}
-                          </span>
-                        </span>
-                      </button>
-                    )}
-                    {open &&
-                      g.rows.map((t) => {
-                        const v = views.get(t.id);
-                        const ri = flatRows.indexOf(t);
-                        const isSel = !!sel[t.id];
-                        const rowAct = cell?.r === t.id;
-                        return (
-                          <div
-                            key={t.id}
-                            role="row"
-                            data-rowid={t.id}
-                            onDragOver={(e) => {
-                              if (!rowDrag) return;
-                              e.preventDefault();
-                              const box = e.currentTarget.getBoundingClientRect();
-                              const pos = e.clientY < box.top + box.height / 2 ? "above" : "below";
-                              if (dropAt?.id !== t.id || dropAt?.pos !== pos) setDropAt({ id: t.id, pos });
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              if (dropAt) dropRows(dropAt.id, dropAt.pos);
-                            }}
-                            aria-selected={isSel}
-                            className={`group/row ${isSel ? "" : "hover:bg-[#f9fafb]"}`}
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: GRID,
-                              height: 40,
-                              background: isSel ? C.b50 : "#fff",
-                              fontSize: 13,
-                              lineHeight: "18px",
-                              position: "relative",
-                              zIndex: 0,
-                            }}
-                          >
-                            <span
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                if (!e.shiftKey) checkDragRef.current = { on: !sel[t.id] };
-                                toggleRow(t.id, e.shiftKey);
-                                setCell((c) => ({ r: t.id, c: c?.c || cols[0]?.key }));
-                                focusGrid();
-                              }}
-                              onMouseEnter={() => {
-                                const drag = checkDragRef.current;
-                                if (drag) setSel((cur) => ({ ...cur, [t.id]: drag.on }));
-                              }}
-                              title="Click, drag or Shift+click to select several"
-                              style={{
-                                position: "sticky",
-                                left: 0,
-                                zIndex: 2,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                paddingLeft: 14,
-                                boxSizing: "border-box",
-                                background: rowAct ? C.b100 : isSel ? C.b50 : C.n50,
-                                boxShadow: `inset -1px -1px 0 ${C.line}`,
-                                cursor: "pointer",
-                              }}
-                            >
-                              {canEdit && !sort && (
-                                <span
-                                  role="button"
-                                  aria-label="Drag to move row"
-                                  title="Drag to move. Selected rows move together."
-                                  draggable
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onDragStart={(e) => {
-                                    e.stopPropagation();
-                                    e.dataTransfer.effectAllowed = "move";
-                                    e.dataTransfer.setData("text/plain", t.id);
-                                    setRowDrag(isSel ? selIds : [t.id]);
-                                  }}
-                                  onDragEnd={() => {
-                                    setRowDrag(null);
-                                    setDropAt(null);
-                                  }}
-                                  className="hover:!bg-[#f5f6f8] hover:!text-[#4a5878]"
-                                  style={{
-                                    position: "absolute",
-                                    left: 2,
-                                    top: 8,
-                                    width: 14,
-                                    height: 24,
-                                    borderRadius: 4,
-                                    display: "grid",
-                                    gridTemplateColumns: "repeat(2, 3px)",
-                                    gridAutoRows: "3px",
-                                    gap: 2,
-                                    alignContent: "center",
-                                    justifyContent: "center",
-                                    color: C.n300,
-                                    cursor: "grab",
-                                  }}
-                                >
-                                  {[0, 1, 2, 3, 4, 5].map((k) => (
-                                    <span key={k} style={{ borderRadius: 9999, background: "currentColor" }} />
-                                  ))}
-                                </span>
-                              )}
-                              <Checkbox on={isSel} label="Select row" />
-                            </span>
-                            {dropAt?.id === t.id && (
-                              <span
-                                aria-hidden="true"
-                                style={{
-                                  position: "absolute",
-                                  left: 0,
-                                  right: 0,
-                                  [dropAt.pos === "above" ? "top" : "bottom"]: -1,
-                                  height: 2,
-                                  background: C.b500,
-                                  zIndex: 6,
-                                  pointerEvents: "none",
-                                }}
-                              />
-                            )}
-                            {cols.map((col, ci) => renderCell(t, v, col, ri, ci))}
-                          </div>
-                        );
-                      })}
-                  </div>
-                );
-              })}
+            <GridGroups {...ctx} />
 
-            {!loading && !visible.length && (
-              <div
-                className="sticky left-0 flex flex-col items-center gap-2 px-5 py-12 text-center"
-                style={{ width: "min(100vw, 720px)" }}
-              >
-                {dayTasks.length ? (
-                  <>
-                    <span className="text-[14px] font-semibold text-[#0d1b3e]">No rows match</span>
-                    <span className="text-[13px] text-[#546490]">Try a different search or clear filters.</span>
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="mt-1 h-8 rounded-[7px] bg-[#f5f6f8] px-3.5 text-[13px] font-semibold text-[#4a5878] hover:bg-[#eef0f3]"
-                      style={control}
-                    >
-                      Clear filters
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-[14px] font-semibold text-[#0d1b3e]">
-                      {allDays ? "No tasks this month" : "No tasks open on this day"}
-                    </span>
-                    <span className="text-[13px] text-[#546490]">
-                      {canEdit ? "Use Add row to start one." : "Pick another day or month."}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
+            <GridEmpty {...ctx} />
           </div>
         </div>
 
-        {selIds.length > 0 && canEdit && (
-          <div
-            role="toolbar"
-            aria-label="Row actions"
-            className="absolute bottom-5 left-1/2 z-[46] flex w-max max-w-[calc(100%-32px)] -translate-x-1/2 flex-wrap items-center justify-center gap-0.5 whitespace-nowrap rounded-[12px] p-1.5 text-[13px] text-white"
-            style={{ background: C.n900, boxShadow: "0 6px 25px rgba(13,28,61,0.2)" }}
-          >
-            <span
-              className="mr-1 flex h-8 items-center gap-1.5 pl-2 pr-3"
-              style={{ boxShadow: "inset -1px 0 0 rgb(56,66,84)" }}
-            >
-              <span
-                className="h-5 min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5"
-                style={{ background: C.b500 }}
-              >
-                {selIds.length}
-              </span>
-              <span className="font-medium" style={{ color: "rgb(200,213,240)" }}>
-                {selIds.length === 1 ? "row selected" : "rows selected"}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={bulkDuplicate}
-              className="flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium hover:bg-[rgb(36,46,61)]"
-            >
-              <Copy className="h-3.5 w-3.5" />
-              Duplicate
-            </button>
-            <Popover open={statusMenu} onOpenChange={setStatusMenu}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-haspopup="menu"
-                  className="flex h-8 items-center gap-1.5 rounded-[7px] pl-2.5 pr-2 text-[12px] font-medium hover:bg-[rgb(36,46,61)]"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Apply status
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="start" sideOffset={10} className={`${MENU} w-[200px]`}>
-                <div className="flex flex-col gap-px p-1.5">
-                  {(options.statuses || []).map((s) => (
-                    <button key={s} type="button" onClick={() => bulkStatus(s)} className={MENU_ITEM}>
-                      <span
-                        style={{ width: 8, height: 8, borderRadius: 9999, background: BADGE[STATUS_BADGE[s] || "Neutral"].dot }}
-                      />
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-            <button
-              type="button"
-              onClick={() => {
-                setHiddenRows((h) => ({ ...h, ...Object.fromEntries(selIds.map((id) => [id, true])) }));
-                setSel({});
-                if (cell && selIds.includes(cell.r)) setCell(null);
-              }}
-              className="flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium hover:bg-[rgb(36,46,61)]"
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-              Hide
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium hover:bg-[rgba(239,68,68,0.18)]"
-              style={{ color: "rgb(252,165,165)" }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </button>
-            <span className="mx-1 h-5 w-px" style={{ background: "rgb(56,66,84)" }} />
-            <button
-              type="button"
-              aria-label="Clear selection"
-              onClick={() => setSel({})}
-              className="flex h-7 w-7 items-center justify-center rounded-[7px] hover:bg-[rgb(36,46,61)]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+        <SheetBulkBar {...ctx} />
       </div>
 
-      {isMulti && !selIds.length && (() => {
-        const rowsB = flatRows.slice(block.r1, block.r2 + 1);
-        const colsB = cols.slice(block.c1, block.c2 + 1);
-        let filled = 0;
-        const unique = new Set();
-        const statuses = new Map();
-        rowsB.forEach((t) => {
-          const v = views.get(t.id);
-          colsB.forEach((c) => {
-            const val = String((c.key === "owner" ? v.ownerText : v[c.key]) ?? "");
-            if (val) {
-              filled += 1;
-              unique.add(val);
-            }
-            if (c.key === "status" && t.status) statuses.set(t.status, (statuses.get(t.status) || 0) + 1);
-          });
-        });
-        const count = rowsB.length * colsB.length;
-        return (
-          <RangeSelectionBar
-            stats={{
-              rows: rowsB.length,
-              cols: colsB.length,
-              count,
-              filled,
-              empty: count - filled,
-              unique: unique.size,
-              times: [],
-              statusCounts: [...statuses.entries()],
-              block,
-            }}
-            left={(gridRef.current?.getBoundingClientRect().left || 0) + 16}
-            onCopy={copyBlock}
-            onClear={() => setRangeEnd(null)}
-          />
-        );
-      })()}
+      <SheetRangeBar {...ctx} />
 
-      <WorkSheetHistory
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        stage="Projects"
-        load={getProjectTaskHistory}
-        subtitle="Management sheet"
-      />
-
-      <ConfirmDeleteModal
-        open={confirmDelete}
-        onClose={() => !deleting && setConfirmDelete(false)}
-        onConfirm={bulkDelete}
-        title={`Delete ${selIds.length} selected row${selIds.length === 1 ? "" : "s"}?`}
-        description="These tasks and their remarks will be permanently removed."
-        warning="This action cannot be undone."
-        confirmLabel="Delete Rows"
-        loading={deleting}
-      />
+      <SheetDialogs {...ctx} />
     </>
   );
 }

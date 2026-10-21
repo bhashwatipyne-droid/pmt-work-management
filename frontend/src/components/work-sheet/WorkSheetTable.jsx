@@ -7,25 +7,18 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  ChevronsLeftRight,
-  ChevronDown,
-  ChevronRight,
-  Hand,
-} from "lucide-react";
-import { WorksheetColumnMenu } from "./WorksheetColumnMenu";
 import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
-import { computeFrozenLefts, frozenStyle } from "@/lib/worksheetFreeze";
+import { computeFrozenLefts } from "@/lib/worksheetFreeze";
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
 import {
   DELIVERABLE_SPECIAL_OPTIONS,
   PROJECT_SPECIAL_OPTIONS,
   REVIEWER_SPECIAL_OPTIONS,
 } from "@/lib/worksheetFilterOptions";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { Checkbox } from "../ui/checkbox";
-import { WorkSheetRow } from "./WorkSheetRow";
+import { Table } from "../ui/table";
+import { WorkSheetTableBody } from "./WorkSheetTableBody";
+import { WorkSheetTableHeader } from "./WorkSheetTableHeader";
 import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { QuantityPanel } from "./QuantityPanel";
@@ -34,14 +27,13 @@ import { durationSecondsOf, isQtySet, quantityOf } from "@/lib/quantity";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
-import { avatarColorClasses } from "@/lib/avatarColors";
 import { trackEvent } from "@/analytics";
 import { buildLookalikeIndex } from "@/lib/lookalikes";
 import { useWorksheetRangeSelection } from "@/hooks/useWorksheetRangeSelection";
 import { useWorksheetTableDragging } from "@/hooks/useWorksheetTableDragging";
 import { resolvePasteValue as resolvePasteValueFor } from "@/lib/worksheetPaste";
 import { computeRangeStats } from "@/lib/worksheetRangeStats";
-import { COLUMNS, COLUMN_FIELDS, ESTIMATED_ROW_HEIGHT, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, GROUP_HEADER_HEIGHT, GROUP_KEY_RESOLVERS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, NO_COLLAB_IDS, NO_COLUMNS, OVERSCAN, SHEET_EXCLUDED_COLUMNS, STAGE_DOT_COLORS, formatGroupMinutes, getGroupInitials } from "./workSheetTableConfig";
+import { COLUMNS, COLUMN_FIELDS, ESTIMATED_ROW_HEIGHT, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, GROUP_HEADER_HEIGHT, GROUP_KEY_RESOLVERS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, NO_COLLAB_IDS, NO_COLUMNS, OVERSCAN, SHEET_EXCLUDED_COLUMNS } from "./workSheetTableConfig";
 export { SHEET_EXCLUDED_COLUMNS };
 
 export const WorkSheetTable = forwardRef(function WorkSheetTable({
@@ -1554,6 +1546,88 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     }
   };
 
+  const ctx = {
+    activeCell,
+    allSelected,
+    allVisibleIds,
+    bottomSpacerHeight,
+    clearColumnFilter,
+    clearRowDrag,
+    clientNameOf,
+    clients,
+    collabIndex,
+    columnOrder,
+    columnSort,
+    columnWidths,
+    currentUser,
+    deliverablesByProject,
+    displayEntries,
+    displayRowNumberById,
+    draggedColumn,
+    draggedRowIds,
+    dropTarget,
+    effectiveHiddenColumns,
+    fillState,
+    frozenLefts,
+    frozenThrough,
+    getCollabMemberIds,
+    getHiddenColumnsAfter,
+    getHiddenColumnsFromStart,
+    gridTemplateColumns,
+    groupBySafe,
+    handleCellSelect,
+    handleCheckboxClickCapture,
+    handleCheckboxDragEnter,
+    handleCheckboxDragStart,
+    handleCheckboxRangeSelect,
+    handleCheckboxToggle,
+    handleColumnDrop,
+    handleColumnResizeStart,
+    handleExtendSelection,
+    handleFillEnd,
+    handleFillHover,
+    handleFillStart,
+    handleRowDragOver,
+    handleRowDragStart,
+    handleRowDrop,
+    headerRef,
+    hiddenRowsBeforeById,
+    isColumnFiltered,
+    nonAdminUsers,
+    onAddCollaborators,
+    onDelete,
+    onDuplicateRow,
+    onRequestHideRow,
+    onToggleSelectAll,
+    onUpdate,
+    openQtyPanel,
+    options,
+    projectLookalikes,
+    projects,
+    qtyPanel,
+    rangeSelection,
+    recentProjectsByCreator,
+    renderColumnFilterControl,
+    restoreHiddenColumns,
+    restoreHiddenRows,
+    reviewerUsers,
+    rowObserver,
+    selectedSet,
+    selection,
+    setColumnSort,
+    setDraggedColumn,
+    setFrozenThrough,
+    setHiddenColumns,
+    sortedTableItems,
+    toggleGroupCollapse,
+    topSpacerHeight,
+    totalCols,
+    users,
+    usersById,
+    visibleColumns,
+    visibleItems,
+  };
+
   return (
     <>
     <WorksheetFormulaBar
@@ -1580,355 +1654,9 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
         data-testid={WORKSHEET.table}
         className="min-w-max border-collapse"
       >
-        {/* Frozen: the column titles stay at the top while the rows scroll. */}
-        <TableHeader ref={headerRef} className="sticky top-0 z-40 bg-[#f7f9fc]">
-          <TableRow
-            className="border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
-            style={{ display: "grid", gridTemplateColumns, minWidth: "max-content" }}
-          >
-            <TableHead
-              className="row-num-head flex min-h-10 items-center justify-center bg-[#f7f9fc] px-0"
-              style={{ gridColumn: 1 }}
-            />
+        <WorkSheetTableHeader {...ctx} />
 
-
-            <TableHead className="checkbox-cell relative flex min-h-10 items-center border-r border-slate-200 bg-[#f7f9fc] pl-1 pr-0" style={{ gridColumn: 2 }}>
-              <Checkbox
-                data-testid="worksheet-select-all-checkbox"
-                className="rounded-[5px] border-slate-300 shadow-none"
-                checked={allSelected}
-                onCheckedChange={onToggleSelectAll}
-                disabled={allVisibleIds.length === 0}
-              />
-
-              {getHiddenColumnsFromStart().length > 0 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    restoreHiddenColumns(getHiddenColumnsFromStart())
-                  }
-                  className="absolute -right-2 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
-                  title={`Show ${getHiddenColumnsFromStart().length} hidden column${
-                    getHiddenColumnsFromStart().length === 1 ? "" : "s"
-                  }`}
-                  aria-label="Show hidden columns"
-                >
-                  <ChevronsLeftRight className="h-3 w-3" />
-                </button>
-              )}
-            </TableHead>
-
-            {columnOrder.map((column, columnIndex) => {
-              const isHidden = effectiveHiddenColumns.includes(column);
-
-              if (isHidden) {
-                return null;
-              }
-
-              const hiddenAfter = getHiddenColumnsAfter(columnIndex);
-
-              return (
-                <TableHead
-                  key={column}
-                  className={`group relative flex min-h-10 min-w-0 items-center justify-center whitespace-nowrap border-r border-slate-200 bg-[#f7f9fc] px-2 py-1 text-[12px] font-bold leading-4 text-slate-900 ${
-                    draggedColumn === column ? "opacity-50" : ""
-                  }`}
-                  style={{
-                    gridColumn: visibleColumns.indexOf(column) + 3,
-                    ...frozenStyle(frozenLefts, column, 36),
-                  }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => handleColumnDrop(column)}
-                >
-                  <div
-                    className="group/header flex w-full min-w-0 items-center overflow-hidden justify-center gap-1"
-                    draggable
-                    onDragStart={(event) => {
-                      event.stopPropagation();
-                      setDraggedColumn(column);
-                    }}
-                    onDragEnd={() => setDraggedColumn(null)}
-                    title={`Drag ${column} column`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="inline-flex h-5 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-400 opacity-0 transition-opacity group-hover/header:opacity-100 active:cursor-grabbing"
-                    >
-                      <Hand className="h-3.5 w-3.5" />
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={(event) => event.stopPropagation()}
-                      className="flex max-w-full min-w-0 items-center overflow-hidden rounded px-1 py-0.5 text-center hover:text-slate-900"
-                      title={column === "Time (min)" ? `${column} - required` : column}
-                    >
-                      <span className="block min-w-0 truncate">{column}</span>
-                      {/* Outside the truncating label so the marker stays visible in a narrow column. */}
-                      {column === "Time (min)" && (
-                        <span
-                          className="ml-0.5 shrink-0 text-rose-500"
-                          title="Required"
-                          aria-label="required"
-                        >
-                          *
-                        </span>
-                      )}
-                    </button>
-
-                    <WorksheetColumnMenu
-                      column={column}
-                      isSorted={columnSort.key === column}
-                      isFiltered={isColumnFiltered(column)}
-                      onSortAsc={() =>
-                        setColumnSort({
-                          key: column,
-                          direction: "asc",
-                        })
-                      }
-                      onSortDesc={() =>
-                        setColumnSort({
-                          key: column,
-                          direction: "desc",
-                        })
-                      }
-                      isFrozen={frozenThrough === column}
-                      onFreeze={() => {
-                        const lefts = computeFrozenLefts(visibleColumns, column, columnWidths);
-                        if (!lefts) {
-                          toast.error("Those columns are too wide to freeze on this screen. Narrow them or freeze an earlier column.");
-                          return;
-                        }
-                        setFrozenThrough(column);
-                      }}
-                      onUnfreeze={() => setFrozenThrough(null)}
-                      onHide={() =>
-                        setHiddenColumns((current) =>
-                          current.includes(column)
-                            ? current
-                            : [...current, column]
-                        )
-                      }
-                      filterControl={renderColumnFilterControl(column)}
-                      onClearFilter={() => clearColumnFilter(column)}
-                    />
-                  </div>
-
-                  {hiddenAfter.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => restoreHiddenColumns(hiddenAfter)}
-                      className="absolute -right-2 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:bg-blue-50 hover:text-blue-600"
-                      title={`Show ${hiddenAfter.length} hidden column${
-                        hiddenAfter.length === 1 ? "" : "s"
-                      }`}
-                      aria-label="Show hidden columns"
-                    >
-                      <ChevronsLeftRight className="h-3 w-3" />
-                    </button>
-                  )}
-
-                  <div
-                    onMouseDown={(event) =>
-                      handleColumnResizeStart(event, column)
-                    }
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                    }}
-                    className="group/resize absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize"
-                    title="Drag to resize column"
-                  >
-                    <div className="mx-auto h-full w-px bg-transparent group-hover/resize:bg-slate-400" />
-                  </div>
-                </TableHead>
-              );
-            })}
-          </TableRow>
-        </TableHeader>
-
-        <TableBody>
-          {displayEntries.length === 0 ? (
-            <TableRow>
-              <td
-                colSpan={totalCols}
-                data-testid={WORKSHEET.emptyState}
-                className="py-16 text-center"
-              >
-                <p className="text-sm font-medium text-slate-700">
-                  No work items yet
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Add a row to start logging work.
-                </p>
-              </td>
-            </TableRow>
-          ) : (
-            <>
-              {topSpacerHeight > 0 && (
-                <TableRow aria-hidden="true">
-                  <td
-                    colSpan={totalCols}
-                    style={{ height: topSpacerHeight, padding: 0 }}
-                  />
-                </TableRow>
-              )}
-
-              {visibleItems.map((entry) => {
-                if (entry.type === "header") {
-                  const { key, isCollapsed, label, summary } = entry;
-
-                  return (
-                    <TableRow
-                      key={`group-${key}`}
-                      className="h-10 border-b border-slate-200 bg-[#f7f9fc] hover:bg-[#f7f9fc]"
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns,
-                        minWidth: "max-content",
-                      }}
-                    >
-                      <TableCell
-                        className="flex h-10 items-center gap-2 px-3 text-[13px]"
-                        style={{ gridColumn: "1 / -1" }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleGroupCollapse(key)}
-                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-200"
-                          aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`}
-                        >
-                          {isCollapsed ? (
-                            <ChevronRight className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </button>
-
-                        {groupBySafe === "Stage" && (
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${
-                              STAGE_DOT_COLORS[key] || "bg-slate-400"
-                            }`}
-                          />
-                        )}
-
-                        {groupBySafe === "Member" && (
-                          <span
-                            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarColorClasses(
-                              key === "__unassigned__" ? null : key
-                            )}`}
-                          >
-                            {getGroupInitials(label)}
-                          </span>
-                        )}
-
-                        <span className="truncate font-semibold text-slate-800">
-                          {label}
-                        </span>
-
-                        <span className="shrink-0 text-slate-500">
-                          {groupBySafe === "Stage"
-                            ? `${summary.count}`
-                            : `${summary.count} row${summary.count === 1 ? "" : "s"} · ${formatGroupMinutes(
-                                summary.minutes
-                              )}`}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  );
-                }
-
-                const { item, rowIndex } = entry;
-                const index = rowIndex;
-
-                return (
-                  <WorkSheetRow
-                    key={item.id}
-                    activeCell={activeCell}
-                    selection={selection}
-                    rangeSelection={rangeSelection}
-                    totalRows={sortedTableItems.length}
-                    onExtendSelection={handleExtendSelection}
-                    onCheckboxRangeSelect={handleCheckboxRangeSelect}
-                    fillState={fillState}
-                    onCellSelect={handleCellSelect}
-                    onFillStart={handleFillStart}
-                    onFillHover={handleFillHover}
-                    onFillEnd={handleFillEnd}
-                    item={item}
-                    index={index}
-                    currentUser={currentUser}
-                    users={users}
-                    usersById={usersById}
-                    nonAdminUsers={nonAdminUsers}
-                    reviewerUsers={reviewerUsers}
-                    options={options}
-                    clients={clients}
-                    projects={projects}
-                    deliverablesByProject={deliverablesByProject}
-                    clientNameOf={clientNameOf}
-                    lookalikes={projectLookalikes}
-                    recentProjectsByCreator={recentProjectsByCreator}
-                    onUpdate={onUpdate}
-                    collabCount={
-                      item.collab_group_id
-                        ? Math.max(0, (collabIndex?.get(item.collab_group_id)?.length || 1) - 1)
-                        : 0
-                    }
-                    getCollabMemberIds={getCollabMemberIds}
-                    onAddCollaborators={onAddCollaborators}
-                    onOpenQty={openQtyPanel}
-                    qtyPanelOpen={qtyPanel?.id === item.id}
-                    onDelete={onDelete}
-                    onDuplicate={onDuplicateRow}
-                    hiddenColumns={effectiveHiddenColumns}
-                    frozenLefts={frozenLefts}
-                    columnOrder={columnOrder}
-                    columnWidths={columnWidths}
-                    onRowDragStart={handleRowDragStart}
-                    onRowDragOver={handleRowDragOver}
-                    onRowDrop={(event, rowId) => {
-                      event.preventDefault();
-                      handleRowDrop(event, rowId);
-                    }}
-                    onRowDragEnd={clearRowDrag}
-                    isRowDragging={draggedRowIds.includes(item.id)}
-                    dropIndicator={dropTarget?.id === item.id ? dropTarget.pos : null}
-                    dragCount={selectedSet.has(item.id) ? selectedSet.size : 0}
-                    onCheckboxDragStart={handleCheckboxDragStart}
-                    onCheckboxDragEnter={handleCheckboxDragEnter}
-                    onCheckboxClickCapture={handleCheckboxClickCapture}
-                    rowObserver={rowObserver}
-                    canDragRow={!columnSort.key}
-                    selected={selectedSet.has(item.id)}
-                    onToggleSelect={(id) => handleCheckboxToggle(id, index)}
-                    displayRowNumber={displayRowNumberById[item.id]}
-                    hiddenRowIdsBefore={hiddenRowsBeforeById[item.id] || []}
-                    hiddenRowIdsAfter={
-                      item.id === sortedTableItems[sortedTableItems.length - 1]?.id
-                        ? hiddenRowsBeforeById.__trailing__ || []
-                        : []
-                    }
-                    onUnhideRows={restoreHiddenRows}
-                    onHideRow={(rowId) => {
-                      onRequestHideRow?.(rowId);
-                    }}
-                  />
-                );
-              })}
-
-              {bottomSpacerHeight > 0 && (
-                <TableRow aria-hidden="true">
-                  <td
-                    colSpan={totalCols}
-                    style={{ height: bottomSpacerHeight, padding: 0 }}
-                  />
-                </TableRow>
-              )}
-            </>
-          )}
-        </TableBody>
+        <WorkSheetTableBody {...ctx} />
       </Table>
     </div>
 

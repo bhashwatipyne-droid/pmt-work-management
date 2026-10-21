@@ -10,30 +10,27 @@ import {
 import { FilterMultiSelect } from "./FilterMultiSelect";
 import { buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
 import { computeFrozenLefts } from "@/lib/worksheetFreeze";
-import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
-import {
-  DELIVERABLE_SPECIAL_OPTIONS,
-  PROJECT_SPECIAL_OPTIONS,
-  REVIEWER_SPECIAL_OPTIONS,
-} from "@/lib/worksheetFilterOptions";
 import { Table } from "../ui/table";
+import { useWorksheetTableWindow } from "./useWorksheetTableWindow";
+import { useWorksheetTableRows } from "./useWorksheetTableRows";
+import { useWorksheetTableGroups } from "./useWorksheetTableGroups";
+import { useWorksheetTableLookups } from "./useWorksheetTableLookups";
 import { WorkSheetTableBody } from "./WorkSheetTableBody";
 import { WorkSheetTableHeader } from "./WorkSheetTableHeader";
 import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { QuantityPanel } from "./QuantityPanel";
 import { RangeSelectionBar } from "./RangeSelectionBar";
-import { durationSecondsOf, isQtySet, quantityOf } from "@/lib/quantity";
+import { isQtySet } from "@/lib/quantity";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { trackEvent } from "@/analytics";
-import { buildLookalikeIndex } from "@/lib/lookalikes";
 import { useWorksheetRangeSelection } from "@/hooks/useWorksheetRangeSelection";
 import { useWorksheetTableDragging } from "@/hooks/useWorksheetTableDragging";
 import { resolvePasteValue as resolvePasteValueFor } from "@/lib/worksheetPaste";
 import { computeRangeStats } from "@/lib/worksheetRangeStats";
-import { COLUMNS, COLUMN_FIELDS, ESTIMATED_ROW_HEIGHT, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, GROUP_HEADER_HEIGHT, GROUP_KEY_RESOLVERS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, NO_COLLAB_IDS, NO_COLUMNS, OVERSCAN, SHEET_EXCLUDED_COLUMNS } from "./workSheetTableConfig";
+import { COLUMNS, COLUMN_FIELDS, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, NO_COLUMNS, SHEET_EXCLUDED_COLUMNS } from "./workSheetTableConfig";
 export { SHEET_EXCLUDED_COLUMNS };
 
 export const WorkSheetTable = forwardRef(function WorkSheetTable({
@@ -363,131 +360,24 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     );
   }, [hiddenColumns]);
 
-  // Pre-index data once instead of doing a full .filter() inside every row.
-  const deliverablesByProject = useMemo(() => {
-    const map = {};
-
-    for (const deliverable of deliverables || []) {
-      if (!deliverable.project_id) continue;
-
-      if (!map[deliverable.project_id]) {
-        map[deliverable.project_id] = [];
-      }
-
-      map[deliverable.project_id].push(deliverable);
-    }
-
-    return map;
-  }, [deliverables]);
-
-  // For the Project picker: client names, the look-alike index among the
-  // projects it can offer (not delivered/scrapped), and which projects each
-  // person already has rows for ("Recently used").
-  const clientNameById = useMemo(
-    () => new Map((clients || []).map((client) => [client.id, client.name])),
-    [clients]
-  );
-
-  const clientNameOf = useCallback(
-    (clientId) => clientNameById.get(clientId) || "",
-    [clientNameById]
-  );
-
-  const projectLookalikes = useMemo(
-    () =>
-      buildLookalikeIndex(
-        projects || [],
-        clientNameOf
-      ),
-    [projects, clientNameOf]
-  );
-
-  const recentProjectsByCreator = useMemo(() => {
-    const map = new Map();
-
-    for (const item of items || []) {
-      if (!item.project_id || !item.creator_id) continue;
-      if (!map.has(item.creator_id)) map.set(item.creator_id, new Set());
-      map.get(item.creator_id).add(item.project_id);
-    }
-
-    return map;
-  }, [items]);
-
-  const usersById = useMemo(() => {
-    const map = {};
-
-    for (const user of users || []) {
-      map[user.id] = user;
-    }
-
-    return map;
-  }, [users]);
-
-  const nonAdminUsers = useMemo(
-    () => (users || []).filter((user) => user.role !== "admin" && user.role !== "hr"),
-    [users]
-  );
-
-  const reviewerUsers = useMemo(
-    () => (users || []).filter((user) => user.role !== "member" && user.role !== "hr"),
-    [users]
-  );
-
-  // Read when a collaborator picker opens (so it always sees the live list)
-  // through a stable function, so rows are not re-rendered for it.
-  const collabIndexRef = useRef(collabIndex);
-  collabIndexRef.current = collabIndex;
-  const getCollabMemberIds = useCallback(
-    (groupId) => (groupId && collabIndexRef.current?.get(groupId)) || NO_COLLAB_IDS,
-    []
-  );
-
-  // Value lists for the per-column filter menus. Memoized on the
-  // underlying data only (not on `filters` or any per-render state), so
-  // opening/using one column's filter never recomputes or re-renders the
-  // others — same reasoning as the big filter panel's fix.
-  const projectFilterValues = useMemo(
-    () => [
-      ...PROJECT_SPECIAL_OPTIONS,
-      ...(projects || []).map((p) => ({ value: p.id, label: p.name })),
-    ],
-    [projects]
-  );
-  const deliverableFilterValues = useMemo(
-    () => [
-      ...DELIVERABLE_SPECIAL_OPTIONS,
-      ...(deliverables || []).map((d) => ({ value: d.id, label: d.name })),
-    ],
-    [deliverables]
-  );
-  const stageFilterValues = useMemo(
-    () => (options.stages || []).map((s) => ({ value: s, label: s })),
-    [options.stages]
-  );
-  const typeFilterValues = useMemo(
-    () => (options.deliverable_types || []).map((t) => ({ value: t, label: t })),
-    [options.deliverable_types]
-  );
-  const categoryFilterValues = useMemo(
-    () => (options.work_categories || []).map((c) => ({ value: c, label: c })),
-    [options.work_categories]
-  );
-  const statusFilterValues = useMemo(
-    () => (options.statuses || []).map((s) => ({ value: s, label: s })),
-    [options.statuses]
-  );
-  const creatorFilterValues = useMemo(
-    () => nonAdminUsers.map((u) => ({ value: u.id, label: u.name })),
-    [nonAdminUsers]
-  );
-  const reviewerFilterValues = useMemo(
-    () => [
-      ...REVIEWER_SPECIAL_OPTIONS,
-      ...reviewerUsers.map((u) => ({ value: u.id, label: u.name })),
-    ],
-    [reviewerUsers]
-  );
+  const {
+    deliverablesByProject,
+    clientNameOf,
+    projectLookalikes,
+    recentProjectsByCreator,
+    usersById,
+    nonAdminUsers,
+    reviewerUsers,
+    getCollabMemberIds,
+    projectFilterValues,
+    deliverableFilterValues,
+    stageFilterValues,
+    typeFilterValues,
+    categoryFilterValues,
+    statusFilterValues,
+    creatorFilterValues,
+    reviewerFilterValues,
+  } = useWorksheetTableLookups({ items, users, options, projects, deliverables, clients, collabIndex });
 
   // Maps a column to its filter field(s) in the `filters` object. Columns
   // not listed here (Client, Deliverable Name, Deliverable Link, Version,
@@ -593,153 +483,19 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  const getSortValue = useCallback(
-    (item, column) => {
-      if (column === "Qty") return isQtySet(item) ? quantityOf(item) : "";
-      if (column === "Duration") return durationSecondsOf(item) ?? "";
+  const {
+    getSortValue,
+    visibleTableItems,
+    hiddenRowsBeforeById,
+    displayRowNumberById,
+  } = useWorksheetTableRows({ items, projects, clients, deliverables, usersById, columnSort, rowOrder, hiddenRows });
 
-      const field = COLUMN_FIELDS[column];
-
-      if (!field) return "";
-
-      let value = item[field];
-
-      if (column === "Client") {
-        const project = projects.find((p) => p.id === item.project_id);
-        const clientId = item.client_id || project?.client_id;
-        value = clients.find((c) => c.id === clientId)?.name || "";
-      }
-
-      if (column === "Project") {
-        value = projects.find((p) => p.id === item.project_id)?.name || "";
-      }
-
-      if (column === "Deliverable") {
-        value = item.deliverable_not_available
-          ? NOT_AVAILABLE_LABEL
-          : deliverables.find((d) => d.id === item.deliverable_id)?.name || "";
-      }
-
-      if (column === "Creator") {
-        value = usersById[item.creator_id]?.name || "";
-      }
-
-      if (column === "Reviewer") {
-        value = usersById[item.reviewer_id]?.name || "";
-      }
-
-      if (value === null || value === undefined) return "";
-
-      return value;
-    },
-    [clients, projects, deliverables, usersById]
-  );
-
-  const hiddenRowSet = useMemo(
-    () => new Set(hiddenRows),
-    [hiddenRows]
-  );
-
-  const sortedAllTableItems = useMemo(() => {
-    if (!columnSort.key) {
-      return items;
-    }
-
-    const sorted = [...items];
-
-    sorted.sort((a, b) => {
-      const aValue = getSortValue(a, columnSort.key);
-      const bValue = getSortValue(b, columnSort.key);
-
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        return columnSort.direction === "asc"
-          ? aValue - bValue
-          : bValue - aValue;
-      }
-
-      return columnSort.direction === "asc"
-        ? String(aValue).localeCompare(String(bValue), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          })
-        : String(bValue).localeCompare(String(aValue), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-    });
-
-    return sorted;
-  }, [items, columnSort, getSortValue]);
-
-  const personallyOrderedItems = useMemo(() => {
-    if (!rowOrder.length || columnSort.key) return sortedAllTableItems;
-
-    const byId = new Map(sortedAllTableItems.map((item) => [item.id, item]));
-    const ordered = rowOrder
-      .map((id) => byId.get(id))
-      .filter(Boolean);
-    const orderedIds = new Set(ordered.map((item) => item.id));
-
-    // Items not yet part of the saved drag order are newly added rows —
-    // surface them at the top instead of burying them after everything
-    // the user has already arranged.
-    return [
-      ...sortedAllTableItems.filter((item) => !orderedIds.has(item.id)),
-      ...ordered,
-    ];
-  }, [sortedAllTableItems, rowOrder, columnSort.key]);
-
-  const visibleTableItems = useMemo(
-    () => personallyOrderedItems.filter((item) => !hiddenRowSet.has(item.id)),
-    [personallyOrderedItems, hiddenRowSet]
-  );
-
-  // Clusters visibleTableItems into groups, in first-seen order, without
-  // disturbing each group's own internal (drag/sort) order. `summaries`
-  // carries the per-group row-count/time rollup the header row displays.
-  //
-  // The Member resolver needs `usersById` (component data), so it's built
-  // here rather than read off the static GROUP_KEY_RESOLVERS map — a
-  // creator_id that no longer resolves to a real user (a deactivated or
-  // deleted account) is folded into the same "__unassigned__" bucket as
-  // rows with no creator at all, rather than becoming its own
-  // one-off "Unassigned" group per orphaned id.
-  const resolveGroupKey = useCallback(
-    (item) => {
-      if (groupBySafe === "Member") {
-        const id = item.creator_id;
-        return id && usersById[id] ? id : "__unassigned__";
-      }
-      return GROUP_KEY_RESOLVERS[groupBySafe]?.(item);
-    },
-    [groupBySafe, usersById]
-  );
-
-  const groupInfo = useMemo(() => {
-    if (!groupBySafe) return null;
-
-    const order = [];
-    const buckets = new Map();
-    const summaries = new Map();
-
-    for (const item of visibleTableItems) {
-      const key = resolveGroupKey(item);
-
-      if (!buckets.has(key)) {
-        buckets.set(key, []);
-        summaries.set(key, { count: 0, minutes: 0 });
-        order.push(key);
-      }
-
-      buckets.get(key).push(item);
-
-      const summary = summaries.get(key);
-      summary.count += 1;
-      summary.minutes += Number(item.time_taken_minutes) || 0;
-    }
-
-    return { order, buckets, summaries };
-  }, [visibleTableItems, groupBySafe, resolveGroupKey]);
+  const {
+    resolveGroupKey,
+    groupInfo,
+    sortedTableItems,
+    displayEntries,
+  } = useWorksheetTableGroups({ visibleTableItems, groupBySafe, usersById, collapsedGroupKeys });
 
   // Groups start collapsed — on first mount (a fresh session/page load)
   // and whenever the grouping mode or active tab changes, since keys
@@ -777,94 +533,6 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       return next;
     });
   }, []);
-
-  const getGroupLabel = useCallback(
-    (key) => {
-      if (groupBySafe === "Member") {
-        return usersById[key]?.name || "Unassigned";
-      }
-      return key;
-    },
-    [groupBySafe, usersById]
-  );
-
-  // sortedTableItems stays the single source of truth for row numbering,
-  // fill, selection, and keyboard nav — exactly as before grouping
-  // existed — it's just now, when grouped, clustered by group and with
-  // collapsed groups' rows excluded entirely (the same way hidden rows
-  // already are). displayEntries is the parallel list actually rendered
-  // (it additionally carries the header rows), built in the same pass so
-  // the two can never drift apart: every "row" entry in displayEntries
-  // gets a rowIndex equal to its position in sortedTableItems.
-  const { sortedTableItems, displayEntries } = useMemo(() => {
-    if (!groupInfo) {
-      return {
-        sortedTableItems: visibleTableItems,
-        displayEntries: visibleTableItems.map((item, i) => ({
-          type: "row",
-          item,
-          rowIndex: i + 1,
-        })),
-      };
-    }
-
-    const rows = [];
-    const entries = [];
-    let rowIndex = 0;
-
-    for (const key of groupInfo.order) {
-      const isCollapsed = collapsedGroupKeys.has(key);
-
-      entries.push({
-        type: "header",
-        key,
-        isCollapsed,
-        label: getGroupLabel(key),
-        summary: groupInfo.summaries.get(key),
-      });
-
-      if (isCollapsed) continue;
-
-      for (const item of groupInfo.buckets.get(key)) {
-        rowIndex += 1;
-        rows.push(item);
-        entries.push({ type: "row", item, rowIndex });
-      }
-    }
-
-    return { sortedTableItems: rows, displayEntries: entries };
-  }, [groupInfo, visibleTableItems, collapsedGroupKeys, getGroupLabel]);
-
-
-  // Tracks which hidden rows sit immediately before each visible row.
-  const hiddenRowsBeforeById = useMemo(() => {
-    const result = {};
-    let pendingHiddenRows = [];
-
-    for (const item of personallyOrderedItems) {
-      if (hiddenRowSet.has(item.id)) {
-        pendingHiddenRows.push(item.id);
-        continue;
-      }
-
-      result[item.id] = pendingHiddenRows;
-      pendingHiddenRows = [];
-    }
-
-    result.__trailing__ = pendingHiddenRows;
-
-    return result;
-  }, [personallyOrderedItems, hiddenRowSet]);
-
-  const displayRowNumberById = useMemo(() => {
-    const result = {};
-
-    personallyOrderedItems.forEach((item, index) => {
-      result[item.id] = index + 1;
-    });
-
-    return result;
-  }, [personallyOrderedItems]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -1157,67 +825,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     return () => observer.disconnect();
   }, []);
 
-  // Top edge of every entry, from the measured heights (estimated where a row
-  // has not been measured yet). offsets[n] is the total height.
-  const offsets = useMemo(() => {
-    const result = new Array(displayEntries.length + 1);
-    const heights = rowHeightsRef.current;
-    // Rows not on screen yet are assumed to be as tall as the average of the
-    // ones already measured, so the scrollbar is about right from the start.
-    let measuredTotal = 0;
-    heights.forEach((height) => {
-      measuredTotal += height;
-    });
-    const estimate = heights.size
-      ? Math.max(MIN_HEADER_HEIGHT, Math.round(measuredTotal / heights.size))
-      : ESTIMATED_ROW_HEIGHT;
-    let acc = 0;
-
-    for (let i = 0; i < displayEntries.length; i += 1) {
-      result[i] = acc;
-      const entry = displayEntries[i];
-      acc +=
-        entry.type === "header"
-          ? GROUP_HEADER_HEIGHT
-          : heights.get(String(entry.item.id)) ?? estimate;
-    }
-    result[displayEntries.length] = acc;
-
-    return result;
-    // heightVersion is the signal that rowHeightsRef changed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayEntries, heightVersion]);
-
-  // First index whose top edge is at or past `target`.
-  const indexAtOffset = (target) => {
-    let low = 0;
-    let high = displayEntries.length;
-    while (low < high) {
-      const mid = (low + high) >> 1;
-      if (offsets[mid] < target) low = mid + 1;
-      else high = mid;
-    }
-    return low;
-  };
-
-  const bodyScrollTop = Math.max(0, scrollTop - headerHeight);
-
-  const visibleStart = Math.max(
-    0,
-    indexAtOffset(bodyScrollTop + 1) - 1 - OVERSCAN
-  );
-
-  const visibleEnd = Math.min(
-    displayEntries.length,
-    indexAtOffset(bodyScrollTop + viewportHeight) + OVERSCAN
-  );
-
-  const visibleItems = displayEntries.slice(visibleStart, visibleEnd);
-  const topSpacerHeight = offsets[visibleStart] || 0;
-  const bottomSpacerHeight = Math.max(
-    0,
-    (offsets[displayEntries.length] || 0) - (offsets[visibleEnd] || 0)
-  );
+  const {
+    visibleItems,
+    topSpacerHeight,
+    bottomSpacerHeight,
+  } = useWorksheetTableWindow({ displayEntries, rowHeightsRef, heightVersion, scrollTop, headerHeight, viewportHeight });
 
   const allVisibleIds = useMemo(
     () => sortedTableItems.map((item) => item.id),

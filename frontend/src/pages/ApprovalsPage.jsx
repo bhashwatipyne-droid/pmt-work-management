@@ -1,18 +1,7 @@
 import { makeMatcher } from "@/lib/search";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { differenceInCalendarDays, format, formatDistanceToNowStrict, parseISO } from "date-fns";
-import {
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  ShieldCheck,
-  Users,
-  UserCheck,
-  Search,
-  X,
-} from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useAccess } from "@/hooks/useAccess";
 import { refreshCounts } from "@/lib/countsBus";
@@ -26,160 +15,12 @@ import { APPROVALS } from "@/constants/testIds";
 import ApprovalsFilterModal from "@/components/approvals/ApprovalsFilterModal";
 import { useUndo } from "@/hooks/useUndo";
 import { trackEvent } from "../analytics";
-
-const COLUMNS = [
-  {
-    key: "MANAGER",
-    label: "Manager",
-    icon: Users,
-    description: "Internal manager sign-off",
-  },
-  {
-    key: "LEADERSHIP",
-    label: "Leadership",
-    icon: ShieldCheck,
-    description: "Leadership review",
-  },
-  {
-    key: "CLIENT_SPOC",
-    label: "Client SPOC",
-    icon: UserCheck,
-    description: "Client sign-off",
-  },
-  {
-    key: "COMPLIANCE",
-    label: "Compliance",
-    icon: ShieldCheck,
-    description: "Compliance review",
-  },
-];
-
-const initialBoard = () =>
-  Object.fromEntries(COLUMNS.map((column) => [column.key, []]));
-
-const ageLabel = (isoDate) => {
-  if (!isoDate) return "—";
-  try {
-    return `${formatDistanceToNowStrict(parseISO(isoDate))} ago`;
-  } catch {
-    return "—";
-  }
-};
-
-// Due-date chip: replaces the plain "Pending" label with how close the
-// current stage's deadline is. Falls back to "Pending" when there is none.
-const dueChip = (isoDate) => {
-  const fallback = {
-    label: "Pending",
-    cls: "bg-amber-50 text-amber-700",
-    dot: "bg-amber-500",
-  };
-  if (!isoDate) return fallback;
-  try {
-    const due = parseISO(String(isoDate).slice(0, 10));
-    const days = differenceInCalendarDays(due, new Date());
-    if (Number.isNaN(days)) return fallback;
-    if (days < 0) {
-      return { label: `Overdue · ${Math.abs(days)}d`, cls: "bg-red-50 text-red-700", dot: "bg-red-500" };
-    }
-    if (days === 0) return { label: "Due today", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" };
-    if (days === 1) return { label: "Due tomorrow", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" };
-    return { label: `Due ${format(due, "EEE d MMM")}`, cls: "bg-slate-100 text-slate-600", dot: "bg-slate-400" };
-  } catch {
-    return fallback;
-  }
-};
-
-const deadlineText = (isoDate) => {
-  if (!isoDate) return "—";
-  try {
-    const due = parseISO(String(isoDate).slice(0, 10));
-    const days = differenceInCalendarDays(due, new Date());
-    const text = format(due, "EEE, d MMM");
-    if (days === 0) return `Today · ${text}`;
-    if (days === 1) return `Tomorrow · ${text}`;
-    return text;
-  } catch {
-    return "—";
-  }
-};
-
-const isEditableTarget = (el) => {
-  if (!el) return false;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (el.isContentEditable) return true;
-  return false;
-};
-
-// Shortcuts need Ctrl (Windows/Linux) or Cmd (Mac) held down. Plain letters
-// used to trigger them, and people typing or just resting on the keyboard
-// approved or sent back items by accident.
-const IS_MAC =
-  typeof navigator !== "undefined" &&
-  /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || "");
-const MOD_LABEL = IS_MAC ? "⌘" : "Ctrl";
-
-const KBD_CLASS =
-  "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
-
-// One row of the queue list. Memoised so ticking a checkbox (or moving the
-// highlight) re-renders only the rows whose own state changed, not all of the
-// hundreds in the queue - that was most of the input lag on bulk selection.
-const ApprovalRow = memo(function ApprovalRow({
-  item,
-  isSelected,
-  checked,
-  canAct,
-  draggable,
-  onOpen,
-  onToggle,
-  onDragStart,
-  onDragEnd,
-}) {
-  const chip = dueChip(item.due_date);
-
-  return (
-    <div
-      data-testid={`${APPROVALS.listRowPrefix}-${item.id}`}
-      draggable={draggable}
-      onDragStart={() => onDragStart(item)}
-      onDragEnd={onDragEnd}
-      onClick={() => onOpen(item.id)}
-      className={[
-        "flex w-full cursor-pointer items-start gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition-colors",
-        isSelected ? "bg-[#f0f0fd]" : "hover:bg-slate-50",
-      ].join(" ")}
-    >
-      {canAct && (
-        <input
-          type="checkbox"
-          data-testid={`${APPROVALS.checkboxPrefix}-${item.id}`}
-          checked={checked}
-          onChange={() => onToggle(item.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-          aria-label={`Select ${item.deliverable_name}`}
-        />
-      )}
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="flex-1" />
-          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>
-            {chip.label}
-          </span>
-        </div>
-        <div className="mt-1 truncate text-sm font-semibold leading-5 text-slate-900">
-          {item.deliverable_name}
-        </div>
-        <div className="mt-0.5 truncate text-xs text-slate-500">
-          {item.project_name} · {item.client_name || "—"}
-        </div>
-      </div>
-    </div>
-  );
-});
+import { COLUMNS, initialBoard, isEditableTarget } from "@/components/approvals/approvalsView";
+import { ApprovalsDetail } from "@/components/approvals/ApprovalsDetail";
+import { ApprovalsList } from "@/components/approvals/ApprovalsList";
+import { ApprovalsSearchRow } from "@/components/approvals/ApprovalsSearchRow";
+import { ApprovalsQueueTabs } from "@/components/approvals/ApprovalsQueueTabs";
+import { ApprovalsHeader } from "@/components/approvals/ApprovalsHeader";
 
 export default function ApprovalsPage() {
   const { currentUser, currentUserId, loading: userLoading } = useUser();
@@ -646,322 +487,62 @@ export default function ApprovalsPage() {
 
   if (userLoading || !currentUser) return null;
 
+  const ctx = {
+    aList,
+    aSel,
+    activeFilterCount,
+    activeQueue,
+    allInQueueSelected,
+    bulkLoading,
+    canAct,
+    clearSelection,
+    dateFrom,
+    dateTo,
+    deadlineFilter,
+    decide,
+    detailOpen,
+    dragOverQueue,
+    dragging,
+    endDrag,
+    filteredBoard,
+    handleApplyFilters,
+    handleBulkApprove,
+    handleMove,
+    loading,
+    movingId,
+    notes,
+    openRow,
+    projectFilter,
+    projectOptions,
+    search,
+    selectedId,
+    selectedIds,
+    setActiveQueue,
+    setDetailOpen,
+    setDragOverQueue,
+    setDragging,
+    setNotes,
+    setSearch,
+    stageFilter,
+    stageOptions,
+    startDrag,
+    toggleSelect,
+    toggleSelectAllInQueue,
+  };
+
   return (
     <div data-testid={APPROVALS.page} className="flex h-full flex-col bg-background">
-      {/* HEADER */}
-      <div className="flex items-center gap-3 px-3 pt-4 md:px-5 md:pt-5">
-        <h1 className="flex-1 text-2xl font-semibold tracking-tight text-foreground">Approvals</h1>
+      <ApprovalsHeader {...ctx} />
 
-        {canAct && selectedIds.size > 0 ? (
-          // Gmail-style contextual bar — replaces the hint row the moment
-          // anything is checked.
-          <div className="flex items-center gap-2 rounded-lg bg-[#f0f0fd] px-3 py-1.5">
-            <span className="text-xs font-semibold text-[#2b2bb5]">
-              {selectedIds.size} selected
-            </span>
-            <button
-              type="button"
-              data-testid={APPROVALS.bulkApproveBtn}
-              onClick={handleBulkApprove}
-              disabled={bulkLoading}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-[#2b2bb5] px-2.5 text-xs font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
-            >
-              <Check className="h-3.5 w-3.5" />
-              Approve
-            </button>
-            <button
-              type="button"
-              aria-label="Clear selection"
-              onClick={clearSelection}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-[#2b2bb5] hover:bg-[#e4e4fb]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="hidden items-center gap-2.5 text-xs text-muted-foreground md:flex">
-            {!canAct && (
-              <span
-                data-testid="approvals-view-only"
-                title="Only managers and admins can approve or send items back"
-                className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600"
-              >
-                View only
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <kbd className={KBD_CLASS}>{MOD_LABEL}+J</kbd>
-              <kbd className={KBD_CLASS}>{MOD_LABEL}+K</kbd>
-              move
-            </span>
-            {canAct && (
-              <>
-                <span className="flex items-center gap-1">
-                  <kbd className={KBD_CLASS}>{MOD_LABEL}+A</kbd>
-                  approve
-                </span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      <ApprovalsQueueTabs {...ctx} />
 
-      {/* QUEUE TABS — also drop targets for drag-to-reassign */}
-      <div
-        role="tablist"
-        aria-label="Approval queues"
-        className="mt-3 flex gap-1 overflow-x-auto px-3 shadow-[inset_0_-1px_0_rgba(234,238,244,1)]"
-      >
-        {COLUMNS.map((column) => {
-          const Icon = column.icon;
-          const isActive = activeQueue === column.key;
-          const isDropTarget = dragOverQueue === column.key && dragging?.approval_type !== column.key;
-
-          return (
-            <button
-              key={column.key}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveQueue(column.key)}
-              onDragOver={(e) => {
-                if (!dragging || dragging.approval_type === column.key) return;
-                e.preventDefault();
-                setDragOverQueue(column.key);
-              }}
-              onDragLeave={() => setDragOverQueue((cur) => (cur === column.key ? null : cur))}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOverQueue(null);
-                if (dragging) handleMove(dragging, column.key);
-                setDragging(null);
-              }}
-              className={[
-                "flex h-10 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-                isDropTarget ? "bg-[#f0f0fd]" : "",
-              ].join(" ")}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {column.label}
-              <span
-                className={[
-                  "inline-flex h-[18px] min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold",
-                  isActive ? "bg-[#2b2bb5] text-white" : "bg-slate-100 text-slate-600",
-                ].join(" ")}
-              >
-                {filteredBoard[column.key]?.length ?? 0}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* SEARCH + FILTER ROW */}
-      <div className="flex items-center gap-2 px-3 py-3 md:px-5">
-        <div className="relative min-w-0 flex-1 md:flex-none">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            data-testid={APPROVALS.searchInput}
-            placeholder="Search deliverable, project, client..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-10 w-full rounded-lg border border-slate-200 md:w-64 bg-white pl-8 pr-3 text-sm text-slate-800 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-          />
-        </div>
-
-        <ApprovalsFilterModal
-          stages={stageOptions}
-          projectOptions={projectOptions}
-          initialValues={{ stageFilter, projectFilter, deadlineFilter, dateFrom, dateTo }}
-          onApply={handleApplyFilters}
-          activeFilterCount={activeFilterCount}
-        />
-      </div>
+      <ApprovalsSearchRow {...ctx} />
 
       {/* BODY: master list + detail */}
       <div className="flex min-h-0 flex-1">
-        {/* LIST */}
-        <div className={`flex w-full shrink-0 flex-col border-r border-slate-200 md:w-[360px] ${detailOpen ? "max-md:hidden" : ""}`}>
-          <div className="flex h-10 shrink-0 items-center gap-3 border-b border-slate-200 px-4">
-            {canAct && (
-              <input
-                type="checkbox"
-                aria-label="Select all in this queue"
-                checked={allInQueueSelected}
-                onChange={toggleSelectAllInQueue}
-                disabled={aList.length === 0}
-                className="h-4 w-4 rounded border-slate-300 text-[#2b2bb5] accent-[#2b2bb5]"
-              />
-            )}
-            <span className="text-xs text-slate-500">
-              {aList.length} pending
-            </span>
-          </div>
+        <ApprovalsList {...ctx} />
 
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="p-4 text-sm text-muted-foreground">Loading…</div>
-            ) : aList.length === 0 ? (
-              <div
-                data-testid={APPROVALS.emptyState}
-                className="flex flex-col items-center gap-1.5 px-5 py-10 text-center"
-              >
-                <span className="text-sm font-semibold text-foreground">No pending approvals</span>
-                <span className="text-xs text-muted-foreground">This queue is clear.</span>
-              </div>
-            ) : (
-              aList.map((item) => (
-                <ApprovalRow
-                  key={item.id}
-                  item={item}
-                  isSelected={item.id === selectedId}
-                  checked={selectedIds.has(item.id)}
-                  canAct={canAct}
-                  draggable={canAct && !movingId}
-                  onOpen={openRow}
-                  onToggle={toggleSelect}
-                  onDragStart={startDrag}
-                  onDragEnd={endDrag}
-                />
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* DETAIL */}
-        <div className={`flex-1 overflow-y-auto ${detailOpen ? "" : "max-md:hidden"}`}>
-          {aSel ? (
-            <div className="max-w-[720px] px-4 pb-10 pt-4 md:px-7 md:pt-6">
-              <button
-                type="button"
-                onClick={() => setDetailOpen(false)}
-                className="mb-3 inline-flex h-10 items-center gap-1 rounded-lg pr-3 text-sm font-medium text-[#2b2bb5] active:bg-[#f0f0fd] md:hidden"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Back to list
-              </button>
-
-              <div className="flex flex-wrap items-start gap-4">
-                <div className="flex min-w-0 flex-1 flex-col gap-2 md:min-w-[240px]">
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const chip = dueChip(aSel.due_date);
-                      return (
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium ${chip.cls}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
-                          {chip.label}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <h2 className="text-lg font-semibold text-foreground">
-                    {aSel.deliverable_name}
-                  </h2>
-                </div>
-
-                {canAct && (
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <span className="text-xs text-slate-500">Move to</span>
-                  {COLUMNS.filter((c) => c.key !== aSel.approval_type).map((c) => (
-                    <button
-                      key={c.key}
-                      type="button"
-                      onClick={() => handleMove(aSel, c.key)}
-                      disabled={movingId === aSel.id}
-                      className="h-7 rounded-lg bg-white px-2.5 text-xs text-slate-700 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-                )}
-              </div>
-
-              <div className="mt-5 grid grid-cols-[92px_1fr] gap-y-2.5 md:grid-cols-[130px_1fr] text-sm">
-                <span className="text-slate-500">Project</span>
-                <span className="text-foreground">{aSel.project_name}</span>
-                <span className="text-slate-500">Client</span>
-                <span className="text-foreground">{aSel.client_name || "—"}</span>
-                <span className="text-slate-500">Deadline</span>
-                <span className="text-foreground">{deadlineText(aSel.due_date)}</span>
-                <span className="text-slate-500">Workflow</span>
-                <span className="flex flex-wrap items-center gap-1.5">
-                  {(aSel.required_stages || [aSel.current_stage]).map((stage, i, arr) => (
-                    <span key={stage} className="flex items-center gap-1.5">
-                      <span
-                        className={[
-                          "inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium",
-                          stage === aSel.current_stage
-                            ? "bg-[#2b2bb5] text-white"
-                            : arr.indexOf(aSel.current_stage) > i
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-500",
-                        ].join(" ")}
-                      >
-                        {stage}
-                      </span>
-                      {i < arr.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-slate-300" />}
-                    </span>
-                  ))}
-                </span>
-              </div>
-
-              {aSel.comments && (
-                <div className="mt-5 rounded-lg border border-border bg-muted/50 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground">
-                  {aSel.comments}
-                </div>
-              )}
-
-              {canAct ? (
-              <>
-              <label className="mt-5 flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-foreground">Review note</span>
-                <textarea
-                  data-testid={`${APPROVALS.notePrefix}-${aSel.id}`}
-                  placeholder="Optional note"
-                  value={notes[aSel.id] || ""}
-                  onChange={(e) =>
-                    setNotes((prev) => ({ ...prev, [aSel.id]: e.target.value }))
-                  }
-                  rows={3}
-                  className="resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm leading-5 outline-none focus:border-[#2b2bb5] focus:ring-[3px] focus:ring-[#2b2bb5]/20"
-                />
-              </label>
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  data-testid={`${APPROVALS.approvePrefix}-${aSel.id}`}
-                  onClick={() => decide(aSel)}
-                  disabled={movingId === aSel.id}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2b2bb5] px-3.5 text-sm font-semibold text-white hover:bg-[#1a1a8a] disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                  Approve
-                </button>
-              </div>
-              </>
-              ) : (
-                <div
-                  data-testid="approvals-read-only-note"
-                  className="mt-5 rounded-lg border border-border bg-muted/50 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground"
-                >
-                  You can follow this approval here. Only managers can approve it
-                  or move it to another queue.
-                </div>
-              )}
-            </div>
-          ) : (
-            !loading && (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Select an approval to review it
-              </div>
-            )
-          )}
-        </div>
+        <ApprovalsDetail {...ctx} />
       </div>
     </div>
   );

@@ -1,91 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, Clock, Plus, Trash2, AlertCircle } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
 import { clearQuickLogPreset, peekQuickLogPreset } from "@/lib/appActions";
 import { lowTimeMessage } from "@/lib/timeRules";
-import { buildLookalikeIndex } from "@/lib/lookalikes";
-import { ProjectNameParts } from "./ProjectPicker";
-import {
-  NOT_AVAILABLE_LABEL,
-  NOT_AVAILABLE_VALUE,
-} from "@/lib/deliverableRules";
-
-// Shown as the last Deliverable suggestion. Shaped like a deliverable (id /
-// name) so the suggestion list, chips and keyboard handling treat it the same
-// way; `notAvailable` is what tells buildEntry to save the flag instead of an
-// id.
-const NOT_AVAILABLE_OPTION = {
-  id: NOT_AVAILABLE_VALUE,
-  name: NOT_AVAILABLE_LABEL,
-  notAvailable: true,
-};
-
-const STAGE_BY_DEPARTMENT = {
-  Content: "Content",
-  Design: "Design",
-  Animation: "Animate",
-};
-
-const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
-
-const emptyDraft = () => ({
-  text: "",
-  client_id: "",
-  project_id: "",
-  deliverable_id: "",
-  deliverable_type: "",
-  time_taken_minutes: "",
-  remarks: "",
-});
-
-const formatDuration = (minutes) => {
-  const value = Number(minutes);
-  if (!value) return "";
-  const h = Math.floor(value / 60);
-  const m = value % 60;
-  if (h && m) return `${h}h ${m}m`;
-  if (h) return `${h}h`;
-  return `${m}m`;
-};
-
-const parseDuration = (value) => {
-  const text = String(value || "").trim().toLowerCase();
-  if (!text) return null;
-
-  const hours = text.match(/^(\d+(?:\.\d+)?)\s*h$/);
-  if (hours) return Math.round(Number(hours[1]) * 60);
-
-  const minutes = text.match(/^(\d+)\s*m?$/);
-  if (minutes) return Number(minutes[1]);
-
-  return null;
-};
-
-const normalise = (value) =>
-  String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-
-// No cap by default: the suggestion list scrolls (max-h-64), and cutting it to
-// the first 8 hid most deliverables and types unless they were typed exactly.
-const fuzzyMatches = (items, query, getLabel, limit = Infinity) => {
-  const q = normalise(query);
-  if (!q) return items.slice(0, limit);
-
-  return items
-    .map((item, index) => {
-      const label = normalise(getLabel(item));
-      let score = 0;
-      if (label === q) score = 100;
-      else if (label.startsWith(q)) score = 80;
-      else if (label.includes(q)) score = 60;
-      else if (q.split(" ").every((word) => label.includes(word))) score = 40;
-      return { item, score, index };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, limit)
-    .map((x) => x.item);
-};
+import { NOT_AVAILABLE_OPTION, emptyDraft, formatDuration, fuzzyMatches } from "./quickLoggerLogic";
+import { useQuickLoggerDerived } from "./useQuickLoggerDerived";
+import { QuickLoggerFooter } from "./QuickLoggerFooter";
+import { QuickLoggerEntries } from "./QuickLoggerEntries";
+import { QuickLoggerEntryLine } from "./QuickLoggerEntryLine";
+import { QuickLoggerHeader } from "./QuickLoggerHeader";
 
 export default function QuickLoggerModal({
   open,
@@ -128,189 +51,28 @@ export default function QuickLoggerModal({
   const entryStartedRef = useRef(false);
   const savedSuccessfullyRef = useRef(false);
 
-  const stage =
-    STAGE_BY_DEPARTMENT[currentUser?.department] ||
-    currentUser?.department ||
-    "";
-
-  const deliverableTypes = options.deliverable_types || [];
-  const deliverableTypeCategories =
-    options.deliverable_type_categories || {};
-
-  const projectMap = useMemo(
-    () => new Map(projects.map((p) => [p.id, p])),
-    [projects]
-  );
-
-  const clientMap = useMemo(
-    () => new Map(clients.map((c) => [c.id, c])),
-    [clients]
-  );
-
-  const deliverablesByProject = useMemo(() => {
-    const map = new Map();
-    deliverables.forEach((d) => {
-      const projectId = d.project_id || d.projectId;
-      if (!projectId) return;
-      if (!map.has(projectId)) map.set(projectId, []);
-      map.get(projectId).push(d);
-    });
-    return map;
-  }, [deliverables]);
-
-  // Client and Project always sit at fixed positions 0/1 in the typed
-  // text, followed by Deliverable, Type and Time. Deliverable is always
-  // asked for once a project is chosen: when the project has none (or
-  // the right one isn't there yet) the user picks "Not available", which
-  // tells the admins to add it, instead of skipping the field.
-  const clientProjectParts = useMemo(() => {
-    const values = draft.text.split("/");
-    return {
-      client: (values[0] || "").trim(),
-      project: (values[1] || "").trim(),
-    };
-  }, [draft.text]);
-
-  const resolvedClient = useMemo(() => {
-    if (draft.client_id) return clientMap.get(draft.client_id) || null;
-    return (
-      clients.find(
-        (c) => normalise(c.name) === normalise(clientProjectParts.client)
-      ) || null
-    );
-  }, [draft.client_id, clientMap, clients, clientProjectParts.client]);
-
-  // Delivered and scrapped projects are left out: no new work is logged
-  // against them (same rule as the Work Sheet's Project picker).
-  const clientProjects = useMemo(
-    () =>
-      resolvedClient
-        ? projects.filter(
-            (p) => p.client_id === resolvedClient.id
-          )
-        : [],
-    [projects, resolvedClient]
-  );
-
-  const clientNameOf = useCallback(
-    (clientId) => clientMap.get(clientId)?.name || "",
-    [clientMap]
-  );
-
-  // Look-alike names among the projects on offer, flagged in the Project
-  // suggestions with the words that tell them apart in bold.
-  const lookalikes = useMemo(
-    () =>
-      open
-        ? buildLookalikeIndex(projects, clientNameOf)
-        : new Map(),
-    [open, projects, clientNameOf]
-  );
-
-  const resolvedProject = useMemo(() => {
-    if (draft.project_id) return projectMap.get(draft.project_id) || null;
-    return (
-      clientProjects.find(
-        (p) => normalise(p.name) === normalise(clientProjectParts.project)
-      ) || null
-    );
-  }, [draft.project_id, projectMap, clientProjects, clientProjectParts.project]);
-
-  const projectDeliverables = useMemo(
-    () => (resolvedProject ? deliverablesByProject.get(resolvedProject.id) || [] : []),
-    [deliverablesByProject, resolvedProject]
-  );
-
-  // A deliverable (or "Not available") is required for every entry once a
-  // project is chosen. "Not available" is always offered, so a project with
-  // no deliverables never leaves the user stuck.
-  const deliverableRequired = Boolean(resolvedProject);
-
-  const parts = useMemo(() => {
-    const values = draft.text.split("/").map((v) => (v || "").trim());
-
-    if (deliverableRequired) {
-      return {
-        client: clientProjectParts.client,
-        project: clientProjectParts.project,
-        deliverable: values[2] || "",
-        type: values[3] || "",
-        duration: values[4] || "",
-      };
-    }
-
-    return {
-      client: clientProjectParts.client,
-      project: clientProjectParts.project,
-      deliverable: "",
-      type: values[2] || "",
-      duration: values[3] || "",
-    };
-  }, [draft.text, deliverableRequired, clientProjectParts]);
-
-  const resolvedDeliverable = useMemo(() => {
-    if (!deliverableRequired) return null;
-    if (draft.deliverable_id === NOT_AVAILABLE_VALUE) {
-      return NOT_AVAILABLE_OPTION;
-    }
-    if (draft.deliverable_id) {
-      return deliverables.find((d) => d.id === draft.deliverable_id) || null;
-    }
-    // Typed text: a real deliverable with that name wins, then "Not available".
-    return (
-      projectDeliverables.find(
-        (d) =>
-          normalise(d.name || d.deliverable_name) ===
-          normalise(parts.deliverable)
-      ) ||
-      (normalise(parts.deliverable) === normalise(NOT_AVAILABLE_LABEL)
-        ? NOT_AVAILABLE_OPTION
-        : null)
-    );
-  }, [
-    deliverableRequired,
-    deliverables,
-    draft.deliverable_id,
-    parts.deliverable,
-    projectDeliverables,
-  ]);
-
-  const resolvedType = useMemo(
-    () =>
-      deliverableTypes.find(
-        (type) => normalise(type) === normalise(draft.deliverable_type || parts.type)
-      ) || "",
-    [deliverableTypes, draft.deliverable_type, parts.type]
-  );
-
-  // Time is required, but when nothing has been typed it is filled from this
-  // person's own benchmark for the chosen type (their efficiency target). A
-  // typed duration always wins, so edge cases stay editable.
-  const typedDurationText = draft.time_taken_minutes || parts.duration;
-  const typedDuration = parseDuration(typedDurationText);
-  const benchmarkMinutes = resolvedType
-    ? Number(timeDefaults[resolvedType]) || 0
-    : 0;
-  const durationIsAuto = !typedDurationText && benchmarkMinutes > 0;
-  const parsedDuration = typedDuration || (durationIsAuto ? benchmarkMinutes : null);
-
-  const currentStep = useMemo(() => {
-    if (!draft.text.trim()) return "client";
-    if (!resolvedClient) return "client";
-    if (!resolvedProject) return "project";
-    if (deliverableRequired && !resolvedDeliverable) return "deliverable";
-    if (!resolvedType) return "type";
-    if (!parsedDuration || parsedDuration <= 0) return "duration";
-    return "complete";
-  }, [
-    draft.text,
-    deliverableRequired,
-    parsedDuration,
+  const {
+    stage,
+    deliverableTypes,
+    deliverableTypeCategories,
+    projectMap,
+    clientMap,
     resolvedClient,
-    resolvedDeliverable,
+    clientProjects,
+    clientNameOf,
+    lookalikes,
     resolvedProject,
+    projectDeliverables,
+    deliverableRequired,
+    parts,
+    resolvedDeliverable,
     resolvedType,
-  ]);
+    typedDuration,
+    benchmarkMinutes,
+    durationIsAuto,
+    parsedDuration,
+    currentStep,
+  } = useQuickLoggerDerived({ open, draft, currentUser, projects, deliverables, clients, options, timeDefaults });
 
   useEffect(() => {
     if (!open) return;
@@ -834,6 +596,41 @@ export default function QuickLoggerModal({
     0
   );
 
+
+  const ctx = {
+    benchmarkMinutes,
+    chips,
+    clientMap,
+    clientNameOf,
+    commitDraft,
+    currentStep,
+    draft,
+    durationIsAuto,
+    entryCardRef,
+    error,
+    handleClose,
+    handleKeyDown,
+    handleSave,
+    highlightedIndex,
+    inputRef,
+    lookalikes,
+    parsedDuration,
+    projectMap,
+    resolvedType,
+    savedEntries,
+    saving,
+    selectSuggestion,
+    setQuickDuration,
+    setSavedEntries,
+    setShowRemark,
+    setSuggestionsNonce,
+    showRemark,
+    stepTitle,
+    suggestionRefs,
+    suggestions,
+    totalMinutes,
+    updateDraft,
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(12,12,13,0.1)] px-4 pt-[10dvh]">
       <div
@@ -841,281 +638,13 @@ export default function QuickLoggerModal({
         aria-label="Quick log"
         className="flex max-h-[calc(100dvh-10vh-16px)] w-[680px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgb(234,238,244),0_15px_25px_rgba(13,28,61,0.12)]"
       >
-        {/* Header */}
-        <div className="flex items-center gap-2.5 px-5 pt-4">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0f0fd] text-[#2b2bb5]">
-            <Clock className="h-4 w-4" />
-          </span>
-          <h2 className="flex-1 text-base font-semibold text-foreground">Quick log</h2>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={saving}
-            aria-label="Close"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-slate-100 disabled:opacity-50"
-          >
-            <X className="h-[18px] w-[18px]" />
-          </button>
-        </div>
+        <QuickLoggerHeader {...ctx} />
 
-        {/* Entry line */}
-        <div ref={entryCardRef} className="flex flex-col gap-2.5 px-5 pb-4 pt-3.5">
-          <div className="relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={draft.text}
-              onChange={(event) =>
-                updateDraft({
-                  text: event.target.value,
-                  client_id: "",
-                  project_id: "",
-                  deliverable_id: "",
-                  deliverable_type: "",
-                  time_taken_minutes: "",
-                })
-              }
-              onKeyDown={handleKeyDown}
-              onClick={() => {
-                if (!suggestions.length) setSuggestionsNonce((n) => n + 1);
-              }}
-              placeholder="Client / Project / Deliverable / Type / Time"
-              autoComplete="off"
-              spellCheck="false"
-              className="h-11 w-full rounded-lg border-none bg-white px-3.5 text-[15px] text-foreground shadow-[inset_0_0_0_1px_#2b2bb5,0_0_0_3px_#dcdcf8] outline-none placeholder:text-muted-foreground"
-              aria-label="Quick work entry"
-            />
+        <QuickLoggerEntryLine {...ctx} />
 
-            {suggestions.length > 0 && (
-              <div
-                role="listbox"
-                className="absolute inset-x-0 top-[50px] z-20 rounded-[10px] bg-white p-1 shadow-[0_0_0_1px_rgb(234,238,244),0_6px_15px_rgba(13,28,61,0.08)]"
-              >
-                <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-bold uppercase leading-[14px] tracking-[0.05em] text-muted-foreground">
-                  {stepTitle}
-                </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {suggestions.map((item, index) => {
-                    const label =
-                      typeof item === "string"
-                        ? item
-                        : currentStep === "project"
-                        ? item.name
-                        : item.name || item.deliverable_name || "Untitled deliverable";
+        <QuickLoggerEntries {...ctx} />
 
-                    return (
-                      <button
-                        key={typeof item === "string" ? item : item.id}
-                        ref={(node) => {
-                          suggestionRefs.current[index] = node;
-                        }}
-                        type="button"
-                        role="option"
-                        aria-selected={index === highlightedIndex}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => selectSuggestion(item)}
-                        className={[
-                          "flex min-h-8 w-full items-start gap-2 rounded-[7px] px-2.5 py-1 text-left text-[13px] transition-colors",
-                          index === highlightedIndex
-                            ? "bg-[#f0f0fd] text-foreground"
-                            : "text-foreground hover:bg-[#f0f0fd]",
-                        ].join(" ")}
-                      >
-                        {currentStep === "project" ? (
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="whitespace-normal break-words">
-                              <ProjectNameParts
-                                project={item}
-                                twins={lookalikes.get(item.id) || []}
-                                clientNameOf={clientNameOf}
-                              />
-                            </span>
-                            {item.description && (
-                              <span className="whitespace-normal break-words text-xs leading-4 text-slate-600">
-                                {item.description}
-                              </span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="min-w-0 flex-1 self-center whitespace-normal break-words">
-                            {label}
-                          </span>
-                        )}
-                        {index === highlightedIndex && (
-                          <span className="self-center text-[11px] text-muted-foreground">Enter</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* What has been understood so far */}
-          <div className="flex flex-wrap gap-1.5">
-            {chips.map(([label, value]) => (
-              <span
-                key={label}
-                title={value ? `${label}: ${value}` : label}
-                className={[
-                  "inline-flex h-[26px] max-w-[200px] items-center gap-1.5 rounded-full px-2.5 text-xs",
-                  value
-                    ? "bg-[#f0f0fd] text-[#1a1a8a] shadow-[inset_0_0_0_1px_#dcdcf8]"
-                    : "bg-white text-muted-foreground shadow-[inset_0_0_0_1px_rgb(226,232,240)]",
-                ].join(" ")}
-              >
-                <span
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    value ? "bg-[#2b2bb5]" : "bg-slate-300"
-                  }`}
-                />
-                <span className="truncate">{value || label}</span>
-              </span>
-            ))}
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {showRemark && (
-            <input
-              type="text"
-              value={draft.remarks}
-              onChange={(e) => updateDraft({ remarks: e.target.value })}
-              placeholder="Remark (optional)"
-              aria-label="Remark"
-              className="h-9 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-[#2b2bb5] focus:ring-2 focus:ring-[#2b2bb5]/15"
-            />
-          )}
-
-          {durationIsAuto && (
-            <p className="text-xs text-[#2b2bb5]">
-              Time filled from your benchmark for {resolvedType} ({formatDuration(benchmarkMinutes)}).
-              Type a duration, or pick one below, to change it.
-            </p>
-          )}
-
-          {/* Duration presets + add */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs text-muted-foreground">Duration</span>
-            {DURATION_PRESETS.map((minutes) => (
-              <button
-                key={minutes}
-                type="button"
-                onClick={() => setQuickDuration(minutes)}
-                className={[
-                  "h-[26px] rounded-[7px] px-2.5 text-xs font-medium transition-colors",
-                  parsedDuration === minutes
-                    ? "bg-[#f0f0fd] text-[#1a1a8a] shadow-[inset_0_0_0_1px_#2b2bb5]"
-                    : "bg-white text-slate-700 shadow-[inset_0_0_0_1px_rgb(226,232,240)] hover:bg-[#f0f0fd]",
-                ].join(" ")}
-              >
-                {formatDuration(minutes)}
-              </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={() => setShowRemark((v) => !v)}
-              className="ml-1 h-[26px] rounded-[7px] px-2 text-xs font-medium text-[#2b2bb5] hover:bg-[#f0f0fd]"
-            >
-              {showRemark ? "Hide remark" : "+ Remark"}
-            </button>
-
-            <span className="flex-1" />
-
-            <button
-              type="button"
-              onClick={() => commitDraft()}
-              disabled={!draft.text.trim()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#f0f0fd] px-3 text-[13px] font-semibold text-[#2b2bb5] transition-colors hover:bg-[#dcdcf8] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add entry
-            </button>
-          </div>
-        </div>
-
-        {/* Entries collected so far */}
-        <div className="max-h-[260px] min-h-[120px] overflow-y-auto bg-[#f7f9fc] shadow-[inset_0_1px_0_rgb(234,238,244)]">
-          {savedEntries.length === 0 ? (
-            <div className="px-5 py-7 text-center text-[13px] leading-5 text-muted-foreground">
-              Type one line per task and press Enter.
-              <br />
-              Entries collect here until you save them.
-            </div>
-          ) : (
-            savedEntries.map((entry, index) => (
-              <div
-                key={`${entry.project_id}-${entry.deliverable_id}-${entry.deliverable_type}-${index}`}
-                className="flex items-center gap-3 px-5 py-2.5 text-[13px] shadow-[inset_0_-1px_0_rgb(234,238,244)]"
-              >
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate font-medium text-foreground">
-                    {entry.deliverable_not_available
-                      ? NOT_AVAILABLE_LABEL
-                      : entry.deliverable_name || entry.deliverable_type}
-                  </span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {[
-                      clientMap.get(entry.client_id)?.name,
-                      projectMap.get(entry.project_id)?.name,
-                      entry.deliverable_type,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </span>
-                <span className="font-semibold tabular-nums text-foreground">
-                  {formatDuration(entry.time_taken_minutes)}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Remove entry"
-                  onClick={() =>
-                    setSavedEntries((prev) => prev.filter((_, i) => i !== index))
-                  }
-                  className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-slate-200"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center gap-2 px-5 py-3 shadow-[inset_0_1px_0_rgb(234,238,244)]">
-          <span className="flex-1 text-xs text-muted-foreground">
-            {savedEntries.length === 0
-              ? "No entries yet"
-              : `${savedEntries.length} ${savedEntries.length === 1 ? "entry" : "entries"} · ${formatDuration(totalMinutes)}`}
-            <span className="hidden sm:inline">
-              {" · "}↓/↑ navigate · Enter select/log · Cmd/Ctrl + Enter save
-            </span>
-          </span>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={saving}
-            className="h-9 rounded-lg px-3.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || (!savedEntries.length && !draft.text.trim())}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2b2bb5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#1a1a8a] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? "Saving..." : savedEntries.length ? `Save ${savedEntries.length}` : "Save"}
-          </button>
-        </div>
+        <QuickLoggerFooter {...ctx} />
       </div>
     </div>
   );

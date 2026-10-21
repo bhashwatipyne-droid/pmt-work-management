@@ -24,181 +24,24 @@ import {
   REVIEWER_SPECIAL_OPTIONS,
 } from "@/lib/worksheetFilterOptions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { parseTimeInput } from "@/lib/timeRules";
 import { Checkbox } from "../ui/checkbox";
 import { WorkSheetRow } from "./WorkSheetRow";
 import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { QuantityPanel } from "./QuantityPanel";
 import { RangeSelectionBar } from "./RangeSelectionBar";
-import {
-  MAX_QUANTITY,
-  durationPatch,
-  durationSecondsOf,
-  deliverableIdsOf,
-  deliverableListPatch,
-  isMultiDeliverableRow,
-  isQtySet,
-  parseDurationSeconds,
-  qtyApplies,
-  quantityOf,
-} from "@/lib/quantity";
+import { durationSecondsOf, isQtySet, quantityOf } from "@/lib/quantity";
 import { WORKSHEET } from "@/constants/testIds";
 import { toast } from "sonner";
 import { canEditWorkItem, isRowLockedForMember } from "@/lib/worksheetPermissions";
 import { avatarColorClasses } from "@/lib/avatarColors";
 import { trackEvent } from "@/analytics";
 import { buildLookalikeIndex } from "@/lib/lookalikes";
-
-const COLUMNS = [
-  "Date",
-  "Client",
-  "Project",
-  "Deliverable",
-  "Stage",
-  "Deliverable Name",
-  "Deliverable Link",
-  "Deliverable Type",
-  "Qty",
-  "Duration",
-  "Category",
-  "Version",
-  "Time (min)",
-  "Creator",
-  "Reviewer",
-  "Remarks",
-  "Status",
-];
-
-const FILL_FIELDS = {
-  0: "work_date",
-  1: "client_id",
-  2: "project_id",
-  3: "deliverable_id",
-  4: "stage",
-  5: "deliverable_name",
-  6: "deliverable_link",
-  7: "deliverable_type",
-  8: "work_category",
-  9: "version",
-  10: "time_taken_minutes",
-  11: "creator_id",
-  12: "reviewer_id",
-  13: "remarks",
-  14: "status",
-};
-
-const COLUMN_FIELDS = {
-  Date: "work_date",
-  Client: "client_id",
-  Project: "project_id",
-  Deliverable: "deliverable_id",
-  Stage: "stage",
-  "Deliverable Name": "deliverable_name",
-  "Deliverable Link": "deliverable_link",
-  "Deliverable Type": "deliverable_type",
-  Category: "work_category",
-  Version: "version",
-  "Time (min)": "time_taken_minutes",
-  Creator: "creator_id",
-  Reviewer: "reviewer_id",
-  Remarks: "remarks",
-  Status: "status",
-};
-
-const STAGES = ["Content", "Design", "Animate"];
-
-// The text cells the formula bar can edit, and the field each one saves to.
-const FORMULA_EDITABLE_FIELDS = {
-  "Deliverable Name": "deliverable_name",
-  "Deliverable Link": "deliverable_link",
-  Version: "version",
-  Remarks: "remarks",
-};
-// Cells that are picked from a list rather than typed.
-const FORMULA_PICKER_COLUMNS = new Set([
-  "Client",
-  "Project",
-  "Deliverable",
-  "Stage",
-  "Deliverable Type",
-  "Category",
-  "Reviewer",
-  "Status",
-]);
-const NO_COLUMNS = [];
-const NO_COLLAB_IDS = [];
-
-// Columns a department's own sheet doesn't use. They are left out of that
-// tab entirely (the "All" tab keeps every column): Duration only matters for
-// video work. Content keeps Qty because a Campaign Ideation Plan row counts the
-// deliverables ticked on it (every other Content row shows "—").
-export const SHEET_EXCLUDED_COLUMNS = {
-  Content: ["Duration"],
-  Design: ["Duration"],
-};
-
-// What to send with a project / client / deliverable change so a Campaign
-// Ideation Plan row also lets go of its ticked deliverables (they belong to the
-// project) - the server does the same, this just keeps the sheet in step.
-const noDeliverablesFor = (item) =>
-  isMultiDeliverableRow(item)
-    ? { deliverable_ids: [], quantity: 1, quantity_items: [] }
-    : {};
-
-const MEMBER_STAGE_BY_DEPARTMENT = {
-  Content: "Content",
-  Design: "Design",
-  Animation: "Animate",
-};
-
-// New: worksheet grouping. "Stage" and "Member" are the only two grouped
-// views (plus "None", the existing flat list) — each resolves an item to
-// the key its group header row represents.
-const GROUP_KEY_RESOLVERS = {
-  Stage: (item) => item.stage || "No stage",
-  Member: (item) => item.creator_id || "__unassigned__",
-};
-
-// Decorative only — same dots already used elsewhere for Stage, repeated
-// here so a grouped-by-Stage header row can carry the same color cue.
-const STAGE_DOT_COLORS = {
-  Content: "bg-violet-600",
-  Design: "bg-sky-500",
-  Animate: "bg-amber-500",
-};
-
-const formatGroupMinutes = (totalMinutes) => {
-  if (!totalMinutes) return "0m";
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours && minutes) return `${hours}h ${minutes}m`;
-  if (hours) return `${hours}h`;
-  return `${minutes}m`;
-};
-
-// Same "two-letter initials from a name" rule already used for the
-// Creator/Reviewer avatar chips elsewhere in the sheet — kept local here
-// rather than imported since WorkSheetRow's version isn't exported.
-const getGroupInitials = (name) => {
-  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-};
-
-// The worksheet is intentionally virtualized without adding a new dependency.
-// Only the visible rows + a small overscan buffer are mounted in the DOM.
-//
-// Cells clip long text on one line (the full value is in the formula bar), so
-// rows are all about the same height. Every mounted row is still measured (see
-// rowObserver below), because a few cells can make a row taller; rows that have
-// not been on screen yet are positioned with an estimate (ESTIMATED_ROW_HEIGHT
-// until some rows have been measured, then their average) until they are.
-const ESTIMATED_ROW_HEIGHT = 42;
-const GROUP_HEADER_HEIGHT = 40;
-const MIN_HEADER_HEIGHT = 40;
-const OVERSCAN = 20;
+import { useWorksheetTableDragging } from "@/hooks/useWorksheetTableDragging";
+import { resolvePasteValue as resolvePasteValueFor } from "@/lib/worksheetPaste";
+import { computeRangeStats } from "@/lib/worksheetRangeStats";
+import { COLUMNS, COLUMN_FIELDS, ESTIMATED_ROW_HEIGHT, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, GROUP_HEADER_HEIGHT, GROUP_KEY_RESOLVERS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, NO_COLLAB_IDS, NO_COLUMNS, OVERSCAN, SHEET_EXCLUDED_COLUMNS, STAGE_DOT_COLORS, formatGroupMinutes, getGroupInitials } from "./workSheetTableConfig";
+export { SHEET_EXCLUDED_COLUMNS };
 
 export const WorkSheetTable = forwardRef(function WorkSheetTable({
   items,
@@ -1422,178 +1265,13 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   // when the text doesn't match anything valid for that column, so the
   // caller can skip that cell rather than write garbage.
   const resolvePasteValue = useCallback(
-    (column, rawText, targetItem) => {
-      const text = (rawText ?? "").trim();
-      const clear = text === "" || text === "—" || text === "-";
-      const ciEquals = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
-
-      switch (column) {
-        case "Date": {
-          if (clear) return { work_date: "" };
-          if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return { work_date: text };
-          const parsed = new Date(text);
-          if (Number.isNaN(parsed.getTime())) return null;
-          return { work_date: parsed.toISOString().slice(0, 10) };
-        }
-        case "Client": {
-          // A Campaign Ideation Plan row's ticked deliverables go with its project.
-          const noProjects = noDeliverablesFor(targetItem);
-          if (clear) {
-            return {
-              client_id: null,
-              project_id: null,
-              deliverable_id: null,
-              deliverable_not_available: false,
-              ...noProjects,
-            };
-          }
-          const match = clients.find((c) => ciEquals(c.name, text));
-          if (!match) return null;
-          return {
-            client_id: match.id,
-            project_id: null,
-            deliverable_id: null,
-            deliverable_not_available: false,
-            ...noProjects,
-          };
-        }
-        case "Project": {
-          if (clear) {
-            return {
-              project_id: null,
-              deliverable_id: null,
-              deliverable_not_available: false,
-              ...noDeliverablesFor(targetItem),
-            };
-          }
-          const currentProject = projects.find(
-            (p) => p.id === targetItem.project_id
-          );
-          const effectiveClientId =
-            targetItem.client_id || currentProject?.client_id;
-          const pool = effectiveClientId
-            ? projects.filter((p) => p.client_id === effectiveClientId)
-            : projects;
-          const match = pool.find((p) => ciEquals(p.name, text));
-          if (!match) return null;
-          return {
-            project_id: match.id,
-            deliverable_id: null,
-            deliverable_not_available: false,
-            ...noDeliverablesFor(targetItem),
-          };
-        }
-        case "Deliverable": {
-          if (clear) {
-            return {
-              deliverable_id: null,
-              deliverable_not_available: false,
-              ...noDeliverablesFor(targetItem),
-            };
-          }
-          // "Not available" only makes sense on a row that has a project.
-          if (ciEquals(text, NOT_AVAILABLE_LABEL)) {
-            if (!targetItem.project_id) return null;
-            return {
-              deliverable_id: null,
-              deliverable_not_available: true,
-              ...noDeliverablesFor(targetItem),
-            };
-          }
-          const pool = deliverablesByProject[targetItem.project_id] || [];
-          const match = pool.find((d) => ciEquals(d.name, text));
-          if (!match) return null;
-          return {
-            deliverable_id: match.id,
-            deliverable_not_available: false,
-            // Pasting one deliverable onto a Campaign Ideation Plan row leaves
-            // it covering just that deliverable.
-            ...(isMultiDeliverableRow(targetItem)
-              ? deliverableListPatch(targetItem, [match.id])
-              : {}),
-          };
-        }
-        case "Stage": {
-          if (clear) return { stage: null };
-          const match = STAGES.find((s) => ciEquals(s, text));
-          if (!match) return null;
-          return { stage: match };
-        }
-        case "Deliverable Name":
-          return { deliverable_name: clear ? "" : text };
-        case "Deliverable Link":
-          return { deliverable_link: clear ? "" : text };
-        case "Deliverable Type": {
-          if (clear) return { deliverable_type: "", work_category: "" };
-          const match = (options.deliverable_types || []).find((t) =>
-            ciEquals(t, text)
-          );
-          if (!match) return null;
-          return {
-            deliverable_type: match,
-            work_category: options.deliverable_type_categories?.[match] || "",
-          };
-        }
-        // Category is derived from Type, not directly editable anywhere
-        // else in the sheet — paste shouldn't be able to set it either.
-        case "Category":
-          return null;
-        case "Version":
-          return { version: clear ? "" : text };
-        case "Qty": {
-          // Only Design / Animate rows have a typed quantity; a Campaign
-          // Ideation Plan row's comes from its ticked deliverables (clearing it
-          // only clears the time for each).
-          if (!qtyApplies(targetItem)) return null;
-          if (isMultiDeliverableRow(targetItem)) {
-            return clear
-              ? { quantity_items: deliverableIdsOf(targetItem).map(() => null) }
-              : null;
-          }
-          if (clear) return { quantity: 1, quantity_items: [] };
-          const n = Number(text.replace(/[^\d]/g, ""));
-          if (!Number.isInteger(n) || n < 1 || n > MAX_QUANTITY) return null;
-          return { quantity: n, quantity_items: Array(n).fill(null) };
-        }
-        case "Duration": {
-          if (targetItem.stage !== "Animate") return null;
-          if (clear) return durationPatch(null);
-          // A bare number is seconds; "3m 20s" and "3:20" work too.
-          const parsed = parseDurationSeconds(text);
-          if (!parsed.ok || parsed.seconds == null) return null;
-          return durationPatch(parsed.seconds);
-        }
-        case "Time (min)": {
-          if (clear) return { time_taken_minutes: 0 };
-          const num = Number(text.replace(/[^\d.-]/g, ""));
-          // Anything the server would refuse (not a number, negative, over 24 h)
-          // is ignored like an unmatched value, instead of failing silently later.
-          if (!parseTimeInput(String(num)).ok) return null;
-          return { time_taken_minutes: num };
-        }
-        case "Creator": {
-          if (clear) return { creator_id: null };
-          const match = nonAdminUsers.find((u) => ciEquals(u.name, text));
-          if (!match) return null;
-          return { creator_id: match.id };
-        }
-        case "Reviewer": {
-          if (clear) return { reviewer_id: null };
-          const match = reviewerUsers.find((u) => ciEquals(u.name, text));
-          if (!match) return null;
-          return { reviewer_id: match.id };
-        }
-        case "Remarks":
-          return { remarks: clear ? "" : text };
-        case "Status": {
-          const match = (options.statuses || []).find((s) => ciEquals(s, text));
-          if (!match) return null;
-          return { status: match };
-        }
-        default:
-          return null;
-      }
-    },
+    (column, rawText, targetItem) =>
+      resolvePasteValueFor(
+        { clients, projects, deliverablesByProject, options, nonAdminUsers, reviewerUsers },
+        column,
+        rawText,
+        targetItem
+      ),
     [clients, projects, deliverablesByProject, options, nonAdminUsers, reviewerUsers]
   );
 
@@ -2009,56 +1687,17 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   // What the cell-count bar shows. Worked out from the data, not the page, so
   // rows scrolled out of view (the sheet only mounts the visible ones) count.
-  const rangeStats = useMemo(() => {
-    if (!rangeSelection) return null;
-
-    const r1 = Math.min(rangeSelection.anchorRow, rangeSelection.row);
-    const r2 = Math.max(rangeSelection.anchorRow, rangeSelection.row);
-    const c1 = Math.min(rangeSelection.anchorCol, rangeSelection.col);
-    const c2 = Math.max(rangeSelection.anchorCol, rangeSelection.col);
-    const rows = sortedTableItems.slice(r1 - 1, r2);
-    const cols = visibleColumns.slice(c1, c2 + 1);
-    if (!rows.length || !cols.length || rows.length * cols.length < 2) return null;
-
-    let filled = 0;
-    const unique = new Set();
-    const times = [];
-    const statuses = new Map();
-
-    for (const item of rows) {
-      for (const column of cols) {
-        const value = getSortValue(item, column);
-        if (value !== "" && value !== null && value !== undefined) {
-          filled += 1;
-          unique.add(String(value));
-        }
-        if (column === "Time (min)") {
-          const minutes = Number(item.time_taken_minutes);
-          if (minutes > 0) times.push(minutes);
-        }
-        if (column === "Status" && item.status) {
-          statuses.set(item.status, (statuses.get(item.status) || 0) + 1);
-        }
-      }
-    }
-
-    const count = rows.length * cols.length;
-    const statusOrder = options.statuses || [];
-
-    return {
-      rows: rows.length,
-      cols: cols.length,
-      count,
-      filled,
-      empty: count - filled,
-      unique: unique.size,
-      times,
-      statusCounts: [...statuses.entries()].sort(
-        (a, b) => statusOrder.indexOf(a[0]) - statusOrder.indexOf(b[0])
-      ),
-      block: { r1, r2, c1, c2 },
-    };
-  }, [rangeSelection, sortedTableItems, visibleColumns, getSortValue, options.statuses]);
+  const rangeStats = useMemo(
+    () =>
+      computeRangeStats({
+        rangeSelection,
+        sortedTableItems,
+        visibleColumns,
+        getSortValue,
+        statusOrder: options.statuses || [],
+      }),
+    [rangeSelection, sortedTableItems, visibleColumns, getSortValue, options.statuses]
+  );
 
   // Keep the bar just right of the sidebar, even when the sidebar collapses.
   const hasRangeStats = Boolean(rangeStats);
@@ -2153,259 +1792,47 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
 
   const totalCols = COLUMNS.length + 2; // #, checkbox
 
-  const handleColumnResizeStart = useCallback(
-    (event, column) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const header = event.currentTarget.parentElement;
-
-      if (!header) return;
-
-      const startWidth = header.getBoundingClientRect().width;
-
-      resizeStateRef.current = {
-        column,
-        startX: event.clientX,
-        startWidth,
-      };
-
-      setResizingColumn(column);
-
-      const handleMouseMove = (moveEvent) => {
-        const state = resizeStateRef.current;
-
-        if (!state) return;
-
-        const delta = moveEvent.clientX - state.startX;
-
-        const nextWidth = Math.max(
-          80,
-          Math.round(state.startWidth + delta)
-        );
-
-        setColumnWidths((current) => ({
-          ...current,
-          [state.column]: `${nextWidth}px`,
-        }));
-      };
-
-      const handleMouseUp = () => {
-        resizeStateRef.current = null;
-        setResizingColumn(null);
-
-        document.removeEventListener(
-          "mousemove",
-          handleMouseMove
-        );
-
-        document.removeEventListener(
-          "mouseup",
-          handleMouseUp
-        );
-      };
-
-      document.addEventListener(
-        "mousemove",
-        handleMouseMove
-      );
-
-      document.addEventListener(
-        "mouseup",
-        handleMouseUp
-      );
-    },
-    []
-  );
-
-  const handleColumnDrop = (targetColumn) => {
-    if (!draggedColumn || draggedColumn === targetColumn) return;
-
-    const columnsBefore = columnOrderRef.current;
-    onUndoable?.("column move", () => setColumnOrder(columnsBefore));
-
-    setColumnOrder((current) => {
-      const next = [...current];
-      const fromIndex = next.indexOf(draggedColumn);
-      const toIndex = next.indexOf(targetColumn);
-      if (fromIndex === -1 || toIndex === -1) return current;
-      next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, draggedColumn);
-      return next;
-    });
-    setActiveCell(null);
-    setSelection(null);
-    setDraggedColumn(null);
-  };
-
-  // Rows being dragged: if the picked-up row is one of several selected rows
-  // they all travel together (in sheet order); otherwise just that row.
-  const handleRowDragStart = (event, rowId) => {
-    const ids =
-      selectedSet.has(rowId) && selectedSet.size > 1
-        ? sortedItemsRef.current
-            .filter((item) => selectedSet.has(item.id))
-            .map((item) => item.id)
-        : [rowId];
-
-    event.dataTransfer.effectAllowed = "move";
-    // Firefox only starts a drag that carries some data.
-    event.dataTransfer.setData("text/plain", ids.join(","));
-
-    if (ids.length > 1) {
-      const ghost = document.createElement("div");
-      ghost.textContent = `${ids.length} rows`;
-      ghost.style.cssText =
-        "position:fixed;top:-1000px;left:-1000px;padding:6px 12px;border-radius:9999px;background:#2b2bb5;color:#fff;font:600 12px system-ui,sans-serif;white-space:nowrap";
-      document.body.appendChild(ghost);
-      event.dataTransfer.setDragImage(ghost, 16, 16);
-      setTimeout(() => ghost.remove(), 0);
-    }
-
-    setDraggedRow(rowId);
-    setDraggedRowIds(ids);
-  };
-
-  const clearRowDrag = () => {
-    setDraggedRow(null);
-    setDraggedRowIds([]);
-    setDropTarget(null);
-  };
-
-  // Where, if anywhere, the dragged rows may be dropped relative to `rowId`.
-  // Not onto themselves, not while a column sort decides the order, and when
-  // the sheet is grouped only within one group (moving rows between groups
-  // would mean changing their stage or owner, which a drag should not do).
-  const getRowDropPosition = (event, rowId) => {
-    if (!draggedRow || columnSort.key || draggedRowIds.includes(rowId)) {
-      return null;
-    }
-
-    if (groupBySafe) {
-      const byId = new Map(sortedItemsRef.current.map((item) => [item.id, item]));
-      const targetItem = byId.get(rowId);
-      if (!targetItem) return null;
-      const targetKey = resolveGroupKey(targetItem);
-      const sameGroup = draggedRowIds.every((id) => {
-        const item = byId.get(id);
-        return item && resolveGroupKey(item) === targetKey;
-      });
-      if (!sameGroup) return null;
-    }
-
-    const rect = event.currentTarget.getBoundingClientRect();
-    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
-  };
-
-  const handleRowDragOver = (event, rowId) => {
-    const pos = getRowDropPosition(event, rowId);
-
-    if (!pos) {
-      if (draggedRow) event.dataTransfer.dropEffect = "none";
-      setDropTarget((current) => (current ? null : current));
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropTarget((current) =>
-      current && current.id === rowId && current.pos === pos
-        ? current
-        : { id: rowId, pos }
-    );
-  };
-
-  const handleRowDrop = (event, targetId) => {
-    const pos = getRowDropPosition(event, targetId);
-    const ids = draggedRowIds;
-
-    if (!pos || !ids.length) {
-      clearRowDrag();
-      return;
-    }
-
-    const moving = new Set(ids);
-
-    const rowsBefore = rowOrderRef.current;
-    onUndoable?.(ids.length === 1 ? "row move" : `move of ${ids.length} rows`, () =>
-      setRowOrder(rowsBefore)
-    );
-
-    setRowOrder((current) => {
-      if (!current.includes(targetId)) return current;
-      const carried = current.filter((id) => moving.has(id));
-      if (!carried.length) return current;
-      const rest = current.filter((id) => !moving.has(id));
-      const at = rest.indexOf(targetId) + (pos === "after" ? 1 : 0);
-      return [...rest.slice(0, at), ...carried, ...rest.slice(at)];
-    });
-    setActiveCell(null);
-    setSelection(null);
-    clearRowDrag();
-    toast.success(ids.length === 1 ? "Row moved" : `${ids.length} rows moved`);
-  };
-
-  // Press on a row's checkbox and drag down or up over the others to select
-  // them all (or, starting on a selected row, to deselect them). A plain click
-  // is left to the checkbox itself.
-  const handleCheckboxDragStart = (event, id, index) => {
-    if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) {
-      return;
-    }
-
-    checkboxDragRef.current = {
-      startIndex: index,
-      on: !selectedSet.has(id),
-      base: selectedIds,
-      moved: false,
-    };
-
-    const stop = () => {
-      window.removeEventListener("mouseup", stop);
-      document.body.style.userSelect = "";
-      // The click that follows the mouseup is still to come; clear after it.
-      setTimeout(() => {
-        checkboxDragRef.current = null;
-      }, 0);
-    };
-    window.addEventListener("mouseup", stop);
-  };
-
-  const handleCheckboxDragEnter = (index) => {
-    const drag = checkboxDragRef.current;
-    if (!drag || (!drag.moved && index === drag.startIndex)) return;
-
-    if (!drag.moved) {
-      drag.moved = true;
-      document.body.style.userSelect = "none";
-      checkboxAnchorRef.current = drag.startIndex;
-      rangeSelectionRef.current = null;
-      setRangeSelection(null);
-    }
-
-    const start = Math.min(drag.startIndex, index);
-    const end = Math.max(drag.startIndex, index);
-    const inRange = sortedItemsRef.current
-      .slice(start - 1, end)
-      .filter((item) => canEditItem(item))
-      .map((item) => item.id);
-
-    if (drag.on) {
-      onSelectRange?.([...new Set([...drag.base, ...inRange])]);
-    } else {
-      const removed = new Set(inRange);
-      onSelectRange?.(drag.base.filter((id) => !removed.has(id)));
-    }
-  };
-
-  // A drag across checkboxes already changed the selection; the click that
-  // ends it must not toggle the row it started on a second time.
-  const handleCheckboxClickCapture = (event) => {
-    if (checkboxDragRef.current?.moved) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  };
+  const {
+    handleColumnResizeStart,
+    handleColumnDrop,
+    handleRowDragStart,
+    clearRowDrag,
+    handleRowDragOver,
+    handleRowDrop,
+    handleCheckboxDragStart,
+    handleCheckboxDragEnter,
+    handleCheckboxClickCapture,
+  } = useWorksheetTableDragging({
+    canEditItem,
+    checkboxAnchorRef,
+    checkboxDragRef,
+    columnOrderRef,
+    columnSort,
+    draggedColumn,
+    draggedRow,
+    draggedRowIds,
+    groupBySafe,
+    onSelectRange,
+    onUndoable,
+    rangeSelectionRef,
+    resizeStateRef,
+    resolveGroupKey,
+    rowOrderRef,
+    selectedIds,
+    selectedSet,
+    setActiveCell,
+    setColumnOrder,
+    setColumnWidths,
+    setDraggedColumn,
+    setDraggedRow,
+    setDraggedRowIds,
+    setDropTarget,
+    setRangeSelection,
+    setResizingColumn,
+    setRowOrder,
+    setSelection,
+    sortedItemsRef,
+  });
 
   const getHiddenColumnsAfter = (columnIndex) => {
     const hidden = [];

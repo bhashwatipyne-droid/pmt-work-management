@@ -1,22 +1,11 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUser } from "@/context/UserContext";
 import { APP_ACTIONS, registerAppAction } from "@/lib/appActions";
-import { refreshCounts } from "@/lib/countsBus";
 import { downloadCsv } from "@/lib/exportCsv";
-import {
-  bulkUpdateWorkItems,
-  deleteWorkItem,
-  updateWorkItem,
-} from "@/services/api";
-import { WorkSheetToolbar } from "@/components/work-sheet/WorkSheetToolbar";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
 import { ProjectsSheet, prefetchProjectSheet } from "@/components/work-sheet/ProjectsSheet";
-import { WorkSheetTable, SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/WorkSheetTable";
-import { WorksheetFilterPanel } from "@/components/work-sheet/WorksheetFilterPanel";
-import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
-import { BulkActionBar } from "@/components/work-sheet/BulkActionBar";
-import { MobileWorkList } from "@/components/work-sheet/MobileWorkList";
+import { SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/WorkSheetTable";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWorksheetUndo } from "@/hooks/useWorksheetUndo";
 import { useWorksheetBulkActions } from "@/hooks/useWorksheetBulkActions";
@@ -24,39 +13,20 @@ import { useWorksheetRowCreation } from "@/hooks/useWorksheetRowCreation";
 import { useWorksheetLookups } from "@/hooks/useWorksheetLookups";
 import { useWorksheetItemsLoader } from "@/hooks/useWorksheetItemsLoader";
 import { useWorksheetCollaborators } from "@/hooks/useWorksheetCollaborators";
-// Lazy — both are closed by default (~1,500 lines combined), so their
-// code only needs to download once someone actually opens one, instead
-// of padding out the Work Sheet page's own initial chunk.
-const QuickLoggerModal = lazy(() => import("../components/work-sheet/QuickLoggerModal"));
-import { QuickLogTrigger } from "../components/work-sheet/QuickLogTrigger";
-import { AlertCircle, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { WorkSheetHistory } from "@/components/work-sheet/WorkSheetHistory";
+import { useWorksheetDerived } from "@/hooks/useWorksheetDerived";
+import { useWorksheetItemActions } from "@/hooks/useWorksheetItemActions";
+import { WorksheetDialogs } from "@/components/work-sheet/page/WorksheetDialogs";
+import { WorksheetGrid } from "@/components/work-sheet/page/WorksheetGrid";
+import { WorksheetOverlays } from "@/components/work-sheet/page/WorksheetOverlays";
+import { WorksheetToolbarArea } from "@/components/work-sheet/page/WorksheetToolbarArea";
 import { toast } from "sonner";
-import { trackEvent } from "@/analytics";
-import {
-  DELIVERABLE_GATED_STATUSES,
-  DELIVERABLE_REQUIRED_MESSAGE,
-  isDeliverableMissing,
-} from "@/lib/deliverableRules";
-import {
-  TIME_GATED_STATUSES,
-  TIME_REQUIRED_MESSAGE,
-  hasTime,
-  parseTimeInput,
-} from "@/lib/timeRules";
-import { WorkSheetSkeleton, WorkSheetTableSkeleton } from "@/components/skeletons/Skeletons";
+import { WorkSheetSkeleton } from "@/components/skeletons/Skeletons";
 import {
   DEPARTMENT_TO_STAGE,
-  LS,
   anyDialogOpen,
   buildWorksheetCsv,
   countActiveFilters,
-  countTabs,
   emptyFilters,
-  filterWorkItems,
-  sortWorkItems,
-  trackWorksheetContext,
 } from "@/lib/worksheetView";
 
 
@@ -316,85 +286,16 @@ export default function WorkSheetPage() {
   // project name (not just deliverable name / remarks). Kept as maps
   // rather than clients.find()/projects.find() per item so filtering
   // thousands of rows on every keystroke stays O(n) instead of O(n*m).
-  const clientNameById = useMemo(() => {
-    const map = new Map();
-    clients.forEach((c) => map.set(c.id, c.name));
-    return map;
-  }, [clients]);
-
-  const userNameById = useMemo(() => {
-    const map = new Map();
-    (users || []).forEach((u) => map.set(u.id, u.name || ""));
-    return map;
-  }, [users]);
-
-  const projectById = useMemo(() => {
-    const map = new Map();
-    projects.forEach((p) => map.set(p.id, p));
-    return map;
-  }, [projects]);
-
-  // Typing stays instant; filtering the rows follows it.
-  const deferredSearch = useDeferredValue(filters.search || "");
-  // Not "no results" yet: the list is catching up with the typing, or the
-  // full list is still arriving behind the fast first slice.
-  const searchPending =
-    deferredSearch !== (filters.search || "") ||
-    (loadingFullList && Boolean((filters.search || "").trim()));
-
-  const filteredItems = useMemo(
-    () =>
-      filterWorkItems({
-        items,
-        filters,
-        deferredSearch,
-        month,
-        activeSheet,
-        clientNameById,
-        projectById,
-        userNameById,
-        onlyMissing,
-        deliverableTypeCategories: options.deliverable_type_categories,
-      }),
-    [
-      items,
-      filters,
-      deferredSearch,
-      month,
-      activeSheet,
-      clientNameById,
-      projectById,
-      userNameById,
-      onlyMissing,
-      options.deliverable_type_categories,
-    ]
-  );
-
-  // Toolbar's "N missing a deliverable" badge — purely informational, so
-  // scoped the same as the visible row count (post search/filter) rather
-  // than some separate, harder-to-explain total.
-  const missingDeliverableCount = useMemo(
-    () =>
-      filteredItems.filter((item) =>
-        isDeliverableMissing(item, options.deliverable_type_categories)
-      ).length,
-    [filteredItems, options.deliverable_type_categories]
-  );
-
-  // Per-tab counts shown next to each tab label (e.g. "Content 7") —
-  // scoped to the tab's own stage and to the month on screen (same rule the
-  // row filter uses), independent of any active search/filter, so switching
-  // filters doesn't make the tabs themselves jump around. With "every month"
-  // selected (month = "") this is the all-time total.
-  const tabCounts = useMemo(
-    () => countTabs({ items, month, projectTasks }),
-    [items, month, projectTasks]
-  );
-
-  const sortedItems = useMemo(
-    () => sortWorkItems(filteredItems, sortDirection),
-    [filteredItems, sortDirection]
-  );
+  const {
+    clientNameById,
+    userNameById,
+    projectById,
+    searchPending,
+    filteredItems,
+    missingDeliverableCount,
+    tabCounts,
+    sortedItems,
+  } = useWorksheetDerived({ items, clients, users, projects, options, filters, loadingFullList, month, activeSheet, onlyMissing, projectTasks, sortDirection });
 
   // Export the rows currently shown on this sheet (tab, month, search and
   // every filter applied, newest first) as a CSV.
@@ -442,290 +343,11 @@ export default function WorkSheetPage() {
     removeRows,
   });
 
-  // Wrapped in useCallback so its reference is stable across WorkSheetPage
-  // re-renders (which happen on every edit via setItems). Reads the revert
-  // snapshot from itemsRef instead of closing over `items`, so `items` can
-  // safely stay out of the dependency array.
-  const handleUpdate = useCallback(async (id, patch, opts = {}) => {
-    const currentItem = itemsRef.current.find(
-      (item) => item.id === id
-    );
-
-    if (
-      currentUser.role === "member" &&
-      patch.status === "Ready for Review" &&
-      !currentItem?.reviewer_id
-    ) {
-      toast.error(
-        "Please assign a reviewer before marking this as Ready for Review."
-      );
-
-      return {
-        success: false,
-        validation: true,
-      };
-    }
-
-    // Mirrors the backend rule: a row with a project needs a deliverable (or
-    // "Not available") before it can leave Not Started.
-    if (
-      patch.status &&
-      DELIVERABLE_GATED_STATUSES.includes(patch.status) &&
-      patch.status !== currentItem?.status &&
-      isDeliverableMissing(
-        { ...currentItem, ...patch },
-        options.deliverable_type_categories
-      )
-    ) {
-      toast.error(DELIVERABLE_REQUIRED_MESSAGE);
-
-      return {
-        success: false,
-        validation: true,
-      };
-    }
-
-    // Mirrors the backend time rule: a row needs time before it moves forward.
-    // Only refused here when nothing could fill it - with a deliverable type the
-    // server pre-fills the person's benchmark, so that case is left to it.
-    if (
-      patch.status &&
-      TIME_GATED_STATUSES.includes(patch.status) &&
-      patch.status !== currentItem?.status
-    ) {
-      const merged = { ...currentItem, ...patch };
-      if (!hasTime(merged) && !merged.deliverable_type) {
-        toast.error(TIME_REQUIRED_MESSAGE);
-
-        return {
-          success: false,
-          validation: true,
-        };
-      }
-    }
-
-    const previous = itemsRef.current.find((item) => item.id === id);
-
-    // Optimistically update the UI immediately.
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, ...patch } : item
-      )
-    );
-
-    if (patch.project_id !== undefined) {
-      localStorage.setItem(LS.project, patch.project_id || "");
-    }
-
-    if (patch.deliverable_id !== undefined) {
-      localStorage.setItem(
-        LS.deliverable,
-        patch.deliverable_id || ""
-      );
-    }
-
-    if (patch.stage !== undefined) {
-      localStorage.setItem(LS.stage, patch.stage || "");
-    }
-
-    try {
-      // IMPORTANT:
-      // Keep the actual MongoDB response instead of treating the
-      // optimistic React update as proof that persistence succeeded.
-      const updated = await updateWorkItem(
-        currentUser.id,
-        id,
-        patch
-      );
-
-      // The backend returns the complete updated work item.
-      // Use it as the source of truth once persistence succeeded.
-      const persistedItem = updated || {
-        ...currentItem,
-        ...patch,
-      };
-
-      if (updated) {
-        setItems((prev) =>
-          prev.map((item) =>
-            item.id === id ? updated : item
-          )
-        );
-      }
-
-      trackWorksheetContext(persistedItem, currentItem, patch);
-
-      trackEvent("cell_edited", {
-        row_id: id,
-        fields: Object.keys(patch),
-      });
-
-      if (!opts.skipUndo && previous) {
-        const keys = Object.keys(patch);
-        const changed = keys.some(
-          (k) => String(previous[k] ?? "") !== String(patch[k] ?? "")
-        );
-        if (changed) {
-          const back = Object.fromEntries(
-            keys.map((k) => [
-              k,
-              previous[k] ?? (typeof patch[k] === "string" ? "" : null),
-            ])
-          );
-          pushUndo("cell edit", async () => {
-            const result = await updateRef.current(id, back, { skipUndo: true });
-            if (!result?.success) throw new Error("update failed");
-          });
-        }
-      }
-
-      if (patch.status && currentItem?.status !== patch.status) {
-        trackEvent("task_status_changed", {
-          row_id: id,
-          old_status: currentItem?.status,
-          new_status: patch.status,
-        });
-        // A status change is exactly what the sidebar's "not closed" count
-        // and the Bulk Review badge track — refresh them immediately
-        // instead of waiting on their own poll tick.
-        refreshCounts();
-      }
-
-      return {
-        success: true,
-        item: updated,
-      };
-    } catch (e) {
-      // Revert only this row if MongoDB/API persistence fails.
-      if (previous) {
-        setItems((prev) =>
-          prev.map((item) =>
-            item.id === id ? previous : item
-          )
-        );
-      }
-
-      toast.error(
-        e.response?.data?.detail || "Update failed"
-      );
-
-      return {
-        success: false,
-        error: e,
-      };
-    }
-  }, [currentUser, options]);
-  updateRef.current = handleUpdate;
-
-  const handleDelete = async (item) => {
-    if (!item?.id) return;
-
-    setDeleting(true);
-
-    try {
-      await deleteWorkItem(currentUser.id, item.id);
-
-      setItems((prev) => prev.filter((row) => row.id !== item.id));
-
-      pushUndo("deleted entry", () => restoreRows([item]));
-      toast.success("Entry deleted", {
-        action: { label: "Undo", onClick: () => runUndoRef.current() },
-      });
-      setDeleteTarget(null);
-      refreshCounts();
-    } catch (e) {
-      toast.error(
-        e.response?.data?.detail || "Could not delete entry"
-      );
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  // Wrapped in useCallback for the same reason as handleUpdate — stable
-  // identity, snapshot read from itemsRef rather than the closed-over
-  // `items` state.
-  const handleFill = useCallback(async (targetIds, field, value) => {
-    if (!targetIds.length || !field) return;
-
-    // The server skips rows it refuses without saying so, so a time it would
-    // refuse is stopped here where the user can be told why.
-    if (field === "time_taken_minutes") {
-      const parsed = parseTimeInput(value);
-      if (!parsed.ok) {
-        toast.error(parsed.message);
-        return;
-      }
-    }
-
-    const previous = itemsRef.current
-      .filter((item) => targetIds.includes(item.id))
-      .map((item) => ({
-        id: item.id,
-        value: item[field],
-      }));
-
-    // Optimistic UI update.
-    setItems((prev) =>
-      prev.map((item) =>
-        targetIds.includes(item.id)
-          ? { ...item, [field]: value }
-          : item
-      )
-    );
-
-    try {
-      const updated = await bulkUpdateWorkItems(
-        currentUser.id,
-        targetIds,
-        { [field]: value }
-      );
-
-      const updatedById = Object.fromEntries(
-        updated.map((item) => [item.id, item])
-      );
-
-      setItems((prev) =>
-        prev.map((item) =>
-          updatedById[item.id] || item
-        )
-      );
-
-      const changedBack = previous
-        .filter((entry) => updatedById[entry.id])
-        .map((entry) => ({
-          id: entry.id,
-          values: { [field]: entry.value ?? (typeof value === "string" ? "" : null) },
-        }));
-      if (changedBack.length) {
-        pushUndo(`fill of ${changedBack.length} cell${changedBack.length === 1 ? "" : "s"}`, () =>
-          revertFields(changedBack)
-        );
-      }
-    } catch (e) {
-      // Revert only affected cells.
-      setItems((prev) =>
-        prev.map((item) => {
-          const original = previous.find(
-            (entry) => entry.id === item.id
-          );
-
-          if (!original) return item;
-
-          return {
-            ...item,
-            [field]: original.value,
-          };
-        })
-      );
-
-      toast.error(
-        e.response?.data?.detail ||
-          "Could not fill cells"
-      );
-      throw e;
-    }
-  }, [currentUser]);
+  const {
+    handleUpdate,
+    handleDelete,
+    handleFill,
+  } = useWorksheetItemActions({ currentUser, options, itemsRef, setItems, pushUndo, restoreRows, revertFields, runUndoRef, updateRef, setDeleting, setDeleteTarget });
 
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
 
@@ -990,263 +612,96 @@ export default function WorkSheetPage() {
     );
   }
 
+
+  const ctx = {
+    activeFilterCount,
+    activeSheet,
+    addingRow,
+    allGroupsCollapsed,
+    bulkAdding,
+    bulkCollabPeople,
+    bulkDeleteConfirmOpen,
+    canAddToActiveSheet,
+    clients,
+    collabIndex,
+    confirmBulkDelete,
+    currentMonth,
+    currentUser,
+    deleteTarget,
+    deleting,
+    deliverables,
+    filteredItems,
+    filters,
+    filtersOpen,
+    groupBy,
+    handleAddCollaborators,
+    handleAddRow,
+    handleBulkAddRows,
+    handleBulkAssign,
+    handleBulkDelete,
+    handleBulkDuplicate,
+    handleBulkStatus,
+    handleDateSort,
+    handleDelete,
+    handleDuplicateRow,
+    handleExport,
+    handleFill,
+    handleGroupByChange,
+    handleHideRows,
+    handleInsertRow,
+    handleQuickLoggerSave,
+    handleSelectRange,
+    handleToggleCollapseAll,
+    handleUpdate,
+    hiddenRows,
+    hideRowsErrorOpen,
+    historyOpen,
+    isAdmin,
+    isManager,
+    isMember,
+    isPhone,
+    items,
+    loading,
+    loadingFullList,
+    missingDeliverableCount,
+    month,
+    onlyMissing,
+    options,
+    projects,
+    pushUndo,
+    quickLoggerOpen,
+    searchPending,
+    selectedIds,
+    setActiveSheet,
+    setAllGroupsCollapsed,
+    setBulkDeleteConfirmOpen,
+    setDeleteTarget,
+    setFilters,
+    setFiltersOpen,
+    setHiddenRows,
+    setHideRowsErrorOpen,
+    setHistoryOpen,
+    setMonth,
+    setOnlyMissing,
+    setQuickLoggerOpen,
+    setSelectedIds,
+    sortDirection,
+    sortedItems,
+    tabCounts,
+    tableRef,
+    toggleSelect,
+    toggleSelectAll,
+    users,
+  };
   return (
     <div className="flex h-full flex-col bg-background">
-      <WorkSheetToolbar
-        filters={filters}
-        setFilters={setFilters}
-        options={options}
-        onOpenFilters={() => setFiltersOpen((current) => !current)}
-        activeFilterCount={activeFilterCount}
-        onAddRow={handleAddRow}
-        canAdd={canAddToActiveSheet}
-        resultCount={filteredItems.length}
-        totalCount={tabCounts[activeSheet] ?? items.length}
-        missingDeliverableCount={missingDeliverableCount}
-        onlyMissing={onlyMissing}
-        onToggleMissing={() => setOnlyMissing((current) => !current)}
-        loadingFullList={loadingFullList}
-        groupBy={groupBy}
-        onGroupByChange={handleGroupByChange}
-        allCollapsed={allGroupsCollapsed}
-        onToggleCollapseAll={handleToggleCollapseAll}
-        onExport={handleExport}
-        tabs={
-          <WorkSheetTabs
-            activeSheet={activeSheet}
-            onChange={setActiveSheet}
-            counts={tabCounts}
-          />
-        }
-        onBulkAdd={isAdmin ? undefined : handleBulkAddRows}
-        bulkAdding={bulkAdding}
-        onOpenHistory={() => setHistoryOpen(true)}
-        month={month}
-        onMonthChange={setMonth}
-        currentMonth={currentMonth}
-      />
+      <WorksheetToolbarArea {...ctx} />
 
-      <WorksheetFilterPanel
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        filters={filters}
-        setFilters={setFilters}
-        options={options}
-        projects={projects}
-        deliverables={deliverables}
-        users={users}
-      />
+      <WorksheetOverlays {...ctx} />
 
-      {(isManager || isMember) && (
-        <QuickLogTrigger onOpen={() => setQuickLoggerOpen(true)} />
-      )}
+      <WorksheetGrid {...ctx} />
 
-      <Suspense fallback={null}>
-        <QuickLoggerModal
-          open={quickLoggerOpen}
-          onClose={() => setQuickLoggerOpen(false)}
-          currentUser={currentUser}
-          projects={projects}
-          deliverables={deliverables}
-          clients={clients}
-          options={options}
-          onSave={handleQuickLoggerSave}
-        />
-      </Suspense>
-
-      <WorkSheetHistory
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        stage={activeSheet}
-      />
-
-      {selectedIds.length > 0 && (
-        <BulkActionBar
-          selectedCount={selectedIds.length}
-          currentUser={currentUser}
-          options={options}
-          projects={projects}
-          deliverables={deliverables}
-          onApplyStatus={handleBulkStatus}
-          onApplyAssign={handleBulkAssign}
-          collabPeople={bulkCollabPeople}
-          onAddCollaborators={
-            isAdmin ? undefined : (creatorIds) => handleAddCollaborators(selectedIds, creatorIds)
-          }
-          onHideRows={handleHideRows}
-          onInsertAbove={() => handleInsertRow("above")}
-          onInsertBelow={() => handleInsertRow("below")}
-          onDuplicate={handleBulkDuplicate}
-          onDelete={handleBulkDelete}
-          onClear={() => setSelectedIds([])}
-        />
-      )}
-
-      {loading || (sortedItems.length === 0 && searchPending) ? (
-        <WorkSheetTableSkeleton />
-      ) : isPhone ? (
-        <MobileWorkList
-          items={sortedItems}
-          currentUser={currentUser}
-          users={users}
-          options={options}
-          projects={projects}
-          deliverables={deliverables}
-          clients={clients}
-          hiddenRows={hiddenRows}
-          onUpdate={handleUpdate}
-        />
-      ) : (
-        <WorkSheetTable
-          ref={tableRef}
-          items={sortedItems}
-          currentUser={currentUser}
-          users={users}
-          options={options}
-          clients={clients}
-          projects={projects}
-          deliverables={deliverables}
-          onUpdate={handleUpdate}
-          collabIndex={collabIndex}
-          onAddCollaborators={isAdmin ? undefined : handleAddCollaborators}
-          onDelete={setDeleteTarget}
-          onDuplicateRow={handleDuplicateRow}
-          onFill={handleFill}
-          onUndoable={pushUndo}
-          selectedIds={selectedIds}
-          onToggleSelect={toggleSelect}
-          onToggleSelectAll={toggleSelectAll}
-          onDateSort={handleDateSort}
-          sortDirection={sortDirection}
-          hiddenRows={hiddenRows}
-          setHiddenRows={setHiddenRows}
-          filters={filters}
-          setFilters={setFilters}
-          onAddRow={isAdmin ? undefined : handleAddRow}
-          addingRow={addingRow}
-          onSelectRange={handleSelectRange}
-          sheetKey={activeSheet}
-          groupBy={groupBy}
-          onGroupCollapseStateChange={setAllGroupsCollapsed}
-          onRequestHideRow={(rowId) => {
-            const visibleIds = filteredItems.map((item) => item.id);
-
-            const wouldHideEveryVisibleRow =
-              visibleIds.length === 1 &&
-              visibleIds[0] === rowId &&
-              !hiddenRows.includes(rowId);
-
-            if (wouldHideEveryVisibleRow) {
-              setHideRowsErrorOpen(true);
-              return;
-            }
-
-            setHiddenRows((current) =>
-              current.includes(rowId)
-                ? current
-                : [...current, rowId]
-            );
-
-            if (selectedIds.includes(rowId)) {
-              setSelectedIds((current) =>
-                current.filter((id) => id !== rowId)
-              );
-            }
-          }}
-        />
-      )}
-
-      <ConfirmDeleteModal
-        open={!!deleteTarget}
-        onClose={() => {
-          if (!deleting) {
-            setDeleteTarget(null);
-          }
-        }}
-        onConfirm={() => handleDelete(deleteTarget)}
-        title="Delete this work entry?"
-        description="This work entry will be permanently removed."
-        warning="This action cannot be undone."
-        confirmLabel="Delete Entry"
-        loading={deleting}
-      />
-
-      <ConfirmDeleteModal
-        open={bulkDeleteConfirmOpen}
-        onClose={() => {
-          if (!deleting) {
-            setBulkDeleteConfirmOpen(false);
-          }
-        }}
-        onConfirm={confirmBulkDelete}
-        title={`Delete ${selectedIds.length} selected row${
-          selectedIds.length === 1 ? "" : "s"
-        }?`}
-        description={`These ${selectedIds.length} selected work entr${
-          selectedIds.length === 1 ? "y" : "ies"
-        } will be permanently removed.`}
-        warning="This action cannot be undone."
-        confirmLabel="Delete Rows"
-        loading={deleting}
-      />
-
-      {hideRowsErrorOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) {
-              setHideRowsErrorOpen(false);
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="hide-rows-error-title"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50">
-                <AlertCircle className="h-5 w-5 text-amber-600" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <h2
-                    id="hide-rows-error-title"
-                    className="text-base font-semibold text-slate-900"
-                  >
-                    Can't hide every row
-                  </h2>
-
-                  <button
-                    type="button"
-                    onClick={() => setHideRowsErrorOpen(false)}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <p className="mt-2 text-sm leading-5 text-slate-600">
-                  At least one row needs to stay visible on the sheet.
-                  Unhide a row first if you want to hide this one.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <Button
-                type="button"
-                onClick={() => setHideRowsErrorOpen(false)}
-              >
-                OK
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <WorksheetDialogs {...ctx} />
     </div>
   );
 }

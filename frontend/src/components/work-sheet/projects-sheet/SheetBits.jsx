@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { BADGE, C, STATUS_BADGE, MANROPE } from "./sheetTheme";
+import { C } from "./sheetTheme";
 import { initials } from "./sheetDates";
 
 export function Checkbox({ on, partial, onClick, label }) {
@@ -30,30 +30,8 @@ export function Checkbox({ on, partial, onClick, label }) {
   );
 }
 
-export function StatusBadge({ status }) {
-  const s = BADGE[STATUS_BADGE[status] || "Neutral"];
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        height: 24,
-        padding: "4px 12px",
-        boxSizing: "border-box",
-        borderRadius: 9999,
-        background: s.bg,
-        boxShadow: `inset 0 0 0 1px ${s.ring}`,
-        color: s.fg,
-        font: `400 10px/16px ${MANROPE}`,
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: 9999, background: s.dot, flexShrink: 0 }} />
-      {status}
-    </span>
-  );
-}
+// One status chip for every sheet (see ../StatusBadge).
+export { StatusBadge } from "../StatusBadge";
 
 export function Avatar({ name, size = 20, fontSize = 9 }) {
   return (

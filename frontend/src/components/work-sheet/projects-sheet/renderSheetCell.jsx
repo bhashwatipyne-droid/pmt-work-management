@@ -188,7 +188,9 @@ export function renderSheetCell(ctx, t, v, col, ri, ci) {
             commitText(t, col.key, e.target.value);
             requestAnimationFrame(focusGrid);
           }}
-          className="sheet-date-input h-8 w-[130px] pl-7 pr-1 text-[13px]"
+          className={`sheet-date-input h-8 w-[130px] border-transparent bg-transparent pl-7 pr-1 text-[13px] shadow-none hover:border-[#dcdcf8] hover:bg-[#fafbff] disabled:opacity-100 ${
+            canEdit ? "" : "disabled:text-slate-600"
+          } ${!canEdit && !t[DATE_FIELD[col.key]] ? "!text-transparent" : ""}`}
         />
       )}
       {!isEditing && col.key !== "status" && col.kind !== "date" && (

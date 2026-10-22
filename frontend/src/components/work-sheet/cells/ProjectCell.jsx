@@ -1,6 +1,7 @@
 import { ProjectPicker } from "../ProjectPicker";
 import { TableCell } from "@/components/ui/table";
 import { pickDeliverablePatch } from "@/lib/quantity";
+import { offerKeepType } from "./DeliverableCell";
 import { toast } from "sonner";
 
 // The "Project" cell of a Work Sheet row. `r` carries the row state and helpers.
@@ -37,6 +38,9 @@ export function renderProjectCell(r) {
         Object.assign(patch, noDeliverables());
       }
       onUpdate(item.id, patch);
+      if (deliverable) {
+        offerKeepType(item, patch, options.deliverable_type_categories || {}, onUpdate);
+      }
 
       const twins = lookalikes?.get(picked.id) || [];
       if (item.client_id && String(picked.client_id) !== String(item.client_id)) {

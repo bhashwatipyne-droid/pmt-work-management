@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useUser } from "@/context/UserContext";
 import { useAccess } from "@/hooks/useAccess";
 import { useUndo } from "@/hooks/useUndo";
+import { useSessionState } from "@/hooks/useSessionState";
 import {
   getProjects,
   getProjectMetrics,
@@ -73,20 +74,20 @@ export default function ProjectsPage() {
   // Ctrl/Cmd+Z: hide / restore, status changes and board moves. (Deleting a
   // project is permanent, so it cannot be undone.)
   const { pushUndo } = useUndo();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSessionState("pmt-projects-search", "");
   // project id -> its deliverable names (lowercase), so the search box can find
   // a project by one of its deliverables. Loaded once, the first time someone
   // types, so opening the page does not pay for it.
   const [deliverableNamesByProject, setDeliverableNamesByProject] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("");
-  const [clientFilter, setClientFilter] = useState("");
-  const [pocFilter, setPocFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [visibility, setVisibility] = useState("visible");
+  const [statusFilter, setStatusFilter] = useSessionState("pmt-projects-status", "");
+  const [clientFilter, setClientFilter] = useSessionState("pmt-projects-client", "");
+  const [pocFilter, setPocFilter] = useSessionState("pmt-projects-poc", "");
+  const [dateFrom, setDateFrom] = useSessionState("pmt-projects-date-from", "");
+  const [dateTo, setDateTo] = useSessionState("pmt-projects-date-to", "");
+  const [visibility, setVisibility] = useSessionState("pmt-projects-visibility", "visible");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [view, setView] = useState("chart");
-  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
+  const [view, setView] = useSessionState("pmt-projects-view", "chart");
+  const [sortBy, setSortBy] = useSessionState("pmt-projects-sort", DEFAULT_SORT);
   const [modalOpen, setModalOpen] = useState(false);
 
   const [selectedProjects, setSelectedProjects] = useState(new Set());

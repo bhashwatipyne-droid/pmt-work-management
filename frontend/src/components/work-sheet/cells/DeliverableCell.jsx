@@ -2,8 +2,23 @@ import { DeliverableMultiPicker } from "../DeliverableMultiPicker";
 import { NOT_AVAILABLE_LABEL, NOT_AVAILABLE_VALUE } from "@/lib/deliverableRules";
 import { SearchableSelect } from "../SearchableSelect";
 import { TableCell } from "@/components/ui/table";
-import { deliverableIdsOf, deliverableListPatch, pickDeliverablePatch } from "@/lib/quantity";
+import { deliverableIdsOf, deliverableListPatch, pickDeliverablePatch, typeChangePatch } from "@/lib/quantity";
 import { toast } from "sonner";
+
+// Picking a deliverable fills the row's Deliverable Type from the deliverable's
+// own type. When that replaces a type the person had already set, say so and
+// offer to keep the old one, so an auto-fill is never a one-way change.
+export function offerKeepType(item, patch, categories, onUpdate) {
+  const previous = item.deliverable_type;
+  if (!previous || patch.deliverable_type === undefined || patch.deliverable_type === previous) return;
+  toast(`Deliverable Type changed to ${patch.deliverable_type}`, {
+    action: {
+      label: `Keep ${previous}`,
+      onClick: () =>
+        onUpdate(item.id, typeChangePatch({ ...item, ...patch }, previous, categories)),
+    },
+  });
+}
 
 // The "Deliverable" cell of a Work Sheet row. `r` carries the row state and helpers.
 export function renderDeliverableCell(r) {
@@ -58,13 +73,12 @@ export function renderDeliverableCell(r) {
       const picked = v === NONE_VALUE ? null : projectDeliverables.find((d) => String(d.id) === String(v));
       if (picked) {
         // The deliverable's type fills the row's Deliverable Type too.
-        onUpdate(
-          item.id,
-          pickDeliverablePatch(item, picked, {
-            types: options.deliverable_types || [],
-            categories: options.deliverable_type_categories || {},
-          })
-        );
+        const pickPatch = pickDeliverablePatch(item, picked, {
+          types: options.deliverable_types || [],
+          categories: options.deliverable_type_categories || {},
+        });
+        onUpdate(item.id, pickPatch);
+        offerKeepType(item, pickPatch, options.deliverable_type_categories || {}, onUpdate);
         return;
       }
       onUpdate(item.id, {
@@ -144,14 +158,16 @@ export function renderDeliverableCell(r) {
             chip: deliverable.type || "",
             onSelect: () => {
               // Switches the row's project and client along with it.
+              const otherPickPatch = pickDeliverablePatch(item, deliverable, {
+                types: options.deliverable_types || [],
+                categories: options.deliverable_type_categories || {},
+              });
               onUpdate(item.id, {
                 project_id: project.id,
                 client_id: project.client_id,
-                ...pickDeliverablePatch(item, deliverable, {
-                  types: options.deliverable_types || [],
-                  categories: options.deliverable_type_categories || {},
-                }),
+                ...otherPickPatch,
               });
+              offerKeepType(item, otherPickPatch, options.deliverable_type_categories || {}, onUpdate);
               const newClient = clientNameOf(project.client_id);
               toast(
                 String(project.client_id) !== String(item.client_id) && newClient

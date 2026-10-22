@@ -10,11 +10,11 @@ export function GridHeaderRow(ctx) {
       style={{
         display: "grid",
         gridTemplateColumns: GRID,
-        height: 34,
+        height: 40,
         position: "sticky",
         top: 0,
         zIndex: 4,
-        background: C.n50,
+        background: C.head,
       }}
     >
       <span
@@ -25,7 +25,7 @@ export function GridHeaderRow(ctx) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: C.n50,
+          background: C.head,
           boxShadow: `inset -1px -1px 0 ${C.line}`,
         }}
       >

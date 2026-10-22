@@ -1,5 +1,6 @@
 import { C, MENU, MENU_ITEM, MENU_LABEL } from "@/components/work-sheet/projects-sheet/sheetTheme";
-import { Check, ChevronRight, Eye, Filter, LayoutList, Search, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowUpDown, Check, ChevronRight, Eye, Filter, Search, SlidersHorizontal, X } from "lucide-react";
 import { ExportIconButton } from "@/components/ui/ExportIconButton";
 import { FIELDS, GROUPS } from "@/components/work-sheet/projects-sheet/sheetColumns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -7,29 +8,44 @@ import { ValuesPanel } from "@/components/work-sheet/projects-sheet/SheetPickers
 
 export function SheetToolbar(ctx) {
   const { activeFields, allCollapsed, control, exportSheet, filterMenu, filters, groupBy, groups, hiddenCols, hiddenRows, monthCount, query, setCollapsed, setFilterMenu, setFilters, setGroupBy, setHiddenCols, setHiddenRows, setQuery, toggleAll, toggleFilter, valuesFor, visible } = ctx;
+  const searchRef = useRef(null);
+  // "/" jumps to the search box from anywhere on the page, as on the other sheets.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   return (
     <>
-    <div
-      className="flex flex-wrap items-center gap-2 px-3 py-2.5 md:px-5"
-      style={{ boxShadow: `inset 0 -1px 0 ${C.cellLine}` }}
-    >
+    <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 md:px-5">
       <label
-        className="flex h-8 min-w-[240px] items-center gap-2 rounded-[7px] bg-white px-2.5 text-[#546490]"
-        style={{ ...control, flex: "0 1 320px" }}
+        className="relative flex h-8 min-w-[220px] max-w-[400px] flex-1 items-center rounded-[7px] border border-[#eff0f2] bg-white pl-9 pr-9 text-[#546490] focus-within:ring-[3px] focus-within:ring-[#2b2bb5]/20"
       >
-        <Search className="h-3.5 w-3.5 shrink-0" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 shrink-0 text-slate-500" />
         <input
+          ref={searchRef}
           aria-label="Search work sheet"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-          placeholder="Search task, client, remark"
-          className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#0d1b3e] outline-none placeholder:text-[#8a97b5]"
+          placeholder="Search task, client, remark…"
+          className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#0d1b3e] outline-none placeholder:text-slate-500"
         />
-        {query && (
-          <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="flex text-[#546490]">
-            <X className="h-4 w-4" />
+        {query ? (
+          <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+            <X className="h-3.5 w-3.5" />
           </button>
+        ) : (
+          <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden h-5 -translate-y-1/2 items-center rounded px-1.5 text-[10px] font-semibold text-slate-400 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)] sm:inline-flex">
+            /
+          </kbd>
         )}
       </label>
 
@@ -45,8 +61,13 @@ export function SheetToolbar(ctx) {
               boxShadow: `inset 0 0 0 1px ${activeFields.length ? C.b200 : C.n200}`,
             }}
           >
-            <Filter className="h-3.5 w-3.5" />
-            {activeFields.length ? `Filter · ${activeFields.length}` : "Filter"}
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filter
+            {activeFields.length > 0 && (
+              <span className="ml-0.5 rounded-full bg-[#2b2bb5] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                {activeFields.length}
+              </span>
+            )}
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" sideOffset={4} className={MENU}>
@@ -91,10 +112,10 @@ export function SheetToolbar(ctx) {
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex h-8 items-center gap-1.5 rounded-[7px] bg-white px-2.5 text-[13px] text-[#4a5878] hover:bg-[#f9fafb]"
+            className="flex h-8 items-center gap-1.5 rounded-[7px] bg-white px-2.5 text-[13px] font-medium text-[#4a5878] hover:bg-[#f9fafb]"
             style={control}
           >
-            <LayoutList className="h-3.5 w-3.5" />
+            <ArrowUpDown className="h-3.5 w-3.5" />
             Group: {GROUPS.find(([k]) => k === groupBy)[1]}
           </button>
         </PopoverTrigger>
@@ -150,7 +171,7 @@ export function SheetToolbar(ctx) {
           {Object.values(hiddenRows).filter(Boolean).length} hidden · Show
         </button>
       )}
-      <span className="text-[12px] text-[#546490]">
+      <span className="text-xs text-[#546490]">
         {visible.length.toLocaleString("en-IN")} of {monthCount.toLocaleString("en-IN")} rows
       </span>
       <ExportIconButton

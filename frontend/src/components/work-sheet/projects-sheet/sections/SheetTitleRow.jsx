@@ -12,14 +12,6 @@ export function SheetTitleRow(ctx) {
       <h1 className="min-w-[120px] flex-1 text-xl font-semibold tracking-tight text-[#0d1b3e] md:min-w-[160px] md:text-2xl">
         Work sheet
       </h1>
-      <button
-        type="button"
-        onClick={() => setHistoryOpen(true)}
-        className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-[#f5f6f8] px-3.5 text-[13px] font-semibold text-[#4a5878] shadow-[inset_0_0_0_1px_#eff0f2] hover:bg-[#eef0f3]"
-      >
-        <History className="h-3.5 w-3.5" />
-        History
-      </button>
       <MonthPicker
         value={viewMonth}
         allowAll={false}
@@ -30,6 +22,14 @@ export function SheetTitleRow(ctx) {
         currentMonth={today.slice(0, 7)}
         maxMonth={today.slice(0, 7)}
       />
+      <button
+        type="button"
+        onClick={() => setHistoryOpen(true)}
+        className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-[#f5f6f8] px-3.5 text-[13px] font-semibold text-[#4a5878] shadow-[inset_0_0_0_1px_#eff0f2] hover:bg-[#eef0f3]"
+      >
+        <History className="h-3.5 w-3.5" />
+        History
+      </button>
       {canEdit && (
         <div className="inline-flex h-8">
           <button

@@ -3,6 +3,7 @@ import { NOT_AVAILABLE_LABEL, NOT_AVAILABLE_VALUE } from "@/lib/deliverableRules
 import { SearchableSelect } from "../SearchableSelect";
 import { TableCell } from "@/components/ui/table";
 import { deliverableIdsOf, deliverableListPatch, pickDeliverablePatch, typeChangePatch } from "@/lib/quantity";
+import { searchDeliverables } from "@/lib/deliverableSearch";
 import { toast } from "sonner";
 
 // Picking a deliverable fills the row's Deliverable Type from the deliverable's
@@ -116,39 +117,20 @@ export function renderDeliverableCell(r) {
       // People remember the deliverable but not always which project it
       // sits under (e.g. "ABSL Alternates" vs a similar ABSL project), so
       // a search also looks through every other project's deliverables.
-      const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      // Every typed word must match (any order, plural or not, client
+      // initials like "absl" count) and the newest deliverables come first.
       if (search.trim().length < 2) return null;
-      // The client picked may itself be wrong (e.g. "Aditya Birla Sun
-      // Life" for "Aditya Birla Alternative"), so rank matches: same
-      // client first, then clients whose names share a word with it,
-      // then everyone else.
-      const tokensOf = (name) =>
-        new Set(
-          String(name || "")
-            .toLowerCase()
-            .split(/[^a-z0-9]+/)
-            .filter((t) => t.length > 2 && !["ltd", "pvt", "the", "and", "limited"].includes(t))
-        );
-      const rowClientTokens = tokensOf(clientNameOf(item.client_id));
-      const clientRank = (clientId) => {
-        if (item.client_id && String(clientId) === String(item.client_id)) return 0;
-        for (const t of tokensOf(clientNameOf(clientId))) {
-          if (rowClientTokens.has(t)) return 1;
-        }
-        return 2;
-      };
-      const matches = [];
+      const candidates = [];
       for (const project of projects) {
         if (project.id === item.project_id) continue;
+        const clientName = clientNameOf(project.client_id);
         for (const deliverable of deliverablesByProject[project.id] || []) {
-          const hay = `${deliverable.name} ${project.name} ${clientNameOf(project.client_id)}`.toLowerCase();
-          if (!words.every((w) => hay.includes(w))) continue;
-          matches.push({ project, deliverable, rank: clientRank(project.client_id) });
+          candidates.push({ project, deliverable, clientName });
         }
       }
-      matches.sort((a, b) => a.rank - b.rank);
+      const matches = searchDeliverables(search, candidates);
       const items = [];
-      for (const { project, deliverable } of matches.slice(0, 8)) {
+      for (const { project, deliverable } of matches) {
         {
           const client = clientNameOf(project.client_id);
           items.push({

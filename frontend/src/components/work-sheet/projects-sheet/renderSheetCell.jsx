@@ -1,6 +1,6 @@
 import { Avatar, StatusBadge } from "@/components/work-sheet/projects-sheet/SheetBits";
 import { C, MENU } from "@/components/work-sheet/projects-sheet/sheetTheme";
-import { ChevronDown, Maximize2 } from "lucide-react";
+import { ChevronsUpDown, Maximize2 } from "lucide-react";
 import { DATE_FIELD } from "@/components/work-sheet/projects-sheet/sheetColumns";
 import { ExpandEditor } from "@/components/work-sheet/projects-sheet/SheetPickers";
 import { Input } from "@/components/ui/input";
@@ -206,7 +206,7 @@ export function renderSheetCell(ctx, t, v, col, ri, ci) {
           {text}
         </span>
       )}
-      {caret && <ChevronDown className="h-3 w-3 shrink-0" style={{ color: isAct ? C.b500 : C.n300 }} />}
+      {caret && <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" style={{ color: isAct ? C.b500 : "#94a3b8" }} />}
       {showExpand && (
         <button
           type="button"

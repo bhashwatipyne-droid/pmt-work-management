@@ -1,5 +1,5 @@
 import { Avatar, Checkbox } from "@/components/work-sheet/projects-sheet/SheetBits";
-import { C, MANROPE } from "@/components/work-sheet/projects-sheet/sheetTheme";
+import { C } from "@/components/work-sheet/projects-sheet/sheetTheme";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 export function GridGroups(ctx) {
@@ -17,8 +17,8 @@ export function GridGroups(ctx) {
                 type="button"
                 aria-expanded={open}
                 onClick={() => setCollapsed((c) => ({ ...c, [g.key]: open }))}
-                className="block w-full bg-white text-left hover:bg-[#f9fafb]"
-                style={{ height: 32, padding: 0, border: "none", boxShadow: `inset 0 -1px 0 ${C.line}` }}
+                className="block w-full text-left hover:bg-[#f7f9fc]"
+                style={{ height: 40, padding: 0, border: "none", background: C.head, boxShadow: `inset 0 -1px 0 ${C.line}` }}
               >
                 <span
                   style={{
@@ -27,32 +27,29 @@ export function GridGroups(ctx) {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    height: 32,
+                    height: 40,
                     padding: "0 12px",
                   }}
                 >
                   {open ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-[#546490]" />
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
                   ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-[#546490]" />
+                    <ChevronRight className="h-4 w-4 text-slate-500" />
                   )}
                   {groupBy === "owner" ? (
-                    <Avatar name={g.name} size={22} fontSize={10} />
+                    <Avatar name={g.name} size={24} fontSize={10} />
                   ) : (
                     <span style={{ width: 8, height: 8, borderRadius: 9999, background: C.n400 }} />
                   )}
-                  <span style={{ fontSize: 13, fontWeight: 600, color: C.n900 }}>{g.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{g.name}</span>
                   <span
                     style={{
                       whiteSpace: "nowrap",
-                      font: `500 11px/16px ${MANROPE}`,
-                      color: C.n700,
-                      background: C.n100,
-                      padding: "2px 8px",
-                      borderRadius: 9999,
+                      fontSize: 13,
+                      color: "#64748b",
                     }}
                   >
-                    {g.rows.length} {g.rows.length === 1 ? "task" : "tasks"}
+                    {g.rows.length} {g.rows.length === 1 ? "row" : "rows"}
                     {delayed ? ` · ${delayed} delayed` : ""}
                   </span>
                 </span>
@@ -85,7 +82,7 @@ export function GridGroups(ctx) {
                     style={{
                       display: "grid",
                       gridTemplateColumns: GRID,
-                      height: 40,
+                      height: 52,
                       background: isSel ? C.b50 : "#fff",
                       fontSize: 13,
                       lineHeight: "18px",

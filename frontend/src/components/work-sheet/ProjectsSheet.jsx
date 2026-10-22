@@ -263,7 +263,7 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
 
   return shell(
     <>
-      <div className="bg-white">
+      <div className="border-b border-[#eaeef4] bg-white">
         <SheetTitleRow {...ctx} />
         {tabsWithCount}
 

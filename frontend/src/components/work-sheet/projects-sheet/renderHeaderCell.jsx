@@ -47,23 +47,23 @@ export function renderHeaderCell(ctx, col) {
             padding: "0 10px",
             border: "none",
             borderRadius: 0,
-            background: sorted || filtered ? C.b50 : C.n50,
+            background: sorted || filtered ? C.b50 : C.head,
             boxShadow: col.edge
               ? `inset -2px 0 0 ${C.edge}, inset 0 -1px 0 ${C.line}`
               : `inset -1px -1px 0 ${C.line}`,
-            color: sorted || filtered ? C.b700 : C.n700,
+            color: sorted || filtered ? C.b700 : "#0f172a",
             fontSize: 12,
-            fontWeight: 600,
+            fontWeight: 700,
             cursor: "pointer",
             whiteSpace: "nowrap",
             textAlign: "left",
           }}
         >
-          <span className="flex min-w-0 items-center gap-1" style={{ opacity: dragCol === col.key ? 0.5 : 1 }}>
+          <span className="flex min-w-0 flex-1 items-center justify-center gap-1" style={{ opacity: dragCol === col.key ? 0.5 : 1 }}>
             <Hand className="h-3 w-3 shrink-0 cursor-grab opacity-0 group-hover/head:opacity-100" />
             <span className="truncate">{col.label}</span>
           </span>
-          <Icon className="h-3 w-3 shrink-0" />
+          <Icon className="h-3 w-3 shrink-0 text-slate-400" />
           <span
             role="separator"
             aria-label={`Resize ${col.label}`}

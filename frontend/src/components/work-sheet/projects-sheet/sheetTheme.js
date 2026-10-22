@@ -16,6 +16,7 @@ export const C = {
   line: "#e2e8f0", // header / gutter grid lines
   cellLine: "#eaeef4", // body grid lines
   edge: "#d6deec", // right edge of the frozen columns
+  head: "#f7f9fc", // header / group-row fill, same as the other sheets
 };
 
 export const BADGE = {

@@ -52,6 +52,7 @@ export const CreateProjectModal = ({
   const [clientIndex, setClientIndex] = useState(0);
   const [addClientName, setAddClientName] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [recentDismissed, setRecentDismissed] = useState(false);
   const [pocId, setPocId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -141,6 +142,7 @@ export const CreateProjectModal = ({
     setClientIndex(0);
     setPocId("");
     setConfirmed(false);
+    setRecentDismissed(false);
   };
 
   const clientMeta = (client, why) => {
@@ -172,8 +174,7 @@ export const CreateProjectModal = ({
   const canCreate =
     !!selectedClient &&
     !!trimmed &&
-    nameState !== "exact" &&
-    (nameState !== "similar" || confirmed);
+    ((nameState !== "similar" && nameState !== "exact") || confirmed);
 
   const clientProjects = selectedClient
     ? projects.filter((p) => p.client_id === selectedClient.id)
@@ -257,6 +258,7 @@ export const CreateProjectModal = ({
     setClientQuery("");
     setClientMenuOpen(false);
     setConfirmed(false);
+    setRecentDismissed(false);
     setPocId("");
     setStartDate("");
     setEndDate("");
@@ -341,10 +343,10 @@ export const CreateProjectModal = ({
       ? "Choose a client first"
       : !trimmed
         ? "Name the project"
-        : nameState === "exact"
-          ? "Project already exists"
-          : nameState === "similar" && !confirmed
-            ? "Confirm it’s a new project"
+        : (nameState === "exact" || nameState === "similar") && !confirmed
+            ? nameState === "exact"
+              ? "Confirm it’s not a duplicate"
+              : "Confirm it’s a new project"
             : "Create project";
 
   const matchRow = (m) => (
@@ -354,7 +356,13 @@ export const CreateProjectModal = ({
     >
       <span className="flex min-w-[220px] flex-1 flex-col gap-0.5">
         <span className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">{m.project.name}</span>
+          <button
+            type="button"
+            onClick={() => openProject(m.project)}
+            className="text-left text-sm font-semibold text-foreground underline-offset-2 hover:text-[#2b2bb5] hover:underline"
+          >
+            {m.project.name}
+          </button>
           <span
             className={`rounded px-1.5 py-px text-[11px] font-medium ${
               m.exact
@@ -425,6 +433,8 @@ export const CreateProjectModal = ({
     setClientIndex,
     setClientMenuOpen,
     setClientQuery,
+    recentDismissed,
+    setRecentDismissed,
     setConfirmed,
     setDescription,
     setEndDate,

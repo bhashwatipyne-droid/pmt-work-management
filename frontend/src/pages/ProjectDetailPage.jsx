@@ -1,5 +1,6 @@
 import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSessionState } from "@/hooks/useSessionState";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -51,10 +52,10 @@ export default function ProjectDetailPage() {
   const [workLogTotal, setWorkLogTotal] = useState(0);
   const [loggedMinutes, setLoggedMinutes] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("deliverables");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [query, setQuery] = useState("");
-  const [closedGroups, setClosedGroups] = useState({});
+  const [tab, setTab] = useSessionState(`project-${projectId}-tab`, "deliverables");
+  const [stageFilter, setStageFilter] = useSessionState(`project-${projectId}-stage`, "all");
+  const [query, setQuery] = useSessionState(`project-${projectId}-query`, "");
+  const [closedGroups, setClosedGroups] = useSessionState(`project-${projectId}-closed`, {});
   const [delivModal, setDelivModal] = useState({
     open: false,
     mode: "add",

@@ -1,6 +1,7 @@
 import { makeMatcher } from "@/lib/search";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSessionState } from "@/hooks/useSessionState";
 import { CalendarDays, Clock, Umbrella } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,7 +28,7 @@ export default function EfficiencyMonthlyCapacityPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [employees, setEmployees] = useState([]);
   const [capacities, setCapacities] = useState([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSessionState("eff-capacity-search", "");
   const [filter, setFilter] = useState("all");
   const [form, setForm] = useState({ wd: "", lv: "", hpd: "" });
 

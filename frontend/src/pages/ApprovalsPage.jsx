@@ -1,5 +1,6 @@
 import { makeMatcher } from "@/lib/search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSessionState } from "@/hooks/useSessionState";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useUser } from "@/context/UserContext";
@@ -43,7 +44,7 @@ export default function ApprovalsPage() {
   // Which queue (authority column) is active — the redesign replaces the
   // old Kanban board (all four columns visible at once) with one queue at
   // a time, navigated via tabs.
-  const [activeQueue, setActiveQueue] = useState(COLUMNS[0].key);
+  const [activeQueue, setActiveQueue] = useSessionState("approvals-queue", COLUMNS[0].key);
   const [selectedId, setSelectedId] = useState(null);
   // Phones show the list OR the detail, never both side by side.
   const [detailOpen, setDetailOpen] = useState(false);
@@ -52,12 +53,12 @@ export default function ApprovalsPage() {
   // filter are both gone — authority is now the queue tab itself, and
   // hide/unhide isn't part of this redesign, so there's no separate
   // "hidden" set to filter in or out of.
-  const [search, setSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState("");
-  const [projectFilter, setProjectFilter] = useState("");
-  const [deadlineFilter, setDeadlineFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [search, setSearch] = useSessionState("approvals-search", "");
+  const [stageFilter, setStageFilter] = useSessionState("approvals-stage", "");
+  const [projectFilter, setProjectFilter] = useSessionState("approvals-project", "");
+  const [deadlineFilter, setDeadlineFilter] = useSessionState("approvals-deadline", "");
+  const [dateFrom, setDateFrom] = useSessionState("approvals-date-from", "");
+  const [dateTo, setDateTo] = useSessionState("approvals-date-to", "");
 
   // Gmail-style bulk selection, scoped to whatever's currently visible in
   // the active queue (selecting in one queue and switching tabs clears it

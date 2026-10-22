@@ -2,6 +2,7 @@ import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useSessionState } from "@/hooks/useSessionState";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { getClients, getProjects, deleteClient } from "@/services/api";
@@ -21,7 +22,7 @@ export default function ClientsPage() {
 
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSessionState("clients-search", "");
 
   const [modal, setModal] = useState({
     open: false,

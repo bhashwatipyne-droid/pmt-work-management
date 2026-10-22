@@ -145,6 +145,8 @@ const wait = (ms = 20) => act(async () => { await new Promise((r) => setTimeout(
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
 function mount(props) {
+  // Each scenario starts from a fresh tab: the sheet remembers its view in sessionStorage.
+  sessionStorage.clear();
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);

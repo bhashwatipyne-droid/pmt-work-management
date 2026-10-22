@@ -12,6 +12,7 @@ import { useWorksheetBulkActions } from "@/hooks/useWorksheetBulkActions";
 import { useWorksheetRowCreation } from "@/hooks/useWorksheetRowCreation";
 import { useWorksheetLookups } from "@/hooks/useWorksheetLookups";
 import { useWorksheetItemsLoader } from "@/hooks/useWorksheetItemsLoader";
+import { hasSessionState, useSessionState } from "@/hooks/useSessionState";
 import { useWorksheetCollaborators } from "@/hooks/useWorksheetCollaborators";
 import { useWorksheetDerived } from "@/hooks/useWorksheetDerived";
 import { useWorksheetItemActions } from "@/hooks/useWorksheetItemActions";
@@ -60,8 +61,10 @@ export default function WorkSheetPage() {
     (user?.role === "admin" && "Projects") ||
     (user && DEPARTMENT_TO_STAGE[user.department]) ||
     "Master";
-  const [activeSheet, setActiveSheet] = useState(() => defaultSheetFor(currentUser));
-  const defaultSheetApplied = useRef(Boolean(currentUser));
+  // Remembered for the browser tab, so coming back from another page (or tab)
+  // lands on the sheet the person was on.
+  const [activeSheet, setActiveSheet] = useSessionState("worksheet-active-sheet", defaultSheetFor(currentUser));
+  const defaultSheetApplied = useRef(Boolean(currentUser) || hasSessionState("worksheet-active-sheet"));
   useEffect(() => {
     // The user can arrive a moment after the page does.
     if (defaultSheetApplied.current || !currentUser) return;
@@ -75,7 +78,7 @@ export default function WorkSheetPage() {
 
   // Filters are scoped to each worksheet tab so a filter applied on one
   // sheet does not leak into another sheet.
-  const [filtersBySheet, setFiltersBySheet] = useState(() => {
+  const [filtersBySheet, setFiltersBySheet] = useSessionState("worksheet-filters", () => {
     const createFilters = () => ({
       ...emptyFilters,
       project_ids: [],
@@ -102,7 +105,7 @@ export default function WorkSheetPage() {
   // Content to Design doesn't carry one tab's "Group: Member" choice
   // into the other. Session-only (not persisted), since this is a brand
   // new control with no prior behavior to preserve across reloads.
-  const [groupByBySheet, setGroupByBySheet] = useState({
+  const [groupByBySheet, setGroupByBySheet] = useSessionState("worksheet-group-by", {
     Master: "Member",
     Content: "Member",
     Design: "Member",
@@ -151,7 +154,7 @@ export default function WorkSheetPage() {
   // filters" does not widen it. Uses the same UTC "today" as new rows, so a
   // row just added always lands in the month on screen.
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const [month, setMonth] = useState(currentMonth);
+  const [month, setMonth] = useSessionState("worksheet-month", currentMonth);
 
   // Rows created (or arriving) outside the month on screen would vanish the
   // moment they appear; switch to the month they are in so they stay visible.
@@ -165,7 +168,7 @@ export default function WorkSheetPage() {
   }, []);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sortDirection, setSortDirection] = useState("desc");
+  const [sortDirection, setSortDirection] = useSessionState("worksheet-sort", "desc");
   const [loading, setLoading] = useState(true);
   // True while the full dataset is still loading in behind the fast
   // initial slice — lets the toolbar show a small "loading full list"
@@ -182,7 +185,7 @@ export default function WorkSheetPage() {
   });
   const [quickLoggerOpen, setQuickLoggerOpen] = useState(false);
   // Toolbar chip / ⌘K action: show only rows that still need a deliverable.
-  const [onlyMissing, setOnlyMissing] = useState(false);
+  const [onlyMissing, setOnlyMissing] = useSessionState("worksheet-only-missing", false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);

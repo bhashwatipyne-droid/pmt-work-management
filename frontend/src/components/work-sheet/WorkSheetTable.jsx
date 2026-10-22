@@ -17,6 +17,7 @@ import { useWorksheetTableGroups } from "./useWorksheetTableGroups";
 import { useWorksheetTableLookups } from "./useWorksheetTableLookups";
 import { WorkSheetTableBody } from "./WorkSheetTableBody";
 import { WorkSheetTableHeader } from "./WorkSheetTableHeader";
+import { readSessionState, writeSessionState } from "@/hooks/useSessionState";
 import { focusCellShell, focusCheckboxRow } from "./useWorksheetKeyboardNavigation";
 import { WorksheetFormulaBar } from "./WorksheetFormulaBar";
 import { QuantityPanel } from "./QuantityPanel";
@@ -204,6 +205,18 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   // once visibleTableItems/resolveGroupKey exist, for what populates it.
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => new Set());
   const groupInfoRef = useRef(null);
+  // Which groups the person opened, remembered for this browser tab per sheet
+  // and grouping, so leaving the tab (e.g. to Management) and coming back finds
+  // them as they were left. Groups still start collapsed when nothing is
+  // remembered (that keeps the first render light).
+  const expandedScope = `worksheet-expanded:${sheetKey}:${groupBy && groupBy !== "None" ? groupBy : "none"}`;
+  const expandedScopeRef = useRef(expandedScope);
+  expandedScopeRef.current = expandedScope;
+  const rememberExpanded = (mutate) => {
+    const open = new Set(readSessionState(expandedScopeRef.current, []));
+    mutate(open);
+    writeSessionState(expandedScopeRef.current, [...open]);
+  };
 
   const scrollRef = useRef(null);
   const fillStateRef = useRef(null);
@@ -306,9 +319,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     collapseAllGroups: () => {
       const info = groupInfoRef.current;
       if (!info) return;
+      rememberExpanded((open) => info.order.forEach((key) => open.delete(key)));
       setCollapsedGroupKeys(new Set(info.order));
     },
-    expandAllGroups: () => setCollapsedGroupKeys(new Set()),
+    expandAllGroups: () => {
+      const info = groupInfoRef.current;
+      if (info) rememberExpanded((open) => info.order.forEach((key) => open.add(key)));
+      setCollapsedGroupKeys(new Set());
+    },
   }), []);
 
   useEffect(() => {
@@ -504,7 +522,10 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   // expanded meant the very first render had to build render entries for
   // every row instead of just the handful of group headers.
   useEffect(() => {
-    setCollapsedGroupKeys(groupInfo ? new Set(groupInfo.order) : new Set());
+    const open = new Set(readSessionState(expandedScopeRef.current, []));
+    setCollapsedGroupKeys(
+      groupInfo ? new Set(groupInfo.order.filter((key) => !open.has(key))) : new Set()
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupBySafe, sheetKey]);
 
@@ -527,11 +548,14 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       const next = new Set(current);
       if (next.has(key)) {
         next.delete(key);
+        rememberExpanded((open) => open.add(key));
       } else {
         next.add(key);
+        rememberExpanded((open) => open.delete(key));
       }
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

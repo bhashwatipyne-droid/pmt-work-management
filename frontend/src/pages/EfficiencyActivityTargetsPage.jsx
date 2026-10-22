@@ -1,4 +1,5 @@
 import { makeMatcher } from "@/lib/search";
+import { useSessionState } from "@/hooks/useSessionState";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ export default function EfficiencyActivityTargetsPage() {
   const [capacities, setCapacities] = useState([]);
   const [counts, setCounts] = useState({});
   const [employeeId, setEmployeeId] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSessionState("eff-targets-search", "");
   const [catalog, setCatalog] = useState([]);
   const [targets, setTargets] = useState([]);
   const [drafts, setDrafts] = useState({});

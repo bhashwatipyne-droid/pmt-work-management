@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSessionState } from "@/hooks/useSessionState";
 import { AlertCircle, History, Hourglass, RefreshCw } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
@@ -37,11 +38,11 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
 
   const [team, setTeam] = useState("All");
-  const [tab, setTab] = useState("overview");
-  const [cat, setCat] = useState("all");
+  const [tab, setTab] = useSessionState("dashboard-tab", "overview");
+  const [cat, setCat] = useSessionState("dashboard-cat", "all");
   const [showAllActions, setShowAllActions] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useSessionState("dashboard-filters", {});
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const isAdmin = currentUser?.role === "admin";

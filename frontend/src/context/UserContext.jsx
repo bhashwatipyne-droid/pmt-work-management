@@ -15,6 +15,7 @@ import {
   resetAnalytics,
 } from "@/analytics";
 import { unregisterPush } from "@/lib/push";
+import { clearSessionState } from "@/hooks/useSessionState";
 
 const UserContext = createContext(null);
 
@@ -106,6 +107,7 @@ export const UserProvider = ({ children }) => {
     }
 
     clearAuthToken();
+    clearSessionState();
     resetAnalytics();
 
     setAuthUser(null);

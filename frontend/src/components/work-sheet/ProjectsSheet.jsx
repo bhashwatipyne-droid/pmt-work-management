@@ -23,6 +23,7 @@ import { useSheetClipboard } from "@/components/work-sheet/projects-sheet/useShe
 import { useSheetEditing } from "@/components/work-sheet/projects-sheet/useSheetEditing";
 import { useSheetRows } from "@/components/work-sheet/projects-sheet/useSheetRows";
 import { useSheetFilters } from "@/components/work-sheet/projects-sheet/useSheetFilters";
+import { hasSessionState, useSessionState } from "@/hooks/useSessionState";
 import { C } from "./projects-sheet/sheetTheme";
 import { COLS, COL_BY_KEY } from "./projects-sheet/sheetColumns";
 import { addDays } from "./projects-sheet/sheetDates";
@@ -50,18 +51,21 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
   const [fetchedClients, setClients] = useState([]);
   const clients = clientsProp?.length ? clientsProp : fetchedClients;
   const [today, setToday] = useState(() => addDays(new Date().toISOString().slice(0, 10), 0));
-  const [month, setMonth] = useState(null); // "2026-10"; null = this month
+  // The view (search, filters, grouping, which groups are open, sort, columns)
+  // is remembered for the browser tab, so switching to another Work sheet tab
+  // and back finds the sheet as it was left.
+  const [month, setMonth] = useSessionState("mgmt-month", null); // "2026-10"; null = this month
   const [pickedDay, setPickedDay] = useState(null); // null = the month's default day
   // The sheet always shows the whole month (no day stepper).
   const allDays = true;
-  const [query, setQuery] = useState("");
-  const [groupBy, setGroupBy] = useState("owner");
-  const [collapsed, setCollapsed] = useState({});
+  const [query, setQuery] = useSessionState("mgmt-query", "");
+  const [groupBy, setGroupBy] = useSessionState("mgmt-group-by", "owner");
+  const [collapsed, setCollapsed] = useSessionState("mgmt-collapsed", {});
   // On load the member groups start collapsed, so an admin sees the roll-up
   // (who has how many tasks) first and opens the ones they want.
-  const didCollapseOnLoad = useRef(false);
-  const [filters, setFilters] = useState({});
-  const [sort, setSort] = useState(null); // { key, dir }
+  const didCollapseOnLoad = useRef(hasSessionState("mgmt-collapsed"));
+  const [filters, setFilters] = useSessionState("mgmt-filters", {});
+  const [sort, setSort] = useSessionState("mgmt-sort", null); // { key, dir }
   const [loading, setLoading] = useState(!getSheetCache());
   const [cell, setCell] = useState(null); // { r: taskId, c: colKey }
   const [editing, setEditing] = useState(null); // { r, c, draft }
@@ -69,13 +73,13 @@ export function ProjectsSheet({ currentUser, users = [], clients: clientsProp, t
   const [headMenu, setHeadMenu] = useState(null); // column key
   const [filterMenu, setFilterMenu] = useState(null); // null | "fields" | field key
   const [sel, setSel] = useState({});
-  const [order, setOrder] = useState(() => COLS.map((c) => c.key));
-  const [hiddenCols, setHiddenCols] = useState([]);
-  const [frozenThrough, setFrozenThrough] = useState(null); // nothing frozen until asked
+  const [order, setOrder] = useSessionState("mgmt-col-order", () => COLS.map((c) => c.key));
+  const [hiddenCols, setHiddenCols] = useSessionState("mgmt-hidden-cols", []);
+  const [frozenThrough, setFrozenThrough] = useSessionState("mgmt-frozen", null); // nothing frozen until asked
   const [hiddenRows, setHiddenRows] = useState({});
-  const [ranges, setRanges] = useState({}); // date column key -> { from, to } (YYYY-MM-DD)
+  const [ranges, setRanges] = useSessionState("mgmt-ranges", {}); // date column key -> { from, to } (YYYY-MM-DD)
   const [dragCol, setDragCol] = useState(null);
-  const [widths, setWidths] = useState({}); // column key -> px, after a drag-resize
+  const [widths, setWidths] = useSessionState("mgmt-widths", {}); // column key -> px, after a drag-resize
 
   // Drag a header's right edge to resize that column.
   const startResize = (e, key, from) => {

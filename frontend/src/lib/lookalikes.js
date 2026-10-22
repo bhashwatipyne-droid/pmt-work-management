@@ -162,13 +162,19 @@ export function findSimilarProjects(name, clientId, projects = [], clientNameOf 
     const p = pWords.join(" ");
     let score = 0;
     let why = "";
+    // Only a genuinely identical name (as typed, or once the client prefix and
+    // filler words are ignored) counts as "already exists". A name that merely
+    // scores high because it shares many words is a look-alike, never a block.
+    let identical = false;
 
     if (String(project.name || "").trim().toLowerCase() === raw) {
       score = 100;
       why = "Same name";
+      identical = true;
     } else if (q && q === p) {
       score = 92;
       why = "Same name once the client prefix and filler words are ignored";
+      identical = true;
     } else {
       const shared = qWords.filter((w) => w.length >= 3 && pWords.some((x) => wordsNear(w, x)));
       const ratio = 1 - editDistance(q, p) / Math.max(q.length, p.length, 1);
@@ -184,7 +190,7 @@ export function findSimilarProjects(name, clientId, projects = [], clientNameOf 
     if (!score) return;
     if (same) score += 10;
     else if (clientId) score -= 25;
-    if (score >= 30) out.push({ project, score, why, same, exact: same && score >= 100 });
+    if (score >= 30) out.push({ project, score, why, same, exact: same && identical });
   });
 
   return out.sort((a, b) => b.score - a.score).slice(0, 4);

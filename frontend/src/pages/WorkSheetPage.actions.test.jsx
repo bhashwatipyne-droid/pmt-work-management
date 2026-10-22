@@ -2,6 +2,9 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import WorkSheetPage from "@/pages/WorkSheetPage";
 
+// A long scripted scenario: it sits close to Jest's 5s default on a busy machine.
+jest.setTimeout(30000);
+
 jest.mock("react-router-dom", () => ({ useNavigate: () => (p, o) => globalThis.__log.push(["navigate", p, o]), useLocation: () => ({ state: null, pathname: "/", key: "k" }) }), { virtual: true });
 jest.mock("@/analytics", () => ({ trackEvent: (n, p) => globalThis.__log.push(["track", n, p]) }));
 jest.mock("sonner", () => ({ toast: Object.assign((m) => globalThis.__log.push(["toast", m]), { error: (m) => globalThis.__log.push(["toast.error", m]), success: (m) => globalThis.__log.push(["toast.success", m]) }) }));

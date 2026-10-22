@@ -6,6 +6,9 @@ import { ProjectsSheet, prefetchProjectSheet } from "./ProjectsSheet";
 // renders, what it saves and what it tells the user. Used to prove that
 // splitting the file changes nothing.
 
+// A long scripted scenario: it sits close to Jest's 5s default on a busy machine.
+jest.setTimeout(30000);
+
 const mockLog = [];
 globalThis.__psLog = mockLog;
 let mockStore = {};

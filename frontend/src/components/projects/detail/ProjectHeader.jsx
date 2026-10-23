@@ -1,11 +1,32 @@
-import { AlertCircle, ArrowLeft, Check, ChevronDown, Pencil, Share2, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, ArrowLeft, Check, ChevronDown, Pencil, Share2, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dot } from "@/components/projects/detail/parts";
 import { BRAND_500, ICON_BTN, MENU, MENU_ITEM, PROJECT_STATUS_DOT, fmtRange } from "@/components/projects/detail/projectDetailView";
 import { Building, Calendar, User as UserIcon } from "lucide-react";
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
 
+// A dismissed look-alike warning stays dismissed for that project on this browser.
+const dismissKey = (id) => `pmt-lookalike-dismissed:${id}`;
+const readDismissed = (id) => {
+  try {
+    return localStorage.getItem(dismissKey(id)) === "1";
+  } catch {
+    return false;
+  }
+};
+
 export function ProjectHeader({ canManage, currentUser, handleStatusChange, lookalikes, navigate, project, setDeleteProjectOpen, setEditProjectOpen, setShareOpen, statusDot }) {
+  const [dismissedFor, setDismissedFor] = useState(null);
+  const warningHidden = dismissedFor === project.id || readDismissed(project.id);
+  const dismissWarning = () => {
+    setDismissedFor(project.id);
+    try {
+      localStorage.setItem(dismissKey(project.id), "1");
+    } catch {
+      /* hidden for this visit only */
+    }
+  };
   return (
     <>
     {/* Back link + header */}
@@ -29,7 +50,7 @@ export function ProjectHeader({ canManage, currentUser, handleStatusChange, look
               {project.description}
             </p>
           )}
-          {lookalikes.length > 0 && (
+          {lookalikes.length > 0 && !warningHidden && (
             <div
               data-testid="project-detail-lookalike-warning"
               className="flex items-start gap-2 self-start rounded-lg bg-amber-100 px-3 py-2 text-xs leading-4 text-[rgb(13,27,62)]"
@@ -39,6 +60,15 @@ export function ProjectHeader({ canManage, currentUser, handleStatusChange, look
                 Often confused with {lookalikes.map((p) => p.name).join(", ")}.
                 {" Ask the team to check the project name and client when logging."}
               </span>
+              <button
+                type="button"
+                aria-label="Dismiss warning"
+                title="Dismiss"
+                onClick={dismissWarning}
+                className="-mr-1 ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-amber-800 hover:bg-amber-200"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           )}
           <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 pt-1">

@@ -2,6 +2,7 @@ import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, Clock, FileText, Film, LayoutGrid, List, Palette, Search } from "lucide-react";
 import { toast } from "sonner";
+import { Bone, SkeletonScreen } from "@/components/skeletons/Skeletons";
 
 import { hm } from "@/lib/planning/invoiceLogic";
 import { getInvoiceProjects } from "@/services/api";
@@ -84,6 +85,9 @@ export function InvoiceList({ onOpen, refreshKey }) {
     };
   }, [data, tab, query, failed, counts]);
 
+  const listLoading = !failed && (tab === "ready" ? data.ready : data.raised) === null;
+  const statsLoading = !failed && data.ready === null;
+
   return (
     <div
       data-screen-label="Ready to invoice"
@@ -120,8 +124,8 @@ export function InvoiceList({ onOpen, refreshKey }) {
             {i > 0 && <div style={{ width: 1, background: "rgb(234,238,244)" }} />}
             <div style={{ flex: "1 1 160px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4, padding: "16px 20px" }}>
               <span style={{ fontSize: 13, color: "var(--neutral-500)" }}>{label}</span>
-              <span style={STAT_VALUE}>{value}</span>
-              {sub && <span style={{ fontSize: 12, color: "var(--neutral-500)" }}>{sub}</span>}
+              {statsLoading ? <Bone className="mt-1 h-7 w-24" /> : <span style={STAT_VALUE}>{value}</span>}
+              {sub && !statsLoading && <span style={{ fontSize: 12, color: "var(--neutral-500)" }}>{sub}</span>}
             </div>
           </div>
         ))}
@@ -300,7 +304,26 @@ export function InvoiceList({ onOpen, refreshKey }) {
           </div>
         )}
 
-        {list.rows.length === 0 && (
+        {listLoading && (
+          <SkeletonScreen label="Loading invoicing" testId="invoicing-loading-state">
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="flex items-center gap-6 border-t border-slate-100 px-5 py-4">
+                <span className="flex flex-1 flex-col gap-2">
+                  <Bone className="h-4 w-64 max-w-full" />
+                  <Bone className="h-3 w-40" />
+                </span>
+                <Bone className="hidden h-4 w-14 md:block" />
+                <Bone className="hidden h-6 w-6 rounded-full md:block" />
+                <Bone className="hidden h-6 w-6 rounded-full md:block" />
+                <Bone className="hidden h-6 w-6 rounded-full md:block" />
+                <Bone className="hidden h-4 w-28 md:block" />
+                <Bone className="h-5 w-16 rounded-full" />
+              </div>
+            ))}
+          </SkeletonScreen>
+        )}
+
+        {!listLoading && list.rows.length === 0 && (
           <div style={{ padding: "40px 20px", textAlign: "center", fontSize: 14, color: "var(--neutral-500)" }}>{list.emptyText}</div>
         )}
       </div>

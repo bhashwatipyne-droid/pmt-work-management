@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { dismissLookalike, isLookalikeDismissed } from "@/lib/lookalikeDismiss";
 import { AlertCircle, ArrowLeft, Check, ChevronDown, Pencil, Share2, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dot } from "@/components/projects/detail/parts";
@@ -6,26 +7,12 @@ import { BRAND_500, ICON_BTN, MENU, MENU_ITEM, PROJECT_STATUS_DOT, fmtRange } fr
 import { Building, Calendar, User as UserIcon } from "lucide-react";
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
 
-// A dismissed look-alike warning stays dismissed for that project on this browser.
-const dismissKey = (id) => `pmt-lookalike-dismissed:${id}`;
-const readDismissed = (id) => {
-  try {
-    return localStorage.getItem(dismissKey(id)) === "1";
-  } catch {
-    return false;
-  }
-};
-
 export function ProjectHeader({ canManage, currentUser, handleStatusChange, lookalikes, navigate, project, setDeleteProjectOpen, setEditProjectOpen, setShareOpen, statusDot }) {
-  const [dismissedFor, setDismissedFor] = useState(null);
-  const warningHidden = dismissedFor === project.id || readDismissed(project.id);
+  const [, setTick] = useState(0);
+  const warningHidden = isLookalikeDismissed(project.id);
   const dismissWarning = () => {
-    setDismissedFor(project.id);
-    try {
-      localStorage.setItem(dismissKey(project.id), "1");
-    } catch {
-      /* hidden for this visit only */
-    }
+    dismissLookalike(project.id);
+    setTick((n) => n + 1);
   };
   return (
     <>

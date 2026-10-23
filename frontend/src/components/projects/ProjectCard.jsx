@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2 } from "lucide-react";
+import { dismissLookalike } from "@/lib/lookalikeDismiss";
+import { AlertCircle, ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2, X } from "lucide-react";
 
 import { STAGE_HEX, clientDotColor } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
@@ -212,6 +213,18 @@ const ProjectCardBase = ({
         >
           <AlertCircle className="h-3 w-3 shrink-0" />
           <span className="truncate">{lookalikeText}</span>
+          <button
+            type="button"
+            aria-label="Dismiss warning"
+            title="Dismiss"
+            onClick={(e) => {
+              e.stopPropagation();
+              dismissLookalike(project.id);
+            }}
+            className="-mr-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full hover:bg-amber-200"
+          >
+            <X className="h-3 w-3" />
+          </button>
         </span>
       )}
 

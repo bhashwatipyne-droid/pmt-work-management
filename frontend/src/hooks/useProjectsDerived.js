@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { isLookalikeDismissed, onLookalikeDismissed } from "@/lib/lookalikeDismiss";
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
 import { sortProjects } from "@/lib/projectSort";
 import { buildLookalikeIndex } from "@/lib/lookalikes";
@@ -48,16 +49,20 @@ export function useProjectsDerived({ projects, deferredSearch, deliverableNamesB
     return buildLookalikeIndex(projects, (id) => clientNames.get(id) || "");
   }, [projects]);
 
+  const [dismissals, setDismissals] = useState(0);
+  useEffect(() => onLookalikeDismissed(() => setDismissals((n) => n + 1)), []);
+
   const lookalikeTextById = useMemo(() => {
     const texts = new Map();
     lookalikeIndex.forEach((twins, id) => {
+      if (isLookalikeDismissed(id)) return;
       texts.set(
         id,
         `Looks like ${twins[0].name}${twins.length > 1 ? ` +${twins.length - 1}` : ""}`
       );
     });
     return texts;
-  }, [lookalikeIndex]);
+  }, [lookalikeIndex, dismissals]);
 
   // For the "Look-alikes first" sort: projects that look alike share a key
   // (the alphabetically first name in the group), so they land side by side.

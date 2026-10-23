@@ -360,6 +360,31 @@ export const DashboardSkeleton = () => (
   </PageFrame>
 );
 
+// "Team activity" tab of Home while its data loads: summary line, the
+// Working / Blocked cards and the people table.
+export const TeamActivitySkeleton = () => (
+  <SkeletonScreen label="Loading team activity" testId="team-activity-loading-state" className="flex flex-col gap-4">
+    <Bone className="h-3 w-48" />
+    <Card className="px-5 py-4">
+      <Bone className="h-4 w-2/3 max-w-[520px]" />
+    </Card>
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {[0, 1].map((i) => (
+        <Card key={i} className="space-y-3 p-4">
+          <Bone className="h-4 w-32" />
+          {[0, 1, 2].map((j) => (
+            <div key={j} className="flex items-center gap-3">
+              <Bone className="h-7 w-7 rounded-full" />
+              <Bone className="h-3 w-40" />
+            </div>
+          ))}
+        </Card>
+      ))}
+    </div>
+    <TableSkeleton columns={6} rows={6} />
+  </SkeletonScreen>
+);
+
 export const ProjectDetailSkeleton = () => (
   <PageFrame label="Loading project" testId="project-detail-loading-state">
     <Bone className="mb-4 h-4 w-32" />

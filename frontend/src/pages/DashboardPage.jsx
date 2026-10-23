@@ -11,7 +11,7 @@ import { RiskTab } from "@/components/dashboard/RiskTab";
 import { ActionsTab } from "@/components/dashboard/ActionsTab";
 import { OverviewTab } from "@/components/dashboard/OverviewTab";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
-import { DashboardSkeleton } from "@/components/skeletons/Skeletons";
+import { DashboardSkeleton, TeamActivitySkeleton } from "@/components/skeletons/Skeletons";
 import TeamActivityTab from "@/components/dashboard/TeamActivityTab";
 import { NEXT_STATUSES, TEAM_DEPARTMENT, buildHome, buildTeamActivity, currentMonth, monthLabel, monthShort, pc, shiftMonth } from "@/lib/homeDashboard";
 import { C, hrs } from "@/components/dashboard/dashboardTheme";
@@ -367,8 +367,9 @@ export default function DashboardPage() {
             onOpenSheet={(name) => navigate("/", { state: { search: name } })}
           />
         )}
-        {tab === "team" && !activity && (
-          <Empty>{activityError ? "Could not load team activity. Please try again." : "Loading team activity…"}</Empty>
+        {tab === "team" && !activity && !activityError && <TeamActivitySkeleton />}
+        {tab === "team" && !activity && activityError && (
+          <Empty>Could not load team activity. Please try again.</Empty>
         )}
 
         {/* ================= OVERVIEW ================= */}

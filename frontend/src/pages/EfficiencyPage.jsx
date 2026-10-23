@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
+import { consumePrefetch } from "@/services/prefetch";
 import { getEfficiencyOverview, getEfficiencyTrend } from "@/services/api";
 
 import { EfficiencyKpiCards } from "@/components/efficiency/EfficiencyKpiCards";
@@ -52,7 +53,7 @@ export default function EfficiencyPage() {
     // The trend (sparkline data) is fetched after the overview rather than
     // alongside it: the overview is what the page is waiting on, and the
     // server reuses the two months it just computed for the trend.
-    getEfficiencyOverview(month)
+    consumePrefetch(`efficiency-overview:${month}`, () => getEfficiencyOverview(month))
       .then((d) => !cancelled && setOverview(d))
       .catch(() => !cancelled && setError("Could not load efficiency data. Please refresh."))
       .finally(() => {

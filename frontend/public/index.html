@@ -1,14 +1,30 @@
 <!doctype html>
 <html lang="en">
     <head>
-        <!-- Google tag (gtag.js) -->
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-CBREH0JJD5"></script>
+        <!-- Google tag (gtag.js). The queue (dataLayer/gtag) is set up straight
+             away so nothing is lost, but the tag's own script is only downloaded
+             once the page has loaded and the browser is idle, so it never
+             competes with the app's first paint. -->
         <script>
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
 
             gtag('config', 'G-CBREH0JJD5');
+
+            window.addEventListener('load', function () {
+                var loadTag = function () {
+                    var s = document.createElement('script');
+                    s.async = true;
+                    s.src = 'https://www.googletagmanager.com/gtag/js?id=G-CBREH0JJD5';
+                    document.head.appendChild(s);
+                };
+                if ('requestIdleCallback' in window) {
+                    window.requestIdleCallback(loadTag, { timeout: 4000 });
+                } else {
+                    setTimeout(loadTag, 2000);
+                }
+            });
         </script>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -19,7 +35,13 @@
         <link rel="apple-touch-icon" href="%PUBLIC_URL%/pmt-notification-icon.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet" />
+        <!-- A normal stylesheet link blocks the first paint until Google's server
+             answers (a cross-ocean round trip for many people). Loading it as a
+             preload that turns into a stylesheet when it arrives lets the page
+             paint right away in the system font; display=swap then swaps Inter
+             and Manrope in. -->
+        <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+        <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600&display=swap" /></noscript>
         <!--
         manifest.json provides metadata used when your web app is installed on a
         user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/

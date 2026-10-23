@@ -1,14 +1,22 @@
 import axios from "axios";
 import {
   API,
+  getApprovalBoard,
   getDashboardHome,
   getEfficiencyOverview,
   getEfficiencyTrend,
+  getInvoiceProjects,
+  getOptions,
+  getProject,
+  getProjectMetrics,
+  getProjects,
   getProjectTasks,
+  getProjectWorkLog,
   getWorkItems,
   getWorksheetLookups,
 } from "@/services/api";
 import { currentMonth } from "@/lib/homeDashboard";
+import { readSessionState } from "@/hooks/useSessionState";
 
 // Starts the Work Sheet's data requests while the app is still booting.
 //
@@ -79,6 +87,53 @@ export const fetchPlanningOverview = () =>
 export const prefetchPlanning = () =>
   startPrefetch("planning-overview", fetchPlanningOverview);
 
+// Projects: the first page of projects and the metrics - the two requests the
+// board is waiting on. The first page is keyed by the visibility filter the
+// page will open with (remembered for this browser tab), so a different
+// filter never picks up this answer. The page's own request params must stay
+// identical to these (see ProjectsPage.fetchAll).
+export const PROJECTS_FIRST_PAGE = 30;
+
+export const prefetchProjects = () => {
+  const visibility = readSessionState("projects-visibility", "visible");
+  startPrefetch(`projects-first:${visibility}`, () =>
+    getProjects("", {
+      visibility,
+      include_deliverables: false,
+      limit: PROJECTS_FIRST_PAGE,
+    })
+  );
+  startPrefetch("projects-metrics", () => getProjectMetrics(""));
+};
+
+// Approvals: the board the page opens with.
+export const prefetchApprovals = () =>
+  startPrefetch("approvals-board", () =>
+    getApprovalBoard("", { visibility: "visible" })
+  );
+
+// Efficiency: the overview for the month the page opens on. The page uses the
+// UTC month (components/efficiency/EfficiencyFilters), which can differ from
+// the local month near month end, so it is computed the same way here. The
+// month is part of the key, so a mismatch just means a normal request.
+const efficiencyMonth = () => new Date().toISOString().slice(0, 7);
+
+export const prefetchEfficiency = () => {
+  const month = efficiencyMonth();
+  startPrefetch(`efficiency-overview:${month}`, () => getEfficiencyOverview(month));
+};
+
+// A project's page: the project, its work log and the dropdown options.
+export const prefetchProjectDetail = (projectId) => {
+  startPrefetch(`project:${projectId}`, () => getProject("", projectId));
+  startPrefetch(`project-worklog:${projectId}`, () => getProjectWorkLog("", projectId));
+  startPrefetch("project-options", () => getOptions());
+};
+
+// Ready to invoice: the list the page opens on.
+export const prefetchInvoicing = () =>
+  startPrefetch("invoicing-ready", () => getInvoiceProjects("ready"));
+
 // Download each page's code at boot, in parallel with the sign-in check,
 // instead of after it. Only the page for the address being opened is fetched.
 const PAGE_CHUNKS = {
@@ -102,7 +157,17 @@ export const prefetchForPath = (pathname) => {
   }
   if (path === "/dashboard") prefetchDashboard();
   if (path === "/planning") prefetchPlanning();
+  if (path === "/projects") prefetchProjects();
+  if (path === "/approvals") prefetchApprovals();
+  if (path === "/efficiency") prefetchEfficiency();
+  if (path === "/invoicing") prefetchInvoicing();
   if (path.startsWith("/projects/")) {
+    try {
+      const id = decodeURIComponent(path.slice("/projects/".length));
+      if (id) prefetchProjectDetail(id);
+    } catch {
+      // a malformed address just loads the page as usual
+    }
     import("@/pages/ProjectDetailPage").catch(() => {});
     return;
   }

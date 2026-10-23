@@ -13,6 +13,7 @@
 // - Announced to screen readers as one "Loading ..." status instead of dozens
 //   of empty boxes; the pulse stops for people who prefer reduced motion.
 
+import { ArrowLeft } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { COLUMN_WIDTHS, buildGridTemplateColumns } from "@/constants/worksheetColumnWidths";
@@ -60,10 +61,18 @@ const Card = ({ className, children }) => (
 
 // ------------------------------------------------------------ building blocks
 
-export const PageHeaderSkeleton = ({ action = true, subtitle = true, titleWidth = "w-40" }) => (
+// `title`: when the page's heading is known before its data is (Home), show the
+// real words instead of a grey bar - the person sees where they are straight
+// away, and it is the first real text the browser paints. Same look as the
+// page's own heading, so nothing shifts when the data arrives.
+export const PageHeaderSkeleton = ({ action = true, subtitle = true, titleWidth = "w-40", title }) => (
   <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
     <div>
-      <Bone className={cn("h-8", titleWidth)} />
+      {title ? (
+        <h1 className="m-0 text-[28px] font-bold leading-9 text-[rgb(13,27,62)]">{title}</h1>
+      ) : (
+        <Bone className={cn("h-8", titleWidth)} />
+      )}
       {subtitle && <Bone className="mt-2.5 h-4 w-72 max-w-full" />}
     </div>
     {action && <Bone className="h-10 w-36 rounded-lg" />}
@@ -332,7 +341,7 @@ export const WorkSheetSkeleton = () => (
 
 export const DashboardSkeleton = () => (
   <PageFrame label="Loading dashboard" testId="dashboard-loading-state">
-    <PageHeaderSkeleton action={false} />
+    <PageHeaderSkeleton action={false} title="Home" />
     <StatCardsSkeleton count={4} />
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
       <div className="space-y-5 xl:col-span-2">
@@ -387,7 +396,11 @@ export const TeamActivitySkeleton = () => (
 
 export const ProjectDetailSkeleton = () => (
   <PageFrame label="Loading project" testId="project-detail-loading-state">
-    <Bone className="mb-4 h-4 w-32" />
+    {/* Real words for the back link (same as ProjectHeader's), not a bar. */}
+    <div className="mb-4 flex h-7 items-center gap-1.5 text-[13px] font-medium text-[rgb(84,100,144)]">
+      <ArrowLeft className="h-4 w-4" />
+      All projects
+    </div>
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div>
         <Bone className="h-3 w-24" />

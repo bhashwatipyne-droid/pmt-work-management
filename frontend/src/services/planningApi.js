@@ -23,6 +23,7 @@ import { API } from "@/services/api";
 // signed-in person all day, so they get the slower interval; the Planning page
 // is only open for managers who are looking at it.
 const TICK_MS = 10 * 1000;
+const CARDS_START_DELAY_MS = 3000;
 const SCOPE_MS = { plan: 20 * 1000, cards: 30 * 1000 };
 
 const listeners = new Set();
@@ -156,7 +157,23 @@ const startWatching = (scope) => {
 // keeps the data fresh (every 10 seconds while visible, and when the tab regains focus) while the
 // component is mounted.
 export const usePlanningStore = (scope) => {
-  useEffect(() => (scope ? startWatching(scope) : undefined), [scope]);
+  useEffect(() => {
+    if (!scope) return undefined;
+    // The task cards ride along on every page, so they must not compete with
+    // the page's own first requests: start them a moment later. The Planning
+    // page itself ("plan") still starts straight away.
+    if (scope === "cards") {
+      let stop = null;
+      const timer = window.setTimeout(() => {
+        stop = startWatching(scope);
+      }, CARDS_START_DELAY_MS);
+      return () => {
+        window.clearTimeout(timer);
+        if (stop) stop();
+      };
+    }
+    return startWatching(scope);
+  }, [scope]);
   return useSyncExternalStore(subscribe, () => state);
 };
 

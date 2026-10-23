@@ -5,6 +5,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
+import { consumePrefetch } from "@/services/prefetch";
 import { useAccess } from "@/hooks/useAccess";
 import {
   getProject,
@@ -80,10 +81,13 @@ export default function ProjectDetailPage() {
       // deliverable_id matches itself) instead of two full /work-items
       // downloads. Clients are only needed by the edit-project modal, so they
       // load on demand (see the effect below), not on every page open.
+      // Usually already on its way from boot (services/prefetch).
       const [p, workLog, options] = await Promise.all([
-        getProject(currentUserId, projectId),
-        getProjectWorkLog(currentUserId, projectId),
-        getOptions(),
+        consumePrefetch(`project:${projectId}`, () => getProject(currentUserId, projectId)),
+        consumePrefetch(`project-worklog:${projectId}`, () =>
+          getProjectWorkLog(currentUserId, projectId)
+        ),
+        consumePrefetch("project-options", () => getOptions()),
       ]);
 
       const items = workLog.items || [];

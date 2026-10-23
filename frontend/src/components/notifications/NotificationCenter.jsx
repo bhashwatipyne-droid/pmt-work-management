@@ -17,6 +17,7 @@ import {
 // Push delivers new notifications instantly; this poll is only a safety net,
 // so it does not need to hit the server every 10 seconds from every open tab.
 const POLL_MS = 45000;
+const FIRST_FETCH_DELAY_MS = 2500;
 
 const relativeTime = (iso) => {
   if (!iso) return "";
@@ -158,9 +159,16 @@ export default function NotificationCenter({ placement = "header" }) {
   }, [currentUserId]);
 
   useEffect(() => {
-    fetchNotifications();
+    // The bell is not what the page was opened for, so its first fetch waits
+    // a moment and lets the page's own data requests go first (on a small
+    // backend instance these queue in front of the page otherwise).
+    const first = window.setTimeout(fetchNotifications, FIRST_FETCH_DELAY_MS);
+    const stopPolling = startPolling(() => fetchNotifications({ silent: true }), POLL_MS);
 
-    return startPolling(() => fetchNotifications({ silent: true }), POLL_MS);
+    return () => {
+      window.clearTimeout(first);
+      stopPolling();
+    };
   }, [fetchNotifications]);
 
   // Push delivery is instant, the poll above is not (up to 10s). When a push

@@ -38,6 +38,7 @@ import { useProjectsDerived } from "@/hooks/useProjectsDerived";
 import { useProjectsSelection } from "@/hooks/useProjectsSelection";
 import { useProjectsBulkActions } from "@/hooks/useProjectsBulkActions";
 import { useProjectsDragDrop } from "@/hooks/useProjectsDragDrop";
+import { PROJECTS_FIRST_PAGE, consumePrefetch } from "@/services/prefetch";
 
 // A function with a permanent identity that always calls the latest version
 // of `fn`. Lets the page hand the (memoized) project cards handlers that
@@ -50,8 +51,9 @@ function useStableCallback(fn) {
 }
 
 // How many projects (the newest) the page asks for first, so it can show the
-// board right away while the rest loads.
-const FIRST_PAGE = 30;
+// board right away while the rest loads. Shared with the boot-time prefetch
+// (services/prefetch), which must ask for exactly the same thing.
+const FIRST_PAGE = PROJECTS_FIRST_PAGE;
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
@@ -147,19 +149,33 @@ export default function ProjectsPage() {
         // Opening the page: ask for the newest FIRST_PAGE projects only, so
         // the board is on screen as soon as that small answer arrives, then
         // fetch the complete list and swap it in.
-        const [first, m, c, opts] = await Promise.all([
-          getProjects(currentUserId, { ...params, limit: FIRST_PAGE }),
-          getProjectMetrics(currentUserId),
-          canManage ? getClients() : Promise.resolve(null),
-          canManage ? getOptions() : Promise.resolve(null),
+        //
+        // Both requests are usually already on their way from boot (see
+        // services/prefetch); the page picks them up instead of asking again.
+        const [first, m] = await Promise.all([
+          consumePrefetch(`projects-first:${visibility}`, () =>
+            getProjects(currentUserId, { ...params, limit: FIRST_PAGE })
+          ),
+          consumePrefetch("projects-metrics", () => getProjectMetrics(currentUserId)),
         ]);
         if (!isCurrent()) return;
 
         setProjects(first);
         setMetrics(m);
-        if (c) setClients(c);
-        if (opts) setDeliverableTypes(opts.deliverable_types || []);
         setLoading(false);
+
+        // Admins also need the client list and deliverable types, but only
+        // for the "New project" form - so the board is not held back for
+        // them. (No isCurrent() check: these are loaded once, and a quiet
+        // refresh finishing first must not throw them away.)
+        if (canManage) {
+          Promise.all([getClients(), getOptions()])
+            .then(([c, opts]) => {
+              if (c) setClients(c);
+              if (opts) setDeliverableTypes(opts.deliverable_types || []);
+            })
+            .catch(() => toast.error("Could not load clients for the New project form"));
+        }
 
         if (first.length >= FIRST_PAGE) {
           setLoadingMore(true);

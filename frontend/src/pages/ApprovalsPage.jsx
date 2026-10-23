@@ -15,6 +15,7 @@ import {
 import { APPROVALS } from "@/constants/testIds";
 import ApprovalsFilterModal from "@/components/approvals/ApprovalsFilterModal";
 import { useUndo } from "@/hooks/useUndo";
+import { consumePrefetch } from "@/services/prefetch";
 import { trackEvent } from "../analytics";
 import { COLUMNS, initialBoard, isEditableTarget } from "@/components/approvals/approvalsView";
 import { ApprovalsDetail } from "@/components/approvals/ApprovalsDetail";
@@ -72,9 +73,13 @@ export default function ApprovalsPage() {
     if (!silent) setLoading(true);
 
     try {
-      const data = await getApprovalBoard(currentUserId, {
-        visibility: "visible",
-      });
+      // The first open usually has this answer already on its way from boot
+      // (services/prefetch); quiet refreshes always ask again.
+      const loadBoard = () =>
+        getApprovalBoard(currentUserId, { visibility: "visible" });
+      const data = silent
+        ? await loadBoard()
+        : await consumePrefetch("approvals-board", loadBoard);
       lastFetchRef.current = Date.now();
       setBoard(data);
 

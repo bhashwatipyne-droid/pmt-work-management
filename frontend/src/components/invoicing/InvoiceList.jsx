@@ -6,6 +6,7 @@ import { Bone, SkeletonScreen } from "@/components/skeletons/Skeletons";
 
 import { hm } from "@/lib/planning/invoiceLogic";
 import { getInvoiceProjects } from "@/services/api";
+import { consumePrefetch } from "@/services/prefetch";
 import { Avatar, FIELD, LIST_COLS, STAT_VALUE, countPill, errText, rowOf, seg, segWrap } from "./invoicingShared";
 
 export function InvoiceList({ onOpen, refreshKey }) {
@@ -22,7 +23,8 @@ export function InvoiceList({ onOpen, refreshKey }) {
   useEffect(() => {
     let cancelled = false;
     setFailed(false);
-    getInvoiceProjects("ready")
+    // The first open usually has this on its way from boot (services/prefetch).
+    consumePrefetch("invoicing-ready", () => getInvoiceProjects("ready"))
       .then((res) => {
         if (cancelled) return;
         setCounts(res.counts);

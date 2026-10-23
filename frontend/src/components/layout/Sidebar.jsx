@@ -13,6 +13,7 @@ import {
 
 import { useUser } from "@/context/UserContext";
 import { useAccess } from "@/hooks/useAccess";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePinnedProjects } from "@/hooks/usePinnedProjects";
 import { LAYOUT } from "@/constants/testIds";
 import { STATUS_COLORS } from "@/constants/projectPalette";
@@ -61,6 +62,9 @@ export const Sidebar = ({ counts = { worksheet: 0, approvals: 0 } }) => {
     () => localStorage.getItem("pmt_sidebar_collapsed") === "true"
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // The sidebar is not shown on phones (the header carries the bell there), so
+  // it must not also run its own notification polling.
+  const isMobile = useIsMobile();
   const helpButtonRef = useRef(null);
 
   // Tell floating buttons (Quick log) where the sidebar ends, so they can rest
@@ -139,12 +143,12 @@ export const Sidebar = ({ counts = { worksheet: 0, approvals: 0 } }) => {
             <div className="flex-1 text-[15px] font-bold tracking-tight text-slate-900">
               PMT
             </div>
-            <NotificationCenter placement="sidebar" />
+            {!isMobile && <NotificationCenter placement="sidebar" />}
           </>
         )}
       </div>
 
-      {collapsed && (
+      {collapsed && !isMobile && (
         <div className="flex justify-center pb-1">
           <NotificationCenter placement="sidebar" />
         </div>

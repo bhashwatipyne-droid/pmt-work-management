@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { MobileNav } from "./MobileNav";
 import NotificationCenter from "@/components/notifications/NotificationCenter";
 import { useNavCounts } from "@/hooks/useNavCounts";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { CommandCenterProvider } from "./CommandCenter";
 import { getBreadcrumb, IS_MAC } from "./navItems";
 import { BulkReviewButton } from "./BulkReviewButton";
@@ -23,6 +24,7 @@ export const AppLayout = ({ children }) => {
   const { section, title } = getBreadcrumb(pathname);
   const { currentUser } = useUser();
   const counts = useNavCounts();
+  const isMobile = useIsMobile();
 
   return (
     <CommandCenterProvider>
@@ -54,9 +56,10 @@ export const AppLayout = ({ children }) => {
 
             <BulkReviewButton />
 
-            <div className="md:hidden">
-              <NotificationCenter placement="header" />
-            </div>
+            {/* Phones only. It used to be mounted on every screen size and just
+                hidden with CSS, so every page load and every poll asked for the
+                notifications twice (once here, once in the sidebar). */}
+            {isMobile && <NotificationCenter placement="header" />}
           </header>
 
           <main className="flex flex-1 flex-col overflow-hidden max-md:pb-[calc(56px+env(safe-area-inset-bottom))]">

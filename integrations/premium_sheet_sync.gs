@@ -78,6 +78,10 @@ function run_(dry) {
     });
   }
   Logger.log(JSON.stringify(totals) + '\n' + notes.join('\n'));
-  if (dry) SpreadsheetApp.getUi().alert('Dry run\n' + JSON.stringify(totals) + '\n\n' + notes.slice(0, 25).join('\n'));
+  if (dry) {
+    try { // popups only work when started from the sheet's PMT menu, not the editor's Run button
+      SpreadsheetApp.getUi().alert('Dry run\n' + JSON.stringify(totals) + '\n\n' + notes.slice(0, 25).join('\n'));
+    } catch (e) { /* the result is in the execution log */ }
+  }
   return totals;
 }

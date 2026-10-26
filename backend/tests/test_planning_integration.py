@@ -243,6 +243,33 @@ def test_a_matched_db_deliverable_is_linked_by_id(env):
     assert row["deliverable_name"] == ""
 
 
+def test_a_task_with_no_deliverable_in_pmt_takes_the_type_the_listener_read(env):
+    # "... > Carousel": no such deliverable exists, the listener read the type from the line
+    env.set_item(2, deliverable_type="Carousel", type_source="line", type_candidates=[])
+    card = env.get("/planning/my-tasks", "member-rb").json()[0]
+    assert env.post(f"/planning/my-tasks/{card['id']}/accept", "member-rb").status_code == 200
+    (row,) = env.work_items(creator_id="member-rb")
+    assert row["deliverable_type"] == "Carousel"
+    assert row["deliverable_id"] is None and row["deliverable_not_available"] is True
+    assert row["deliverable_name"] == ""
+
+
+def test_a_task_with_no_type_anywhere_stays_blank_as_before(env):
+    card = env.get("/planning/my-tasks", "member-rb").json()[0]
+    assert env.post(f"/planning/my-tasks/{card['id']}/accept", "member-rb").status_code == 200
+    (row,) = env.work_items(creator_id="member-rb")
+    assert not row["deliverable_type"]
+
+
+def test_a_matched_deliverable_keeps_its_own_type_over_the_listeners_reading(env):
+    env.set_item(1, deliverable_type="Carousel", type_source="line")
+    card = env.get("/planning/my-tasks", "manager-hp").json()[0]
+    assert env.post(f"/planning/my-tasks/{card['id']}/accept", "manager-hp").status_code == 200
+    (row,) = env.work_items(creator_id="manager-hp")
+    assert row["deliverable_id"] == PHARMA_DELIVERABLE
+    assert row["deliverable_type"] == "Newsletters"
+
+
 def test_accepting_twice_makes_one_row(env):
     card = env.get("/planning/my-tasks", "member-rb").json()[0]
     first = env.post(f"/planning/my-tasks/{card['id']}/accept", "member-rb").json()

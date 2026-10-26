@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from premium_sheet_sync import SheetRow, map_row, parse_month, project_name  # noqa: E402
+from premium_sheet_sync import SheetRow, map_row, parse_month, plan_update, project_name  # noqa: E402
 
 
 def test_months():
@@ -35,3 +35,25 @@ def test_skips():
     assert "skip" in map_row(SheetRow(month="2026-10-01", format="Podcast", title="x", status="Uploaded"))
     assert "skip" in map_row(SheetRow(month="2026-04-01", format="Carousel", title="x", status="Uploaded"))
     assert "skip" in map_row(SheetRow(month="Before April 2025", format="Reel", title="x", status="Uploaded"))
+
+
+def test_update_plan_rename_dates_and_never_status():
+    doc = {"name": "Old title", "type": "Carousel", "required_stages": ["Content", "Design"], "stage_schedule": {}}
+    m = map_row(SheetRow(month="2026-10-01", format="Carousel", title="New title", status="Under Design", content_date="2026-11-02"), lenient=True)
+    changes, notes = plan_update(doc, m)
+    assert changes["name"] == "New title"
+    assert changes["stage_schedule"] == {"Content": {"start_dt": None, "end_dt": "2026-11-02"}}
+    assert "current_stage" not in changes and "stage_status" not in changes and not notes
+
+
+def test_update_plan_type_needing_other_stages_is_left_alone():
+    doc = {"name": "T", "type": "Carousel", "required_stages": ["Content", "Design"], "stage_schedule": {}}
+    m = map_row(SheetRow(month="2026-10-01", format="Reel", title="T", status=""), lenient=True)
+    changes, notes = plan_update(doc, m)
+    assert "type" not in changes and notes
+
+
+def test_update_plan_no_change():
+    doc = {"name": "T", "type": "Carousel", "required_stages": ["Content", "Design"], "stage_schedule": {}}
+    m = map_row(SheetRow(month="2026-10-01", format="Carousel", title="T"), lenient=True)
+    assert plan_update(doc, m) == ({}, [])

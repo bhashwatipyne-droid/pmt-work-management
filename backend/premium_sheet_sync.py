@@ -42,6 +42,7 @@ try:
         _rollback_deliverable_batch,
     )
     from security import log_activity
+    from stage_rules import derive_deliverable_dates, normalize_stage_schedule
 except ImportError:  # run as backend.server from the repo root
     from backend.common import now_iso
     from backend.db_client import db
@@ -56,6 +57,7 @@ except ImportError:  # run as backend.server from the repo root
         _rollback_deliverable_batch,
     )
     from backend.security import log_activity
+    from backend.stage_rules import derive_deliverable_dates, normalize_stage_schedule
 
 logger = logging.getLogger("server")
 
@@ -108,6 +110,7 @@ _MONTHS = {m: i for i, m in enumerate(
 
 class SheetRow(BaseModel):
     row: Optional[int] = None
+    sheet_id: Optional[str] = None  # permanent id the script writes into the row
     month: Optional[Any] = None  # "Month & Year" cell: a date, or text like "Sept 26"
     format: Optional[str] = None
     title: Optional[str] = None
@@ -161,8 +164,11 @@ def row_key(project_id: str, title: str, dtype: str) -> str:
     return hashlib.sha1(f"{project_id}|{title.lower()}|{dtype.lower()}".encode()).hexdigest()
 
 
-def map_row(row: SheetRow) -> Dict[str, Any]:
-    """One sheet row -> {"skip": reason} or the pieces PMT needs."""
+def map_row(row: SheetRow, lenient: bool = False) -> Dict[str, Any]:
+    """One sheet row -> {"skip": reason} or the pieces PMT needs.
+
+    lenient=True is for a row already in PMT: its status is ignored (PMT owns
+    the workflow), so a title or date edit still goes through."""
     title = _clean(row.title)
     if not title:
         return {"skip": "no title"}
@@ -175,17 +181,20 @@ def map_row(row: SheetRow) -> Dict[str, Any]:
     if not fmt:
         return {"skip": f"format '{_clean(row.format)}' has no PMT type"}
     dtype, stages = fmt
-    status_key = _clean(row.status).lower()
-    if status_key not in STATUS_MAP:
-        return {"skip": f"status '{_clean(row.status)}' is not recognised"}
-    target = STATUS_MAP[status_key]
-    if target is None:
-        return {"skip": f"status '{_clean(row.status)}' is not imported"}
-    stage, finished = target
-    if stage == "LAST":
-        stage = stages[-1]
-    if stage not in stages:  # e.g. "Under Animation" on a Carousel
-        return {"skip": f"status '{_clean(row.status)}' does not fit a {dtype}"}
+    if lenient:
+        stage, finished = stages[0], False
+    else:
+        status_key = _clean(row.status).lower()
+        if status_key not in STATUS_MAP:
+            return {"skip": f"status '{_clean(row.status)}' is not recognised"}
+        target = STATUS_MAP[status_key]
+        if target is None:
+            return {"skip": f"status '{_clean(row.status)}' is not imported"}
+        stage, finished = target
+        if stage == "LAST":
+            stage = stages[-1]
+        if stage not in stages:  # e.g. "Under Animation" on a Carousel
+            return {"skip": f"status '{_clean(row.status)}' does not fit a {dtype}"}
     schedule = {}
     for stage_name, raw in (("Content", row.content_date), ("Design", row.design_date), ("Animate", row.animation_date)):
         day = parse_day(raw)
@@ -195,6 +204,33 @@ def map_row(row: SheetRow) -> Dict[str, Any]:
         "year": month[0], "month": month[1], "title": title, "type": dtype, "stages": stages,
         "current_stage": stage, "finished": finished, "stage_schedule": schedule,
     }
+
+
+def plan_update(doc: dict, m: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """What to change on an existing deliverable so it matches the sheet row.
+    Only the name, the type (when it needs no change of stages) and the stage
+    deadlines. Stage and status belong to PMT's own workflow and are never set
+    from the sheet. Returns (changes, notes)."""
+    changes: Dict[str, Any] = {}
+    notes: List[str] = []
+    if m["title"] != _clean(doc.get("name")):
+        changes["name"] = m["title"]
+    if m["type"] != _clean(doc.get("type")):
+        if set(m["stages"]) == set(doc.get("required_stages") or []):
+            changes["type"] = m["type"]
+        else:
+            notes.append(f"type '{m['type']}' needs different stages - change it in PMT")
+    stages = doc.get("required_stages") or m["stages"]
+    old = doc.get("stage_schedule") or {}
+    merged = {**old, **{k: v for k, v in m["stage_schedule"].items() if k in stages}}
+    if merged != old:
+        try:
+            clean = normalize_stage_schedule(stages, merged)
+            start, end = derive_deliverable_dates(stages, clean)
+            changes.update({"stage_schedule": clean, "start_dt": start, "end_dt": end})
+        except HTTPException:
+            notes.append("delivery dates are not valid - not updated")
+    return changes, notes
 
 
 def create_premium_sheet_router() -> APIRouter:
@@ -244,31 +280,72 @@ def create_premium_sheet_router() -> APIRouter:
         if len(payload.rows) > MAX_ROWS:
             raise HTTPException(status_code=400, detail=f"Send at most {MAX_ROWS} rows per call")
 
+        async with _keyed_lock("premium-sheet-sync-all"):
+            return await _run(payload)
+
+    async def _run(payload: SheetPayload) -> dict:
         client_id = await _client_id()
         report: List[dict] = []
+        ids = [r.sheet_id for r in payload.rows if r.sheet_id]
+        linked: Dict[str, dict] = {}
+        if ids:
+            for d in await db.deliverables.find({"sheet_id": {"$in": ids}}, {"_id": 0}).to_list(None):
+                linked[d["sheet_id"]] = d
+
         by_project: Dict[Tuple[int, int], List[Tuple[SheetRow, dict]]] = {}
+        updated = 0
         for row in payload.rows:
-            mapped = map_row(row)
+            doc = linked.get(row.sheet_id) if row.sheet_id else None
+            mapped = map_row(row, lenient=doc is not None)
             if "skip" in mapped:
                 # Blank rows are normal in the sheet; only report real ones.
                 if mapped["skip"] != "no title":
                     report.append({"row": row.row, "title": _clean(row.title), "result": "skipped", "reason": mapped["skip"]})
                 continue
+            if doc:  # already in PMT under this row's id: keep it in step
+                changes, notes = plan_update(doc, mapped)
+                if changes:
+                    if not payload.dry_run:
+                        changes["updated_at"] = now_iso()
+                        await db.deliverables.update_one({"id": doc["id"]}, {"$set": changes})
+                        await log_activity(
+                            collection_name="deliverable_activity_log", entity_id=doc["id"],
+                            entity_field="deliverable_id", action="DELIVERABLE_UPDATED", changed_by=CHANGED_BY,
+                            old_value={k: doc.get(k) for k in changes if k != "updated_at"},
+                            new_value={k: v for k, v in changes.items() if k != "updated_at"},
+                            metadata={"source": SOURCE, "sheet_row": row.row},
+                        )
+                    updated += 1
+                    report.append({"row": row.row, "title": mapped["title"], "result": "would_update" if payload.dry_run else "updated",
+                                   "changes": [k for k in changes if k in ("name", "type", "stage_schedule")], "notes": notes})
+                else:
+                    report.append({"row": row.row, "title": mapped["title"], "result": "exists", "notes": notes})
+                continue
             by_project.setdefault((mapped["year"], mapped["month"]), []).append((row, mapped))
 
         created = 0
+        linked_now = 0
         for (year, month), items in by_project.items():
             project = await _project_for(client_id, year, month, create=not payload.dry_run)
-            known = set()
+            known: Dict[Tuple[str, str], dict] = {}
             if project:
                 for d in await db.deliverables.find(
-                    {"project_id": project["id"]}, {"_id": 0, "name": 1, "type": 1}
+                    {"project_id": project["id"]}, {"_id": 0, "id": 1, "name": 1, "type": 1, "sheet_id": 1}
                 ).to_list(None):
-                    known.add((_clean(d.get("name")).lower(), _clean(d.get("type")).lower()))
+                    known[(_clean(d.get("name")).lower(), _clean(d.get("type")).lower())] = d
             specs, seen, pending = [], set(), []
             for row, m in items:
                 key = (m["title"].lower(), m["type"].lower())
-                if key in known or key in seen:
+                if key in known:
+                    # Same title and type already in PMT (loaded before ids existed):
+                    # remember this row's id on it so later edits flow through.
+                    if row.sheet_id and not known[key].get("sheet_id") and not payload.dry_run:
+                        await db.deliverables.update_one({"id": known[key]["id"]}, {"$set": {"sheet_id": row.sheet_id, "sheet_row": row.row}})
+                        known[key]["sheet_id"] = row.sheet_id
+                        linked_now += 1
+                    report.append({"row": row.row, "title": m["title"], "result": "exists"})
+                    continue
+                if key in seen:
                     report.append({"row": row.row, "title": m["title"], "result": "exists"})
                     continue
                 seen.add(key)
@@ -292,6 +369,8 @@ def create_premium_sheet_router() -> APIRouter:
                     doc["source"] = SOURCE
                     doc["sheet_row"] = row.row
                     doc["sheet_key"] = row_key(project["id"], m["title"], m["type"])
+                    if row.sheet_id:
+                        doc["sheet_id"] = row.sheet_id
                 try:
                     await _persist_deliverable_batch(docs, workflows, items_, activity)
                 except Exception:
@@ -306,6 +385,8 @@ def create_premium_sheet_router() -> APIRouter:
         return {
             "dry_run": payload.dry_run,
             "created": created,
+            "updated": updated,
+            "linked": linked_now,
             "exists": sum(1 for r in report if r["result"] == "exists"),
             "skipped": sum(1 for r in report if r["result"] == "skipped"),
             "report": report,

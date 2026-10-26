@@ -1283,6 +1283,14 @@ _meetings_router = create_meetings_router(
     now_iso=now_iso,
 )
 api_router.include_router(_meetings_router)
+
+# Premium Content planner sheet -> PMT deliverables (Apps Script pushes rows;
+# secured by the SHEET_SYNC_TOKEN env var, not a user login).
+try:
+    from premium_sheet_sync import create_premium_sheet_router
+except ImportError:  # run as backend.server from the repo root
+    from backend.premium_sheet_sync import create_premium_sheet_router
+api_router.include_router(create_premium_sheet_router())
 _calendar_sync_task: Optional["asyncio.Task"] = None
 
 app.include_router(api_router)

@@ -81,6 +81,7 @@ export default function WorkSheetPage() {
   const [filtersBySheet, setFiltersBySheet] = useSessionState("worksheet-filters", () => {
     const createFilters = () => ({
       ...emptyFilters,
+      client_ids: [],
       project_ids: [],
       deliverable_ids: [],
       stages: [],
@@ -527,6 +528,7 @@ export default function WorkSheetPage() {
         ...current,
         Master: {
           ...emptyFilters,
+          client_ids: [],
           project_ids: [],
           deliverable_ids: [],
           stages: [],

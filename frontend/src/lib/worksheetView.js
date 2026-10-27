@@ -27,6 +27,7 @@ export const emptyFilters = {
   date_from: "",
   date_to: "",
 
+  client_ids: [],
   project_ids: [],
   deliverable_ids: [],
   stages: [],
@@ -132,6 +133,7 @@ export const filterWorkItems = ({
   // project even though those words sit in different columns.
   const matchesSearch = makeMatcher(deferredSearch);
   const search = searchTokens(deferredSearch).length > 0;
+  const clientIds = filters.client_ids?.length ? new Set(filters.client_ids) : null;
   const projectIds = filters.project_ids?.length ? new Set(filters.project_ids) : null;
   const deliverableIds = filters.deliverable_ids?.length ? new Set(filters.deliverable_ids) : null;
   const deliverableTypes = filters.deliverable_types?.length ? new Set(filters.deliverable_types) : null;
@@ -189,6 +191,11 @@ export const filterWorkItems = ({
     if (filters.month && item.month !== filters.month) return false;
     if (month && (item.month || (item.work_date || "").slice(0, 7)) !== month) return false;
 
+    if (clientIds) {
+      // Same fallback WorkSheetRow uses: the row's own client, else its project's.
+      const rowClientId = item.client_id || projectById.get(item.project_id)?.client_id;
+      if (!rowClientId || !clientIds.has(rowClientId)) return false;
+    }
     if (projectIds && !matchesProjectFilter(item, projectIds)) return false;
     if (deliverableIds && !matchesDeliverableFilter(item, deliverableIds)) return false;
     if (deliverableTypes && !deliverableTypes.has(item.deliverable_type)) return false;
@@ -253,6 +260,7 @@ export const sortWorkItems = (filteredItems, sortDirection) => {
 
 export const countActiveFilters = (filters) =>
   Number(Boolean(filters.date_from || filters.date_to)) +
+  (filters.client_ids?.length || 0) +
   (filters.project_ids?.length || 0) +
   (filters.deliverable_ids?.length || 0) +
   (filters.stages?.length || 0) +

@@ -94,6 +94,10 @@ export function useWorksheetTableLookups({ items, users, options, projects, deli
   // underlying data only (not on `filters` or any per-render state), so
   // opening/using one column's filter never recomputes or re-renders the
   // others — same reasoning as the big filter panel's fix.
+  const clientFilterValues = useMemo(
+    () => (clients || []).map((c) => ({ value: c.id, label: c.name })),
+    [clients]
+  );
   const projectFilterValues = useMemo(
     () => [
       ...PROJECT_SPECIAL_OPTIONS,
@@ -145,6 +149,7 @@ export function useWorksheetTableLookups({ items, users, options, projects, deli
     nonAdminUsers,
     reviewerUsers,
     getCollabMemberIds,
+    clientFilterValues,
     projectFilterValues,
     deliverableFilterValues,
     stageFilterValues,

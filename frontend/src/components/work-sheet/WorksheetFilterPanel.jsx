@@ -17,6 +17,7 @@ const EMPTY = {
   month: "",
   date_from: "",
   date_to: "",
+  client_ids: [],
   project_ids: [],
   deliverable_ids: [],
   stages: [],

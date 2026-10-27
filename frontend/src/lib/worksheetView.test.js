@@ -70,3 +70,30 @@ test("csv: header, rows and excluded columns", () => {
   expect(rows[0]).toContain("Ben");
   expect(filename).toMatch(/^worksheet-design-2026-10-\d{4}/);
 });
+
+describe("client filter", () => {
+  const run = (client_ids) =>
+    filterWorkItems({
+      items: [
+        { id: "a", client_id: "c1", stage: "Content" },
+        { id: "b", project_id: "p2", stage: "Content" },
+        { id: "c", client_id: "c3", stage: "Content" },
+      ],
+      filters: { ...emptyFilters, client_ids },
+      deferredSearch: "",
+      month: "",
+      activeSheet: "Master",
+      clientNameById: new Map(),
+      projectById: new Map([["p2", { id: "p2", client_id: "c2" }]]),
+      userNameById: new Map(),
+      onlyMissing: false,
+      deliverableTypeCategories: {},
+    }).map((i) => i.id);
+
+  test("matches a row's own client or its project's client", () => {
+    expect(run(["c1", "c2"]).sort()).toEqual(["a", "b"]);
+  });
+  test("no selection shows everything", () => {
+    expect(run([]).length).toBe(3);
+  });
+});

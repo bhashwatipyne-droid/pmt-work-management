@@ -412,6 +412,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     nonAdminUsers,
     reviewerUsers,
     getCollabMemberIds,
+    clientFilterValues,
     projectFilterValues,
     deliverableFilterValues,
     stageFilterValues,
@@ -423,10 +424,11 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   } = useWorksheetTableLookups({ items, users, options, projects, deliverables, clients, collabIndex });
 
   // Maps a column to its filter field(s) in the `filters` object. Columns
-  // not listed here (Client, Deliverable Name, Deliverable Link, Version,
+  // not listed here (Deliverable Name, Deliverable Link, Version,
   // Time (min), Remarks) have no filter — their column menu only offers
   // Sort and Hide.
   const COLUMN_FILTER_KEYS = {
+    Client: "client_ids",
     Project: "project_ids",
     Deliverable: "deliverable_ids",
     Stage: "stages",
@@ -438,6 +440,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
   };
 
   const COLUMN_FILTER_VALUES = {
+    Client: clientFilterValues,
     Project: projectFilterValues,
     Deliverable: deliverableFilterValues,
     Stage: stageFilterValues,
@@ -1186,6 +1189,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     switch (column) {
       case "Date":
         return Boolean(filters?.date_from || filters?.date_to);
+      case "Client":
+        return Boolean(filters?.client_ids?.length);
       case "Project":
         return Boolean(filters?.project_ids?.length);
       case "Deliverable":

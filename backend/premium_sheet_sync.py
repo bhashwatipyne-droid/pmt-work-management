@@ -179,22 +179,25 @@ def map_row(row: SheetRow, lenient: bool = False) -> Dict[str, Any]:
         return {"skip": f"month is before {FROM_MONTH}"}
     fmt = FORMAT_MAP.get(_clean(row.format).lower())
     if not fmt:
-        return {"skip": f"format '{_clean(row.format)}' has no PMT type"}
+        return {"skip": f"format '{_clean(row.format)}' has no PMT type" if _clean(row.format) else "format is empty (pick one and the row is added)"}
     dtype, stages = fmt
     if lenient:
         stage, finished = stages[0], False
     else:
-        status_key = _clean(row.status).lower()
-        if status_key not in STATUS_MAP:
+        status_key = _clean(row.status).lower() or None
+        if status_key is None:  # status is optional: a new row starts at its first stage
+            stage, finished = stages[0], False
+        elif status_key not in STATUS_MAP:
             return {"skip": f"status '{_clean(row.status)}' is not recognised"}
-        target = STATUS_MAP[status_key]
-        if target is None:
-            return {"skip": f"status '{_clean(row.status)}' is not imported"}
-        stage, finished = target
-        if stage == "LAST":
-            stage = stages[-1]
-        if stage not in stages:  # e.g. "Under Animation" on a Carousel
-            return {"skip": f"status '{_clean(row.status)}' does not fit a {dtype}"}
+        if status_key is not None:
+            target = STATUS_MAP[status_key]
+            if target is None:
+                return {"skip": f"status '{_clean(row.status)}' is not imported"}
+            stage, finished = target
+            if stage == "LAST":
+                stage = stages[-1]
+            if stage not in stages:  # e.g. "Under Animation" on a Carousel
+                return {"skip": f"status '{_clean(row.status)}' does not fit a {dtype}"}
     schedule = {}
     for stage_name, raw in (("Content", row.content_date), ("Design", row.design_date), ("Animate", row.animation_date)):
         day = parse_day(raw)

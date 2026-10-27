@@ -57,3 +57,9 @@ def test_update_plan_no_change():
     doc = {"name": "T", "type": "Carousel", "required_stages": ["Content", "Design"], "stage_schedule": {}}
     m = map_row(SheetRow(month="2026-10-01", format="Carousel", title="T"), lenient=True)
     assert plan_update(doc, m) == ({}, [])
+
+
+def test_blank_status_is_allowed():
+    from premium_sheet_sync import SheetRow, map_row
+    m = map_row(SheetRow(month="2026-11-01", format="Reel", title="X", status=""))
+    assert m["current_stage"] == "Content" and not m["finished"] and m["type"] == "Reel / Short Video"

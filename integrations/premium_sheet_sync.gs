@@ -18,6 +18,7 @@ var ID_COL = 25; // column Y holds each row's permanent id (you can hide it)
 var COL = { month: 2, format: 4, title: 5, status: 8, content_date: 13, design_date: 17, animation_date: 21 };
 var BATCH = 400;
 var FROM_DATE = '2026-10-01'; // older months are already in PMT; do not send them
+var LOG_TAB = 'PMT Sync Log'; // one line per row added/updated, plus a summary per run
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('PMT')
@@ -33,8 +34,9 @@ function installTrigger() {
   ScriptApp.newTrigger('syncToPmt').timeBased().everyMinutes(15).create();
 }
 
-function dryRun() { return run_(true); }
-function syncToPmt() { return run_(false); }
+function dryRun() { return run_(true, 'dry run'); }
+// The 15-minute trigger passes an event object; the menu / Run button does not.
+function syncToPmt(e) { return run_(false, e ? 'auto' : 'manual'); }
 
 function cell_(v) {
   // Dates travel as yyyy-mm-dd text so time zones cannot shift them.
@@ -44,7 +46,32 @@ function cell_(v) {
   return v === '' ? null : v;
 }
 
-function run_(dry) {
+function log_(lines) {
+  if (!lines.length) return;
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(LOG_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(LOG_TAB);
+    sh.appendRow(['Time', 'Run', 'Row', 'Title', 'Result', 'Details']);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+  sh.getRange(sh.getLastRow() + 1, 1, lines.length, 6).setValues(lines);
+}
+
+function run_(dry, mode) {
+  var logLines = [], now = new Date();
+  try {
+    return runInner_(dry, mode, now, logLines);
+  } catch (err) {
+    logLines.push([now, mode, '', '', 'ERROR', String(err)]);
+    throw err;
+  } finally {
+    try { log_(logLines); } catch (e) { /* never let logging break a sync */ }
+  }
+}
+
+function runInner_(dry, mode, now, logLines) {
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty('PMT_URL'), token = props.getProperty('SYNC_TOKEN');
   if (!url || !token) throw new Error('Set PMT_URL and SYNC_TOKEN in Script properties.');
@@ -84,9 +111,19 @@ function run_(dry) {
       if (x.result === 'skipped' && !/is before|not a single month/.test(x.reason)) notes.push('Row ' + x.row + ': ' + x.reason);
       if (x.result === 'updated' || x.result === 'would_update') notes.push('Row ' + x.row + ' ' + x.result.replace('_', ' ') + ': ' + x.changes.join(', '));
       if (x.result === 'would_create') notes.push('Row ' + x.row + ' would be added to ' + x.project);
+      // Per-row log lines: only real changes (a skipped row would repeat every 15 minutes).
+      if (x.result === 'created') logLines.push([now, mode, x.row, x.title, 'ADDED', x.project]);
+      if (x.result === 'updated') logLines.push([now, mode, x.row, x.title, 'UPDATED', x.changes.join(', ')]);
     });
   }
   Logger.log(JSON.stringify(totals) + '\n' + notes.join('\n'));
+  // A summary line when something changed, or when a person ran it (so they see what was skipped and why).
+  if (totals.created || totals.updated || mode !== 'auto') {
+    var skippedNotes = notes.filter(function (n) { return /: (format|status|month)/.test(n); });
+    logLines.push([now, mode, '', '', 'RUN SUMMARY',
+      'added ' + totals.created + ', updated ' + totals.updated + ', already in PMT ' + totals.exists +
+      ', skipped ' + totals.skipped + (skippedNotes.length ? ' | ' + skippedNotes.slice(0, 15).join('; ') : '')]);
+  }
   if (dry) {
     try { // popups only work when started from the sheet's PMT menu, not the editor's Run button
       SpreadsheetApp.getUi().alert('Dry run\n' + JSON.stringify(totals) + '\n\n' + notes.slice(0, 25).join('\n'));

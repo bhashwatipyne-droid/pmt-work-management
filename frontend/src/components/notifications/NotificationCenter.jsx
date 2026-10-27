@@ -14,9 +14,13 @@ import {
   markNotificationRead,
 } from "@/services/api";
 
-// Push delivers new notifications instantly; this poll is only a safety net,
-// so it does not need to hit the server every 10 seconds from every open tab.
-const POLL_MS = 45000;
+// Push delivers new notifications instantly, and the list is refreshed when
+// the bell is opened, so this poll is only a slow safety net (e.g. for people
+// who have push turned off). Notices are not live: every open tab used to hit
+// the server every 45 seconds for a list that almost never changed.
+const POLL_MS = 6 * 60 * 60 * 1000;
+// Opening the bell refreshes the list, but not more than once in this window.
+const OPEN_REFRESH_GAP_MS = 60 * 1000;
 const FIRST_FETCH_DELAY_MS = 2500;
 
 const relativeTime = (iso) => {
@@ -108,6 +112,7 @@ export default function NotificationCenter({ placement = "header" }) {
   const [loading, setLoading] = useState(false);
   const [actionId, setActionId] = useState(null);
   const [tab, setTab] = useState("all");
+  const lastFetchAtRef = useRef(0);
   const previousIdsRef = useRef(new Set());
   const initializedRef = useRef(false);
   const soundedIdsRef = useRef(new Set());
@@ -118,6 +123,7 @@ export default function NotificationCenter({ placement = "header" }) {
     if (!currentUserId) return;
 
     if (!silent) setLoading(true);
+    lastFetchAtRef.current = Date.now();
 
     try {
       const next = await getNotifications(currentUserId);
@@ -163,7 +169,11 @@ export default function NotificationCenter({ placement = "header" }) {
     // a moment and lets the page's own data requests go first (on a small
     // backend instance these queue in front of the page otherwise).
     const first = window.setTimeout(fetchNotifications, FIRST_FETCH_DELAY_MS);
-    const stopPolling = startPolling(() => fetchNotifications({ silent: true }), POLL_MS);
+    const stopPolling = startPolling(
+      () => fetchNotifications({ silent: true }),
+      POLL_MS,
+      { minGapMs: POLL_MS }
+    );
 
     return () => {
       window.clearTimeout(first);
@@ -171,7 +181,7 @@ export default function NotificationCenter({ placement = "header" }) {
     };
   }, [fetchNotifications]);
 
-  // Push delivery is instant, the poll above is not (up to 10s). When a push
+  // Push delivery is instant, the poll above is not (hours). When a push
   // reaches this browser: chime now and refresh the list right away.
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -438,7 +448,14 @@ export default function NotificationCenter({ placement = "header" }) {
       <button
         type="button"
         data-testid="topbar-notifications"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          // Opening the bell is the "give me the latest" moment now that the
+          // background refresh is slow.
+          if (!open && Date.now() - lastFetchAtRef.current > OPEN_REFRESH_GAP_MS) {
+            fetchNotifications({ silent: true });
+          }
+          setOpen((current) => !current);
+        }}
         className={[
           "relative flex h-9 w-9 items-center justify-center",
           "rounded-lg text-slate-500 transition-colors",

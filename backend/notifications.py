@@ -312,7 +312,7 @@ async def _admin_users() -> list[dict]:
 
 
 # (user_id, dedupe_key) pairs this process has already written. The overdue scan
-# rebuilds the SAME notifications every minute; without this, every one of them
+# rebuilds the SAME notifications on every run; without this, every one of them
 # (thousands: overdue deliverables x recipients) is re-sent to MongoDB as an
 # upsert that matches and changes nothing - a steady stream of outbound
 # bandwidth. Only used by the overdue scan (skip_known=True). Worst case after a
@@ -585,6 +585,22 @@ async def _notify_new_project(
     await _upsert_notifications_batch(pending_notifications)
 
 
+def _scan_interval_from_env() -> timedelta:
+    try:
+        minutes = int(os.getenv("NOTIFICATION_SCAN_INTERVAL_MINUTES", "360"))
+    except ValueError:
+        minutes = 360
+    return timedelta(minutes=max(1, minutes))
+
+
+# How often the overdue-deadline and reminder scans may run. Both read every
+# user, project and deliverable, and any open tab's bell poll can trigger them,
+# so they used to cost the API a full scan every minute for notices almost nobody
+# watches live. New notices still reach people at once by push; this only sets
+# how often the scans look for newly overdue / stuck items. Override with the
+# NOTIFICATION_SCAN_INTERVAL_MINUTES environment variable (default 360 = 6h).
+NOTIFICATION_SCAN_INTERVAL = _scan_interval_from_env()
+
 _last_overdue_notification_check: Optional[datetime] = None
 
 
@@ -607,7 +623,7 @@ async def _ensure_overdue_notifications():
     check_now = datetime.now(timezone.utc)
     if (
         _last_overdue_notification_check
-        and check_now - _last_overdue_notification_check < timedelta(minutes=1)
+        and check_now - _last_overdue_notification_check < NOTIFICATION_SCAN_INTERVAL
     ):
         return
 
@@ -783,7 +799,7 @@ except ZoneInfoNotFoundError:  # tz database missing (e.g. Windows without tzdat
 # so nobody is pinged at midnight just because the first poll of the day landed.
 INACTIVITY_REMINDER_HOUR = 10
 APPROVAL_STUCK_DAYS = 2
-REMINDER_CHECK_INTERVAL = timedelta(minutes=5)
+REMINDER_CHECK_INTERVAL = NOTIFICATION_SCAN_INTERVAL
 
 APPROVAL_TYPE_LABELS = {
     "MANAGER": "manager",

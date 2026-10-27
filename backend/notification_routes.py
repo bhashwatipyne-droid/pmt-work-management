@@ -3,14 +3,27 @@
 Moved out of server.py unchanged; everything the routes use from the
 application is passed to create_notification_router().
 """
+import asyncio
 import hashlib
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 from fastapi import HTTPException, Request, Response
+from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
+
+
+# Names of deliverables for notifications that were saved before the name was
+# stored on them. Looking them up cost one extra database round trip on EVERY
+# bell request (7,000+ old notices were in that state), so the answer is
+# remembered for an hour - including "this deliverable no longer exists".
+_NAME_CACHE: dict = {}  # deliverable_id -> (expires_at_monotonic, name)
+_NAME_CACHE_TTL_SECONDS = 3600
+_NAME_CACHE_MAX = 5000
+_background_tasks: set = set()
 
 
 class PushTokenPayload(BaseModel):
@@ -35,6 +48,22 @@ def create_notification_router(
 ) -> APIRouter:
     router = APIRouter()
 
+    async def _save_deliverable_names(pairs):
+        """Best-effort write-back of looked-up names (runs after the response)."""
+        try:
+            await db.notifications.bulk_write(
+                [
+                    UpdateOne(
+                        {"id": notification_id, "deliverable_name": {"$in": [None, ""]}},
+                        {"$set": {"deliverable_name": name}},
+                    )
+                    for notification_id, name in pairs
+                ],
+                ordered=False,
+            )
+        except Exception:
+            pass
+
     @router.get("/notifications")
     async def list_notifications(request: Request, limit: int = 50):
         user = await get_acting_user(request)
@@ -57,23 +86,45 @@ def create_notification_router(
 
         # The bell opens the exact item a notification is about (the deliverable
         # in Approvals, its rows in the work sheet), and the work sheet finds it
-        # by name. Notifications saved before names were stored get theirs here,
-        # with one lookup for the whole list.
-        missing = {
-            row["deliverable_id"]
-            for row in rows
+        # by name. Notifications saved before names were stored get theirs here:
+        # looked up at most once an hour per deliverable (_NAME_CACHE), and the
+        # name is then written back so the notification never needs it again.
+        missing_rows = [
+            row for row in rows
             if row.get("deliverable_id") and not row.get("deliverable_name")
-        }
-        if missing:
-            names = {
-                d["id"]: d.get("name") or ""
-                for d in await db.deliverables.find(
-                    {"id": {"$in": list(missing)}}, {"_id": 0, "id": 1, "name": 1}
-                ).to_list(len(missing))
+        ]
+        if missing_rows:
+            now_m = time.monotonic()
+            unknown = {
+                row["deliverable_id"]
+                for row in missing_rows
+                if row["deliverable_id"] not in _NAME_CACHE
+                or _NAME_CACHE[row["deliverable_id"]][0] <= now_m
             }
-            for row in rows:
-                if row.get("deliverable_id") and not row.get("deliverable_name"):
-                    row["deliverable_name"] = names.get(row["deliverable_id"], "")
+            if unknown:
+                found = {
+                    d["id"]: d.get("name") or ""
+                    for d in await db.deliverables.find(
+                        {"id": {"$in": list(unknown)}}, {"_id": 0, "id": 1, "name": 1}
+                    ).to_list(len(unknown))
+                }
+                if len(_NAME_CACHE) > _NAME_CACHE_MAX:
+                    _NAME_CACHE.clear()
+                for deliverable_id in unknown:
+                    _NAME_CACHE[deliverable_id] = (
+                        now_m + _NAME_CACHE_TTL_SECONDS,
+                        found.get(deliverable_id, ""),
+                    )
+            write_back = []
+            for row in missing_rows:
+                name = _NAME_CACHE[row["deliverable_id"]][1]
+                row["deliverable_name"] = name
+                if name:
+                    write_back.append((row["id"], name))
+            if write_back:
+                task = asyncio.create_task(_save_deliverable_names(write_back))
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
 
         # Every open tab asks for this list every few seconds, and almost every
         # time nothing has changed. Tag the response with a hash of its content:

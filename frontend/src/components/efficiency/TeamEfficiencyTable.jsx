@@ -164,6 +164,9 @@ export const TeamEfficiencyTable = ({
           <p className="text-xs text-slate-500">Compare employee productivity and capacity</p>
         </div>
 
+        {/* With a single department (an employee only sees themselves, a manager
+            sees their own team) "All" and that department are the same list. */}
+        {departments.length > 1 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
@@ -191,6 +194,7 @@ export const TeamEfficiencyTable = ({
             </button>
           ))}
         </div>
+        )}
       </div>
 
       <button

@@ -13,7 +13,7 @@ export function DashboardHeader(ctx) {
         <div className="flex min-w-[240px] flex-1 flex-col gap-1">
           <h1 className="m-0 text-[28px] font-bold leading-9 text-[rgb(13,27,62)]">Home</h1>
           <p className="m-0 text-[14px] text-[rgb(84,100,144)] [text-wrap:pretty]">
-            {label} · {scopeNote} · {h.total} deliverables · {h.projectCount} projects started this month · {activeN} active
+            {label} · {scopeNote} · {h.total} deliverables · {h.projectCount} projects ({h.spilledProjectCount} spilled over from earlier months) · {activeN} active
           </p>
         </div>
 

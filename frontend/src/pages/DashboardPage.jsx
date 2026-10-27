@@ -147,7 +147,10 @@ export default function DashboardPage() {
   const kpis = [
     { label: "Active deliverables", value: activeN, den: h.total, denLabel: "total", rows: h.active, dot: C.brand500, go: () => setTab("risk") },
     { label: "On track", value: h.on.length, den: activeN, denLabel: "active", rows: h.on, dot: C.success500, go: () => setTab("risk") },
-    { label: "At risk", value: h.risk.length, den: activeN, denLabel: "active", rows: h.risk, dot: C.warning500, go: () => setTab("risk") },
+    {
+      label: "Spilled over", value: h.spilled.length, den: h.total, denLabel: "total", rows: h.spilled, dot: C.warning500, go: () => setTab("risk"),
+      note: "still open from earlier months",
+    },
     {
       label: "Delayed", value: h.delay.length, den: h.total, denLabel: "total", rows: h.delay, dot: C.error500, go: () => setTab("risk"),
       extra: delayDelta == null || delayDelta === 0 ? null : {

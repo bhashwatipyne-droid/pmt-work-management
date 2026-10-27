@@ -15,12 +15,15 @@ Definitions (keep in sync with frontend/src/pages/DashboardPage.jsx):
   no deadline  an open deliverable with no stage / deliverable end date uses its
                project's end date; if that is missing too it is reported as
                "unscheduled" instead of being dropped silently
-  month scope  only deliverables whose start_dt falls in the month ("new").
-               Everything on the page (cards, tabs, project counts) is built
-               from these. Side counts in month_summary, not part of scope:
+  month scope  deliverables whose start_dt falls in the month ("new") PLUS
+               the work spilled in from earlier months. Everything on the
+               page (cards, tabs, project counts) is built from these.
+               Spilled-over rows carry month_flags.spilled_in. Counts in
+               month_summary:
                  due          its due falls in the month
                  spilled in   started (or, with no start, due) before the month
-                              and still open (not finished)
+                              and still open (not finished), unless it is
+                              stale backlog (see below)
                  delayed      open and past due (due on or before month end)
                  spilling out started in the month and still open after it
                               (current month: open and due after the month)
@@ -364,13 +367,15 @@ def create_home_dashboard_router(
                 not finished and bool(due) and due < stale_before_s
                 and not is_new and not in_month
             )
+            # Work that started earlier and is still open belongs to this month
+            # too, whether or not it is also due in it.
             spilled_in = (
-                started_before and not in_month and not stale
+                started_before and not stale
                 and bool(start or due) and not finished
             )
-            # The month's scope is the work that STARTED in it. Due / spilled
-            # in / delayed / spilling out are side counts in month_summary.
-            scoped = is_new
+            # The month's scope is the work that STARTED in it plus everything
+            # still open that spilled in from earlier months.
+            scoped = is_new or spilled_in
             # Spilling out: started in the month, still open, and not due
             # until after it (or, for a past month, still open now).
             spilling_out = is_new and not finished and (

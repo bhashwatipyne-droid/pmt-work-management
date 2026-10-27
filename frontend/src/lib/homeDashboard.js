@@ -131,6 +131,8 @@ export function buildHome({ data, team, filters, userName }) {
   const billed = by("billed");
   const active = [...on, ...risk, ...delay];
   const total = scoped.length;
+  // Open work carried in from earlier months (the server tags it).
+  const spilled = scoped.filter((r) => r.month_flags?.spilled_in);
   const projectsOf = (rows) => new Set(rows.map((r) => r.project_id)).size;
 
   // ---- attention signals ----
@@ -256,8 +258,9 @@ export function buildHome({ data, team, filters, userName }) {
   };
 
   return {
-    total, active, on, risk, delay, ready, billed, projectsOf,
+    total, active, on, risk, delay, ready, billed, spilled, projectsOf,
     projectCount: projectsOf(scoped),
+    spilledProjectCount: projectsOf(spilled),
     signals, actions, next, nextCount, delayAll, delayTeams, portfolio, quality,
   };
 }

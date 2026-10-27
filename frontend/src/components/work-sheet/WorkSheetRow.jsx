@@ -96,6 +96,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
     onCheckboxRangeSelect,
     hiddenColumns = [],
     frozenLefts,
+    wrappedColumns = [],
     columnOrder = [],
     columnWidths = {},
     onRowDragStart,
@@ -518,6 +519,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       style: cellStyle(col),
       className: [
         "sheet-cell",
+        wrappedColumns.includes(COLUMN_NAMES[col]) && "sheet-cell-wrap",
         isCellActive(col) && "sheet-cell-active",
         isCellInFillRange(col) && "sheet-cell-fill-range",
         isCellInRangeSelection(col) && "sheet-cell-range-select",

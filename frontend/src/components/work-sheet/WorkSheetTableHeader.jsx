@@ -6,7 +6,7 @@ import { computeFrozenLefts, frozenStyle } from "@/lib/worksheetFreeze";
 import { toast } from "sonner";
 
 export function WorkSheetTableHeader(ctx) {
-  const { allSelected, allVisibleIds, clearColumnFilter, columnOrder, columnSort, columnWidths, draggedColumn, effectiveHiddenColumns, frozenLefts, frozenThrough, getHiddenColumnsAfter, getHiddenColumnsFromStart, gridTemplateColumns, handleColumnDrop, handleColumnResizeStart, headerRef, isColumnFiltered, onToggleSelectAll, renderColumnFilterControl, restoreHiddenColumns, setColumnSort, setDraggedColumn, setFrozenThrough, setHiddenColumns, visibleColumns } = ctx;
+  const { allSelected, allVisibleIds, clearColumnFilter, columnOrder, columnSort, columnWidths, draggedColumn, effectiveHiddenColumns, frozenLefts, frozenThrough, getHiddenColumnsAfter, getHiddenColumnsFromStart, gridTemplateColumns, handleColumnDrop, handleColumnResizeStart, headerRef, isColumnFiltered, onToggleSelectAll, renderColumnFilterControl, restoreHiddenColumns, setColumnSort, setDraggedColumn, setFrozenThrough, setHiddenColumns, visibleColumns, wrappedColumns = [], toggleColumnWrap } = ctx;
   return (
     <>
     {/* Frozen: the column titles stay at the top while the rows scroll. */}
@@ -131,6 +131,8 @@ export function WorkSheetTableHeader(ctx) {
                     setFrozenThrough(column);
                   }}
                   onUnfreeze={() => setFrozenThrough(null)}
+                  isWrapped={wrappedColumns.includes(column)}
+                  onToggleWrap={() => toggleColumnWrap(column)}
                   onHide={() =>
                     setHiddenColumns((current) =>
                       current.includes(column)

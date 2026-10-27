@@ -7,6 +7,7 @@ import {
   EyeOff,
   Filter,
   Snowflake,
+  WrapText,
   X,
 } from "lucide-react";
 
@@ -26,6 +27,8 @@ export const WorksheetColumnMenu = ({
   isFrozen = false,
   onFreeze,
   onUnfreeze,
+  isWrapped = false,
+  onToggleWrap,
   filterControl,
   onClearFilter,
 }) => {
@@ -33,6 +36,7 @@ export const WorksheetColumnMenu = ({
   const [menuPosition, setMenuPosition] = useState({
     top: 0,
     left: 0,
+    maxHeight: 520,
   });
 
   const ref = useRef(null);
@@ -44,35 +48,33 @@ export const WorksheetColumnMenu = ({
     if (!triggerRef.current) return;
 
     const rect = triggerRef.current.getBoundingClientRect();
+    // Anchor to the header cell, not the small arrow button, so the menu
+    // opens right under the column title and never covers it.
+    const headRect =
+      triggerRef.current.closest("th, [role='columnheader']")?.getBoundingClientRect() || rect;
     const menuWidth = 380;
-    const gap = 4;
+    const gap = 2;
     const padding = 8;
 
-    let left = rect.right - menuWidth;
-    let top = rect.bottom + gap;
-
-    // Keep menu inside the viewport horizontally
-    if (left < padding) {
-      left = padding;
-    }
-
+    // Like a spreadsheet: the menu's left edge lines up with the column's
+    // left edge and it opens towards the right. Only when that would run off
+    // the screen does it shift left.
+    let left = headRect.left;
     if (left + menuWidth > window.innerWidth - padding) {
       left = window.innerWidth - menuWidth - padding;
     }
+    left = Math.max(padding, left);
 
-    // Keep the menu on screen by sliding it up, never by flipping it above
-    // the header: flipping depended on where the header was at that moment,
-    // so any table re-render made the menu jump between the two spots.
-    const estimatedMenuHeight = 520;
-
-    top = Math.max(
-      padding,
-      Math.min(top, window.innerHeight - estimatedMenuHeight - padding)
-    );
+    // Always directly below the header. A short screen gets a scrollable menu
+    // (maxHeight) instead of the menu being pushed up over the column title.
+    const top = headRect.bottom + gap;
+    const maxHeight = Math.max(160, window.innerHeight - top - padding);
 
     // Same values -> same state object is not guaranteed, so skip no-op sets.
     setMenuPosition((current) =>
-      current.top === top && current.left === left ? current : { top, left }
+      current.top === top && current.left === left && current.maxHeight === maxHeight
+        ? current
+        : { top, left, maxHeight }
     );
   };
 
@@ -125,7 +127,7 @@ export const WorksheetColumnMenu = ({
       className="
         fixed z-[9999]
         w-[380px]
-        overflow-hidden
+        overflow-y-auto
         rounded-lg
         border border-slate-200
         bg-white
@@ -136,6 +138,7 @@ export const WorksheetColumnMenu = ({
       style={{
         top: `${menuPosition.top}px`,
         left: `${menuPosition.left}px`,
+        maxHeight: `${menuPosition.maxHeight}px`,
       }}
       onClick={(event) => event.stopPropagation()}
     >
@@ -199,6 +202,31 @@ export const WorksheetColumnMenu = ({
 
             {filterControl}
           </div>
+        </>
+      )}
+
+      {/* WRAP */}
+      {onToggleWrap && (
+        <>
+          <div className="my-1.5 border-t border-slate-100" />
+
+          <button
+            type="button"
+            data-testid="worksheet-column-wrap"
+            aria-pressed={isWrapped}
+            onClick={() => handleAction(onToggleWrap)}
+            className="
+              flex w-full items-center gap-3
+              px-3 py-2
+              text-left text-[13px]
+              hover:bg-slate-50
+            "
+          >
+            <WrapText
+              className={`h-4 w-4 shrink-0 ${isWrapped ? "text-indigo-600" : "text-slate-500"}`}
+            />
+            <span>{isWrapped ? "Unwrap text" : "Wrap text"}</span>
+          </button>
         </>
       )}
 

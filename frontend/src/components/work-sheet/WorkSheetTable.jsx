@@ -121,6 +121,31 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       // private mode: the freeze just lasts for this visit
     }
   }, [frozenThrough]);
+  // Columns whose text wraps onto several lines instead of being clipped with
+  // an ellipsis. Remembered per person, like column order and widths.
+  const wrappedColumnsKey = `worksheet_wrapped_columns_${currentUser.id}`;
+  const [wrappedColumns, setWrappedColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(wrappedColumnsKey) || "[]");
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(wrappedColumnsKey, JSON.stringify(wrappedColumns));
+    } catch {
+      // private mode: wrapping just lasts for this visit
+    }
+  }, [wrappedColumns, wrappedColumnsKey]);
+  const toggleColumnWrap = useCallback(
+    (column) =>
+      setWrappedColumns((current) =>
+        current.includes(column) ? current.filter((c) => c !== column) : [...current, column]
+      ),
+    []
+  );
   const excludedColumns = SHEET_EXCLUDED_COLUMNS[sheetKey] || NO_COLUMNS;
   // What is actually hidden on this tab: the person's own hidden columns plus
   // the ones this tab doesn't use.
@@ -1206,6 +1231,8 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
     fillState,
     frozenLefts,
     frozenThrough,
+    wrappedColumns,
+    toggleColumnWrap,
     getCollabMemberIds,
     getHiddenColumnsAfter,
     getHiddenColumnsFromStart,

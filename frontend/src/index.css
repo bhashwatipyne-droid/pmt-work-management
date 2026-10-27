@@ -212,6 +212,27 @@
     padding: 6px 4px;
   }
 
+  /* A column set to "Wrap text" (column menu): its text flows onto several
+     lines and the row grows to fit, instead of being clipped with an ellipsis. */
+  .sheet-cell-wrap .cell-plain,
+  .sheet-cell-wrap button > span.truncate {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+  }
+  .sheet-cell-wrap button.h-8 {
+    height: auto !important;
+    min-height: 2rem;
+    align-items: flex-start;
+  }
+  .sheet-cell-wrap textarea {
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    text-overflow: clip !important;
+    height: auto;
+  }
+
   /* Row gutter = drag grip + checkbox. Both cells share one background and
      the divider sits after the checkbox, so they read as a single column. */
   .row-num {

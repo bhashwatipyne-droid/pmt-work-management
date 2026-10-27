@@ -6,7 +6,7 @@ import { WorkSheetRow } from "./WorkSheetRow";
 import { avatarColorClasses } from "@/lib/avatarColors";
 
 export function WorkSheetTableBody(ctx) {
-  const { activeCell, bottomSpacerHeight, clearRowDrag, clientNameOf, clients, collabIndex, columnOrder, columnSort, columnWidths, currentUser, deliverablesByProject, displayEntries, displayRowNumberById, draggedRowIds, dropTarget, effectiveHiddenColumns, fillState, frozenLefts, getCollabMemberIds, gridTemplateColumns, groupBySafe, handleCellSelect, handleCheckboxClickCapture, handleCheckboxDragEnter, handleCheckboxDragStart, handleCheckboxRangeSelect, handleCheckboxToggle, handleExtendSelection, handleFillEnd, handleFillHover, handleFillStart, handleRowDragOver, handleRowDragStart, handleRowDrop, hiddenRowsBeforeById, nonAdminUsers, onAddCollaborators, onDelete, onDuplicateRow, onRequestHideRow, onUpdate, openQtyPanel, options, projectLookalikes, projects, qtyPanel, rangeSelection, recentProjectsByCreator, restoreHiddenRows, reviewerUsers, rowObserver, selectedSet, selection, sortedTableItems, toggleGroupCollapse, topSpacerHeight, totalCols, users, usersById, visibleItems } = ctx;
+  const { activeCell, bottomSpacerHeight, clearRowDrag, clientNameOf, clients, collabIndex, columnOrder, columnSort, columnWidths, currentUser, deliverablesByProject, displayEntries, displayRowNumberById, draggedRowIds, dropTarget, effectiveHiddenColumns, fillState, frozenLefts, getCollabMemberIds, gridTemplateColumns, groupBySafe, handleCellSelect, handleCheckboxClickCapture, handleCheckboxDragEnter, handleCheckboxDragStart, handleCheckboxRangeSelect, handleCheckboxToggle, handleExtendSelection, handleFillEnd, handleFillHover, handleFillStart, handleRowDragOver, handleRowDragStart, handleRowDrop, hiddenRowsBeforeById, nonAdminUsers, onAddCollaborators, onDelete, onDuplicateRow, onRequestHideRow, onUpdate, openQtyPanel, options, projectLookalikes, projects, qtyPanel, rangeSelection, recentProjectsByCreator, restoreHiddenRows, reviewerUsers, rowObserver, selectedSet, selection, sortedTableItems, toggleGroupCollapse, topSpacerHeight, totalCols, users, usersById, visibleItems, wrappedColumns } = ctx;
   return (
     <>
     <TableBody>
@@ -146,6 +146,7 @@ export function WorkSheetTableBody(ctx) {
                 onDuplicate={onDuplicateRow}
                 hiddenColumns={effectiveHiddenColumns}
                 frozenLefts={frozenLefts}
+                wrappedColumns={wrappedColumns}
                 columnOrder={columnOrder}
                 columnWidths={columnWidths}
                 onRowDragStart={handleRowDragStart}

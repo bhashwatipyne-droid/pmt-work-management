@@ -8,7 +8,7 @@ const mount = (props) => {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() => root.render(<table><thead><tr><th><WorksheetColumnMenu column="Client" {...props} /></tr></thead></table>));
+  act(() => root.render(<table><thead><tr><th><WorksheetColumnMenu column="Client" {...props} /></th></tr></thead></table>));
   act(() => host.querySelector("button[aria-label='Column options for Client']").click());
   return { host, root };
 };

@@ -58,6 +58,17 @@ FINISH_WORDS = {"finish", "finished", "complete", "completed", "done", "closed"}
 # common and unambiguous enough to just accept outright.
 TYPE_ALIASES = {
     "reel": "Reel / Short Video",
+    # A bare "Video" is ambiguous (Long Video, Reel / Short Video, Video
+    # Storyboard...), but in practice it means the long-form one.
+    "video": "Long Video",
+    "short video": "Reel / Short Video",
+    "short": "Reel / Short Video",
+    "shorts": "Reel / Short Video",
+    "poll": "Typeform / Polls / Quiz",
+    "quiz": "Typeform / Polls / Quiz",
+    "ppt": "Presentation (PPT) - Per Slide",
+    "presentation": "Presentation (PPT) - Per Slide",
+    "slide": "Presentation (PPT) - Per Slide",
     # "One Pager" and "Infographic" are one deliverable type now.
     "infographic": "One Pager / Infographic",
     "infographics": "One Pager / Infographic",
@@ -233,6 +244,35 @@ def _suggest_types(raw: str, canonical: Iterable[str], limit: int = 2) -> List[s
     return [name for _, name in scored[:limit]]
 
 
+def _infer_type(raw: str, canonical: Iterable[str]) -> Optional[str]:
+    """Closest real type when the text is clearly one of them, else None.
+
+    1. Every word typed is a word of exactly one type ("Storyboard" ->
+       "Video Storyboard"). If several types contain the words, it is ambiguous
+       and left for the user to fix.
+    2. A near-identical spelling with a clear winner ("Carosel" -> "Carousel").
+    """
+    names = list(canonical)
+    wanted = [_loose(w) for w in _key(raw).split()]
+    if not wanted:
+        return None
+    contained = [
+        name for name in names
+        if set(wanted) <= {_loose(w) for w in _key(name).split()}
+    ]
+    if len(contained) == 1:
+        return contained[0]
+    if contained:
+        return None
+    scored = sorted(
+        ((difflib.SequenceMatcher(None, _key(raw), _key(name)).ratio(), name) for name in names),
+        reverse=True,
+    )
+    if scored and scored[0][0] >= 0.85 and (len(scored) == 1 or scored[1][0] <= scored[0][0] - 0.1):
+        return scored[0][1]
+    return None
+
+
 def _split_list(text: str) -> List[str]:
     return [part.strip() for part in re.split(r"[,;|/\n]+", text) if part.strip()]
 
@@ -325,7 +365,15 @@ def validate_table(
         type_raw = _text(cell(row, "type"))
         type_value = ""
         if type_raw:
-            match = type_by_key.get(_key(type_raw)) or TYPE_ALIASES.get(_key(type_raw))
+            match = type_by_key.get(_key(type_raw))
+            if match is None:
+                alias = TYPE_ALIASES.get(_key(type_raw)) or TYPE_ALIASES.get(_loose(type_raw))
+                if alias and alias in type_by_key.values():
+                    match = alias
+                    if _key(type_raw) not in ("reel", "infographic", "infographics", "one pager", "one pagers", "onepager", "one pager infographic"):
+                        warnings.append(f'"{type_raw}" matched to "{alias}"')
+                elif alias:
+                    match = alias
             if match is None:
                 loose = type_by_loose.get(_loose(type_raw))
                 if loose:
@@ -336,6 +384,11 @@ def validate_table(
                 if squashed:
                     match = squashed
                     warnings.append(f'"{type_raw}" matched to "{squashed}"')
+            if match is None:
+                inferred = _infer_type(type_raw, type_by_key.values())
+                if inferred:
+                    match = inferred
+                    warnings.append(f'"{type_raw}" matched to "{inferred}"')
             if match is None:
                 hints = _suggest_types(type_raw, type_by_key.values())
                 errors.append(

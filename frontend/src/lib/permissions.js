@@ -9,7 +9,8 @@
 //   Work sheet         view only    edit         edit (own rows)
 //   Projects           view + edit  view only    view only
 //   Approvals          view + act   view + act   view only
-//   Efficiency         view only    view + edit  view only
+//   Efficiency         view all     view + edit  view own only
+//                                   (own department)
 //   Clients            view + edit  -            -
 //   Team               view + edit  -            -
 //   Planning           view         view         -

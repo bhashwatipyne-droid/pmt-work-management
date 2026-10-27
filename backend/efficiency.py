@@ -14,8 +14,10 @@ Permission model:
   - Employee activity targets (potential): MANAGER ONLY. Admins cannot create, edit, or
     delete these — only view them, same as any report. A manager may only set potential
     for employees in their own department.
-  - Reporting (overview / employee detail / activity breakdown / trend): admin sees the
-    whole org, manager sees their department, everyone else sees only themselves.
+  - Reporting (overview / employee detail / activity breakdown / trend), capacity and
+    potential reads: admin sees the whole org, manager sees their own department (and
+    themselves), everyone else sees only themselves. Team totals/averages are computed
+    from the rows the caller may see, so they never leak other teams' numbers.
 """
 
 import asyncio
@@ -288,20 +290,47 @@ def create_efficiency_router(
         return user
 
     async def _visible_users(user) -> List[dict]:
-        """Employees efficiency data is shown for.
+        """Employees whose efficiency data the caller may see.
 
-        Every signed-in role can see every (active, non-admin) employee's
-        efficiency, across all departments. What differs by role is who can
-        *change* things: capacity and potential are manager-only writes, and a
-        manager can only write for their own department (_assert_manages).
+        - admin: every (active, non-admin/hr) employee, all departments.
+        - manager: the employees of their own department, plus themselves.
+        - everyone else: only themselves.
+
+        A manager with no department set is treated like an employee (only
+        themselves) rather than matching every user that has no department.
         """
-        return await db.users.find(
-            {"role": {"$nin": ["admin", "hr"]}, "active": {"$ne": False}}, {"_id": 0}
-        ).to_list(1000)
+        base = {"role": {"$nin": ["admin", "hr"]}, "active": {"$ne": False}}
+        if user.role == "admin":
+            return await db.users.find(base, {"_id": 0}).to_list(1000)
+        if user.role == "manager" and user.department:
+            query = {**base, "$or": [{"department": user.department}, {"id": user.id}]}
+        else:
+            query = {**base, "id": user.id}
+        return await db.users.find(query, {"_id": 0}).to_list(1000)
+
+    async def _visible_ids(user) -> set:
+        return {u["id"] for u in await _visible_users(user)}
 
     async def _assert_can_view(user, target_user_id: str):
-        # Reading any employee's efficiency is open to every signed-in role.
-        return
+        """403 unless the caller may see this employee's efficiency (see
+        _visible_users). Reading your own is always allowed."""
+        if user.role == "admin" or user.id == target_user_id:
+            return
+        if user.role == "manager" and user.department:
+            target = await db.users.find_one(
+                {"id": target_user_id}, {"_id": 0, "department": 1}
+            )
+            if target and target.get("department") == user.department:
+                return
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view efficiency for yourself"
+            if user.role != "manager"
+            else "You can only view efficiency for your own department",
+        )
+
+    def _scope_rows(rows: List[dict], visible_ids: set) -> List[dict]:
+        return [r for r in rows if r["user_id"] in visible_ids]
 
     async def _assert_manages(manager, target_user_id: str, what: str = "potential"):
         """A manager may only change capacity / potential for members of their
@@ -531,15 +560,15 @@ def create_efficiency_router(
         return result
 
     async def _build_month(month: str, user, employee_id: Optional[str] = None) -> List[dict]:
-        rows = (await _build_months([month]))[month]
+        rows = _scope_rows((await _build_months([month]))[month], await _visible_ids(user))
         if employee_id:
             rows = [r for r in rows if r["user_id"] == employee_id]
         return rows
 
     # ---------- Monthly capacity ----------
-    # Reading is open to every role (scoped by _visible_users); writing is
-    # manager-only, matching activity potential below. Admins and members
-    # get a read-only Efficiency view.
+    # Reading is scoped by _visible_users (admin: everyone, manager: own
+    # department, member: self); writing is manager-only, matching activity
+    # potential below. Admins and members get a read-only Efficiency view.
 
     @router.get("/monthly-capacity")
     async def list_monthly_capacity(
@@ -829,8 +858,9 @@ def create_efficiency_router(
     async def efficiency_overview(request: Request, month: str = Query(...)):
         user = await get_acting_user(request)
         prev = _prev_months(month, 2)[0]
+        visible_ids = await _visible_ids(user)
         by_month = await _build_months([prev, month])
-        rows = by_month[month]
+        rows = _scope_rows(by_month[month], visible_ids)
 
         configured = [r for r in rows if r["has_capacity"]]
         total_core_hours = round(sum(r["core_hours"] for r in configured), 2)
@@ -860,7 +890,7 @@ def create_efficiency_router(
             ],
         }
 
-        prev_rows = by_month[prev]
+        prev_rows = _scope_rows(by_month[prev], visible_ids)
         prev_productivity = calculate_team_productivity(prev_rows)
         team_productivity = calculate_team_productivity(rows)
 
@@ -984,9 +1014,10 @@ def create_efficiency_router(
 
         out = []
         month_list = _prev_months(month, months)
+        visible_ids = await _visible_ids(user)
         by_month = await _build_months(month_list)
         for m in month_list:
-            rows = by_month[m]
+            rows = _scope_rows(by_month[m], visible_ids)
             out.append({
                 "month": m,
                 "team_productivity": calculate_team_productivity(rows),

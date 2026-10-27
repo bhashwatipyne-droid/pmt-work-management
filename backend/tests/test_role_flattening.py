@@ -4,7 +4,8 @@ Backend tests for the flattened role gating:
 - Projects: readable by every role; every write is admin-only.
 - Approvals: readable by every role (admins/members see the full board,
   read-only); approve / send back / move / hide are manager-only.
-- Efficiency: readable by every role; monthly capacity writes are manager-only.
+- Efficiency: admin reads everyone, manager their own department, member only
+  themselves; monthly capacity writes are manager-only.
 
 Same live-server style as the other suites (needs REACT_APP_BACKEND_URL).
 """
@@ -101,7 +102,7 @@ class TestApprovalsViewEveryoneActManager:
 # ---------------- Efficiency ----------------
 class TestEfficiencyViewEveryoneEditManager:
     @pytest.mark.parametrize("uid", [ADMIN, MGR, MEMBER])
-    def test_everyone_can_read_overview(self, uid):
+    def test_every_role_can_open_overview(self, uid):
         r = requests.get(f"{API}/efficiency/overview", params={"month": "2026-09"}, headers=H(uid))
         assert r.status_code == 200
 
@@ -113,14 +114,36 @@ class TestEfficiencyViewEveryoneEditManager:
         assert requests.delete(f"{API}/efficiency/monthly-capacity/nope", headers=H(uid)).status_code == 403
 
 
-class TestEfficiencyEveryoneSeesEveryone:
-    def test_all_roles_see_the_same_employees(self):
-        def names(uid):
-            r = requests.get(f"{API}/efficiency/overview", params={"month": "2026-09"}, headers=H(uid))
-            assert r.status_code == 200
-            return sorted(e["user_id"] for e in r.json()["employees"])
+class TestEfficiencyVisibilityScoped:
+    """Admin sees everyone, a manager sees their own department, a member sees
+    only themselves."""
 
-        assert names(ADMIN) == names(MGR) == names(MEMBER)
+    def _ids(self, uid):
+        r = requests.get(f"{API}/efficiency/overview", params={"month": "2026-09"}, headers=H(uid))
+        assert r.status_code == 200
+        return {e["user_id"] for e in r.json()["employees"]}
+
+    def test_member_sees_only_self(self):
+        assert self._ids(MEMBER) <= {MEMBER}
+
+    def test_manager_sees_only_own_department(self):
+        users = requests.get(f"{API}/users", headers=H(MGR)).json()
+        dept = {u["id"]: u.get("department") for u in users}
+        my_dept = dept[MGR]
+        assert all(dept.get(i) == my_dept or i == MGR for i in self._ids(MGR))
+
+    def test_admin_sees_at_least_what_a_manager_sees(self):
+        assert self._ids(MGR) <= self._ids(ADMIN)
+
+    def test_member_cannot_open_someone_elses_detail(self):
+        others = self._ids(ADMIN) - {MEMBER}
+        if not others:
+            pytest.skip("no other employees")
+        r = requests.get(
+            f"{API}/efficiency/employee/{next(iter(others))}",
+            params={"month": "2026-09"}, headers=H(MEMBER),
+        )
+        assert r.status_code == 403
 
     def test_manager_cannot_set_capacity_outside_own_department(self):
         overview = requests.get(

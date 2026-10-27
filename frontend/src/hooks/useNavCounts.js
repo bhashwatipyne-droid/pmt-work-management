@@ -13,9 +13,11 @@ import {
 // changed by someone else / another tab. Anything the current user does
 // themselves refreshes instantly via the countsBus event. It pauses while the
 // tab is hidden and refreshes when visible again (see startPolling).
-// 60s: the Approvals count is the heaviest call the app polls (it was
-// 2-3s on the free backend instance), so it runs less often.
-const COUNT_POLL_MS = 60000;
+// Every 5 minutes: the Approvals count is the heaviest call the app polls
+// (it was 2-3s on the free backend instance), and the badges are only a
+// safety net. Coming back to the tab refreshes them again after 2 minutes.
+const COUNT_POLL_MS = 5 * 60 * 1000;
+const COUNT_RETURN_GAP_MS = 2 * 60 * 1000;
 const FIRST_COUNT_DELAY_MS = 1200;
 
 // One copy of the poll for the whole shell: the desktop sidebar and the mobile
@@ -52,7 +54,9 @@ export function useNavCounts() {
     // (on a busy or waking backend those two extra queries otherwise queue in
     // front of the page).
     const firstFetch = window.setTimeout(fetchCounts, FIRST_COUNT_DELAY_MS);
-    const stopPolling = startPolling(fetchCounts, COUNT_POLL_MS);
+    const stopPolling = startPolling(fetchCounts, COUNT_POLL_MS, {
+      minGapMs: COUNT_RETURN_GAP_MS,
+    });
     const unsubscribe = onCountsRefresh(fetchCounts);
 
     return () => {

@@ -601,6 +601,53 @@ def _scan_interval_from_env() -> timedelta:
 # NOTIFICATION_SCAN_INTERVAL_MINUTES environment variable (default 360 = 6h).
 NOTIFICATION_SCAN_INTERVAL = _scan_interval_from_env()
 
+# ---------------- Expiry of old notifications ----------------
+# Read notices older than NOTIFICATION_READ_RETENTION_DAYS, and any notice
+# older than NOTIFICATION_RETENTION_DAYS, are deleted (at most once a day) so the
+# collection - and every bell query against it - stays small.
+#
+# Overdue-deadline and stuck-approval notices are NOT deleted: the scans rebuild
+# them from live data, so removing one that is still true would just recreate it
+# as a brand-new unread notice (and push it again).
+NOTIFICATION_READ_RETENTION_DAYS = 60
+NOTIFICATION_RETENTION_DAYS = 180
+_REBUILT_KEY_PATTERN = r"^(project-overdue|deliverable-overdue|approval-stuck):"
+_NOTIFICATION_CLEANUP_EVERY = timedelta(hours=24)
+_last_notification_cleanup: Optional[datetime] = None
+
+
+async def _expire_old_notifications():
+    """Delete expired notifications. Throttled to once a day, never raises."""
+    global _last_notification_cleanup
+
+    now = datetime.now(timezone.utc)
+    if _last_notification_cleanup and now - _last_notification_cleanup < _NOTIFICATION_CLEANUP_EVERY:
+        return
+    _last_notification_cleanup = now
+
+    try:
+        not_rebuilt = {"dedupe_key": {"$not": {"$regex": _REBUILT_KEY_PATTERN}}}
+        read_cutoff = (now - timedelta(days=NOTIFICATION_READ_RETENTION_DAYS)).isoformat()
+        any_cutoff = (now - timedelta(days=NOTIFICATION_RETENTION_DAYS)).isoformat()
+        result = await db.notifications.delete_many(
+            {
+                "$and": [
+                    not_rebuilt,
+                    {
+                        "$or": [
+                            {"read_at": {"$ne": None}, "created_at": {"$lt": read_cutoff}},
+                            {"created_at": {"$lt": any_cutoff}},
+                        ]
+                    },
+                ]
+            }
+        )
+        if result.deleted_count:
+            logger.info("Expired %s old notification(s)", result.deleted_count)
+    except Exception:
+        logger.exception("Notification expiry failed")
+
+
 _last_overdue_notification_check: Optional[datetime] = None
 
 

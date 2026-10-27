@@ -6,8 +6,10 @@ import { getBulkReviewCount } from "@/services/api";
 import { onCountsRefresh, refreshCounts } from "@/lib/countsBus";
 import { startPolling } from "@/lib/polling";
 
-// Not 15s like before: every poll is a request the backend has to answer.
-const BULK_POLL_MS = 60000;
+// Every poll is a request the backend has to answer, so this is a slow safety
+// net (5 minutes); the user's own actions refresh the count instantly.
+const BULK_POLL_MS = 5 * 60 * 1000;
+const BULK_RETURN_GAP_MS = 2 * 60 * 1000;
 
 const BulkReviewModal = lazy(() => import("../work-sheet/BulkReviewModal"));
 
@@ -44,7 +46,9 @@ export function BulkReviewButton() {
     // First count a few seconds after the page paints, after the page's own
     // requests and the sidebar's badge counts.
     const first = setTimeout(fetchCount, 4000);
-    const stopPolling = startPolling(fetchCount, BULK_POLL_MS);
+    const stopPolling = startPolling(fetchCount, BULK_POLL_MS, {
+      minGapMs: BULK_RETURN_GAP_MS,
+    });
     const unsubscribe = onCountsRefresh(fetchCount);
     return () => {
       clearTimeout(first);

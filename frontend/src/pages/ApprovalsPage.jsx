@@ -123,19 +123,26 @@ export default function ApprovalsPage() {
   useEffect(() => {
     if (!currentUser) return undefined;
 
-    const refresh = () => {
+    // The board is refreshed every few minutes, and when the person returns to
+    // the tab only if it has been a minute since the last refresh (it used to
+    // reload every 30s and on every focus, even a quick alt-tab).
+    let lastRefreshAt = Date.now();
+    const refresh = ({ minGapMs = 0 } = {}) => {
       if (document.hidden || busyRef.current) return;
+      if (Date.now() - lastRefreshAt < minGapMs) return;
+      lastRefreshAt = Date.now();
       fetchBoard({ silent: true });
     };
+    const onReturn = () => refresh({ minGapMs: 60000 });
 
-    const timer = window.setInterval(refresh, 30000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    const timer = window.setInterval(refresh, 3 * 60 * 1000);
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
 
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, currentUserId]);

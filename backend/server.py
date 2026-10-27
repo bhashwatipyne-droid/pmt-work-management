@@ -58,6 +58,7 @@ try:
         _APPROVAL_NOTICE_QUERY,
         _ensure_overdue_notifications,
         _ensure_reminder_notifications,
+        _expire_old_notifications,
         _fire_and_forget,
         _get_firebase_app,
         _keyed_lock,
@@ -264,6 +265,7 @@ except ImportError:
         _APPROVAL_NOTICE_QUERY,
         _ensure_overdue_notifications,
         _ensure_reminder_notifications,
+        _expire_old_notifications,
         _fire_and_forget,
         _get_firebase_app,
         _keyed_lock,
@@ -824,6 +826,7 @@ async def _run_notification_scans():
         # notifications endpoint down.
         logger.exception("Overdue notification scan failed")
     await _ensure_reminder_notifications()
+    await _expire_old_notifications()
 
 
 def _start_notification_scans():
@@ -1509,6 +1512,8 @@ async def run_startup_migrations():
         unique=True,
     )
     await db.notifications.create_index([("user_id", 1), ("read_at", 1)])
+    # The daily expiry (notifications._expire_old_notifications) filters on age.
+    await db.notifications.create_index([("created_at", 1)])
     await db.push_tokens.create_index("token", unique=True)
     await db.push_tokens.create_index("user_id")
     await db.approval_workflows.create_index("deliverable_id", unique=True)

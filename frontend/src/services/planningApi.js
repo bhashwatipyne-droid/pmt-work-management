@@ -18,13 +18,16 @@ import { toast } from "sonner";
 
 import { API } from "@/services/api";
 
-// New WhatsApp tasklists should show up within a minute. Polling only runs
+// New WhatsApp tasklists show up within a couple of minutes. Polling only runs
 // while the tab is visible (see tick). The task cards are polled by every
 // signed-in person all day, so they get the slower interval; the Planning page
 // is only open for managers who are looking at it.
-const TICK_MS = 10 * 1000;
+const TICK_MS = 30 * 1000;
+// Returning to the tab only re-fetches a scope that is at least this stale.
+const RETURN_GAP_MS = 30 * 1000;
 const CARDS_START_DELAY_MS = 3000;
-const SCOPE_MS = { plan: 20 * 1000, cards: 30 * 1000 };
+// my-tasks is one of the slowest calls (~1.2s), so it is not refreshed often.
+const SCOPE_MS = { plan: 60 * 1000, cards: 2 * 60 * 1000 };
 
 const listeners = new Set();
 
@@ -121,12 +124,15 @@ const runScope = (scope) => {
   REFRESH[scope]();
 };
 
-// force: the person just came back to the tab, so catch up straight away.
+// force: the person just came back to the tab, so catch up (unless the data
+// was fetched in the last RETURN_GAP_MS).
 const tick = (force) => {
   if (document.hidden) return;
   const now = Date.now();
   Object.keys(watchers).forEach((scope) => {
-    if (watchers[scope] > 0 && (force === true || now - lastRun[scope] >= SCOPE_MS[scope])) {
+    if (watchers[scope] > 0 && (force === true
+        ? now - lastRun[scope] >= RETURN_GAP_MS
+        : now - lastRun[scope] >= SCOPE_MS[scope])) {
       runScope(scope);
     }
   });
@@ -154,7 +160,8 @@ const startWatching = (scope) => {
 };
 
 // scope: "plan" (Planning page) or "cards" (task cards). It starts loading and
-// keeps the data fresh (every 10 seconds while visible, and when the tab regains focus) while the
+// keeps the data fresh (about every minute for the Planning page and every two
+// minutes for task cards while visible, and when the tab regains focus) while the
 // component is mounted.
 export const usePlanningStore = (scope) => {
   useEffect(() => {

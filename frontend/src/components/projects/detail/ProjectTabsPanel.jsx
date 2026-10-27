@@ -1,8 +1,8 @@
-import { ChevronRight, Clock, Plus, Search, Upload, X } from "lucide-react";
+import { ChevronRight, Clock, Download, Plus, Search, Upload, X } from "lucide-react";
 import { Avatar, Badge, CountPill, DeliverableNameInput, Dot, GroupHeader } from "@/components/projects/detail/parts";
 import { DELIVERABLE_STATUS, DELIV_GRID, HAIRLINE, HEAD_ROW, LOG_GRID, NEUTRAL_400, STAGE_DOT, WORK_STATUS_BADGE, fmtDay, fmtMin, fmtWindow, isOverdue, stageWindow, statusOf } from "@/components/projects/detail/projectDetailView";
 
-export function ProjectTabsPanel({ canLogWork, canManage, closedGroups, deliverableGroups, handleRename, isDeliv, loggedMinutes, openQuickLog, people, q, query, setDelivModal, setImportOpen, setQuery, setStageFilter, setTab, stageFilter, statsH, tab, toggleGroup, total, userName, workGroups, workItems, workLogTotal }) {
+export function ProjectTabsPanel({ canLogWork, canManage, closedGroups, deliverableGroups, handleExportDeliverables, handleRename, isDeliv, loggedMinutes, openQuickLog, people, q, query, setDelivModal, setImportOpen, setQuery, setStageFilter, setTab, stageFilter, statsH, tab, toggleGroup, total, userName, workGroups, workItems, workLogTotal }) {
   return (
     <>
     {/* Tabs panel */}
@@ -70,6 +70,19 @@ export function ProjectTabsPanel({ canLogWork, canManage, closedGroups, delivera
         )}
 
         <span className="flex-1" />
+
+        {isDeliv && (
+          <button
+            type="button"
+            data-testid="project-detail-export-deliverables-btn"
+            onClick={handleExportDeliverables}
+            disabled={deliverableGroups.length === 0}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[7px] bg-[rgb(245,246,248)] px-3.5 text-xs font-semibold leading-4 text-[rgb(74,88,120)] shadow-[inset_0_0_0_1px_rgb(239,240,242)] transition-colors hover:bg-[rgb(243,244,246)] focus:outline-none focus-visible:shadow-[inset_0_0_0_1px_rgb(239,240,242),0_0_0_3px_rgb(220,220,248)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </button>
+        )}
 
         {isDeliv && canManage && (
           <div className="flex gap-2">

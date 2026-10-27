@@ -31,7 +31,8 @@ import { ProjectDetailSkeleton } from "@/components/skeletons/Skeletons";
 import { ProjectHeader } from "@/components/projects/detail/ProjectHeader";
 import { ProjectStats } from "@/components/projects/detail/ProjectStats";
 import { ProjectTabsPanel } from "@/components/projects/detail/ProjectTabsPanel";
-import { BADGE, BRAND_500, DELIVERABLE_STATUSES, NEUTRAL_900, PROJECT_STATUS_DOT, STAGE_DOT, stageOf, statusOf } from "@/components/projects/detail/projectDetailView";
+import { BADGE, BRAND_500, DELIVERABLE_STATUS, DELIVERABLE_STATUSES, NEUTRAL_900, PROJECT_STATUS_DOT, STAGE_DOT, isOverdue, stageOf, stageWindow, statusOf } from "@/components/projects/detail/projectDetailView";
+import { downloadCsv, slugify, todayStamp } from "@/lib/exportCsv";
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
@@ -318,6 +319,44 @@ export default function ProjectDetailPage() {
   const toggleGroup = (key) =>
     setClosedGroups((c) => ({ ...c, [key]: !c[key] }));
 
+  // Export the deliverables currently listed (search and stage filter applied)
+  // as a CSV, in the same order and wording as the table.
+  const handleExportDeliverables = () => {
+    const listed = deliverableGroups.flatMap((g) => g.rows);
+    if (listed.length === 0) {
+      toast.info("No deliverables to export");
+      return;
+    }
+    const header = [
+      "Deliverable", "Type", "Current stage", "Workflow", "Status",
+      "Start", "Due", "Overdue",
+    ];
+    const rows = listed.map((d) => {
+      const win = stageWindow(d);
+      const flow = d.required_stages?.length ? d.required_stages : [d.current_stage];
+      const status = DELIVERABLE_STATUS[statusOf(d)] || DELIVERABLE_STATUS["Not Started"];
+      return [
+        d.name || "",
+        d.type || "",
+        stageOf(d),
+        flow.filter(Boolean).join(" > "),
+        status.label,
+        (win.start || "").slice(0, 10),
+        (win.end || "").slice(0, 10),
+        isOverdue(d) ? "Yes" : "No",
+      ];
+    });
+    const slug = slugify(project.name) || "project";
+    downloadCsv(`${slug}-deliverables-${todayStamp()}.csv`, header, rows);
+    trackEvent("project_deliverables_exported", {
+      project_id: projectId,
+      count: rows.length,
+    });
+    toast.success(
+      `Exported ${rows.length} deliverable${rows.length === 1 ? "" : "s"}`
+    );
+  };
+
   const statusDot = PROJECT_STATUS_DOT[project.status] || BRAND_500;
   const isDeliv = tab === "deliverables";
 
@@ -331,7 +370,7 @@ export default function ProjectDetailPage() {
 
         <ProjectStats done={done} loggedMinutes={loggedMinutes} pct={pct} segments={segments} setStageFilter={setStageFilter} setTab={setTab} stageFilter={stageFilter} statsRef={statsRef} tiles={tiles} total={total} />
 
-        <ProjectTabsPanel canLogWork={canLogWork} canManage={canManage} closedGroups={closedGroups} deliverableGroups={deliverableGroups} handleRename={handleRename} isDeliv={isDeliv} loggedMinutes={loggedMinutes} openQuickLog={openQuickLog} people={people} q={q} query={query} setDelivModal={setDelivModal} setImportOpen={setImportOpen} setQuery={setQuery} setStageFilter={setStageFilter} setTab={setTab} stageFilter={stageFilter} statsH={statsH} tab={tab} toggleGroup={toggleGroup} total={total} userName={userName} workGroups={workGroups} workItems={workItems} workLogTotal={workLogTotal} />
+        <ProjectTabsPanel canLogWork={canLogWork} canManage={canManage} closedGroups={closedGroups} deliverableGroups={deliverableGroups} handleExportDeliverables={handleExportDeliverables} handleRename={handleRename} isDeliv={isDeliv} loggedMinutes={loggedMinutes} openQuickLog={openQuickLog} people={people} q={q} query={query} setDelivModal={setDelivModal} setImportOpen={setImportOpen} setQuery={setQuery} setStageFilter={setStageFilter} setTab={setTab} stageFilter={stageFilter} statsH={statsH} tab={tab} toggleGroup={toggleGroup} total={total} userName={userName} workGroups={workGroups} workItems={workItems} workLogTotal={workLogTotal} />
       </div>
 
       {canLogWork && <QuickLogTrigger onOpen={openQuickLog} />}

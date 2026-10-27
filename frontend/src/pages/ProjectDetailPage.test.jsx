@@ -14,6 +14,11 @@ jest.mock("@/components/projects/ShareProjectModal", () => ({ __esModule: true, 
 jest.mock("@/components/ui/ConfirmDeleteModal", () => ({ __esModule: true, default: () => null }));
 jest.mock("@/components/work-sheet/QuickLogTrigger", () => ({ QuickLogTrigger: () => null }));
 jest.mock("@/analytics", () => ({ trackEvent: jest.fn() }));
+jest.mock("@/lib/exportCsv", () => ({
+  ...jest.requireActual("@/lib/exportCsv"),
+  downloadCsv: jest.fn(),
+  todayStamp: () => "2026-10-27",
+}));
 jest.mock("@/context/UserContext", () => ({
   useUser: () => ({
     currentUser: { id: "u1", role: "admin", name: "Asha" },
@@ -62,6 +67,38 @@ test("project page shows header, progress, and the deliverables list", async () 
   expect(host.querySelector('[data-testid="project-detail-stats"]')).not.toBeNull();
   expect(host.textContent).toContain("1 of 2 deliverables done");
   expect(Array.from(host.querySelectorAll("input")).some((i) => i.value === "Carousel")).toBe(true);
+
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("Export downloads the listed deliverables as a CSV", async () => {
+  const { downloadCsv } = require("@/lib/exportCsv");
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  await act(async () => {
+    root.render(<ProjectDetailPage />);
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  const btn = host.querySelector('[data-testid="project-detail-export-deliverables-btn"]');
+  expect(btn).not.toBeNull();
+  await act(async () => {
+    btn.click();
+  });
+
+  expect(downloadCsv).toHaveBeenCalledTimes(1);
+  const [filename, header, rows] = downloadCsv.mock.calls[0];
+  expect(filename).toBe("icici-contra-deliverables-2026-10-27.csv");
+  expect(header[0]).toBe("Deliverable");
+  expect(rows).toHaveLength(2);
+  const reel = rows.find((r) => r[0] === "Reel");
+  expect(reel[4]).toBe("Done");
+  const carousel = rows.find((r) => r[0] === "Carousel");
+  expect(carousel[3]).toBe("Content > Design");
 
   await act(async () => root.unmount());
   host.remove();

@@ -28,10 +28,13 @@ is assigned by guesswork.
     GET  /planning/review?status=...         needs_review (default) | declined
     POST /planning/review/{id}/resolve       {project_id, deliverable_id?, assignee_user_id?}
     POST /planning/review/{id}/reject        {reason?}
+    GET  /planning/learned-rules             what the matcher learned from those decisions
+    POST /planning/learned-rules/disabled    {id, disabled}   switch a rule off / on
 
 Collections used
     tasklist_items     read / update (written by the listener)
     nlp_match_logs     update only: records what the human decided
+    nlp_learned_rules  written by the listener from those decisions; only `disabled` is changed here
     work_items         insert, through the existing create_work_item()
     notifications      insert, through the existing notification helper
     users / clients / projects / deliverables   read only
@@ -129,6 +132,12 @@ class ResolvePayload(BaseModel):
     project_id: str
     deliverable_id: Optional[str] = None
     assignee_user_id: Optional[str] = None
+
+
+class RuleSwitchPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    disabled: bool
 
 
 class RejectPayload(BaseModel):
@@ -1191,6 +1200,45 @@ def create_planning_router(
         if result.modified_count != 1:
             raise HTTPException(status_code=409, detail="This task is not waiting for review")
         await log_human(item, "rejected", user, {"reason": (payload.reason or "")[:200]})
+        return {"ok": True}
+
+    # ------------------------------------------- managers: learned rules
+
+    @router.get("/learned-rules")
+    async def learned_rules(request: Request):
+        await planner(request)
+        rows = await db.nlp_learned_rules.find({}, {"_id": 0}).sort("updated_at", -1).to_list(500)
+        project_ids = [r["project_id"] for r in rows if r.get("project_id")]
+        client_ids = [r["client_id"] for r in rows if r.get("client_id")]
+        names = {
+            p["id"]: p.get("name")
+            async for p in db.projects.find({"id": {"$in": project_ids}}, {"_id": 0, "id": 1, "name": 1})
+        }
+        clients = {
+            c["id"]: c.get("name")
+            async for c in db.clients.find({"id": {"$in": client_ids}}, {"_id": 0, "id": 1, "name": 1})
+        }
+        return [
+            {
+                "id": r["id"],
+                "kind": r.get("kind"),
+                "example": r.get("example") or r.get("key"),
+                "project_name": names.get(r.get("project_id")),
+                "client_name": clients.get(r.get("client_id")),
+                "count": r.get("count", 1),
+                "disabled": bool(r.get("disabled")),
+            }
+            for r in rows
+        ]
+
+    @router.post("/learned-rules/disabled")
+    async def set_rule_disabled(payload: RuleSwitchPayload, request: Request):
+        await planner(request)
+        result = await db.nlp_learned_rules.update_one(
+            {"id": payload.id}, {"$set": {"disabled": bool(payload.disabled)}}
+        )
+        if result.matched_count != 1:
+            raise HTTPException(status_code=404, detail="Rule not found")
         return {"ok": True}
 
     return router

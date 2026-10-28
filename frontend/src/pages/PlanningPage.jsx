@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 import HeldTasksPanel from "@/components/planning/HeldTasksPanel";
+import LearnedRulesPanel from "@/components/planning/LearnedRulesPanel";
 import TaskPopover from "@/components/planning/TaskPopover";
 
 import { useUser } from "@/context/UserContext";
@@ -245,6 +246,7 @@ export default function PlanningPage() {
         </div>
 
         <HeldTasksPanel />
+        <LearnedRulesPanel />
 
         {/* Schedule */}
         <section style={{ ...CARD, overflow: "hidden", opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease" }}>

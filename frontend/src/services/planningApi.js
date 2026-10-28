@@ -231,6 +231,15 @@ export const resolveReviewItem = (id, body) => axios.post(`${API}/planning/revie
 
 export const rejectReviewItem = (id, reason = "") => axios.post(`${API}/planning/review/${id}/reject`, { reason });
 
+// What the matcher learned from those decisions (switch a rule off if it learned wrong).
+export const getLearnedRules = async () => {
+  const { data } = await axios.get(`${API}/planning/learned-rules`);
+  return Array.isArray(data) ? data : [];
+};
+
+export const setLearnedRuleDisabled = (id, disabled) =>
+  axios.post(`${API}/planning/learned-rules/disabled`, { id, disabled });
+
 export const dismissInsight = (key) => setState({ dismissed: { ...state.dismissed, [key]: true } });
 
 export const resetInsights = () => setState({ dismissed: {} });

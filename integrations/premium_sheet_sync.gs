@@ -6,7 +6,7 @@
  *
  * Setup (once): Extensions > Apps Script > paste this file >
  *   Project Settings > Script properties:
- *     PMT_URL    = https://pmt-backend-txlt.onrender.com/api   (no trailing slash)
+ *     PMT_URL    = https://pmt-backend-sg.onrender.com/api   (no trailing slash)
  *     SYNC_TOKEN = the same value as SHEET_SYNC_TOKEN on Render
  *   then run installTrigger() once and approve the permissions.
  * Use the "PMT" menu > "Dry run" to preview without writing.

@@ -11,11 +11,11 @@ test("ticks round the tallest bar up so it fits", () => {
   expect(chartTicks([{ active: 7 }]).ticks).toEqual([7, 4, 0]);
 });
 
-test("each bar carries its split, tooltip and current flag", () => {
+test("each bar carries its height, tooltip and current flag", () => {
   const [aug, sep] = chartBars(monthly, "2026-09");
   expect(aug.current).toBe(false);
   expect(sep.current).toBe(true);
   expect(sep.total).toBe(142);
-  expect(sep.tip).toBe("Sep · 142 active · 80 on track · 40 delayed · 22 at risk");
-  expect(parseFloat(sep.onH)).toBeCloseTo((80 / 150) * 100);
+  expect(sep.tip).toBe("Sep · 142 active");
+  expect(parseFloat(sep.h)).toBeCloseTo((142 / 150) * 100);
 });

@@ -2,13 +2,7 @@ import { ArrowRight } from "lucide-react";
 import { chartBars, chartTicks } from "@/lib/monthlyChart";
 import { C, CARD, EYEBROW } from "./dashboardTheme";
 
-const LEGEND = [
-  ["On track", C.success500],
-  ["Delayed", C.error500],
-  ["At risk (due in 2 days)", C.warning500],
-];
-
-// "At a glance, last 12 months": one bar per month, split by status.
+// "At a glance, last 12 months": one bar per month, sized by active deliverables.
 export function MonthlyChart({ monthly, month, setMonth, critCount, openActions }) {
   if (!monthly || monthly.length === 0) return null;
   const bars = chartBars(monthly, month);
@@ -18,16 +12,8 @@ export function MonthlyChart({ monthly, month, setMonth, critCount, openActions 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-[200px] flex-1 flex-col gap-0.5">
           <span className={EYEBROW}>At a glance · last 12 months</span>
-          <span className="text-[13px] text-[rgb(84,100,144)]">Bar height = active deliverables · hover a bar for its breakdown</span>
+          <span className="text-[13px] text-[rgb(84,100,144)]">Bar height = active deliverables</span>
         </div>
-        <span className="flex gap-3.5 text-[12px] text-[rgb(74,88,120)]">
-          {LEGEND.map(([name, color]) => (
-            <span key={name} className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: color }} />
-              {name}
-            </span>
-          ))}
-        </span>
         <button
           type="button"
           onClick={() => openActions(critCount ? "crit" : "all")}
@@ -58,11 +44,9 @@ export function MonthlyChart({ monthly, month, setMonth, critCount, openActions 
             >
               <span className={`text-[12px] tabular-nums ${b.current ? "font-bold text-[rgb(13,27,62)]" : "text-[rgb(84,100,144)]"}`}>{b.total}</span>
               <span
-                className={`flex h-[160px] w-full max-w-[44px] flex-col justify-end gap-0.5 shadow-[inset_0_-1px_0_rgb(234,238,244)] transition-opacity duration-100 ${b.current ? "" : "opacity-50 hover:opacity-100"}`}
+                className={`flex h-[160px] w-full max-w-[44px] flex-col justify-end shadow-[inset_0_-1px_0_rgb(234,238,244)] transition-opacity duration-100 ${b.current ? "" : "opacity-50 hover:opacity-100"}`}
               >
-                <span className="rounded-t" style={{ height: b.riskH, background: C.warning500 }} />
-                <span style={{ height: b.delayedH, background: C.error500 }} />
-                <span className="rounded-b-sm" style={{ height: b.onH, background: C.success500 }} />
+                <span className="rounded-t-sm" style={{ height: b.h, background: C.brand500 }} />
               </span>
               <span className={`text-[12px] ${b.current ? "font-bold text-[rgb(13,27,62)]" : "text-[rgb(84,100,144)]"}`}>{b.label}</span>
             </button>

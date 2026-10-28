@@ -16,9 +16,7 @@ export function chartBars(monthly, currentMonthKey) {
     label: monthShort(m.month),
     total: m.active || 0,
     current: m.month === currentMonthKey,
-    onH: h(m.on_track),
-    delayedH: h(m.delayed),
-    riskH: h(m.at_risk),
-    tip: `${monthShort(m.month)} · ${m.active} active · ${m.on_track} on track · ${m.delayed} delayed · ${m.at_risk} at risk`,
+    h: h(m.active),
+    tip: `${monthShort(m.month)} · ${m.active || 0} active`,
   }));
 }

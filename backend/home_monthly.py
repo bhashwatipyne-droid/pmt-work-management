@@ -2,7 +2,7 @@
 
 Each bar is exactly what Home shows when you pick that month: the same month
 scope and the same buckets as build_dashboard_home(), so the number on a bar is
-the "N active" in that month's header, and its colours are that month's
+the "N deliverables" in that month's header; the split below is that month's
 on track / delayed / at risk counts.
 
 Per deliverable the caller passes:
@@ -15,6 +15,7 @@ For a month:
     scope     started in the month, plus still-open work that started earlier
               (open work overdue by more than stale_days before the month is
               backlog and left out)
+    total     scope: what Home shows as "N deliverables" for that month (the bar height)
     active    scope, minus finished and ready-to-invoice work
     delayed   active and past due (due before today)
     at risk   active, not delayed, due within at_risk_days of today, not in review
@@ -61,7 +62,7 @@ def monthly_overview(
         start_s, end_s = m_start.isoformat(), m_end.isoformat()
         stale_before = (m_start - timedelta(days=stale_days)).isoformat()
 
-        active = delayed = at_risk = 0
+        total = active = delayed = at_risk = 0
         for f in facts:
             start, due = f.get("start"), f.get("due")
             finished = bool(f.get("finished"))
@@ -72,6 +73,7 @@ def monthly_overview(
             spilled_in = started_before and not stale and bool(start or due) and not finished
             if not (is_new or spilled_in):
                 continue
+            total += 1
             if finished or f.get("ready"):
                 continue
             active += 1
@@ -81,6 +83,7 @@ def monthly_overview(
                 at_risk += 1
         out.append({
             "month": m,
+            "total": total,
             "active": active,
             "delayed": delayed,
             "at_risk": at_risk,

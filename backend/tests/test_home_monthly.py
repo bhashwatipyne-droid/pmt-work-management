@@ -34,6 +34,7 @@ def test_a_month_counts_what_started_in_it_plus_open_spill_in():
     ]
     row = by_month(monthly_overview(facts, "2026-10", TODAY))["2026-10"]
     assert (row["active"], row["delayed"], row["at_risk"], row["on_track"]) == (4, 1, 1, 2)
+    assert row["total"] == 6  # the header's "N deliverables": active plus finished and ready
 
 
 def test_work_in_review_is_not_at_risk():

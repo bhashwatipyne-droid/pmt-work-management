@@ -3,7 +3,7 @@ import { monthShort } from "@/lib/homeDashboard";
 
 // Axis ticks: 0, half, and the top, rounded up so the tallest bar always fits.
 export function chartTicks(monthly) {
-  const max = Math.max(1, ...(monthly || []).map((m) => m.active || 0));
+  const max = Math.max(1, ...(monthly || []).map((m) => m.total || 0));
   const top = max <= 10 ? max : Math.ceil(max / 10) * 10;
   return { top, ticks: [top, Math.round(top / 2), 0] };
 }
@@ -14,9 +14,9 @@ export function chartBars(monthly, currentMonthKey) {
   return (monthly || []).map((m) => ({
     month: m.month,
     label: monthShort(m.month),
-    total: m.active || 0,
+    total: m.total || 0,
     current: m.month === currentMonthKey,
-    h: h(m.active),
-    tip: `${monthShort(m.month)} · ${m.active || 0} active`,
+    h: h(m.total),
+    tip: `${monthShort(m.month)} · ${m.total || 0} deliverables`,
   }));
 }

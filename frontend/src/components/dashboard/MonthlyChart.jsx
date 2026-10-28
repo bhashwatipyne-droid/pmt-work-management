@@ -12,7 +12,7 @@ export function MonthlyChart({ monthly, month, setMonth, critCount, openActions 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-[200px] flex-1 flex-col gap-0.5">
           <span className={EYEBROW}>At a glance · last 12 months</span>
-          <span className="text-[13px] text-[rgb(84,100,144)]">Bar height = active deliverables</span>
+          <span className="text-[13px] text-[rgb(84,100,144)]">Bar height = deliverables in the month</span>
         </div>
         <button
           type="button"

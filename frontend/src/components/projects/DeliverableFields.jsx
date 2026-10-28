@@ -12,26 +12,20 @@ const STAGE_ICONS = {
 
 // A deliverable's overall start/end date is always DERIVED from these
 // per-stage windows (earliest stage start, latest stage end) - it is never
-// entered directly, here or anywhere else. A stage with no window simply
-// isn't tracked for deadlines yet; that's fine, dates are optional per stage.
+// entered directly, here or anywhere else. Every selected stage must have both
+// a start and an end date.
 //
-// Validates a stage_schedule object the same way the backend does
-// (normalize_stage_schedule in backend/server.py), so a bad range is caught
-// before the request round-trip. Returns an error message, or null when
+// Validates a stage_schedule object before the request round-trip (the backend
+// still checks ranges in normalize_stage_schedule). Returns an error message, or null when
 // everything is fine.
 export const validateStageSchedule = (requiredStages, stageSchedule = {}) => {
   for (const stage of requiredStages || []) {
-    const window = stageSchedule[stage];
-    if (!window) continue;
-    const { start_dt: start, end_dt: end } = window;
-    if (!start && !end) continue;
-    // An end date (deadline) with no fixed start is fine - e.g. "due the
-    // 24th, starts whenever the previous stage finishes". A start with no
-    // deadline isn't a useful window, so that's still not allowed.
-    if (start && !end) {
-      return `The ${stage} stage has a start date but no end date (deadline) — add one, or remove the start date.`;
+    const { start_dt: start, end_dt: end } = stageSchedule[stage] || {};
+    // Every selected stage needs both dates.
+    if (!start || !end) {
+      return `The ${stage} stage needs both a start date and an end date.`;
     }
-    if (start && end && end < start) {
+    if (end < start) {
       return `The ${stage} stage's end date must be on or after its start date.`;
     }
   }

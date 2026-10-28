@@ -37,7 +37,7 @@ export function CreateProjectMetaFields(ctx) {
         </select>
       </label>
       <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-700">
-        Start date
+        Start date *
         <input
           type="date"
           data-testid={PROJECTS.fieldStart}
@@ -47,7 +47,7 @@ export function CreateProjectMetaFields(ctx) {
         />
       </label>
       <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-slate-700">
-        End date
+        End date *
         <input
           type="date"
           data-testid={PROJECTS.fieldEnd}

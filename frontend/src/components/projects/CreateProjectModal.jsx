@@ -275,8 +275,10 @@ export const CreateProjectModal = ({
   const handleSubmit = async () => {
     if (!canCreate || submitting) return;
 
-    // Start and end dates are optional; only check the order when both are set.
-    if (startDate && endDate && endDate < startDate) {
+    if (!startDate || !endDate) {
+      return toast.error("Project start date and end date are required");
+    }
+    if (endDate < startDate) {
       return toast.error("End date must be after start date");
     }
 

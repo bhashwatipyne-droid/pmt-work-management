@@ -71,6 +71,9 @@ test("create project modal: client, name checks, deliverable, submit", async () 
   await clickBtn(host, /^(Cancel|Discard)/);
   dump.push(host.innerHTML);
 
+  const dates = host.querySelectorAll('input[type="date"]');
+  await setVal(dates[0], "2026-11-01");
+  await setVal(dates[1], "2026-11-30");
   const submit = host.querySelector('[data-testid]:last-of-type');
   void submit;
   await clickBtn(host, /Create project/);

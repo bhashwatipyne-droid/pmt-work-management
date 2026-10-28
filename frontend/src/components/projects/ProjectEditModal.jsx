@@ -69,7 +69,12 @@ const ProjectEditModal = ({
       return;
     }
 
-    if (startDate && endDate && startDate > endDate) {
+    if (!startDate || !endDate) {
+      setError("Project start date and end date are required.");
+      return;
+    }
+
+    if (startDate > endDate) {
       setError("End date cannot be before start date.");
       return;
     }

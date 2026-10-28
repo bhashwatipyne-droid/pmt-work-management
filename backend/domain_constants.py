@@ -46,6 +46,7 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Changes": "Core",
     "Two Pager": "Core",
     "Teaser Short Video": "Core",
+    "Hiring and Interviews": "Core",
 
     # Non-Core
     "Project Briefing": "Non-Core",
@@ -54,7 +55,6 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Core Team / Content Team / CEO Discussions": "Non-Core",
     "Trainings / Committee / Reviews Meetings": "Non-Core",
     "SOP and Process Improvements - Documentation": "Non-Core",
-    "Hiring and Interviews": "Non-Core",
     "Follow Up (Over 10-15 mins)": "Non-Core",
 }
 

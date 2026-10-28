@@ -34,6 +34,7 @@ DELIVERABLE_TYPES = [
     "Changes",
     "Two Pager",
     "Teaser Short Video",
+    "Hiring and Interviews",
 
     # Non-Core
     "Project Briefing",
@@ -42,7 +43,6 @@ DELIVERABLE_TYPES = [
     "Core Team / Content Team / CEO Discussions",
     "Trainings / Committee / Reviews Meetings",
     "SOP and Process Improvements - Documentation",
-    "Hiring and Interviews",
     "Follow Up (Over 10-15 mins)",
 ]
 

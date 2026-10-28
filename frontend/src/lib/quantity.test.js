@@ -133,7 +133,7 @@ describe("Content rows on Core deliverable types", () => {
   });
 
   test("Non-Core activities, a missing type and other stages stay out", () => {
-    expect(qtyApplies(ppt({ deliverable_type: "Hiring and Interviews", work_category: "Non-Core" }))).toBe(false);
+    expect(qtyApplies(ppt({ deliverable_type: "Project Briefing", work_category: "Non-Core" }))).toBe(false);
     expect(qtyApplies(ppt({ deliverable_type: "" }))).toBe(false);
     expect(qtyApplies(ppt({ stage: "Review" }))).toBe(false);
   });
@@ -192,7 +192,7 @@ describe("typeChangePatch / pickDeliverablePatch", () => {
   const categories = {
     Carousel: "Core",
     Poster: "Core",
-    "Hiring and Interviews": "Non-Core",
+    "Project Briefing": "Non-Core",
     [PEER]: "Core",
   };
   const types = Object.keys(categories);
@@ -232,7 +232,7 @@ describe("typeChangePatch / pickDeliverablePatch", () => {
 
   test("moving a Content row with a quantity to a Non-Core type resets the quantity", () => {
     const item = row({ deliverable_type: "Carousel", work_category: "Core", quantity: 5, quantity_items: [null, null, null, null, null] });
-    expect(typeChangePatch(item, "Hiring and Interviews", categories)).toMatchObject({ quantity: 1, quantity_items: [] });
+    expect(typeChangePatch(item, "Project Briefing", categories)).toMatchObject({ quantity: 1, quantity_items: [] });
     expect(typeChangePatch(item, "Poster", categories)).not.toHaveProperty("quantity");
   });
 });

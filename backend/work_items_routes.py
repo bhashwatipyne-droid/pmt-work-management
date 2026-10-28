@@ -857,13 +857,6 @@ def create_work_items_router(
         if not raw_fields:
             return []
 
-        # Admins are view-only.
-        if user.role == "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Admins have view-only access to the Work Sheet",
-            )
-
         # Fetch all requested items in one query.
         existing_items = await db.work_items.find(
             {"id": {"$in": payload.ids}},
@@ -1124,7 +1117,8 @@ def create_work_items_router(
 
         for item in items:
             if user.role == "admin":
-                # Admins are view-only on the Work Sheet.
+                # Admins may delete any row.
+                allowed_ids.append(item["id"])
                 continue
 
             if user.role == "member":

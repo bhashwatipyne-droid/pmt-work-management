@@ -198,7 +198,8 @@ export default function WorkSheetPage() {
   const isManager = currentUser?.role === "manager";
   const isMember = currentUser?.role === "member";
 
-  // Admins are view-only on the Work Sheet. Managers/members can only add
+  // Admins can edit and delete every row but do not add rows (they have no
+  // department stage to add to). Managers/members can only add
   // rows to their own department's stage, or to Master (which resolves to
   // their own department's stage anyway).
   const canAddToActiveSheet =

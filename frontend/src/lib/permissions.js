@@ -6,7 +6,7 @@
 //
 //                      Admin        Manager      Member
 //   Home (dashboard)   view         -            -
-//   Work sheet         view only    edit         edit (own rows)
+//   Work sheet         edit all     edit         edit (own rows)
 //   Projects           view + edit  view only    view only
 //   Approvals          view + act   view + act   view only
 //   Efficiency         view all     view + edit  view own only

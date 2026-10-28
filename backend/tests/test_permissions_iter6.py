@@ -51,14 +51,15 @@ class TestAdminViewOnly:
         r = requests.post(f"{API}/work-items/bulk-create", json={"count": 2}, headers=H(ADMIN))
         assert r.status_code == 403
 
-    def test_admin_patch_blocked(self):
+    def test_admin_patch_allowed(self):
         # create as member first
         r = _create_work(MEM_CONTENT)
         assert r.status_code == 200, r.text
         item_id = r.json()["id"]
         created_ids.append(item_id)
         pr = requests.patch(f"{API}/work-items/{item_id}", json={"remarks": "admin edit"}, headers=H(ADMIN))
-        assert pr.status_code == 403
+        assert pr.status_code == 200, pr.text
+        assert pr.json()["remarks"] == "admin edit"
 
 
 # --- GET returns all rows for everyone ---

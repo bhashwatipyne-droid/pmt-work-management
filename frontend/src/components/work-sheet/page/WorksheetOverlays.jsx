@@ -48,9 +48,11 @@ export function WorksheetOverlays(ctx) {
           isAdmin ? undefined : (creatorIds) => handleAddCollaborators(selectedIds, creatorIds)
         }
         onHideRows={handleHideRows}
-        onInsertAbove={() => handleInsertRow("above")}
-        onInsertBelow={() => handleInsertRow("below")}
-        onDuplicate={handleBulkDuplicate}
+        // Admins edit and delete rows but cannot create them, so the buttons
+        // that add rows are not offered.
+        onInsertAbove={isAdmin ? undefined : () => handleInsertRow("above")}
+        onInsertBelow={isAdmin ? undefined : () => handleInsertRow("below")}
+        onDuplicate={isAdmin ? undefined : handleBulkDuplicate}
         onDelete={handleBulkDelete}
         onClear={() => setSelectedIds([])}
       />

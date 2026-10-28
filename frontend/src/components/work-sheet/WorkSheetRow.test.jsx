@@ -28,7 +28,7 @@ test("a row renders its cells with the item's values", async () => {
           <WorkSheetRow
             item={item}
             index={1}
-            currentUser={{ id: "u1", role: "admin", name: "Asha", department: "Content" }}
+            currentUser={{ id: "u9", role: "member", name: "Ben", department: "Content" }}
             users={[{ id: "u1", name: "Asha" }]}
             usersById={{ u1: { id: "u1", name: "Asha" } }}
             options={{ statuses: ["Not Started", "Done"], deliverable_types: [], work_categories: [] }}

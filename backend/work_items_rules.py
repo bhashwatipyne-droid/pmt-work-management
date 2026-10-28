@@ -708,8 +708,8 @@ async def scoped_update_fields(
     creator_role: Optional[str] = None,
 ) -> dict:
     """Apply role-based restrictions to a raw update payload. Raises HTTPException on violation."""
-    if user.role == "admin":
-        raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
+    # Admins can edit every row and every field on the Work Sheet; only members
+    # and managers are scoped to their own rows / department below.
     if user.role == "member":
         # A row with a named creator is theirs alone - a teammate (same
         # department, same stage) can no longer edit it, regardless of

@@ -1,6 +1,6 @@
 // Shared row-edit permission logic for the Work Sheet.
 //
-// Admin = view-only.
+// Admin = every row (edit and delete).
 // Member = own rows only.
 // Manager = own department's rows only.
 //
@@ -31,8 +31,8 @@ export const isRowLockedForMember = (currentUser, item, users = []) => {
 export const canEditWorkItem = (currentUser, item, users = []) => {
   if (!currentUser || !item) return false;
 
-  // Admins are view-only.
-  if (currentUser.role === "admin") return false;
+  // Admins can edit every row.
+  if (currentUser.role === "admin") return true;
 
   // Members can edit their own rows.
   if (currentUser.role === "member") {

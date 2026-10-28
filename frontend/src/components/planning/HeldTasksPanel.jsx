@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { useUser } from "@/context/UserContext";
@@ -130,8 +131,9 @@ export default function HeldTasksPanel() {
 
   if (!items || items.length === 0) return null;
   return (
-    <section data-testid="held-tasks" style={CARD}>
-      <div style={{ padding: "16px 16px 12px", display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+    <details data-testid="held-tasks" className="group" style={CARD}>
+      <summary style={{ padding: "16px 16px 12px", display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", cursor: "pointer" }}>
+        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[rgb(138,151,181)] transition-transform group-open:rotate-90" />
         <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 2 }}>
           <h2 style={{ margin: 0, fontSize: 15, lineHeight: "20px", fontWeight: 600, color: "var(--neutral-900)" }}>Held tasklist items</h2>
           <span style={{ fontSize: 12, lineHeight: "16px", color: "var(--neutral-500)" }}>
@@ -141,10 +143,10 @@ export default function HeldTasksPanel() {
         <span style={{ padding: "2px 8px", borderRadius: 9999, background: "var(--warning-100)", color: "rgb(146,64,14)", font: "600 11px/16px var(--font-ui)" }}>
           {items.length} waiting
         </span>
-      </div>
+      </summary>
       {items.map((item) => (
         <HeldRow key={item.id} item={item} projects={projects} onDone={done} />
       ))}
-    </section>
+    </details>
   );
 }

@@ -16,7 +16,10 @@ export function chartBars(monthly, currentMonthKey) {
     label: monthShort(m.month),
     total: m.total || 0,
     current: m.month === currentMonthKey,
-    h: h(m.total),
-    tip: `${monthShort(m.month)} · ${m.total || 0} deliverables`,
+    spilled: m.spilled || 0,
+    fresh: (m.total || 0) - (m.spilled || 0),
+    spilledH: h(m.spilled),
+    freshH: h((m.total || 0) - (m.spilled || 0)),
+    tip: `${monthShort(m.month)} · ${m.total || 0} deliverables · ${m.spilled || 0} spilled over · ${(m.total || 0) - (m.spilled || 0)} started in the month`,
   }));
 }

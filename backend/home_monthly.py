@@ -16,6 +16,7 @@ For a month:
               (open work overdue by more than stale_days before the month is
               backlog and left out)
     total     scope: what Home shows as "N deliverables" for that month (the bar height)
+    spilled   the part of total that started before the month and is still open
     active    scope, minus finished and ready-to-invoice work
     delayed   active and past due (due before today)
     at risk   active, not delayed, due within at_risk_days of today, not in review
@@ -62,7 +63,7 @@ def monthly_overview(
         start_s, end_s = m_start.isoformat(), m_end.isoformat()
         stale_before = (m_start - timedelta(days=stale_days)).isoformat()
 
-        total = active = delayed = at_risk = 0
+        total = spilled = active = delayed = at_risk = 0
         for f in facts:
             start, due = f.get("start"), f.get("due")
             finished = bool(f.get("finished"))
@@ -74,6 +75,8 @@ def monthly_overview(
             if not (is_new or spilled_in):
                 continue
             total += 1
+            if spilled_in and not is_new:
+                spilled += 1
             if finished or f.get("ready"):
                 continue
             active += 1
@@ -84,6 +87,7 @@ def monthly_overview(
         out.append({
             "month": m,
             "total": total,
+            "spilled": spilled,
             "active": active,
             "delayed": delayed,
             "at_risk": at_risk,

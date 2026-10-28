@@ -14,6 +14,14 @@ export function MonthlyChart({ monthly, month, setMonth, critCount, openActions 
           <span className={EYEBROW}>At a glance · last 12 months</span>
           <span className="text-[13px] text-[rgb(84,100,144)]">Bar height = deliverables in the month</span>
         </div>
+        <span className="flex gap-3.5 text-[12px] text-[rgb(74,88,120)]">
+          {[["Started in the month", C.brand500], ["Spilled over", C.warning500]].map(([name, color]) => (
+            <span key={name} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: color }} />
+              {name}
+            </span>
+          ))}
+        </span>
         <button
           type="button"
           onClick={() => openActions(critCount ? "crit" : "all")}
@@ -46,7 +54,8 @@ export function MonthlyChart({ monthly, month, setMonth, critCount, openActions 
               <span
                 className={`flex h-[160px] w-full max-w-[44px] flex-col justify-end shadow-[inset_0_-1px_0_rgb(234,238,244)] transition-opacity duration-100 ${b.current ? "" : "opacity-50 hover:opacity-100"}`}
               >
-                <span className="rounded-t-sm" style={{ height: b.h, background: C.brand500 }} />
+                <span className="rounded-t-sm" style={{ height: b.spilledH, background: C.warning500 }} />
+                <span style={{ height: b.freshH, background: C.brand500 }} />
               </span>
               <span className={`text-[12px] ${b.current ? "font-bold text-[rgb(13,27,62)]" : "text-[rgb(84,100,144)]"}`}>{b.label}</span>
             </button>

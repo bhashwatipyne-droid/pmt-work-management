@@ -1,8 +1,8 @@
 import { chartBars, chartTicks } from "./monthlyChart";
 
 const monthly = [
-  { month: "2026-08", active: 136, on_track: 100, delayed: 26, due_soon: 10 },
-  { month: "2026-09", active: 142, on_track: 80, delayed: 40, due_soon: 22 },
+  { month: "2026-08", active: 136, on_track: 100, delayed: 26, at_risk: 10 },
+  { month: "2026-09", active: 142, on_track: 80, delayed: 40, at_risk: 22 },
 ];
 
 test("ticks round the tallest bar up so it fits", () => {
@@ -16,6 +16,6 @@ test("each bar carries its split, tooltip and current flag", () => {
   expect(aug.current).toBe(false);
   expect(sep.current).toBe(true);
   expect(sep.total).toBe(142);
-  expect(sep.tip).toBe("Sep · 142 active · 80 on track · 40 delayed · 22 due soon");
+  expect(sep.tip).toBe("Sep · 142 active · 80 on track · 40 delayed · 22 at risk");
   expect(parseFloat(sep.onH)).toBeCloseTo((80 / 150) * 100);
 });

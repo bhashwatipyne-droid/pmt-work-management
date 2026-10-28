@@ -18,7 +18,7 @@ export function chartBars(monthly, currentMonthKey) {
     current: m.month === currentMonthKey,
     onH: h(m.on_track),
     delayedH: h(m.delayed),
-    soonH: h(m.due_soon),
-    tip: `${monthShort(m.month)} · ${m.active} active · ${m.on_track} on track · ${m.delayed} delayed · ${m.due_soon} due soon`,
+    riskH: h(m.at_risk),
+    tip: `${monthShort(m.month)} · ${m.active} active · ${m.on_track} on track · ${m.delayed} delayed · ${m.at_risk} at risk`,
   }));
 }

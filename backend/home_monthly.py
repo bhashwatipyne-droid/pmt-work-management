@@ -1,23 +1,27 @@
 """Month-by-month overview for the Home page chart ("At a glance - last 12 months").
 
-Each deliverable is reduced to four facts by build_dashboard_home():
-    start, due           ISO days (either may be missing)
-    finished             done, or inside a billed / completed project
-    completed_on         ISO day it was finished (the deliverable's last update;
-                         the app stores no separate completed-at), or None
+Each bar is exactly what Home shows when you pick that month: the same month
+scope and the same buckets as build_dashboard_home(), so the number on a bar is
+the "N active" in that month's header, and its colours are that month's
+on track / delayed / at risk counts.
 
-For every month the chart shows the work that was ACTIVE at the end of it:
-    active      started on or before the month end, and not finished by then
-                (open work that has been overdue for more than stale_days is
-                backlog and left out, like the month scope on the page)
-    delayed     active and past its due date
-                (current month: due before today; past months: due by month end)
-    due soon    active, not delayed, due within `next_days` of the reference day
-                (current month: today; past months: the month end)
-    on track    everything else that is active
+Per deliverable the caller passes:
+    start, due     ISO days (either may be missing); due is the current stage's deadline
+    finished       done, or inside a billed / completed project
+    ready          its project is "Ready for Invoice"
+    in_review      its stage is "Ready for Review" (so it is not "at risk")
 
-History is rebuilt from today's data, so an older month is an estimate: a
-deliverable that was re-dated or finished later is shown as it stands now.
+For a month:
+    scope     started in the month, plus still-open work that started earlier
+              (open work overdue by more than stale_days before the month is
+              backlog and left out)
+    active    scope, minus finished and ready-to-invoice work
+    delayed   active and past due (due before today)
+    at risk   active, not delayed, due within at_risk_days of today, not in review
+    on track  the rest of active
+
+"Today" is the same for every month, as on the page, so an older month shows
+what is still open and late today, not a snapshot of how it looked then.
 """
 from datetime import date, timedelta
 from typing import Dict, List, Optional
@@ -46,46 +50,40 @@ def monthly_overview(
     month: str,
     today: date,
     count: int = 12,
-    next_days: int = 7,
+    at_risk_days: int = 2,
     stale_days: int = 90,
 ) -> List[dict]:
-    this_month = today.strftime("%Y-%m")
+    today_s = today.isoformat()
+    risk_until = (today + timedelta(days=at_risk_days)).isoformat()
     out = []
     for m in months_back(month, count):
         m_start, m_end = _bounds(m)
-        end_s, start_s = m_end.isoformat(), m_start.isoformat()
-        current = m == this_month
-        ref = today if current else m_end
-        soon_until = (ref + timedelta(days=next_days)).isoformat()
+        start_s, end_s = m_start.isoformat(), m_end.isoformat()
         stale_before = (m_start - timedelta(days=stale_days)).isoformat()
 
-        active = delayed = soon = 0
+        active = delayed = at_risk = 0
         for f in facts:
             start, due = f.get("start"), f.get("due")
-            began = start or due
-            if not began or began > end_s:
+            finished = bool(f.get("finished"))
+            is_new = bool(start) and start_s <= start <= end_s
+            in_month = bool(due) and start_s <= due <= end_s
+            started_before = (start or due or "") < start_s and not is_new
+            stale = not finished and bool(due) and due < stale_before and not is_new and not in_month
+            spilled_in = started_before and not stale and bool(start or due) and not finished
+            if not (is_new or spilled_in):
                 continue
-            finished, done_on = bool(f.get("finished")), f.get("completed_on")
-            if finished:
-                # no completion date (billed project): treat it as closed on its due day
-                closed = done_on or due or began
-                if closed <= end_s:
-                    continue
-                if current:  # finished now, so not open this month
-                    continue
-            elif due and due < stale_before:
+            if finished or f.get("ready"):
                 continue
             active += 1
-            late = bool(due) and (due < today.isoformat() if current else due <= end_s)
-            if late:
+            if due and due < today_s:
                 delayed += 1
-            elif due and due <= soon_until:
-                soon += 1
+            elif due and due <= risk_until and not f.get("in_review"):
+                at_risk += 1
         out.append({
             "month": m,
             "active": active,
             "delayed": delayed,
-            "due_soon": soon,
-            "on_track": active - delayed - soon,
+            "at_risk": at_risk,
+            "on_track": active - delayed - at_risk,
         })
     return out

@@ -29,8 +29,8 @@ jest.mock("@/services/api", () => ({
       ],
       trend: [{ month: "2026-09" }, { month: "2026-10" }],
       monthly: [
-        { month: "2026-09", active: 10, on_track: 6, delayed: 3, due_soon: 1 },
-        { month: "2026-10", active: 12, on_track: 8, delayed: 3, due_soon: 1 },
+        { month: "2026-09", active: 10, on_track: 6, delayed: 3, at_risk: 1 },
+        { month: "2026-10", active: 12, on_track: 8, delayed: 3, at_risk: 1 },
       ],
       members: { tracked: [], stale: [] },
     }),

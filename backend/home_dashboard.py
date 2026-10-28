@@ -349,7 +349,8 @@ def create_home_dashboard_router(
             completed_on = _day(d.get("updated_at")) if done else None
             monthly_facts.append({
                 "start": _day(d.get("start_dt")), "due": due,
-                "finished": finished, "completed_on": completed_on,
+                "finished": finished, "ready": project["status"] == "Ready for Invoice",
+                "in_review": stage_status == "Ready for Review",
             })
 
             # Trends: late share of what was due in each month, first-pass
@@ -576,7 +577,7 @@ def create_home_dashboard_router(
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,
             # last 12 months for the Overview chart; see home_monthly.py
-            "monthly": monthly_overview(monthly_facts, month, today, 12, NEXT_DAYS, STALE_DAYS),
+            "monthly": monthly_overview(monthly_facts, month, today, 12, AT_RISK_DAYS, STALE_DAYS),
             "members": {
                 "tracked": [
                     {"id": u["id"], "name": u.get("name", ""), "department": u.get("department", "")}

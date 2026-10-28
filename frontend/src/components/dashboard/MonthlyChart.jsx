@@ -5,7 +5,7 @@ import { C, CARD, EYEBROW } from "./dashboardTheme";
 const LEGEND = [
   ["On track", C.success500],
   ["Delayed", C.error500],
-  ["Due in 7 days", C.warning500],
+  ["At risk (due in 2 days)", C.warning500],
 ];
 
 // "At a glance, last 12 months": one bar per month, split by status.
@@ -60,7 +60,7 @@ export function MonthlyChart({ monthly, month, setMonth, critCount, openActions 
               <span
                 className={`flex h-[160px] w-full max-w-[44px] flex-col justify-end gap-0.5 shadow-[inset_0_-1px_0_rgb(234,238,244)] transition-opacity duration-100 ${b.current ? "" : "opacity-50 hover:opacity-100"}`}
               >
-                <span className="rounded-t" style={{ height: b.soonH, background: C.warning500 }} />
+                <span className="rounded-t" style={{ height: b.riskH, background: C.warning500 }} />
                 <span style={{ height: b.delayedH, background: C.error500 }} />
                 <span className="rounded-b-sm" style={{ height: b.onH, background: C.success500 }} />
               </span>

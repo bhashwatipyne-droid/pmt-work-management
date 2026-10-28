@@ -1,45 +1,15 @@
 import { ChevronRight } from "lucide-react";
 import { MonthlyChart } from "./MonthlyChart";
 import { Badge, Block, Dot, Empty, Pill, SectionHead, StatTile } from "./dashboardParts";
-import { C, CARD, EYEBROW, NEXT_BADGE, ROW_DIVIDER, STAGE_DOT } from "./dashboardTheme";
+import { C, CARD, NEXT_BADGE, ROW_DIVIDER, STAGE_DOT } from "./dashboardTheme";
 import { addDays, fmtDay, fmtWeekday, pc } from "@/lib/homeDashboard";
 
 export function OverviewTab(ctx) {
-  const { cats, critCount, data, glance, goProject, h, kpis, label, month, nextDue, openActions, projects, setMonth, today, userName } = ctx;
+  const { cats, critCount, data, goProject, h, kpis, month, nextDue, openActions, projects, setMonth, today, userName } = ctx;
   return (
     <>
     <>
       <MonthlyChart monthly={data.monthly} month={month} setMonth={setMonth} critCount={critCount} openActions={openActions} />
-
-      <section aria-label="This month at a glance" className={`${CARD} flex flex-wrap items-center gap-x-8 gap-y-4 p-5`}>
-        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-3">
-          <span className={EYEBROW}>At a glance · {label}</span>
-          {glance.map((g) => (
-            <div key={g.lead} className="flex items-start gap-2.5 text-[15px] leading-[22px] text-[rgb(74,88,120)]">
-              <Dot color={g.dot} className="mt-[7px]" />
-              <span className="[text-wrap:pretty]">
-                <strong className="font-semibold text-[rgb(13,27,62)]">{g.lead}</strong> {g.rest}
-              </span>
-            </div>
-          ))}
-        </div>
-        {(data.unscheduled || []).length > 0 && (
-          <details className="basis-full text-[12px] text-[rgb(138,151,181)]">
-            <summary className="cursor-pointer">
-              {data.unscheduled.length} open deliverable{data.unscheduled.length === 1 ? "" : "s"} ha{data.unscheduled.length === 1 ? "s" : "ve"} no due date, on the deliverable or its project, so they are not counted.
-            </summary>
-            <ul className="mt-1.5 flex flex-col gap-1 pl-4">
-              {data.unscheduled.slice(0, 20).map((u) => (
-                <li key={u.id}>
-                  <button type="button" onClick={() => goProject(u.project_id)} className="text-left text-[rgb(84,100,144)] hover:underline">
-                    {u.name || u.id} · {u.project || "Project"}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </section>
 
       <Block title="Where are we?">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">

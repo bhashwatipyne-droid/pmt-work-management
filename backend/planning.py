@@ -341,10 +341,13 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
         verb = "Logged" if from_sheet else "Assigned"
         work_date = item.get("work_date") or today_iso
         status = plan_status(item, work_status.get(item.get("work_item_id") or ""))
-        # A row typed into the Work Sheet is a record of work done on its own
-        # date, so it stays on that day. Only assigned tasks carry over; rolling
-        # logged rows forward counted the same hours again on every later day.
-        rolled = status != "done" and work_date < today_iso and not from_sheet
+        # A Work Sheet row and a WhatsApp task are the same thing here, so the
+        # same rule decides both: anything not closed whose day has passed is
+        # carried forward to today as late. Closing the row (status Closed)
+        # makes it "done" and it stays on its own day, marked complete. The hours
+        # are spread over the days it spans, so a carried row is not counted
+        # again in full on every day.
+        rolled = status != "done" and work_date < today_iso
         created = _parse_dt(item.get("created_at"))
         created_day = created.astimezone(IST).date().isoformat() if created else None
 
@@ -1040,14 +1043,12 @@ def create_planning_router(
         week_start = monday.isoformat()
         rows = [
             r for r in rows
-            # finished work from before this week is history, not plan; so is
-            # anything typed into the Work Sheet on an earlier week's day
+            # finished work from before this week is history, not plan. That is
+            # true of a WhatsApp task and a Work Sheet row alike; one that is
+            # still open stays and is carried forward as late.
             if not (
                 (r.get("work_date") or "") < week_start
-                and (
-                    r.get("source") == SHEET_SOURCE
-                    or plan_status(r, statuses.get(r.get("work_item_id") or "")) == "done"
-                )
+                and plan_status(r, statuses.get(r.get("work_item_id") or "")) == "done"
             )
         ]
         tasks = build_plan_rows(rows, statuses, current)

@@ -100,6 +100,8 @@ AUTO_ACCEPT_RETRY_MINUTES = 15
 
 OPEN_STATUSES = ("pending", "accepted")
 WORK_ITEM_DONE = ("Closed", "Scrap")
+# What a task counts as when its Work Sheet row no longer exists (see work_status_map).
+MISSING_ROW_STATUS = "Closed"
 WORK_ITEM_SENT_BACK = ("Changes Requested", "Rework")
 WORK_ITEM_ACTIVE = ("Ongoing", "Ready for Review", "Changes Requested", "Rework", "On Hold")
 
@@ -316,6 +318,12 @@ def sheet_rows_as_items(
     return items, statuses
 
 
+def resolve_work_status(ids: List[str], found: Dict[str, str]) -> Dict[str, str]:
+    """Work Sheet status for each task's row. A row that no longer exists counts
+    as done (MISSING_ROW_STATUS), so its task is not rolled forward as late."""
+    return {i: found[i] if i in found else MISSING_ROW_STATUS for i in ids}
+
+
 def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetime) -> List[dict]:
     """tasklist_items (and Work Sheet rows, via sheet_rows_as_items) -> the rows
     the Planning screen's maths expects (lib/planning/planningLogic.js taskFromRow)."""
@@ -465,7 +473,12 @@ def create_planning_router(
         rows = await db.work_items.find(
             {"id": {"$in": ids}}, {"_id": 0, "id": 1, "status": 1}
         ).to_list(len(ids))
-        return {r["id"]: r.get("status") or "" for r in rows}
+        found = {r["id"]: r.get("status") or "" for r in rows}
+        # An accepted task whose Work Sheet row has since been deleted (for
+        # example cleared and re-entered as a dated backfill) has nothing left to
+        # do. Without this it looked unstarted for ever and was rolled forward
+        # onto every later day as late work.
+        return resolve_work_status(ids, found)
 
     async def apply_logged_minutes(item_list: List[dict]) -> None:
         """An accepted task becomes a Work Sheet row, and the time logged on that

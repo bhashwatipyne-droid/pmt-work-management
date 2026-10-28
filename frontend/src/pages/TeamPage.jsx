@@ -4,7 +4,17 @@ import { toast } from "sonner";
 import { Plus } from "lucide-react";
 
 import { useUser } from "@/context/UserContext";
-import { getUsers, getOptions } from "@/services/api";
+import { getUsers, getOptions, deleteUser } from "@/services/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { TEAM } from "@/constants/testIds";
 import { TeamListSkeleton } from "@/components/skeletons/Skeletons";
 import { AddMemberModal } from "@/components/team/AddMemberModal";
@@ -25,6 +35,8 @@ export default function TeamPage() {
   });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
+  const [removingMember, setRemovingMember] = useState(null);
+  const [removing, setRemoving] = useState(false);
 
   // "Add team member" from the ⌘K palette lands here with this flag set.
   const location = useLocation();
@@ -72,8 +84,23 @@ export default function TeamPage() {
     toast.success(`Saved ${updatedMember.name}`);
   };
 
+  const handleRemove = async () => {
+    if (!removingMember) return;
+    setRemoving(true);
+    try {
+      await deleteUser(currentUserId, removingMember.id);
+      setMembers((prev) => prev.filter((m) => m.id !== removingMember.id));
+      toast.success(`Removed ${removingMember.name}`);
+      setRemovingMember(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not remove this person");
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const roster = useMemo(
-    () => members.filter((m) => m.role !== "admin"),
+    () => members.filter((m) => m.role !== "admin" && !m.removed),
     [members]
   );
 
@@ -136,7 +163,7 @@ export default function TeamPage() {
         {loadingMembers ? (
           <TeamListSkeleton />
         ) : (
-          <TeamRosterTable roster={roster} setEditingMember={setEditingMember} />
+          <TeamRosterTable roster={roster} setEditingMember={setEditingMember} onRemoveMember={setRemovingMember} />
         )}
       </div>
 
@@ -146,6 +173,32 @@ export default function TeamPage() {
         onCreated={fetchAll}
         options={options}
       />
+
+      <AlertDialog open={Boolean(removingMember)} onOpenChange={(open) => !open && !removing && setRemovingMember(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removingMember?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              They will no longer be able to sign in and will disappear from the Team page and Planning.
+              Their past work, approvals and efficiency history stay as they are.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="team-remove-confirm"
+              disabled={removing}
+              onClick={(event) => {
+                event.preventDefault();
+                handleRemove();
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {removing ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <EditMemberModal
         member={editingMember}

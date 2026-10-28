@@ -14,6 +14,10 @@ class User(BaseModel):
     email: Optional[str] = ""
     department: Optional[str] = ""
     active: Optional[bool] = True
+    # Set by "Remove" on the Team page: the person has left. They keep their
+    # history (names on old work, approvals, efficiency) but cannot sign in and
+    # no longer appear on the Team page.
+    removed: Optional[bool] = False
 
 
 class UserCreate(BaseModel):

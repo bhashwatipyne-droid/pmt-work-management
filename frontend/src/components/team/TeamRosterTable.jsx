@@ -1,9 +1,9 @@
 import { ROLE_LABELS } from "@/lib/permissions";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 
 import { TEAM } from "@/constants/testIds";
 
-export function TeamRosterTable({ roster, setEditingMember }) {
+export function TeamRosterTable({ roster, setEditingMember, onRemoveMember }) {
   return (
         <div className="overflow-x-auto">
           <table
@@ -59,6 +59,19 @@ export function TeamRosterTable({ roster, setEditingMember }) {
                           <Pencil className="h-3.5 w-3.5" />
                           Edit
                         </button>
+
+                        {onRemoveMember && (
+                          <button
+                            type="button"
+                            data-testid={`team-remove-${m.id}`}
+                            onClick={() => onRemoveMember(m)}
+                            title={`Remove ${m.name}`}
+                            aria-label={`Remove ${m.name}`}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
 
                         <span
                           data-testid={`${TEAM.activeBadgePrefix}-${m.id}`}

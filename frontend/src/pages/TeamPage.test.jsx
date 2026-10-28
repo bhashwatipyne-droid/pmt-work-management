@@ -24,6 +24,7 @@ jest.mock("@/services/api", () => ({
   getOptions: () => Promise.resolve({ departments: ["Design", "Content"], roles: ["member", "manager"] }),
   createUser: () => Promise.resolve({}),
   updateUser: () => Promise.resolve({}),
+  deleteUser: (...args) => { globalThis.__deleted = args; return Promise.resolve({ ok: true }); },
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -54,4 +55,24 @@ test("team page renders roster and both modals", async () => {
 
   await act(async () => root.unmount());
   host.remove();
+});
+
+
+test("the dustbin removes a member after confirming", async () => {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  await act(async () => { root.render(<TeamPage />); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+  expect(host.textContent).toContain("Ben Lee");
+
+  await act(async () => { host.querySelector("[data-testid='team-remove-u2']").click(); });
+  const confirm = document.querySelector("[data-testid='team-remove-confirm']");
+  expect(confirm).not.toBeNull();
+  await act(async () => { confirm.click(); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+
+  expect(globalThis.__deleted).toEqual(["u1", "u2"]);
+  expect(host.textContent).not.toContain("Ben Lee");
+  await act(async () => root.unmount());
 });

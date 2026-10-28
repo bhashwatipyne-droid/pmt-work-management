@@ -460,6 +460,13 @@ export const createUser = (userId, payload) =>
     })
     .then((r) => r.data);
 
+export const deleteUser = (userId, id) =>
+  axios
+    .delete(`${API}/users/${id}`, {
+      headers: authHeaders(userId),
+    })
+    .then((r) => r.data);
+
 export const updateUser = (userId, id, payload) =>
   axios
     .patch(`${API}/users/${id}`, payload, {

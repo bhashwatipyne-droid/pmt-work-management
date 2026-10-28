@@ -3,11 +3,14 @@
     GET   /users            any logged-in user
     POST  /users            admin: new login (role, department, password >= 8)
     PATCH /users/{id}       admin: edit; blank password keeps the old one
+    DELETE /users/{id}      admin: remove someone who has left (deactivates the
+                            login and hides them from Team; history is kept)
 
 Moved out of server.py unchanged. The User models stay in server.py (every
 module uses them) and are passed in with the other helpers.
 """
 import uuid
+from datetime import datetime, timezone
 from typing import Awaitable, Callable, List
 
 from fastapi import APIRouter, HTTPException, Request
@@ -210,5 +213,29 @@ def create_users_router(
         )
 
         return User(**updated)
+
+    @router.delete("/users/{user_id}")
+    async def remove_user(user_id: str, request: Request):
+        acting = await require_admin(request)
+        existing = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "role": 1})
+        if not existing:
+            raise HTTPException(status_code=404, detail="User not found")
+        if existing["id"] == getattr(acting, "id", None):
+            raise HTTPException(status_code=400, detail="You cannot remove your own account")
+        if existing.get("role") == "admin":
+            raise HTTPException(status_code=400, detail="Admin accounts cannot be removed here")
+
+        # Not a hard delete: their name is on old work items, approvals and
+        # efficiency history, which would all turn into "Unknown".
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {
+                "active": False,
+                "removed": True,
+                "removed_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        _invalidate_cached_user(user_id)
+        return {"ok": True, "id": user_id}
 
     return router

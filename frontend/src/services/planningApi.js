@@ -219,6 +219,18 @@ export const reassignTask = async (taskId, to) => {
   }
 };
 
+// ---------------- held tasklist items (needs_review) ----------------
+// Lines the listener could not place with confidence. A manager picks the project
+// (and deliverable) here, or rejects the line.
+export const getReviewQueue = async () => {
+  const { data } = await axios.get(`${API}/planning/review`);
+  return Array.isArray(data) ? data : [];
+};
+
+export const resolveReviewItem = (id, body) => axios.post(`${API}/planning/review/${id}/resolve`, body);
+
+export const rejectReviewItem = (id, reason = "") => axios.post(`${API}/planning/review/${id}/reject`, { reason });
+
 export const dismissInsight = (key) => setState({ dismissed: { ...state.dismissed, [key]: true } });
 
 export const resetInsights = () => setState({ dismissed: {} });

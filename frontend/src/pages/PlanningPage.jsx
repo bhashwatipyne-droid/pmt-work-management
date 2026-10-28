@@ -1,10 +1,14 @@
 import { useMemo, useState } from "react";
 import { Hourglass, MessageSquare, Shuffle, UserPlus, X, Check } from "lucide-react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+
+import HeldTasksPanel from "@/components/planning/HeldTasksPanel";
+import TaskPopover from "@/components/planning/TaskPopover";
 
 import { useUser } from "@/context/UserContext";
 
-import { BAR_H, DEPT_FILTERS, computePlan, initials } from "@/lib/planning/planningLogic";
+import { BAR_H, DEPT_FILTERS, computePlan, initials, taskCardInfo } from "@/lib/planning/planningLogic";
 import {
   dismissInsight,
   reassignTask,
@@ -73,6 +77,8 @@ export default function PlanningPage() {
   const [period, setPeriod] = useState("today");
   const [cat, setCat] = useState("all");
   const [pickedDept, setDept] = useState("all");
+  const [open, setOpen] = useState(null); // { task, anchor } for the card on a clicked bar
+  const navigate = useNavigate();
 
   // A manager plans their own team: only their department's people appear, and
   // the team switcher is replaced by the team name. Admins see every team.
@@ -88,6 +94,11 @@ export default function PlanningPage() {
   );
   const week = plan.week;
   const hasDismissed = Object.keys(dismissed).length > 0;
+
+  const card = open ? taskCardInfo(open.task, { week: period === "week", ctx, people }) : null;
+  const teammates = open
+    ? (people || []).filter((p) => p[1] === (card?.dept) && p[0] !== open.task.who).map((p) => p[0])
+    : [];
 
   const runInsight = async (n) => {
     if (!n.act) return;
@@ -233,6 +244,8 @@ export default function PlanningPage() {
           ))}
         </div>
 
+        <HeldTasksPanel />
+
         {/* Schedule */}
         <section style={{ ...CARD, overflow: "hidden", opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease" }}>
           <SectionHead
@@ -325,9 +338,13 @@ export default function PlanningPage() {
                       <span style={{ position: "absolute", top: 0, bottom: 0, left: plan.nowLeft, width: 2, background: "var(--error-500)", zIndex: 2 }} />
                     )}
                     {r.bars.map((b) => (
-                      <span
+                      <button
+                        type="button"
                         key={b.id}
                         title={b.title}
+                        aria-label={b.title}
+                        aria-haspopup="dialog"
+                        onClick={(e) => setOpen({ task: b.task, anchor: e.currentTarget.getBoundingClientRect() })}
                         style={{
                           position: "absolute",
                           top: b.top,
@@ -336,6 +353,9 @@ export default function PlanningPage() {
                           height: BAR_H,
                           boxSizing: "border-box",
                           padding: "3px 8px",
+                          border: "none",
+                          textAlign: "left",
+                          cursor: "pointer",
                           borderRadius: 6,
                           background: b.bg,
                           boxShadow: b.ring,
@@ -354,7 +374,7 @@ export default function PlanningPage() {
                       >
                         {b.done && <Check size={12} style={{ flexShrink: 0 }} />}
                         <span style={{ minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflowWrap: "anywhere" }}>{b.label}</span>
-                      </span>
+                      </button>
                     ))}
                                   </div>
                 </div>
@@ -557,6 +577,21 @@ export default function PlanningPage() {
           </div>
         </section>
       </div>
+      {open && card && (
+        <TaskPopover
+          info={card}
+          anchor={open.anchor}
+          teammates={teammates}
+          onClose={() => setOpen(null)}
+          onOpenWorksheet={() => navigate("/", { state: { search: open.task.task } })}
+          onReassign={async (name) => {
+            const id = open.task.id;
+            setOpen(null);
+            const moved = await reassignTask(id, name);
+            if (moved) toast.success("“" + card.title + "” moved to " + name);
+          }}
+        />
+      )}
     </div>
   );
 }

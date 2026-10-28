@@ -1,13 +1,16 @@
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { MonthlyChart } from "./MonthlyChart";
 import { Badge, Block, Dot, Empty, Pill, SectionHead, StatTile } from "./dashboardParts";
 import { C, CARD, EYEBROW, NEXT_BADGE, ROW_DIVIDER, STAGE_DOT } from "./dashboardTheme";
 import { addDays, fmtDay, fmtWeekday, pc } from "@/lib/homeDashboard";
 
 export function OverviewTab(ctx) {
-  const { cats, critCount, data, glance, goProject, h, kpis, label, nextDue, openActions, projects, today, userName } = ctx;
+  const { cats, critCount, data, glance, goProject, h, kpis, label, month, nextDue, openActions, projects, setMonth, today, userName } = ctx;
   return (
     <>
     <>
+      <MonthlyChart monthly={data.monthly} month={month} setMonth={setMonth} critCount={critCount} openActions={openActions} />
+
       <section aria-label="This month at a glance" className={`${CARD} flex flex-wrap items-center gap-x-8 gap-y-4 p-5`}>
         <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-3">
           <span className={EYEBROW}>At a glance · {label}</span>
@@ -36,14 +39,6 @@ export function OverviewTab(ctx) {
             </ul>
           </details>
         )}
-        <button
-          type="button"
-          onClick={() => openActions(critCount ? "crit" : "all")}
-          className="inline-flex h-[34px] items-center gap-1.5 rounded-[7px] bg-[rgb(43,43,181)] px-4 text-[13px] font-semibold leading-[18px] text-white transition-colors hover:bg-[rgb(61,61,204)]"
-        >
-          {critCount ? `Review ${critCount} critical action${critCount === 1 ? "" : "s"}` : "Review actions"}
-          <ArrowRight className="h-4 w-4" />
-        </button>
       </section>
 
       <Block title="Where are we?">

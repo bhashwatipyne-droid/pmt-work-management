@@ -28,6 +28,10 @@ jest.mock("@/services/api", () => ({
         { id: "d1", project_id: "p1", name: "Carousel", stage: "Design", status: "In Progress", owner_id: "u1", due: "2026-10-20" },
       ],
       trend: [{ month: "2026-09" }, { month: "2026-10" }],
+      monthly: [
+        { month: "2026-09", active: 10, on_track: 6, delayed: 3, due_soon: 1 },
+        { month: "2026-10", active: 12, on_track: 8, delayed: 3, due_soon: 1 },
+      ],
       members: { tracked: [], stale: [] },
     }),
   getEfficiencyOverview: () => Promise.resolve({ employees: [] }),
@@ -59,6 +63,7 @@ test("home dashboard renders every tab", async () => {
     dump.push(host.innerHTML);
   }
   expect(dump.length).toBeGreaterThan(2);
+  expect(dump[0]).toContain("At a glance · last 12 months");
 
   await act(async () => root.unmount());
   host.remove();

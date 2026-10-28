@@ -66,6 +66,11 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+try:
+    from home_monthly import monthly_overview
+except ImportError:  # run as backend.server from the repo root
+    from backend.home_monthly import monthly_overview
+
 AT_RISK_DAYS = 2
 CRITICAL_LATE_DAYS = 3
 STALE_WORKING_DAYS = 3
@@ -313,6 +318,7 @@ def create_home_dashboard_router(
 
         # ---- per-deliverable facts ----------------------------------------
         rows_out = []
+        monthly_facts: List[dict] = []
         trend_due: Dict[str, List[bool]] = {m: [] for m in trend_months}
         trend_first_pass: Dict[str, List[bool]] = {m: [] for m in trend_months}
         unscheduled: List[dict] = []
@@ -341,6 +347,10 @@ def create_home_dashboard_router(
             final_due = _day(d.get("end_dt")) or due
             revs = revisions.get(d["id"], 0)
             completed_on = _day(d.get("updated_at")) if done else None
+            monthly_facts.append({
+                "start": _day(d.get("start_dt")), "due": due,
+                "finished": finished, "completed_on": completed_on,
+            })
 
             # Trends: late share of what was due in each month, first-pass
             # share of what finished in each month. "Finished" uses the
@@ -565,6 +575,8 @@ def create_home_dashboard_router(
             "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,
+            # last 12 months for the Overview chart; see home_monthly.py
+            "monthly": monthly_overview(monthly_facts, month, today, 12, NEXT_DAYS, STALE_DAYS),
             "members": {
                 "tracked": [
                     {"id": u["id"], "name": u.get("name", ""), "department": u.get("department", "")}

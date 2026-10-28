@@ -35,6 +35,56 @@ const MIN_BAR = 0.1;
 const LANE_H = 44;
 export const BAR_H = 38;
 
+// 9.5 -> "9:30am", 13 -> "1pm"
+export const clock = (h) => {
+  const m = Math.round(h * 60);
+  const hh = Math.floor(m / 60) % 24;
+  const mm = m % 60;
+  return `${hh % 12 || 12}${mm ? ":" + String(mm).padStart(2, "0") : ""}${hh >= 12 ? "pm" : "am"}`;
+};
+
+const STATUS_TAG = {
+  done: ["Done", "var(--success-100)", "rgb(0,91,75)", "var(--success-500)"],
+  wip: ["In progress", "var(--info-100)", "rgb(30,64,175)", "var(--info-500)"],
+  todo: ["To do", "var(--neutral-100)", "var(--neutral-700)", "var(--neutral-400)"],
+};
+
+// What the card that opens when a schedule bar is clicked shows.
+export function taskCardInfo(t, { week = false, ctx, people } = {}) {
+  const days = ctx?.days || SEED_DAYS;
+  const today = ctx ? ctx.today : SEED_TODAY;
+  const span = Math.max(1, t.d1 - t.d0 + 1);
+  const perDay = t.est / span;
+  const day = (i) => days[Math.max(0, Math.min(days.length - 1, i))] || "";
+  const when = week
+    ? t.d0 === t.d1
+      ? day(t.d0)
+      : `${day(t.d0)} – ${day(t.d1)}`
+    : `${day(today)} · ${clock(t.sh)} – ${clock(t.sh + perDay)}`;
+  const cat = P_CATS[t.cat];
+  const st = STATUS_TAG[t.status] || STATUS_TAG.todo;
+  const dept = (people || SEED_PEOPLE).find((p) => p[0] === t.who)?.[1];
+  const tags = [
+    cat && { l: cat[0], bg: cat[1], fg: cat[2], dot: cat[4] },
+    { l: st[0], bg: st[1], fg: st[2], dot: st[3] },
+    dept && { l: dept, bg: "var(--neutral-100)", fg: "var(--neutral-700)", dot: "var(--neutral-400)" },
+  ].filter(Boolean);
+  return {
+    title: t.task,
+    when,
+    span: span > 1 ? `Spans ${span} days · ${fmtH(perDay)} per day` : `${fmtH(t.est)} planned`,
+    tags,
+    who: t.who,
+    ini: initials(t.who),
+    project: t.proj || "Project to be confirmed",
+    load: week ? `${fmtH(t.est)} total` : `${fmtH(perDay)} today`,
+    change: t.note || "",
+    // Rows logged in the Work Sheet belong to the person who logged them.
+    canReassign: !t.src && t.status !== "done",
+    dept,
+  };
+}
+
 export const DEPT_FILTERS = ["all", "Content", "Design", "Animation"];
 
 export const taskFromRow = (t, i) => ({
@@ -157,6 +207,7 @@ export function computePlan(
           ring: done ? "inset 0 0 0 1px rgb(110,231,183)" : k[3],
           op: cat !== "all" && b.t.cat !== cat ? "0.25" : "1",
           done,
+          task: b.t,
         };
       }),
     };

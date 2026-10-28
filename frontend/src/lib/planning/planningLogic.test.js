@@ -104,3 +104,30 @@ test("on a holiday nothing is planned and nobody has a load", () => {
   expect(plan.rows.every((l) => l.bars.length === 0)).toBe(true);
   expect(plan.rows[0].loadTxt).toBe("Holiday · Sunday");
 });
+
+describe("taskCardInfo", () => {
+  const { taskCardInfo, clock } = require("./planningLogic");
+  const t = { id: "t-2", who: "Ratnesh Bor", task: "Old script", proj: "Contra", d0: 2, d1: 4, est: 6, cat: "rolled", note: "From Wed · 2d late", sh: 9.5, status: "wip" };
+
+  test("clock reads like the design", () => {
+    expect(clock(9.5)).toBe("9:30am");
+    expect(clock(12.5)).toBe("12:30pm");
+    expect(clock(13)).toBe("1pm");
+  });
+
+  test("today view: day, time window, per-day load and the change note", () => {
+    const c = taskCardInfo(t, { ctx, people: toPeopleRows(apiPeople) });
+    expect(c.when).toBe("Fri 9 · 9:30am – 11:30am");
+    expect(c.span).toBe("Spans 3 days · 2h per day");
+    expect(c.load).toBe("2h today");
+    expect(c.change).toBe("From Wed · 2d late");
+    expect(c.tags.map((x) => x.l)).toEqual(["Rolled over / delayed", "In progress", "Content"]);
+    expect(c.canReassign).toBe(true);
+  });
+
+  test("week view shows the day range; Work Sheet rows and done tasks cannot be reassigned", () => {
+    expect(taskCardInfo(t, { week: true, ctx }).when).toBe("Wed 7 – Fri 9");
+    expect(taskCardInfo({ ...t, src: "work_sheet" }, { ctx }).canReassign).toBe(false);
+    expect(taskCardInfo({ ...t, status: "done" }, { ctx }).canReassign).toBe(false);
+  });
+});

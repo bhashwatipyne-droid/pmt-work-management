@@ -576,8 +576,9 @@ def create_home_dashboard_router(
             "reviews": reviews_out,
             "projects": {pid: project_by_id[pid] for pid in used_projects},
             "trend": trend,
-            # last 12 months for the Overview chart; see home_monthly.py
-            "monthly": monthly_overview(monthly_facts, month, today, 12, AT_RISK_DAYS, STALE_DAYS),
+            # last 12 months up to the current month, whichever month is picked, so
+            # the chart does not shift or lose later months; see home_monthly.py
+            "monthly": monthly_overview(monthly_facts, today.strftime("%Y-%m"), today, 12, AT_RISK_DAYS, STALE_DAYS),
             "members": {
                 "tracked": [
                     {"id": u["id"], "name": u.get("name", ""), "department": u.get("department", "")}

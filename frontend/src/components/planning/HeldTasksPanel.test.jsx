@@ -26,7 +26,27 @@ beforeEach(() => {
   api.rejectReviewItem.mockResolvedValue({});
 });
 
+// Radix popovers are very slow under jsdom; swap in a plain open/close wrapper
+// (same as ProjectPicker.test.jsx). What is under test is the panel, not Radix.
+jest.mock("@/components/ui/popover", () => {
+  const React = require("react");
+  const Ctx = React.createContext({});
+  return {
+    Popover: ({ open, onOpenChange, children }) => React.createElement(Ctx.Provider, { value: { open, onOpenChange } }, children),
+    PopoverTrigger: ({ children }) => {
+      const { open, onOpenChange } = React.useContext(Ctx);
+      return React.cloneElement(children, { onClick: () => onOpenChange(!open) });
+    },
+    PopoverContent: React.forwardRef(({ children }, ref) => {
+      const { open } = React.useContext(Ctx);
+      return open ? React.createElement("div", { ref }, children) : null;
+    }),
+  };
+});
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+Element.prototype.scrollIntoView = () => {};
 
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
@@ -57,14 +77,12 @@ test("shows a held line with its guessed project and confirms it", async () => {
   expect(base.getProjects).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("BBNPP > Balanced Hybrid Fund Animation");
   expect(host.textContent).toContain("Client was guessed, please confirm");
-  expect(host.querySelector('select[aria-label="Project"]').value).toBe("p1");
-  expect(host.textContent).toContain("Fund Animation");
-  const del = host.querySelector('select[aria-label="Deliverable"]');
-  await act(async () => {
-    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-    set.call(del, "d1");
-    del.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  expect(host.querySelector('button[aria-label="Project"]').textContent).toContain("BNP Balanced Hybrid NFO Shoot Video");
+  await click(host.querySelector('button[aria-label="Deliverable"]'));
+  await flush();
+  const option = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.includes("Fund Animation"));
+  await click(option);
+  expect(host.querySelector('button[aria-label="Deliverable"]').textContent).toContain("Fund Animation");
   await click(byText(host, "Confirm and send"));
   await flush();
   expect(api.resolveReviewItem).toHaveBeenCalledWith("t1", { project_id: "p1", deliverable_id: "d1" });

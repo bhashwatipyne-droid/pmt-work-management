@@ -2,15 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
+import { SearchableSelect } from "@/components/work-sheet/SearchableSelect";
 import { useUser } from "@/context/UserContext";
 import { getDeliverables, getProjects } from "@/services/api";
 import { getReviewQueue, rejectReviewItem, resolveReviewItem } from "@/services/planningApi";
 
 const CARD = { background: "#fff", borderRadius: 12, boxShadow: "inset 0 0 0 1px rgb(234,238,244)", display: "flex", flexDirection: "column", minWidth: 0 };
-const SELECT = {
-  height: 32, minWidth: 0, width: "100%", padding: "0 8px", borderRadius: 7, border: "none", background: "#fff",
-  boxShadow: "inset 0 0 0 1px var(--neutral-200)", color: "var(--neutral-900)", fontSize: 13, fontFamily: "inherit",
-};
+// Same look as the other pills on this page; the list itself is the Work Sheet's searchable dropdown.
+const TRIGGER = "bg-white shadow-[inset_0_0_0_1px_var(--neutral-200)] disabled:opacity-50";
 const BTN = { height: 32, padding: "0 14px", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 
 const errText = (err, fallback) => {
@@ -24,6 +23,7 @@ function HeldRow({ item, projects, onDone }) {
   const [deliverableId, setDeliverableId] = useState(item.deliverable_id || "");
   const [deliverables, setDeliverables] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [openSelect, setOpenSelect] = useState(null);
 
   useEffect(() => {
     if (!projectId) {
@@ -75,18 +75,33 @@ function HeldRow({ item, projects, onDone }) {
         </span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
-        <select aria-label="Project" value={projectId} onChange={(e) => { setProjectId(e.target.value); setDeliverableId(""); }} style={SELECT}>
-          <option value="">Choose a project…</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <select aria-label="Deliverable" value={deliverableId} onChange={(e) => setDeliverableId(e.target.value)} disabled={!projectId} style={SELECT}>
-          <option value="">No deliverable yet</option>
-          {deliverables.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        <SearchableSelect
+          open={openSelect === "project"}
+          onOpenChange={(o) => setOpenSelect(o ? "project" : null)}
+          value={projectId}
+          onValueChange={(v) => { setProjectId(v); setDeliverableId(""); }}
+          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+          placeholder="Choose a project…"
+          searchPlaceholder="Search project..."
+          emptyText="No projects found"
+          className={TRIGGER}
+          triggerProps={{ "aria-label": "Project" }}
+          contentClassName="w-[400px] p-0"
+        />
+        <SearchableSelect
+          open={openSelect === "deliverable"}
+          onOpenChange={(o) => setOpenSelect(o ? "deliverable" : null)}
+          value={deliverableId}
+          onValueChange={setDeliverableId}
+          options={[{ value: "", label: "No deliverable yet" }, ...deliverables.map((d) => ({ value: d.id, label: d.name, chip: d.deliverable_type }))]}
+          placeholder="No deliverable yet"
+          searchPlaceholder="Search deliverable..."
+          emptyText="No deliverables found"
+          disabled={!projectId}
+          className={TRIGGER}
+          triggerProps={{ "aria-label": "Deliverable" }}
+          contentClassName="w-[400px] p-0"
+        />
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" disabled={!projectId || busy} onClick={confirm} style={{ ...BTN, background: !projectId || busy ? "var(--neutral-200)" : "var(--brand-500)", color: !projectId || busy ? "var(--neutral-400)" : "#fff" }}>

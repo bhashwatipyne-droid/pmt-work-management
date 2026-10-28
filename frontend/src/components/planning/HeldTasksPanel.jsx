@@ -105,6 +105,8 @@ export default function HeldTasksPanel() {
   const { currentUser } = useUser();
   const [items, setItems] = useState(null);
   const [projects, setProjects] = useState([]);
+  // The project list is large, so it is only fetched once the panel is opened.
+  const [opened, setOpened] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +119,7 @@ export default function HeldTasksPanel() {
   }, []);
 
   useEffect(() => {
-    if (!items || items.length === 0 || !currentUser?.id) return undefined;
+    if (!opened || !items || items.length === 0 || !currentUser?.id) return undefined;
     let cancelled = false;
     getProjects(currentUser.id, { include_deliverables: false })
       .then((rows) => !cancelled && setProjects((Array.isArray(rows) ? rows : []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))))
@@ -125,13 +127,15 @@ export default function HeldTasksPanel() {
     return () => {
       cancelled = true;
     };
-  }, [items, currentUser?.id]);
+  }, [opened, items, currentUser?.id]);
 
   const done = useCallback((id) => setItems((cur) => (cur || []).filter((i) => i.id !== id)), []);
 
-  if (!items || items.length === 0) return null;
+  // Keep the room while loading so the page below does not jump when it arrives.
+  if (!items) return <div aria-hidden="true" style={{ minHeight: 72 }} />;
+  if (items.length === 0) return null;
   return (
-    <details data-testid="held-tasks" className="group" style={CARD}>
+    <details data-testid="held-tasks" className="group" style={CARD} onToggle={(e) => e.currentTarget.open && setOpened(true)}>
       <summary style={{ padding: "16px 16px 12px", display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", cursor: "pointer" }}>
         <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[rgb(138,151,181)] transition-transform group-open:rotate-90" />
         <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 2 }}>

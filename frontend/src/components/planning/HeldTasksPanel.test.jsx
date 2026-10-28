@@ -45,6 +45,16 @@ const byText = (host, text) => [...host.querySelectorAll("button")].find((b) => 
 
 test("shows a held line with its guessed project and confirms it", async () => {
   const host = await mount();
+  // the project list is not fetched until the panel is opened
+  expect(base.getProjects).not.toHaveBeenCalled();
+  await act(async () => {
+    const d = host.querySelector("details");
+    d.open = true;
+    d.dispatchEvent(new Event("toggle"));
+  });
+  await flush();
+  await flush();
+  expect(base.getProjects).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("BBNPP > Balanced Hybrid Fund Animation");
   expect(host.textContent).toContain("Client was guessed, please confirm");
   expect(host.querySelector('select[aria-label="Project"]').value).toBe("p1");

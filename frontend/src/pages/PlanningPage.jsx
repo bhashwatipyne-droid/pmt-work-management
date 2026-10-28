@@ -246,7 +246,6 @@ export default function PlanningPage() {
         </div>
 
         <HeldTasksPanel />
-        <LearnedRulesPanel />
 
         {/* Schedule */}
         <section style={{ ...CARD, overflow: "hidden", opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease" }}>
@@ -384,6 +383,8 @@ export default function PlanningPage() {
             </div>
           </div>
         </section>
+
+        <LearnedRulesPanel />
 
         {/* Expected efficiency + insights */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,380px),1fr))", gap: 16, alignItems: "start" }}>

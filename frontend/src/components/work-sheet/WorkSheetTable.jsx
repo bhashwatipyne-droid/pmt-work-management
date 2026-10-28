@@ -31,8 +31,8 @@ import { useWorksheetRangeSelection } from "@/hooks/useWorksheetRangeSelection";
 import { useWorksheetTableDragging } from "@/hooks/useWorksheetTableDragging";
 import { resolvePasteValue as resolvePasteValueFor } from "@/lib/worksheetPaste";
 import { computeRangeStats } from "@/lib/worksheetRangeStats";
-import { COLUMNS, COLUMN_FIELDS, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, NO_COLUMNS, SHEET_EXCLUDED_COLUMNS } from "./workSheetTableConfig";
-export { SHEET_EXCLUDED_COLUMNS };
+import { COLUMNS, COLUMN_FIELDS, FORMULA_EDITABLE_FIELDS, FORMULA_PICKER_COLUMNS, MEMBER_STAGE_BY_DEPARTMENT, MIN_HEADER_HEIGHT, SHEET_EXCLUDED_COLUMNS, excludedColumnsFor } from "./workSheetTableConfig";
+export { SHEET_EXCLUDED_COLUMNS, excludedColumnsFor };
 
 export const WorkSheetTable = forwardRef(function WorkSheetTable({
   items,
@@ -146,7 +146,7 @@ export const WorkSheetTable = forwardRef(function WorkSheetTable({
       ),
     []
   );
-  const excludedColumns = SHEET_EXCLUDED_COLUMNS[sheetKey] || NO_COLUMNS;
+  const excludedColumns = excludedColumnsFor(sheetKey);
   // What is actually hidden on this tab: the person's own hidden columns plus
   // the ones this tab doesn't use.
   const effectiveHiddenColumns = useMemo(

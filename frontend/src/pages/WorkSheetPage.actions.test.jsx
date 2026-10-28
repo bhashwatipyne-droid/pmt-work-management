@@ -20,7 +20,7 @@ jest.mock("@/components/work-sheet/WorkSheetTabs", () => ({ WorkSheetTabs: (p) =
 jest.mock("@/components/work-sheet/ProjectsSheet", () => ({ ProjectsSheet: (p) => cap("projectsSheet")(p), prefetchProjectSheet: () => Promise.resolve({ data: [{ id: "t1", status: "Open" }] }) }));
 jest.mock("@/components/work-sheet/WorkSheetTable", () => {
   const React = require("react");
-  return { SHEET_EXCLUDED_COLUMNS: {}, WorkSheetTable: React.forwardRef((p, ref) => { React.useImperativeHandle(ref, () => ({ resetColumnSort: () => {}, scrollToRow: () => {}, focusFirstCell: () => {} })); return cap("table")(p); }) };
+  return { SHEET_EXCLUDED_COLUMNS: {}, excludedColumnsFor: () => [], WorkSheetTable: React.forwardRef((p, ref) => { React.useImperativeHandle(ref, () => ({ resetColumnSort: () => {}, scrollToRow: () => {}, focusFirstCell: () => {} })); return cap("table")(p); }) };
 });
 jest.mock("@/components/work-sheet/WorksheetFilterPanel", () => ({ WorksheetFilterPanel: (p) => cap("filterPanel")(p) }));
 jest.mock("@/components/ui/ConfirmDeleteModal", () => ({ __esModule: true, default: (p) => cap(p.confirmLabel === "Delete Entry" ? "confirmOne" : "confirmBulk")(p) }));

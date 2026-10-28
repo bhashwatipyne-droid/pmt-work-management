@@ -5,7 +5,7 @@ import { APP_ACTIONS, registerAppAction } from "@/lib/appActions";
 import { downloadCsv } from "@/lib/exportCsv";
 import { WorkSheetTabs } from "@/components/work-sheet/WorkSheetTabs";
 import { ProjectsSheet, prefetchProjectSheet } from "@/components/work-sheet/ProjectsSheet";
-import { SHEET_EXCLUDED_COLUMNS } from "@/components/work-sheet/WorkSheetTable";
+import { excludedColumnsFor } from "@/components/work-sheet/WorkSheetTable";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWorksheetUndo } from "@/hooks/useWorksheetUndo";
 import { useWorksheetBulkActions } from "@/hooks/useWorksheetBulkActions";
@@ -312,7 +312,7 @@ export default function WorkSheetPage() {
     const { filename, header, rows } = buildWorksheetCsv({
       sortedItems,
       activeSheet,
-      excludedColumns: SHEET_EXCLUDED_COLUMNS[activeSheet],
+      excludedColumns: excludedColumnsFor(activeSheet),
       month,
       projectById,
       clientNameById,

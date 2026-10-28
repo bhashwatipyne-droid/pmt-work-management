@@ -151,3 +151,14 @@ export const ESTIMATED_ROW_HEIGHT = 42;
 export const GROUP_HEADER_HEIGHT = 40;
 export const MIN_HEADER_HEIGHT = 40;
 export const OVERSCAN = 20;
+
+// Deliverable Name is not shown on any sheet (the "All" tab included). The data
+// stays on the row; only the column is left out.
+const ALWAYS_EXCLUDED_COLUMNS = ["Deliverable Name"];
+const EXCLUDED_BY_SHEET = {};
+export const excludedColumnsFor = (sheetKey) => {
+  if (!EXCLUDED_BY_SHEET[sheetKey]) {
+    EXCLUDED_BY_SHEET[sheetKey] = [...ALWAYS_EXCLUDED_COLUMNS, ...(SHEET_EXCLUDED_COLUMNS[sheetKey] || [])];
+  }
+  return EXCLUDED_BY_SHEET[sheetKey];
+};

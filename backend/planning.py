@@ -1352,7 +1352,7 @@ def create_planning_router(
             "project_name", "project_text", "deliverable_name", "deliverable_id",
             "priority", "confidence", "alternatives", "review_reasons", "nlp_ids",
             "decline_reason", "decline_message", "questions", "assigned_by_name",
-            "created_at",
+            "assigned_by_user_id", "created_at",
         )
         return [{k: r.get(k) for k in keep} for r in rows]
 
@@ -1381,7 +1381,11 @@ def create_planning_router(
                 raise HTTPException(status_code=400, detail="That deliverable does not belong to the project")
 
         dept = TEAM_DEPARTMENT.get((item.get("team") or "").lower())
-        assignee_id = payload.assignee_user_id or item.get("assignee_user_id")
+        assignee_id = (
+            payload.assignee_user_id
+            or item.get("assignee_user_id")
+            or item.get("assigned_by_user_id")  # a Team line: the manager who posted owns it
+        )
         if not assignee_id:
             raise HTTPException(status_code=400, detail="Choose who this task is for")
         target = await production_target(assignee_id, dept)

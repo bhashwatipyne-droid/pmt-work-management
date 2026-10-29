@@ -34,12 +34,18 @@ function HeldRow({ item, projects, onDone }) {
     if (!needsAssignee || !item.team) return undefined;
     let cancelled = false;
     getAssignable(item.team)
-      .then((rows) => !cancelled && setPeople(rows))
+      .then((rows) => {
+        if (cancelled) return;
+        setPeople(rows);
+        // default owner of a Team line: the manager who posted the list
+        const poster = item.assigned_by_user_id;
+        if (poster && rows.some((r) => r.id === poster)) setChosen((cur) => (cur.length ? cur : [poster]));
+      })
       .catch(() => !cancelled && setPeople([]));
     return () => {
       cancelled = true;
     };
-  }, [needsAssignee, item.team]);
+  }, [needsAssignee, item.team, item.assigned_by_user_id]);
 
   const toggle = (id) => setChosen((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   // the first person picked owns the task; the rest of the team are its collaborators

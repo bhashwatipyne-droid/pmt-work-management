@@ -124,3 +124,22 @@ test("a Team line: the first person owns it and the whole team can be added as c
   await act(async () => confirmBtn().click());
   expect(api.resolveReviewItem).toHaveBeenCalledWith("t9", { project_id: "p1", deliverable_id: null, assignee_user_id: "u2", collaborator_user_ids: ["u1", "u3"] });
 });
+
+test("a Team line is preselected to the manager who posted it", async () => {
+  api.getAssignable.mockResolvedValue([{ id: "u1", name: "Vanshika Shah" }, { id: "u2", name: "Sakshi Agrawal" }]);
+  api.getReviewQueue.mockResolvedValue([
+    { id: "t8", raw_line: "- FT > Brand Film", assignee_name: "Team", assignee_user_id: null, assigned_by_user_id: "u2", team: "content", work_date: "2026-10-29", project_id: "p1", review_reasons: [] },
+  ]);
+  const host = await mount();
+  await act(async () => {
+    const d = host.querySelector("details");
+    d.open = true;
+    d.dispatchEvent(new Event("toggle"));
+  });
+  await flush();
+  await flush();
+  const owner = [...host.querySelectorAll('[data-testid="held-assignees"] button')].find((b) => b.textContent.startsWith("Sakshi Agrawal"));
+  expect(owner.textContent).toContain("owner");
+  const confirm = [...host.querySelectorAll("button")].find((b) => b.textContent === "Confirm and send");
+  expect(confirm.disabled).toBe(false);
+});

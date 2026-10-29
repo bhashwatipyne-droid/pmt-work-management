@@ -1075,3 +1075,14 @@ def test_correcting_an_accepted_task_changes_its_work_sheet_row_too(env):
     # a deliverable of another project is refused
     bad = env.post(f"/planning/tasks/{task['id']}/correct", "manager-vs", {"project_id": CONTRA_PROJECT, "deliverable_id": PHARMA_DELIVERABLE})
     assert bad.status_code == 400
+
+
+def test_resolving_an_old_held_item_files_its_row_under_the_old_date(env):
+    held = env.item(3)
+    old_day = "2026-10-01"
+    env.set_item(3, work_date=old_day, assignee_user_id="member-rb", assignee_pmt_name="Ratnesh Bor")
+    r = env.post(f"/planning/review/{held['id']}/resolve", "manager-vs", {"project_id": held["project_id"], "assignee_user_id": "member-rb"})
+    assert r.status_code == 200, r.text
+    assert env.post(f"/planning/my-tasks/{held['id']}/accept", "member-rb").status_code == 200
+    row = env.work_items(source_task_id=held["id"])[0]
+    assert row["work_date"] == old_day and row["month"] == "2026-10"

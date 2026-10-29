@@ -65,3 +65,17 @@ def test_a_type_chosen_by_the_manager_beats_the_deliverables_own_type():
     assert planning.plan_deliverable_type({**item, "deliverable_type_corrected": True}) == "Reel / Short Video"
     # corrected to nothing is still "Undecided", never a stale type
     assert planning.plan_deliverable_type({**item, "deliverable_type": "", "deliverable_type_corrected": True}) == "Undecided"
+
+
+def test_a_released_held_task_keeps_its_old_date_on_the_work_sheet():
+    today = "2026-10-29"
+    held = {"work_date": "2026-10-22", "from_review": True}
+    assert planning.row_work_date(held, today) == "2026-10-22"
+    # older items resolved before the flag existed still carry resolved_reasons
+    assert planning.row_work_date({"work_date": "2026-10-22", "resolved_reasons": []}, today) == "2026-10-22"
+    # a task that was never held is dated the day it is accepted
+    assert planning.row_work_date({"work_date": "2026-10-22"}, today) == today
+    # never a future day, never a bad one
+    assert planning.row_work_date({"work_date": "2026-11-05", "from_review": True}, today) == today
+    assert planning.row_work_date({"work_date": "nonsense", "from_review": True}, today) == today
+    assert planning.row_work_date({"from_review": True}, today) == today

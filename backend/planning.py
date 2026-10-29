@@ -291,6 +291,22 @@ def plan_deliverable_type(item: dict) -> str:
     )
 
 
+def row_work_date(item: dict, today_iso: str) -> str:
+    """The date on the Work Sheet row made from a task. A task a manager had to
+    release from the held list keeps the day it was assigned, so resolving an old
+    line days later files the work under that day and not under today. A task
+    that was never held, and one with no usable date, is dated today."""
+    held = bool(item.get("from_review")) or "resolved_reasons" in item
+    day = str(item.get("work_date") or "")
+    if held and day:
+        try:
+            if date.fromisoformat(day).isoformat() <= today_iso:
+                return day
+        except ValueError:
+            pass
+    return today_iso
+
+
 def plan_status(item: dict, work_status: Optional[str]) -> str:
     if item.get("status") == "accepted" and work_status:
         if work_status in WORK_ITEM_DONE:
@@ -815,7 +831,7 @@ def create_planning_router(
         remarks = f"WhatsApp task from {item.get('assigned_by_name') or 'your manager'}: {item.get('raw_line') or title}"
 
         payload = work_item_create_model(
-            work_date=now().astimezone(IST).date().isoformat(),
+            work_date=row_work_date(item, now().astimezone(IST).date().isoformat()),
             # "Deliverable Name" is never filled: the deliverable dropdown says it
             deliverable_name="",
             deliverable_type=d_type,
@@ -1364,6 +1380,7 @@ def create_planning_router(
                 "$set": {
                     "status": "pending",
                     "needs_review": False,
+                    "from_review": True,
                     "resolved_reasons": item.get("review_reasons") or [],
                     "review_reasons": [],
                     "client_id": client["id"],

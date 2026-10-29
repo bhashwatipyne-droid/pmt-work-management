@@ -12,6 +12,7 @@ import { useUser } from "@/context/UserContext";
 import { BAR_H, DEPT_FILTERS, computePlan, initials, taskCardInfo } from "@/lib/planning/planningLogic";
 import {
   dismissInsight,
+  correctTask,
   reassignTask,
   resetInsights,
   setPlanDate,
@@ -587,6 +588,14 @@ export default function PlanningPage() {
           teammates={teammates}
           onClose={() => setOpen(null)}
           onOpenWorksheet={() => navigate("/", { state: { search: open.task.task } })}
+          onEdit={async (body) => {
+            const ok = await correctTask(open.task.id, body);
+            if (ok) {
+              toast.success("Saved — the listener will learn from this");
+              setOpen(null);
+            }
+            return ok;
+          }}
           onReassign={async (name) => {
             const id = open.task.id;
             setOpen(null);

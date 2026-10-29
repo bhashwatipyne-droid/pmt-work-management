@@ -80,6 +80,12 @@ export function taskCardInfo(t, { week = false, ctx, people } = {}) {
     // Shown even when the WhatsApp listener could not work them out.
     deliverableType: t.deliverable_type || "Undecided",
     deliverable: t.deliverable || "Unmatched",
+    // what the edit form starts from; only WhatsApp tasks can be edited here
+    projectId: t.project_id || "",
+    deliverableId: t.deliverable_id || "",
+    typeValue: t.deliverable_type && t.deliverable_type !== "Undecided" ? t.deliverable_type : "",
+    canEdit: !t.src && !!t.id,
+    id: t.id,
     load: week ? `${fmtH(t.est)} total` : `${fmtH(perDay)} today`,
     change: t.note || "",
     // Rows logged in the Work Sheet belong to the person who logged them.

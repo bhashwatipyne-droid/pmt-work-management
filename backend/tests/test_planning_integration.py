@@ -1038,3 +1038,40 @@ def test_pending_count_is_cached_but_any_write_request_refreshes_it(env):
     assert count() == before          # still the cached answer
     env.post("/auth/logout", "member-rb")   # any non-GET request drops the cache
     assert count() == before + 1
+
+
+# ------------------------------------------------------- correcting a task
+
+def test_a_manager_can_fix_the_type_of_a_pending_task(env):
+    task = env.item(2)
+    assert env.post(f"/planning/tasks/{task['id']}/correct", "manager-vs", {"deliverable_type": "Not a type"}).status_code == 400
+    assert env.post(f"/planning/tasks/{task['id']}/correct", "member-rb", {"deliverable_type": "Carousel"}).status_code == 403
+
+    r = env.post(f"/planning/tasks/{task['id']}/correct", "manager-vs", {"deliverable_type": "Carousel"})
+    assert r.status_code == 200, r.text
+    after = env.item(2)
+    # a human decision: this is what the listener learns from
+    assert after["deliverable_type"] == "Carousel" and after["deliverable_type_corrected"] is True
+    assert after["resolved_by"] == "manager-vs"
+    assert after["project_id"] == task["project_id"]            # untouched
+    assert after["history"][-1]["action"] == "corrected"
+
+
+def test_correcting_an_accepted_task_changes_its_work_sheet_row_too(env):
+    task = env.item(2)
+    assert env.post(f"/planning/my-tasks/{task['id']}/accept", "member-rb").status_code == 200
+    accepted = env.item(2)
+    assert accepted["row_snapshot"]["project_id"] == task["project_id"]   # what the row was made with
+
+    body = {"project_id": PHARMA_PROJECT, "deliverable_id": PHARMA_DELIVERABLE}
+    assert env.post(f"/planning/tasks/{task['id']}/correct", "manager-vs", body).status_code == 200
+    row = env.work_items(id=accepted["work_item_id"])[0]
+    assert row["project_id"] == PHARMA_PROJECT and row["deliverable_id"] == PHARMA_DELIVERABLE
+    assert row["deliverable_type"] == "Newsletters"              # the new deliverable brings its own type back
+    after = env.item(2)
+    assert after["db_deliverable"] == "From Lab To Life - Product Explainer"
+    assert after["row_snapshot"]["deliverable_id"] == PHARMA_DELIVERABLE   # nothing left to "learn" twice
+
+    # a deliverable of another project is refused
+    bad = env.post(f"/planning/tasks/{task['id']}/correct", "manager-vs", {"project_id": CONTRA_PROJECT, "deliverable_id": PHARMA_DELIVERABLE})
+    assert bad.status_code == 400

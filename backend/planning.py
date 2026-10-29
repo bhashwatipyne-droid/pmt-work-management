@@ -134,6 +134,15 @@ class ResolvePayload(BaseModel):
     assignee_user_id: Optional[str] = None
 
 
+class CorrectPayload(BaseModel):
+    """A manager's fix to a WhatsApp task: any of project / deliverable / type.
+    A field that is left out is unchanged; deliverable_id null means "none"."""
+    model_config = ConfigDict(extra="ignore")
+    project_id: Optional[str] = None
+    deliverable_id: Optional[str] = None
+    deliverable_type: Optional[str] = None
+
+
 class RuleSwitchPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
@@ -274,6 +283,8 @@ def plan_deliverable(item: dict) -> str:
 def plan_deliverable_type(item: dict) -> str:
     """The deliverable type for the Planning card: the matched PMT deliverable's
     own type, else the listener's reading of the line, else "Undecided"."""
+    if item.get("deliverable_type_corrected"):
+        return (item.get("deliverable_type") or "").strip() or UNDECIDED_DELIVERABLE_TYPE
     return (
         (item.get("db_deliverable_type") or item.get("deliverable_type") or "").strip()
         or UNDECIDED_DELIVERABLE_TYPE
@@ -424,6 +435,9 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             "task": task_title(item),
             "deliverable": plan_deliverable(item),
             "deliverable_type": plan_deliverable_type(item),
+            # ids the card's edit form starts from
+            "project_id": item.get("project_id"),
+            "deliverable_id": item.get("deliverable_id"),
             "proj": item.get("project_name") or item.get("project_text") or ("Project to be confirmed" if item.get("project_unconfirmed") else ""),
             "d0": d0,
             "d1": d1,
@@ -528,12 +542,33 @@ def create_planning_router(
         if not wanted:
             return
         found = await db.work_items.find(
-            {"id": {"$in": list(wanted)}}, {"_id": 0, "id": 1, "time_taken_minutes": 1}
+            {"id": {"$in": list(wanted)}},
+            {"_id": 0, "id": 1, "time_taken_minutes": 1, "project_id": 1, "client_id": 1,
+             "deliverable_id": 1, "deliverable_type": 1},
         ).to_list(len(wanted))
+        project_ids = list({r["project_id"] for r in found if r.get("project_id")})
+        project_names = {
+            p["id"]: p.get("name") or ""
+            for p in (
+                await db.projects.find({"id": {"$in": project_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(project_ids))
+                if project_ids else []
+            )
+        }
         for row in found:
+            task = wanted[row["id"]]
             minutes = row.get("time_taken_minutes")
             if isinstance(minutes, (int, float)) and minutes > 0:
-                wanted[row["id"]]["est_minutes"] = minutes
+                task["est_minutes"] = minutes
+            # The Work Sheet row is where the person works, so what it says now
+            # (they may have changed project / deliverable / type there) is what
+            # the card shows.
+            if row.get("project_id"):
+                task["project_id"] = row["project_id"]
+                task["project_name"] = project_names.get(row["project_id"]) or task.get("project_name")
+            task["deliverable_id"] = row.get("deliverable_id")
+            task["db_deliverable"] = ""  # re-read from the deliverable the row points at
+            task["deliverable_type"] = row.get("deliverable_type") or ""
+            task["deliverable_type_corrected"] = True
 
     async def attach_deliverable_info(item_list: List[dict]) -> None:
         """Give each item the name and type of the PMT deliverable it is linked
@@ -771,6 +806,8 @@ def create_planning_router(
         # the line's closing word ("... > Carousel") fills the type, so the Work
         # Sheet row still gets its type, category and time per unit.
         d_type = (
+            item.get("deliverable_type") if item.get("deliverable_type_corrected") else None
+        ) or (
             (deliverable or {}).get("type")
             or (None if deliverable else item.get("deliverable_type"))
             or ""
@@ -807,6 +844,17 @@ def create_planning_router(
                 {"id": created.id},
                 {"$set": {"source": "whatsapp_task", "source_task_id": item["id"]}},
             )
+        # What the row was made with. If someone later changes project /
+        # deliverable / type on the row, the difference is a correction the
+        # listener learns from (whatsapp listener: learned.js).
+        await items.update_one(
+            {"id": item["id"]},
+            {"$set": {"row_snapshot": {
+                "project_id": payload.project_id,
+                "deliverable_id": payload.deliverable_id,
+                "deliverable_type": payload.deliverable_type or "",
+            }}},
+        )
         return created.id
 
     @router.post("/my-tasks/{task_id}/accept")
@@ -1148,6 +1196,112 @@ def create_planning_router(
         )
         if result.modified_count != 1:
             raise HTTPException(status_code=409, detail="This task was just changed. Reload and try again.")
+        return {"ok": True}
+
+    @router.get("/deliverable-types")
+    async def deliverable_types(request: Request):
+        await planner(request)
+        return list(deliverable_type_categories)
+
+    @router.post("/tasks/{task_id}/correct")
+    async def correct_task(task_id: str, payload: CorrectPayload, request: Request):
+        """Fix the project / deliverable / type of a WhatsApp task from the Planning
+        card. It is a human decision like the held-items one: the item is marked
+        resolved_by this person, which is what the listener learns from, and the
+        Work Sheet row (if the task was accepted) is changed to match."""
+        user = await planner(request)
+        item = await load_item(task_id)
+        if not can_see(user, item):
+            raise HTTPException(status_code=404, detail="Task not found")
+        if item["status"] not in ("pending", "accepted"):
+            raise HTTPException(status_code=409, detail="Only a task that is assigned or accepted can be edited")
+        sent = payload.model_fields_set
+
+        project = None
+        project_changed = bool(payload.project_id) and payload.project_id != item.get("project_id")
+        project_id = payload.project_id or item.get("project_id")
+        if project_id:
+            project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+            if not project or project.get("hidden") or project.get("duplicate_of"):
+                raise HTTPException(status_code=400, detail="That project is not available")
+        client = None
+        if project:
+            client = await db.clients.find_one({"id": project.get("client_id")}, {"_id": 0, "id": 1, "name": 1})
+            if not client:
+                raise HTTPException(status_code=400, detail="That project has no valid client")
+
+        deliverable = None
+        deliverable_changed = False
+        if "deliverable_id" in sent or project_changed:
+            # a deliverable belongs to one project: a new project drops the old one
+            wanted = payload.deliverable_id if "deliverable_id" in sent else None
+            deliverable_changed = (wanted or None) != (item.get("deliverable_id") or None)
+            if wanted:
+                deliverable = await db.deliverables.find_one(
+                    {"id": wanted, "project_id": (project or {}).get("id")}, {"_id": 0}
+                )
+                if not deliverable:
+                    raise HTTPException(status_code=400, detail="That deliverable does not belong to the project")
+        elif item.get("deliverable_id") and project:
+            deliverable = await db.deliverables.find_one(
+                {"id": item["deliverable_id"], "project_id": project["id"]}, {"_id": 0}
+            )
+
+        corrected = bool(item.get("deliverable_type_corrected"))
+        if payload.deliverable_type is not None and payload.deliverable_type != "":
+            if payload.deliverable_type not in deliverable_type_categories:
+                raise HTTPException(status_code=400, detail="Unknown deliverable type")
+            d_type, corrected = payload.deliverable_type, True
+        elif deliverable_changed and deliverable:
+            # a different PMT deliverable brings its own type back
+            d_type, corrected = deliverable.get("type") or "", False
+        else:
+            d_type = item.get("deliverable_type") or (deliverable or {}).get("type") or ""
+
+        changes = {
+            "deliverable_id": (deliverable or {}).get("id"),
+            "db_deliverable": (deliverable or {}).get("name"),
+            "deliverable_type": d_type,
+            "deliverable_type_corrected": corrected,
+            "resolved_by": user.id,
+            "resolved_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        if project and client:
+            changes.update({
+                "client_id": client["id"], "client_name": client.get("name"),
+                "project_id": project["id"], "project_name": project.get("name"),
+            })
+        summary = f"{(project or {}).get('name') or 'no project'} / {(deliverable or {}).get('name') or 'no deliverable'} / {d_type or 'no type'}"
+
+        if item["status"] == "accepted" and item.get("work_item_id"):
+            row_changes = {
+                "deliverable_id": (deliverable or {}).get("id"),
+                "deliverable_type": d_type,
+                "work_category": deliverable_type_categories.get(d_type, "Core"),
+                "deliverable_not_available": False,
+            }
+            if project and client:
+                row_changes.update({"project_id": project["id"], "client_id": client["id"]})
+            await db.work_items.update_one({"id": item["work_item_id"]}, {"$set": row_changes})
+            # the row now matches the card, so there is no second "correction" to learn
+            changes["row_snapshot"] = {
+                "project_id": row_changes.get("project_id") or (item.get("row_snapshot") or {}).get("project_id"),
+                "deliverable_id": row_changes["deliverable_id"],
+                "deliverable_type": d_type,
+            }
+
+        result = await items.update_one(
+            {"id": task_id, "status": item["status"]},
+            {"$set": changes, "$push": {"history": history(user.id, "corrected", summary)}},
+        )
+        if result.modified_count != 1:
+            raise HTTPException(status_code=409, detail="This task was just changed. Reload and try again.")
+        await log_human(item, "corrected", user, {
+            "project_id": (project or {}).get("id"),
+            "deliverable_id": (deliverable or {}).get("id"),
+            "deliverable_type": d_type,
+        })
         return {"ok": True}
 
     # ---------------------------------------------- managers: review queue

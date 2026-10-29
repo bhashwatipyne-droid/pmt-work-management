@@ -57,3 +57,11 @@ def test_card_deliverable_fields_fall_back_to_unmatched_and_undecided():
     # the matched PMT deliverable's own type beats the listener's reading
     own = {**matched, "id": "o", "db_deliverable_type": "Carousel"}
     assert planning.build_plan_rows([own], {}, now)[0]["deliverable_type"] == "Carousel"
+
+
+def test_a_type_chosen_by_the_manager_beats_the_deliverables_own_type():
+    item = {"db_deliverable_type": "Carousel", "deliverable_type": "Reel / Short Video"}
+    assert planning.plan_deliverable_type(item) == "Carousel"
+    assert planning.plan_deliverable_type({**item, "deliverable_type_corrected": True}) == "Reel / Short Video"
+    # corrected to nothing is still "Undecided", never a stale type
+    assert planning.plan_deliverable_type({**item, "deliverable_type": "", "deliverable_type_corrected": True}) == "Undecided"

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { Info, RefreshCw, Table2, X } from "lucide-react";
+import { Info, Pencil, RefreshCw, Table2, X } from "lucide-react";
+
+import { SearchableSelect } from "@/components/work-sheet/SearchableSelect";
+import { useUser } from "@/context/UserContext";
+import { getDeliverables, getProjects } from "@/services/api";
+import { getDeliverableTypes } from "@/services/planningApi";
 
 const W = 360;
 // Values shown when the listener could not capture the deliverable; greyed out.
@@ -14,9 +19,89 @@ export const popoverPosition = (rect, vw, vh) => {
   return { left, top };
 };
 
+const TRIGGER = "bg-white shadow-[inset_0_0_0_1px_var(--neutral-200)] disabled:opacity-50";
+const SMALL_BTN = { height: 30, padding: "0 12px", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+
+// Fix the project, deliverable or deliverable type of a WhatsApp task. Whatever is
+// changed here is learned by the listener (and so is a later change in the Work Sheet).
+function EditForm({ info, onSave, onCancel }) {
+  const { currentUser } = useUser();
+  const [projects, setProjects] = useState([]);
+  const [deliverables, setDeliverables] = useState([]);
+  const [types, setTypes] = useState([]);
+  const [projectId, setProjectId] = useState(info.projectId);
+  const [deliverableId, setDeliverableId] = useState(info.deliverableId);
+  const [type, setType] = useState(info.typeValue);
+  const [openSelect, setOpenSelect] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let off = false;
+    if (currentUser?.id) {
+      getProjects(currentUser.id, { include_deliverables: false })
+        .then((rows) => !off && setProjects((Array.isArray(rows) ? rows : []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))))
+        .catch(() => {});
+    }
+    getDeliverableTypes().then((t) => !off && setTypes(t)).catch(() => {});
+    return () => { off = true; };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!projectId || !currentUser?.id) { setDeliverables([]); return undefined; }
+    let off = false;
+    getDeliverables(currentUser.id, { project_id: projectId })
+      .then((rows) => !off && setDeliverables(Array.isArray(rows) ? rows : []))
+      .catch(() => !off && setDeliverables([]));
+    return () => { off = true; };
+  }, [projectId, currentUser?.id]);
+
+  const save = async () => {
+    // only send what changed, so an untouched field is never rewritten
+    const body = {};
+    if (projectId && projectId !== info.projectId) body.project_id = projectId;
+    if ((deliverableId || "") !== info.deliverableId || body.project_id) body.deliverable_id = deliverableId || null;
+    if (type && type !== info.typeValue) body.deliverable_type = type;
+    if (Object.keys(body).length === 0) { onCancel(); return; }
+    setBusy(true);
+    const ok = await onSave(body);
+    if (!ok) setBusy(false);
+  };
+
+  return (
+    <div data-testid="task-popover-edit" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <SearchableSelect
+        open={openSelect === "project"} onOpenChange={(o) => setOpenSelect(o ? "project" : null)}
+        value={projectId} onValueChange={(v) => { setProjectId(v); setDeliverableId(""); }}
+        options={projects.map((p) => ({ value: p.id, label: p.name }))}
+        placeholder="Project…" searchPlaceholder="Search project..." emptyText="No projects found"
+        className={TRIGGER} triggerProps={{ "aria-label": "Project" }} contentClassName="w-[340px] p-0"
+      />
+      <SearchableSelect
+        open={openSelect === "deliverable"} onOpenChange={(o) => setOpenSelect(o ? "deliverable" : null)}
+        value={deliverableId} onValueChange={(v) => { setDeliverableId(v); const d = deliverables.find((x) => x.id === v); if (d?.deliverable_type) setType(d.deliverable_type); }}
+        options={[{ value: "", label: "No deliverable" }, ...deliverables.map((d) => ({ value: d.id, label: d.name, chip: d.deliverable_type }))]}
+        placeholder="Deliverable…" searchPlaceholder="Search deliverable..." emptyText="No deliverables found"
+        disabled={!projectId} className={TRIGGER} triggerProps={{ "aria-label": "Deliverable" }} contentClassName="w-[340px] p-0"
+      />
+      <SearchableSelect
+        open={openSelect === "type"} onOpenChange={(o) => setOpenSelect(o ? "type" : null)}
+        value={type} onValueChange={setType}
+        options={types.map((t) => ({ value: t, label: t }))}
+        placeholder="Deliverable type…" searchPlaceholder="Search type..." emptyText="No types found"
+        className={TRIGGER} triggerProps={{ "aria-label": "Deliverable type" }} contentClassName="w-[340px] p-0"
+      />
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" disabled={busy} onClick={save} style={{ ...SMALL_BTN, background: busy ? "var(--neutral-200)" : "var(--brand-500)", color: busy ? "var(--neutral-400)" : "#fff" }}>Save</button>
+        <button type="button" disabled={busy} onClick={onCancel} style={{ ...SMALL_BTN, background: "#fff", boxShadow: "inset 0 0 0 1px var(--neutral-200)", color: "var(--neutral-900)" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // The expanded card for a schedule bar. `info` comes from taskCardInfo().
-export default function TaskPopover({ info, anchor, onClose, onOpenWorksheet, onReassign, teammates = [] }) {
+export default function TaskPopover({ info, anchor, onClose, onOpenWorksheet, onReassign, onEdit, teammates = [] }) {
   const [choosing, setChoosing] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -75,7 +160,17 @@ export default function TaskPopover({ info, anchor, onClose, onOpenWorksheet, on
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--neutral-700)" }}>
             <Info size={14} style={{ color: "var(--neutral-500)" }} />
             Details
+            {info.canEdit && onEdit && !editing && (
+              <button
+                type="button" onClick={() => setEditing(true)} aria-label="Edit project, deliverable and type"
+                style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, height: 24, padding: "0 6px", border: "none", borderRadius: 7, background: "transparent", color: "var(--brand-500)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+              >
+                <Pencil size={12} />
+                Edit
+              </button>
+            )}
           </div>
+          {editing && <EditForm info={info} onCancel={() => setEditing(false)} onSave={onEdit} />}
           <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", columnGap: 16, rowGap: 8, fontSize: 13, lineHeight: "18px" }}>
             <span style={{ color: "var(--neutral-500)" }}>Assignee</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, color: "var(--neutral-900)" }}>

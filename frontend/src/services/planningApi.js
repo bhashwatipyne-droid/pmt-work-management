@@ -219,6 +219,24 @@ export const reassignTask = async (taskId, to) => {
   }
 };
 
+// Fix the project / deliverable / type of a WhatsApp task from its card. The
+// listener learns from it, and so from the Work Sheet row it made.
+export const correctTask = async (taskId, body) => {
+  try {
+    await axios.post(`${API}/planning/tasks/${taskId}/correct`, body);
+    await refreshPlan();
+    return true;
+  } catch (err) {
+    toast.error(errorText(err, "Could not save the change"));
+    return false;
+  }
+};
+
+export const getDeliverableTypes = async () => {
+  const { data } = await axios.get(`${API}/planning/deliverable-types`);
+  return Array.isArray(data) ? data : [];
+};
+
 // ---------------- held tasklist items (needs_review) ----------------
 // Lines the listener could not place with confidence. A manager picks the project
 // (and deliverable) here, or rejects the line.

@@ -74,21 +74,21 @@ function EditForm({ info, onSave, onCancel }) {
         value={projectId} onValueChange={(v) => { setProjectId(v); setDeliverableId(""); }}
         options={projects.map((p) => ({ value: p.id, label: p.name }))}
         placeholder="Project…" searchPlaceholder="Search project..." emptyText="No projects found"
-        className={TRIGGER} triggerProps={{ "aria-label": "Project" }} contentClassName="w-[340px] p-0"
+        className={TRIGGER} triggerProps={{ "aria-label": "Project" }} contentClassName="z-[80] w-[340px] p-0"
       />
       <SearchableSelect
         open={openSelect === "deliverable"} onOpenChange={(o) => setOpenSelect(o ? "deliverable" : null)}
         value={deliverableId} onValueChange={(v) => { setDeliverableId(v); const d = deliverables.find((x) => x.id === v); if (d?.deliverable_type) setType(d.deliverable_type); }}
         options={[{ value: "", label: "No deliverable" }, ...deliverables.map((d) => ({ value: d.id, label: d.name, chip: d.deliverable_type }))]}
         placeholder="Deliverable…" searchPlaceholder="Search deliverable..." emptyText="No deliverables found"
-        disabled={!projectId} className={TRIGGER} triggerProps={{ "aria-label": "Deliverable" }} contentClassName="w-[340px] p-0"
+        disabled={!projectId} className={TRIGGER} triggerProps={{ "aria-label": "Deliverable" }} contentClassName="z-[80] w-[340px] p-0"
       />
       <SearchableSelect
         open={openSelect === "type"} onOpenChange={(o) => setOpenSelect(o ? "type" : null)}
         value={type} onValueChange={setType}
         options={types.map((t) => ({ value: t, label: t }))}
         placeholder="Deliverable type…" searchPlaceholder="Search type..." emptyText="No types found"
-        className={TRIGGER} triggerProps={{ "aria-label": "Deliverable type" }} contentClassName="w-[340px] p-0"
+        className={TRIGGER} triggerProps={{ "aria-label": "Deliverable type" }} contentClassName="z-[80] w-[340px] p-0"
       />
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" disabled={busy} onClick={save} style={{ ...SMALL_BTN, background: busy ? "var(--neutral-200)" : "var(--brand-500)", color: busy ? "var(--neutral-400)" : "#fff" }}>Save</button>

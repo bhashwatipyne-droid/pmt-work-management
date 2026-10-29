@@ -40,3 +40,20 @@ def test_manual_row_follows_the_same_rollover_rule_as_a_whatsapp_task():
     closed = planning.build_plan_rows(items, statuses, now)[0]
     assert closed["status"] == "done" and closed["cat"] != "rolled"
     assert closed["d0"] == closed["d1"] == 0
+
+
+def test_card_deliverable_fields_fall_back_to_unmatched_and_undecided():
+    now = datetime(2026, 10, 28, 9, 0, tzinfo=timezone.utc)
+    bare = {"id": "t", "status": "pending", "work_date": "2026-10-28", "assignee_pmt_name": "Krishna",
+            "deliverable_name": "Healthy Habits", "created_at": "2026-10-28T04:00:00+00:00", "seq": 1}
+    row = planning.build_plan_rows([bare], {}, now)[0]
+    # typed words that matched nothing in PMT are not a deliverable
+    assert row["deliverable"] == "Unmatched" and row["deliverable_type"] == "Undecided"
+
+    matched = {**bare, "id": "m", "db_deliverable": "Healthy Habits - Reel", "deliverable_type": "Reel / Short Video"}
+    row = planning.build_plan_rows([matched], {}, now)[0]
+    assert row["deliverable"] == "Healthy Habits - Reel" and row["deliverable_type"] == "Reel / Short Video"
+
+    # the matched PMT deliverable's own type beats the listener's reading
+    own = {**matched, "id": "o", "db_deliverable_type": "Carousel"}
+    assert planning.build_plan_rows([own], {}, now)[0]["deliverable_type"] == "Carousel"

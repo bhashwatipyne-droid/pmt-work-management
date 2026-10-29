@@ -125,6 +125,15 @@ describe("taskCardInfo", () => {
     expect(c.canReassign).toBe(true);
   });
 
+  test("deliverable type and deliverable show what was captured, else Undecided / Unmatched", () => {
+    const bare = taskCardInfo(t, { ctx });
+    expect(bare.deliverableType).toBe("Undecided");
+    expect(bare.deliverable).toBe("Unmatched");
+    const matched = taskCardInfo({ ...t, deliverable_type: "Reel / Short Video", deliverable: "Healthy Habits" }, { ctx });
+    expect(matched.deliverableType).toBe("Reel / Short Video");
+    expect(matched.deliverable).toBe("Healthy Habits");
+  });
+
   test("week view shows the day range; Work Sheet rows and done tasks cannot be reassigned", () => {
     expect(taskCardInfo(t, { week: true, ctx }).when).toBe("Wed 7 – Fri 9");
     expect(taskCardInfo({ ...t, src: "work_sheet" }, { ctx }).canReassign).toBe(false);

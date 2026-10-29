@@ -260,6 +260,26 @@ def task_title(item: dict) -> str:
     )
 
 
+UNMATCHED_DELIVERABLE = "Unmatched"
+UNDECIDED_DELIVERABLE_TYPE = "Undecided"
+
+
+def plan_deliverable(item: dict) -> str:
+    """The PMT deliverable a task is tied to, for the Planning card. Only a real
+    PMT deliverable counts (the dropdown one); words typed in the tasklist that
+    matched nothing are "Unmatched", not a deliverable."""
+    return (item.get("db_deliverable") or "").strip() or UNMATCHED_DELIVERABLE
+
+
+def plan_deliverable_type(item: dict) -> str:
+    """The deliverable type for the Planning card: the matched PMT deliverable's
+    own type, else the listener's reading of the line, else "Undecided"."""
+    return (
+        (item.get("db_deliverable_type") or item.get("deliverable_type") or "").strip()
+        or UNDECIDED_DELIVERABLE_TYPE
+    )
+
+
 def plan_status(item: dict, work_status: Optional[str]) -> str:
     if item.get("status") == "accepted" and work_status:
         if work_status in WORK_ITEM_DONE:
@@ -316,7 +336,10 @@ def sheet_rows_as_items(
             "deliverable_label": (deliverable_names or {}).get(row.get("deliverable_id") or "")
             or row.get("deliverable_type")
             or "",
+            "db_deliverable": (deliverable_names or {}).get(row.get("deliverable_id") or "") or "",
             "deliverable_name": (row.get("deliverable_name") or "").strip(),
+            "deliverable_id": row.get("deliverable_id"),
+            "deliverable_type": row.get("deliverable_type") or "",
             "project_name": project_names.get(row.get("project_id") or "", ""),
             "work_date": row["work_date"],
             "created_at": row.get("created_at"),
@@ -399,6 +422,8 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             "id": item["id"],
             "who": item.get("assignee_pmt_name") or item.get("assignee_name") or "",
             "task": task_title(item),
+            "deliverable": plan_deliverable(item),
+            "deliverable_type": plan_deliverable_type(item),
             "proj": item.get("project_name") or item.get("project_text") or ("Project to be confirmed" if item.get("project_unconfirmed") else ""),
             "d0": d0,
             "d1": d1,
@@ -509,6 +534,28 @@ def create_planning_router(
             minutes = row.get("time_taken_minutes")
             if isinstance(minutes, (int, float)) and minutes > 0:
                 wanted[row["id"]]["est_minutes"] = minutes
+
+    async def attach_deliverable_info(item_list: List[dict]) -> None:
+        """Give each item the name and type of the PMT deliverable it is linked
+        to, so the Planning card can show them. The matched deliverable's own
+        type wins over the listener's guess (plan_deliverable_type)."""
+        ids = list({i["deliverable_id"] for i in item_list if i.get("deliverable_id")})
+        if not ids:
+            return
+        found = {
+            d["id"]: d
+            for d in await db.deliverables.find(
+                {"id": {"$in": ids}}, {"_id": 0, "id": 1, "name": 1, "type": 1}
+            ).to_list(len(ids))
+        }
+        for item in item_list:
+            d = found.get(item.get("deliverable_id") or "")
+            if not d:
+                continue
+            if not item.get("db_deliverable"):
+                item["db_deliverable"] = d.get("name") or ""
+            if d.get("type"):
+                item["db_deliverable_type"] = d["type"]
 
     async def manual_sheet_items(
         names: Dict[str, str], date_from: str, date_to: str
@@ -1048,6 +1095,7 @@ def create_planning_router(
         )
         rows = rows + sheet_items
         statuses = {**statuses, **sheet_statuses}
+        await attach_deliverable_info(rows)
 
         week_start = monday.isoformat()
         rows = [

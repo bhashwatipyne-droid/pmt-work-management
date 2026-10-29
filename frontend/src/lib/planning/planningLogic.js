@@ -77,6 +77,9 @@ export function taskCardInfo(t, { week = false, ctx, people } = {}) {
     who: t.who,
     ini: initials(t.who),
     project: t.proj || "Project to be confirmed",
+    // Shown even when the WhatsApp listener could not work them out.
+    deliverableType: t.deliverable_type || "Undecided",
+    deliverable: t.deliverable || "Unmatched",
     load: week ? `${fmtH(t.est)} total` : `${fmtH(perDay)} today`,
     change: t.note || "",
     // Rows logged in the Work Sheet belong to the person who logged them.

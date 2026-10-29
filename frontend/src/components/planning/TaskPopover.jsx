@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { Info, RefreshCw, Table2, X } from "lucide-react";
 
 const W = 360;
+// Values shown when the listener could not capture the deliverable; greyed out.
+const UNSET = new Set(["Undecided", "Unmatched"]);
 const SHADOW = "0 6px 25px rgba(13,28,61,0.12), inset 0 0 0 1px rgb(234,238,244)";
 
 // Opens next to the clicked bar and stays inside the window.
 export const popoverPosition = (rect, vw, vh) => {
   const room = vw - rect.right;
   const left = room >= W + 12 ? rect.right + 8 : Math.max(12, Math.min(rect.left, vw - W - 12));
-  const top = Math.max(12, Math.min(rect.top, vh - 380));
+  const top = Math.max(12, Math.min(rect.top, vh - 440));
   return { left, top };
 };
 
@@ -82,6 +84,10 @@ export default function TaskPopover({ info, anchor, onClose, onOpenWorksheet, on
             </span>
             <span style={{ color: "var(--neutral-500)" }}>Project</span>
             <span style={{ color: "var(--neutral-900)", textWrap: "pretty" }}>{info.project}</span>
+            <span style={{ color: "var(--neutral-500)" }}>Deliverable type</span>
+            <span data-testid="task-popover-deliverable-type" style={{ color: UNSET.has(info.deliverableType) ? "var(--neutral-400)" : "var(--neutral-900)", textWrap: "pretty" }}>{info.deliverableType}</span>
+            <span style={{ color: "var(--neutral-500)" }}>Deliverable</span>
+            <span data-testid="task-popover-deliverable" style={{ color: UNSET.has(info.deliverable) ? "var(--neutral-400)" : "var(--neutral-900)", textWrap: "pretty" }}>{info.deliverable}</span>
             <span style={{ color: "var(--neutral-500)" }}>Load</span>
             <span style={{ color: "var(--neutral-900)", fontVariantNumeric: "tabular-nums" }}>{info.load}</span>
             {info.change && (

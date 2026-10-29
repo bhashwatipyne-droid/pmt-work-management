@@ -678,14 +678,15 @@ def create_work_items_router(
             logger.exception("Could not create the collaborator notifications")
 
 
-    @router.post("/work-items/collaborators")
-    async def add_work_item_collaborators(payload: CollaboratorsPayload, request: Request):
-        user = await get_acting_user(request)
+    async def add_collaborators_core(user, raw_ids, raw_people) -> dict:
+        """Tag people on entries (each gets their own linked row). The Work Sheet
+        endpoint below uses it, and so does accepting a WhatsApp task that was
+        given to a whole team (planning.py)."""
         if user.role == "admin":
             raise HTTPException(status_code=403, detail="Admins have view-only access to the Work Sheet")
 
-        ids = list(dict.fromkeys(i for i in payload.ids if i))
-        people = list(dict.fromkeys(i for i in payload.creator_ids if i))
+        ids = list(dict.fromkeys(i for i in raw_ids if i))
+        people = list(dict.fromkeys(i for i in raw_people if i))
         if not ids or not people:
             raise HTTPException(status_code=400, detail="Pick at least one entry and one person.")
         if len(ids) > COLLAB_MAX_ROWS:
@@ -843,6 +844,14 @@ def create_work_items_router(
             "skipped": skipped,
             "row_errors": row_errors,
         }
+
+    @router.post("/work-items/collaborators")
+    async def add_work_item_collaborators(payload: CollaboratorsPayload, request: Request):
+        user = await get_acting_user(request)
+        return await add_collaborators_core(user, payload.ids, payload.creator_ids)
+
+    # planning.py adds a whole team to an accepted task through the same code
+    router.add_collaborators = add_collaborators_core
 
 
     @router.post("/work-items/bulk-update", response_model=List[WorkItem])

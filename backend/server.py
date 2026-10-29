@@ -999,8 +999,7 @@ api_router.include_router(
     )
 )
 
-api_router.include_router(
-    create_work_items_router(
+_work_items_router = create_work_items_router(
         db=db,
         logger=logging.getLogger(__name__),
         get_acting_user=get_acting_user,
@@ -1040,7 +1039,7 @@ api_router.include_router(
         DONE_STATUSES=DONE_STATUSES,
         DELIVERABLE_TYPE_UNITS=DELIVERABLE_TYPE_UNITS,
     )
-)
+api_router.include_router(_work_items_router)
 
 api_router.include_router(
     create_auth_router(
@@ -1187,6 +1186,7 @@ _planning_router = create_planning_router(
     create_work_item=create_work_item,
     create_work_item_for_user_id=_create_work_item_for_user_id,
     create_work_item_for_task=_create_work_item_for_task,
+    add_collaborators=_work_items_router.add_collaborators,
     work_item_create_model=WorkItemCreate,
     department_to_stage=DEPARTMENT_TO_STAGE,
     deliverable_type_categories=DELIVERABLE_TYPE_CATEGORIES,

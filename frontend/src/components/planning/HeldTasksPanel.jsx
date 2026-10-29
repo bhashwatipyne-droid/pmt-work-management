@@ -42,6 +42,8 @@ function HeldRow({ item, projects, onDone }) {
   }, [needsAssignee, item.team]);
 
   const toggle = (id) => setChosen((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  // the first person picked owns the task; the rest of the team are its collaborators
+  const addWholeTeam = () => setChosen((cur) => [...cur, ...people.map((p) => p.id).filter((id) => !cur.includes(id))]);
   const ready = !!projectId && (!needsAssignee || chosen.length > 0);
 
   useEffect(() => {
@@ -64,7 +66,7 @@ function HeldRow({ item, projects, onDone }) {
       const body = { project_id: projectId, deliverable_id: deliverableId || null };
       if (needsAssignee) {
         body.assignee_user_id = chosen[0];
-        body.also_assign_user_ids = chosen.slice(1);
+        body.collaborator_user_ids = chosen.slice(1);
       }
       await resolveReviewItem(item.id, body);
       const names = needsAssignee
@@ -133,7 +135,7 @@ function HeldRow({ item, projects, onDone }) {
       {needsAssignee && (
         <div data-testid="held-assignees" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 12, color: "var(--neutral-500)" }}>
-            Nobody is named on this line ("{item.assignee_name}"). Who is it for?
+            Nobody is named on this line ("{item.assignee_name}"). Pick who owns it first; anyone else you add is tagged as a collaborator.
           </span>
           <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {people.map((p) => {
@@ -143,10 +145,16 @@ function HeldRow({ item, projects, onDone }) {
                   key={p.id} type="button" aria-pressed={on} onClick={() => toggle(p.id)}
                   style={{ ...BTN, height: 28, padding: "0 10px", background: on ? "var(--brand-500)" : "#fff", color: on ? "#fff" : "var(--neutral-900)", boxShadow: on ? "none" : "inset 0 0 0 1px var(--neutral-200)" }}
                 >
-                  {p.name}
+                  {p.name}{on && chosen[0] === p.id ? " · owner" : ""}
                 </button>
               );
             })}
+            <button
+              type="button" disabled={chosen.length === 0} onClick={addWholeTeam}
+              style={{ ...BTN, height: 28, padding: "0 10px", background: "#fff", color: chosen.length === 0 ? "var(--neutral-400)" : "var(--brand-500)", boxShadow: "inset 0 0 0 1px var(--neutral-200)" }}
+            >
+              Add the whole team
+            </button>
           </span>
         </div>
       )}

@@ -98,8 +98,8 @@ test("Reject removes the line", async () => {
   expect(host.querySelector('[data-testid="held-tasks"]')).toBeNull();
 });
 
-test("a line nobody is named on asks who it is for, and can go to several people", async () => {
-  api.getAssignable.mockResolvedValue([{ id: "u1", name: "Vanshika Shah" }, { id: "u2", name: "Sakshi Agrawal" }]);
+test("a Team line: the first person owns it and the whole team can be added as collaborators", async () => {
+  api.getAssignable.mockResolvedValue([{ id: "u1", name: "Vanshika Shah" }, { id: "u2", name: "Sakshi Agrawal" }, { id: "u3", name: "Krupali Gharge" }]);
   api.getReviewQueue.mockResolvedValue([
     { id: "t9", raw_line: "- FT > 30 Years > Brand Film > Campaign Ideation", assignee_name: "Team", assignee_user_id: null, team: "content", work_date: "2026-10-29", project_id: "p1", review_reasons: [] },
   ]);
@@ -112,13 +112,15 @@ test("a line nobody is named on asks who it is for, and can go to several people
   await flush();
   await flush();
   const confirmBtn = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Confirm and send");
+  const inPicker = (text) => [...host.querySelectorAll('[data-testid="held-assignees"] button')].find((b) => b.textContent.startsWith(text));
   expect(host.querySelector('[data-testid="held-assignees"]')).not.toBeNull();
-  expect(confirmBtn().disabled).toBe(true);           // nobody picked yet
+  expect(confirmBtn().disabled).toBe(true);                 // nobody owns it yet
+  expect(inPicker("Add the whole team").disabled).toBe(true);
 
-  const person = (name) => [...host.querySelectorAll('[data-testid="held-assignees"] button')].find((b) => b.textContent === name);
-  await act(async () => person("Vanshika Shah").click());
-  await act(async () => person("Sakshi Agrawal").click());
+  await act(async () => inPicker("Sakshi Agrawal").click());
+  expect(inPicker("Sakshi Agrawal").textContent).toContain("owner");
+  await act(async () => inPicker("Add the whole team").click());
   expect(confirmBtn().disabled).toBe(false);
   await act(async () => confirmBtn().click());
-  expect(api.resolveReviewItem).toHaveBeenCalledWith("t9", { project_id: "p1", deliverable_id: null, assignee_user_id: "u1", also_assign_user_ids: ["u2"] });
+  expect(api.resolveReviewItem).toHaveBeenCalledWith("t9", { project_id: "p1", deliverable_id: null, assignee_user_id: "u2", collaborator_user_ids: ["u1", "u3"] });
 });

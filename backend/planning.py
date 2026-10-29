@@ -132,6 +132,8 @@ class ResolvePayload(BaseModel):
     project_id: str
     deliverable_id: Optional[str] = None
     assignee_user_id: Optional[str] = None
+    # "Team" lines: the same task for more people (one copy each)
+    also_assign_user_ids: List[str] = []
 
 
 class CorrectPayload(BaseModel):
@@ -1370,6 +1372,10 @@ def create_planning_router(
         if not assignee_id:
             raise HTTPException(status_code=400, detail="Choose who this task is for")
         target = await production_target(assignee_id, dept)
+        extra_targets = []
+        for extra_id in dict.fromkeys(payload.also_assign_user_ids or []):
+            if extra_id != assignee_id:
+                extra_targets.append(await production_target(extra_id, dept))
 
         nlp_project = (item.get("nlp_ids") or {}).get("project_id")
         outcome = "confirmed_nlp" if nlp_project and nlp_project == project["id"] else "corrected"
@@ -1401,7 +1407,50 @@ def create_planning_router(
         if result.modified_count != 1:
             raise HTTPException(status_code=409, detail="This task was just changed. Reload and try again.")
         await log_human(item, outcome, user, {"project_id": project["id"], "deliverable_id": (deliverable or {}).get("id")})
-        return {"ok": True, "outcome": outcome}
+
+        # A line under a "Team" heading is one task for several people: each extra
+        # person gets their own copy, like the same line typed under their name.
+        copies = 0
+        if extra_targets:
+            base = await items.find_one({"id": task_id}, {"_id": 0})
+            for person in extra_targets:
+                copy_doc = {
+                    **base,
+                    "id": str(uuid.uuid4()),
+                    "assignee_name": person["name"],
+                    "assignee_user_id": person["id"],
+                    "assignee_pmt_name": person["name"],
+                    "status": "pending",
+                    "created_at": now_iso(),
+                    "updated_at": now_iso(),
+                    "history": [history(user.id, "resolved", f"copy of {task_id} for {person['name']}")],
+                }
+                try:
+                    await items.insert_one(copy_doc)
+                    copies += 1
+                except Exception as exc:  # noqa: BLE001 - the same line already exists for that person
+                    if log_error:
+                        log_error(f"planning: could not copy task {task_id} for {person['name']}: {exc}")
+        return {"ok": True, "outcome": outcome, "copies": copies}
+
+    @router.get("/assignable")
+    async def assignable(request: Request, team: str = Query(...)):
+        """Who a held line can be given to: the active people of that team."""
+        user = await planner(request)
+        dept = TEAM_DEPARTMENT.get(team.lower())
+        if not dept:
+            raise HTTPException(status_code=400, detail="Unknown team")
+        if user.role == "manager" and user.department != dept:
+            raise HTTPException(status_code=403, detail="Not your team")
+        rows = await db.users.find(
+            {"department": dept, "role": {"$in": ["member", "manager"]}, "active": {"$ne": False}},
+            {"_id": 0, "id": 1, "name": 1, "username": 1},
+        ).sort("name", 1).to_list(200)
+        return [
+            {"id": r["id"], "name": r["name"]}
+            for r in rows
+            if not TEST_ACCOUNT.search(f"{r['name']} {r.get('username') or ''}")
+        ]
 
     @router.post("/review/{task_id}/reject")
     async def reject(task_id: str, payload: RejectPayload, request: Request):

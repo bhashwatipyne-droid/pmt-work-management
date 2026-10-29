@@ -1086,3 +1086,25 @@ def test_resolving_an_old_held_item_files_its_row_under_the_old_date(env):
     assert env.post(f"/planning/my-tasks/{held['id']}/accept", "member-rb").status_code == 200
     row = env.work_items(source_task_id=held["id"])[0]
     assert row["work_date"] == old_day and row["month"] == "2026-10"
+
+
+def test_a_team_line_can_be_given_to_several_people(env):
+    held = env.item(3)
+    env.set_item(3, assignee_name="Team", assignee_user_id=None, assignee_pmt_name=None, team="content")
+    # no assignee chosen: still refused
+    assert env.post(f"/planning/review/{held['id']}/resolve", "manager-vs", {"project_id": held["project_id"]}).status_code == 400
+
+    people = env.get("/planning/assignable?team=content", "manager-vs").json()
+    ids = {p["id"] for p in people}
+    assert {"member-rb", "manager-hp"} <= ids
+    assert env.get("/planning/assignable?team=nonsense", "manager-vs").status_code == 400
+
+    r = env.post(f"/planning/review/{held['id']}/resolve", "manager-vs", {
+        "project_id": held["project_id"], "assignee_user_id": "member-rb", "also_assign_user_ids": ["manager-hp", "member-rb"],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["copies"] == 1                       # the primary person is not copied twice
+    mine = env.get("/planning/my-tasks", "member-rb").json()
+    assert any(c["id"] == held["id"] for c in mine)
+    copies = run(server.db.tasklist_items.find({"message_id": held["message_id"], "raw_line": held["raw_line"], "assignee_user_id": "manager-hp"}, {"_id": 0}).to_list(5))
+    assert len(copies) == 1 and copies[0]["status"] == "pending" and copies[0]["project_id"] == held["project_id"]

@@ -247,6 +247,12 @@ export const getReviewQueue = async () => {
 
 export const resolveReviewItem = (id, body) => axios.post(`${API}/planning/review/${id}/resolve`, body);
 
+// People a held line can be given to (its team's active members).
+export const getAssignable = async (team) => {
+  const { data } = await axios.get(`${API}/planning/assignable`, { params: { team } });
+  return Array.isArray(data) ? data : [];
+};
+
 export const rejectReviewItem = (id, reason = "") => axios.post(`${API}/planning/review/${id}/reject`, { reason });
 
 // What the matcher learned from those decisions (switch a rule off if it learned wrong).

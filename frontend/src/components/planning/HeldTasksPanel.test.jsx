@@ -8,6 +8,7 @@ jest.mock("@/context/UserContext", () => ({ useUser: () => ({ currentUser: { id:
 jest.mock("@/services/api", () => ({ getProjects: jest.fn(), getDeliverables: jest.fn() }));
 jest.mock("@/services/planningApi", () => ({
   getReviewQueue: jest.fn(),
+  getAssignable: jest.fn(),
   resolveReviewItem: jest.fn(),
   rejectReviewItem: jest.fn(),
 }));
@@ -20,7 +21,7 @@ beforeEach(() => {
   base.getProjects.mockResolvedValue([{ id: "p1", name: "BNP Balanced Hybrid NFO Shoot Video" }, { id: "p2", name: "Other" }]);
   base.getDeliverables.mockResolvedValue([{ id: "d1", name: "Fund Animation" }]);
   api.getReviewQueue.mockResolvedValue([
-    { id: "t1", raw_line: "BBNPP > Balanced Hybrid Fund Animation", assignee_name: "Tejas", team: "animation", work_date: "2026-10-28", project_id: "p1", review_reasons: ["Client was guessed, please confirm"] },
+    { id: "t1", raw_line: "BBNPP > Balanced Hybrid Fund Animation", assignee_name: "Tejas", assignee_user_id: "tp1", team: "animation", work_date: "2026-10-28", project_id: "p1", review_reasons: ["Client was guessed, please confirm"] },
   ]);
   api.resolveReviewItem.mockResolvedValue({});
   api.rejectReviewItem.mockResolvedValue({});
@@ -95,4 +96,29 @@ test("Reject removes the line", async () => {
   await flush();
   expect(api.rejectReviewItem).toHaveBeenCalledWith("t1");
   expect(host.querySelector('[data-testid="held-tasks"]')).toBeNull();
+});
+
+test("a line nobody is named on asks who it is for, and can go to several people", async () => {
+  api.getAssignable.mockResolvedValue([{ id: "u1", name: "Vanshika Shah" }, { id: "u2", name: "Sakshi Agrawal" }]);
+  api.getReviewQueue.mockResolvedValue([
+    { id: "t9", raw_line: "- FT > 30 Years > Brand Film > Campaign Ideation", assignee_name: "Team", assignee_user_id: null, team: "content", work_date: "2026-10-29", project_id: "p1", review_reasons: [] },
+  ]);
+  const host = await mount();
+  await act(async () => {
+    const d = host.querySelector("details");
+    d.open = true;
+    d.dispatchEvent(new Event("toggle"));
+  });
+  await flush();
+  await flush();
+  const confirmBtn = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Confirm and send");
+  expect(host.querySelector('[data-testid="held-assignees"]')).not.toBeNull();
+  expect(confirmBtn().disabled).toBe(true);           // nobody picked yet
+
+  const person = (name) => [...host.querySelectorAll('[data-testid="held-assignees"] button')].find((b) => b.textContent === name);
+  await act(async () => person("Vanshika Shah").click());
+  await act(async () => person("Sakshi Agrawal").click());
+  expect(confirmBtn().disabled).toBe(false);
+  await act(async () => confirmBtn().click());
+  expect(api.resolveReviewItem).toHaveBeenCalledWith("t9", { project_id: "p1", deliverable_id: null, assignee_user_id: "u1", also_assign_user_ids: ["u2"] });
 });

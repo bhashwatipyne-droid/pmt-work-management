@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { SearchableSelect } from "@/components/work-sheet/SearchableSelect";
 import { useUser } from "@/context/UserContext";
 import { getDeliverables, getProjects } from "@/services/api";
-import { getReviewQueue, rejectReviewItem, resolveReviewItem } from "@/services/planningApi";
+import { getAssignable, getReviewQueue, rejectReviewItem, resolveReviewItem } from "@/services/planningApi";
 
 const CARD = { background: "#fff", borderRadius: 12, boxShadow: "inset 0 0 0 1px rgb(234,238,244)", display: "flex", flexDirection: "column", minWidth: 0 };
 // Same look as the other pills on this page; the list itself is the Work Sheet's searchable dropdown.
@@ -24,6 +24,25 @@ function HeldRow({ item, projects, onDone }) {
   const [deliverables, setDeliverables] = useState([]);
   const [busy, setBusy] = useState(false);
   const [openSelect, setOpenSelect] = useState(null);
+  // A line under a "Team" heading (or any name PMT does not know) has nobody to
+  // send it to: the manager picks who, one or several.
+  const needsAssignee = !item.assignee_user_id;
+  const [people, setPeople] = useState([]);
+  const [chosen, setChosen] = useState([]);
+
+  useEffect(() => {
+    if (!needsAssignee || !item.team) return undefined;
+    let cancelled = false;
+    getAssignable(item.team)
+      .then((rows) => !cancelled && setPeople(rows))
+      .catch(() => !cancelled && setPeople([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [needsAssignee, item.team]);
+
+  const toggle = (id) => setChosen((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const ready = !!projectId && (!needsAssignee || chosen.length > 0);
 
   useEffect(() => {
     if (!projectId) {
@@ -42,8 +61,16 @@ function HeldRow({ item, projects, onDone }) {
   const confirm = async () => {
     setBusy(true);
     try {
-      await resolveReviewItem(item.id, { project_id: projectId, deliverable_id: deliverableId || null });
-      toast.success("Task sent to " + (item.assignee_pmt_name || item.assignee_name || "the assignee"));
+      const body = { project_id: projectId, deliverable_id: deliverableId || null };
+      if (needsAssignee) {
+        body.assignee_user_id = chosen[0];
+        body.also_assign_user_ids = chosen.slice(1);
+      }
+      await resolveReviewItem(item.id, body);
+      const names = needsAssignee
+        ? people.filter((p) => chosen.includes(p.id)).map((p) => p.name).join(", ")
+        : item.assignee_pmt_name || item.assignee_name || "the assignee";
+      toast.success("Task sent to " + names);
       onDone(item.id);
     } catch (err) {
       toast.error(errText(err, "Could not confirm this task"));
@@ -103,8 +130,28 @@ function HeldRow({ item, projects, onDone }) {
           contentClassName="w-[400px] p-0"
         />
       </div>
+      {needsAssignee && (
+        <div data-testid="held-assignees" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--neutral-500)" }}>
+            Nobody is named on this line ("{item.assignee_name}"). Who is it for?
+          </span>
+          <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {people.map((p) => {
+              const on = chosen.includes(p.id);
+              return (
+                <button
+                  key={p.id} type="button" aria-pressed={on} onClick={() => toggle(p.id)}
+                  style={{ ...BTN, height: 28, padding: "0 10px", background: on ? "var(--brand-500)" : "#fff", color: on ? "#fff" : "var(--neutral-900)", boxShadow: on ? "none" : "inset 0 0 0 1px var(--neutral-200)" }}
+                >
+                  {p.name}
+                </button>
+              );
+            })}
+          </span>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" disabled={!projectId || busy} onClick={confirm} style={{ ...BTN, background: !projectId || busy ? "var(--neutral-200)" : "var(--brand-500)", color: !projectId || busy ? "var(--neutral-400)" : "#fff" }}>
+        <button type="button" disabled={!ready || busy} onClick={confirm} style={{ ...BTN, background: !ready || busy ? "var(--neutral-200)" : "var(--brand-500)", color: !ready || busy ? "var(--neutral-400)" : "#fff" }}>
           Confirm and send
         </button>
         <button type="button" disabled={busy} onClick={reject} style={{ ...BTN, background: "#fff", boxShadow: "inset 0 0 0 1px var(--neutral-200)", color: "var(--neutral-900)" }}>

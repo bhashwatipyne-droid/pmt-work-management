@@ -18,8 +18,11 @@ export const MAX_UNIT_MINUTES = 1440;
 export const MULTI_DELIVERABLE_STAGE = "Content";
 export const MULTI_DELIVERABLE_TYPE_PREFIX = "Campaign Ideation Plan";
 
+// Data research (SMI or Web) is done the same way as campaign ideation.
+export const MULTI_DELIVERABLE_TYPE_PREFIXES = [MULTI_DELIVERABLE_TYPE_PREFIX, "Data Research and Analysis"];
+
 export const isMultiDeliverableType = (type) =>
-  String(type || "").startsWith(MULTI_DELIVERABLE_TYPE_PREFIX);
+  MULTI_DELIVERABLE_TYPE_PREFIXES.some((prefix) => String(type || "").startsWith(prefix));
 
 export const isMultiDeliverableRow = (item) =>
   item?.stage === MULTI_DELIVERABLE_STAGE && isMultiDeliverableType(item?.deliverable_type);

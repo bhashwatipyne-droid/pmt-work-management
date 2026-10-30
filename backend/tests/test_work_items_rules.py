@@ -71,6 +71,15 @@ def test_only_content_rows_of_the_multi_type_cover_several_deliverables():
     assert not rules.is_multi_deliverable_row({})
 
 
+def test_data_research_rows_on_the_content_sheet_cover_several_deliverables_too():
+    stage = rules.MULTI_DELIVERABLE_STAGE
+    for t in ("Data Research and Analysis (SMI)", "Data Research and Analysis (Web)"):
+        assert rules.is_multi_deliverable_row({"stage": stage, "deliverable_type": t})
+        assert not rules.is_multi_deliverable_row({"stage": "Design", "deliverable_type": t})
+    # other Core types keep their typed Qty
+    assert not rules.is_multi_deliverable_row({"stage": stage, "deliverable_type": "Data Updation"})
+
+
 # ------------------------------------------------------- shared constants wiring
 def test_server_still_exposes_the_moved_names_with_the_same_objects():
     """Other modules and tests reach these as server.<name>; they must be the very

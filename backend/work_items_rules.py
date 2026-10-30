@@ -125,13 +125,16 @@ MAX_QUANTITY = 200
 # (quantity_items[i] is the time for deliverable_ids[i]).
 MULTI_DELIVERABLE_STAGE = "Content"
 MULTI_DELIVERABLE_TYPE_PREFIX = "Campaign Ideation Plan"
+# Data research is done the same way: one "Data Research and Analysis (SMI)" or
+# "(Web)" row can cover several deliverables of its project.
+MULTI_DELIVERABLE_TYPE_PREFIXES = (MULTI_DELIVERABLE_TYPE_PREFIX, "Data Research and Analysis")
 
 
 def is_multi_deliverable_row(row: dict) -> bool:
     """True for a Content row whose type lets it cover several deliverables."""
     return row.get("stage") == MULTI_DELIVERABLE_STAGE and str(
         row.get("deliverable_type") or ""
-    ).startswith(MULTI_DELIVERABLE_TYPE_PREFIX)
+    ).startswith(MULTI_DELIVERABLE_TYPE_PREFIXES)
 
 
 def _clean_ids(raw) -> list:
@@ -250,7 +253,7 @@ def apply_deliverable_list_rules(existing: dict, update_fields: dict) -> None:
         if len(_clean_ids(update_fields.get("deliverable_ids"))) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="Several deliverables can be ticked on Campaign Ideation Plan rows only.",
+                detail="Several deliverables can be ticked on Campaign Ideation Plan and Data Research and Analysis rows only.",
             )
         if was_multi:
             # Back to an ordinary row: the deliverable list and the time for

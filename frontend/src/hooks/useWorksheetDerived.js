@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo } from "react";
+import { useDeferredValue, useMemo, useRef } from "react";
 import { isDeliverableMissing } from "@/lib/deliverableRules";
 import { countTabs, filterWorkItems, sortWorkItems } from "@/lib/worksheetView";
 
@@ -30,9 +30,15 @@ export function useWorksheetDerived({ items, clients, users, projects, options, 
     deferredSearch !== (filters.search || "") ||
     (loadingFullList && Boolean((filters.search || "").trim()));
 
+  // Like Google Sheets: a row you just edited stays on screen even if the edit
+  // made it stop matching the filter (fill a blank on a "blanks only" filter and
+  // the row does not vanish under your cursor). It is let go as soon as the
+  // filters, search, month or tab change, or the page is reloaded.
+  const stickyRef = useRef({ key: "", ids: new Set(), seen: new Map(), visible: new Set() });
+
   const filteredItems = useMemo(
-    () =>
-      filterWorkItems({
+    () => {
+      const matching = filterWorkItems({
         items,
         filters,
         deferredSearch,
@@ -43,7 +49,38 @@ export function useWorksheetDerived({ items, clients, users, projects, options, 
         userNameById,
         onlyMissing,
         deliverableTypeCategories: options.deliverable_type_categories,
-      }),
+      });
+
+      const key = JSON.stringify([filters, deferredSearch, month, activeSheet, onlyMissing]);
+      const sticky = stickyRef.current;
+      if (sticky.key !== key) {
+        // a different view: nothing is held over, and nothing counts as "edited"
+        sticky.key = key;
+        sticky.ids = new Set();
+        sticky.visible = new Set();
+        sticky.seen = new Map();
+      }
+
+      const matchingIds = new Set(matching.map((item) => item.id));
+      let kept = 0;
+      for (const item of items) {
+        if (matchingIds.has(item.id)) continue;
+        const before = sticky.seen.get(item.id);
+        // visible a moment ago and edited since (a new object): hold it
+        if (sticky.ids.has(item.id) || (sticky.visible.has(item.id) && before && before !== item)) {
+          sticky.ids.add(item.id);
+          kept += 1;
+        }
+      }
+
+      const result = kept
+        ? items.filter((item) => matchingIds.has(item.id) || sticky.ids.has(item.id))
+        : matching;
+
+      sticky.visible = new Set(result.map((item) => item.id));
+      sticky.seen = new Map(items.map((item) => [item.id, item]));
+      return result;
+    },
     [
       items,
       filters,

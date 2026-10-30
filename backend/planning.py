@@ -1008,11 +1008,15 @@ def create_planning_router(
 
     def pending_since(item: dict) -> Optional[datetime]:
         """When the card became visible to the assignee."""
-        for field in ("released_at", "resolved_at", "created_at"):
-            moment = _parse_dt(item.get(field))
-            if moment:
-                return moment
-        return None
+        moments = [
+            m for m in (
+                _parse_dt(item.get(field))
+                for field in ("released_at", "resolved_at", "created_at")
+            ) if m
+        ]
+        # The latest of them: a card released earlier and resolved today has
+        # only been waiting since it was resolved.
+        return max(moments) if moments else None
 
     async def auto_accept_one(item: dict, current: datetime) -> bool:
         """Accept one task for its assignee, exactly as the Accept button would
@@ -1076,22 +1080,34 @@ def create_planning_router(
 
     async def auto_accept_due() -> int:
         """Accept every task card that has sat unanswered for the whole window.
-        Returns how many were accepted. Only today's tasks are touched: a task
-        from an earlier day was never accepted and must not reappear as a row
-        dated today."""
+        Returns how many were accepted. Two kinds of card are touched: tasks
+        whose work_date is today, and older tasks that only became visible to
+        the person today (released by a manager's review or reassigned). A
+        task that was held for review on Wed and confirmed on Thu keeps its
+        original work_date, so matching on work_date alone left it pending
+        forever and it later showed up as a rolled-over, days-late row. Cards
+        that have been visible to the person since an earlier day are left
+        alone: they were never accepted and must not appear as new work."""
         if AUTO_ACCEPT_AFTER_MINUTES <= 0 or create_work_item_for_user_id is None:
             return 0
 
         current = now()
         today = current.astimezone(IST).date().isoformat()
+        day_start = datetime.combine(
+            date.fromisoformat(today), datetime.min.time(), tzinfo=IST
+        ).astimezone(timezone.utc).isoformat()
         cutoff = current - timedelta(minutes=AUTO_ACCEPT_AFTER_MINUTES)
         retry_after = timedelta(minutes=AUTO_ACCEPT_RETRY_MINUTES)
 
         rows = await items.find(
             {
                 "status": "pending",
-                "work_date": today,
                 "assignee_user_id": {"$nin": [None, ""]},
+                "$or": [
+                    {"work_date": today},
+                    {"resolved_at": {"$gte": day_start}},
+                    {"released_at": {"$gte": day_start}},
+                ],
             },
             {"_id": 0},
         ).to_list(500)

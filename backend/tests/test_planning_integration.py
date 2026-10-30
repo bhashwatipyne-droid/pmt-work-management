@@ -799,6 +799,34 @@ def test_a_task_from_an_earlier_day_is_never_auto_accepted(env):
     assert env.item(2)["status"] == "pending" and env.work_items(creator_id="member-rb") == []
 
 
+def test_an_old_task_confirmed_today_is_auto_accepted_an_hour_after_confirming(env):
+    """Held for review on an earlier day, confirmed today: it keeps its original
+    work_date, but the person has only been looking at the card since today."""
+    yesterday = (datetime.now(IST).date() - timedelta(days=2)).isoformat()
+    age_task(env, 2, 3000, work_date=yesterday)
+    env.set_item(2, from_review=True)
+
+    env.set_item(2, resolved_at=(datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat())
+    assert run(server._auto_accept_due()) == 0           # confirmed 30 min ago: still inside the hour
+    assert env.item(2)["status"] == "pending"
+
+    env.set_item(2, resolved_at=(datetime.now(timezone.utc) - timedelta(minutes=61)).isoformat())
+    assert run(server._auto_accept_due()) == 1
+    item = env.item(2)
+    assert item["status"] == "accepted" and item["auto_accepted"] is True
+    (row,) = env.work_items(creator_id="member-rb")
+    assert row["work_date"] == yesterday                 # dated with the original day
+
+
+def test_an_old_task_confirmed_on_an_earlier_day_is_still_left_alone(env):
+    old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    yesterday = (datetime.now(IST).date() - timedelta(days=2)).isoformat()
+    age_task(env, 2, 3000, work_date=yesterday)
+    env.set_item(2, resolved_at=old)
+    assert run(server._auto_accept_due()) == 0
+    assert env.item(2)["status"] == "pending"
+
+
 def test_auto_accept_twice_or_after_a_click_makes_one_row(env):
     age_task(env, 2, 90)
     assert run(server._auto_accept_due()) == 1

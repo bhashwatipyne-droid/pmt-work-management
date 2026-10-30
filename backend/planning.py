@@ -129,8 +129,11 @@ class ReassignPayload(BaseModel):
 
 class ResolvePayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    project_id: str
+    # No project is fine for work that has none (hiring and interviews, meetings):
+    # the manager then picks the deliverable type instead.
+    project_id: Optional[str] = None
     deliverable_id: Optional[str] = None
+    deliverable_type: Optional[str] = None
     assignee_user_id: Optional[str] = None
     # A line under a "Team" heading: the first person owns it, these are added as
     # collaborators on the owner's Work Sheet row when it is accepted
@@ -794,7 +797,11 @@ def create_planning_router(
 
         # The manager named the client but the project is not in PMT yet: the Work
         # Sheet row is made without a project and the member picks it there.
-        no_project_yet = bool(item.get("project_unconfirmed")) and not item.get("project_id")
+        # A held line confirmed with a type and no project (hiring, interviews) has
+        # no project by design.
+        no_project_yet = (
+            bool(item.get("project_unconfirmed")) or bool(item.get("no_project_needed"))
+        ) and not item.get("project_id")
 
         project = (
             None
@@ -1370,7 +1377,7 @@ def create_planning_router(
             "project_name", "project_text", "deliverable_name", "deliverable_id",
             "priority", "confidence", "alternatives", "review_reasons", "nlp_ids",
             "decline_reason", "decline_message", "questions", "assigned_by_name",
-            "assigned_by_user_id", "created_at",
+            "assigned_by_user_id", "created_at", "deliverable_type",
         )
         return [{k: r.get(k) for k in keep} for r in rows]
 
@@ -1383,15 +1390,24 @@ def create_planning_router(
         if item["status"] != "needs_review":
             raise HTTPException(status_code=409, detail="This task is not waiting for review")
 
-        project = await db.projects.find_one({"id": payload.project_id}, {"_id": 0})
-        if not project or project.get("hidden") or project.get("duplicate_of"):
-            raise HTTPException(status_code=400, detail="That project is not available")
-        client = await db.clients.find_one({"id": project.get("client_id")}, {"_id": 0, "id": 1, "name": 1})
-        if not client:
-            raise HTTPException(status_code=400, detail="That project has no valid client")
+        picked_type = (payload.deliverable_type or "").strip()
+        if picked_type and picked_type not in deliverable_type_categories:
+            raise HTTPException(status_code=400, detail="Unknown deliverable type")
+
+        project = None
+        client = None
+        if payload.project_id:
+            project = await db.projects.find_one({"id": payload.project_id}, {"_id": 0})
+            if not project or project.get("hidden") or project.get("duplicate_of"):
+                raise HTTPException(status_code=400, detail="That project is not available")
+            client = await db.clients.find_one({"id": project.get("client_id")}, {"_id": 0, "id": 1, "name": 1})
+            if not client:
+                raise HTTPException(status_code=400, detail="That project has no valid client")
+        elif not picked_type:
+            raise HTTPException(status_code=400, detail="Choose a project, or a deliverable type for work that has none")
 
         deliverable = None
-        if payload.deliverable_id:
+        if payload.deliverable_id and project:
             deliverable = await db.deliverables.find_one(
                 {"id": payload.deliverable_id, "project_id": project["id"]}, {"_id": 0}
             )
@@ -1413,7 +1429,30 @@ def create_planning_router(
                 collaborators.append((await production_target(extra_id, dept))["id"])
 
         nlp_project = (item.get("nlp_ids") or {}).get("project_id")
-        outcome = "confirmed_nlp" if nlp_project and nlp_project == project["id"] else "corrected"
+        outcome = (
+            "confirmed_nlp" if project and nlp_project and nlp_project == project["id"] else "corrected"
+        )
+        # The type the manager picked is a human decision: it stays over the
+        # deliverable's own type and the listener learns it.
+        type_fields = (
+            {"deliverable_type": picked_type, "deliverable_type_corrected": True} if picked_type else {}
+        )
+        project_fields = (
+            {
+                "client_id": client["id"],
+                "client_name": client.get("name"),
+                "project_id": project["id"],
+                "project_name": project.get("name"),
+            }
+            if project
+            else {
+                "client_id": None,
+                "client_name": None,
+                "project_id": None,
+                "project_name": None,
+                "no_project_needed": True,
+            }
+        )
 
         result = await items.update_one(
             {"id": task_id, "status": "needs_review"},
@@ -1424,10 +1463,8 @@ def create_planning_router(
                     "from_review": True,
                     "resolved_reasons": item.get("review_reasons") or [],
                     "review_reasons": [],
-                    "client_id": client["id"],
-                    "client_name": client.get("name"),
-                    "project_id": project["id"],
-                    "project_name": project.get("name"),
+                    **project_fields,
+                    **type_fields,
                     "deliverable_id": (deliverable or {}).get("id"),
                     "db_deliverable": (deliverable or {}).get("name"),
                     "assignee_user_id": target["id"],
@@ -1437,12 +1474,16 @@ def create_planning_router(
                     "updated_at": now_iso(),
                     **({"collaborator_user_ids": collaborators} if collaborators else {}),
                 },
-                "$push": {"history": history(user.id, "resolved", f"{outcome}: {project.get('name')}")},
+                "$push": {"history": history(user.id, "resolved", f"{outcome}: {(project or {}).get('name') or picked_type}")},
             },
         )
         if result.modified_count != 1:
             raise HTTPException(status_code=409, detail="This task was just changed. Reload and try again.")
-        await log_human(item, outcome, user, {"project_id": project["id"], "deliverable_id": (deliverable or {}).get("id")})
+        await log_human(item, outcome, user, {
+            "project_id": (project or {}).get("id"),
+            "deliverable_id": (deliverable or {}).get("id"),
+            **({"deliverable_type": picked_type} if picked_type else {}),
+        })
 
         return {"ok": True, "outcome": outcome, "collaborators": len(collaborators)}
 

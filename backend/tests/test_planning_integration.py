@@ -483,6 +483,33 @@ def test_choosing_a_different_project_is_logged_as_a_correction(env):
     assert run(server.db.nlp_match_logs.find_one({"seq": 3}))["human_resolution"]["outcome"] == "corrected"
 
 
+def test_a_held_line_with_no_project_is_confirmed_by_its_type_alone(env):
+    task_id = env.item(3)["id"]
+    # neither a project nor a type: nothing to place it by
+    assert env.post(f"/planning/review/{task_id}/resolve", "manager-vs", {}).status_code == 400
+    assert env.post(f"/planning/review/{task_id}/resolve", "manager-vs", {"deliverable_type": "Not a type"}).status_code == 400
+    r = env.post(f"/planning/review/{task_id}/resolve", "manager-vs", {"deliverable_type": "Hiring and Interviews"})
+    assert r.status_code == 200
+    item = env.item(3)
+    assert item["status"] == "pending" and item["project_id"] is None and item["client_id"] is None
+    assert item["deliverable_type"] == "Hiring and Interviews" and item["deliverable_type_corrected"] is True
+    # accepting it makes a Work Sheet row with that type and no project
+    card = env.get("/planning/my-tasks", "manager-vs").json()[0]
+    accepted = env.post(f"/planning/my-tasks/{card['id']}/accept", "manager-vs")
+    assert accepted.status_code == 200, accepted.text
+    row = run(server.db.work_items.find_one({"source_task_id": task_id}, {"_id": 0}))
+    assert row["deliverable_type"] == "Hiring and Interviews" and not row.get("project_id")
+
+
+def test_the_type_picked_on_a_held_line_beats_the_deliverables_own_type(env):
+    task_id = env.item(3)["id"]
+    r = env.post(f"/planning/review/{task_id}/resolve", "manager-vs",
+                 {"project_id": INVESCO_CONTRA, "deliverable_type": "Changes"})
+    assert r.status_code == 200
+    assert env.item(3)["deliverable_type"] == "Changes" and env.item(3)["deliverable_type_corrected"] is True
+    assert env.get("/planning/review", "manager-vs").status_code == 200
+
+
 def test_resolve_refuses_bad_choices(env):
     task_id = env.item(4)["id"]
     run(server.db.projects.update_one({"id": CONTRA_PROJECT}, {"$set": {"hidden": True}}))

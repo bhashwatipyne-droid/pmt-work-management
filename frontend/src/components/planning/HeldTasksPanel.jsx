@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { SearchableSelect } from "@/components/work-sheet/SearchableSelect";
 import { useUser } from "@/context/UserContext";
 import { getDeliverables, getProjects } from "@/services/api";
-import { getAssignable, getReviewQueue, rejectReviewItem, resolveReviewItem } from "@/services/planningApi";
+import { getAssignable, getDeliverableTypes, getReviewQueue, rejectReviewItem, resolveReviewItem } from "@/services/planningApi";
 
 const CARD = { background: "#fff", borderRadius: 12, boxShadow: "inset 0 0 0 1px rgb(234,238,244)", display: "flex", flexDirection: "column", minWidth: 0 };
 // Same look as the other pills on this page; the list itself is the Work Sheet's searchable dropdown.
@@ -17,11 +17,13 @@ const errText = (err, fallback) => {
   return typeof d === "string" ? d : fallback;
 };
 
-function HeldRow({ item, projects, onDone }) {
+function HeldRow({ item, projects, types, onDone }) {
   const { currentUser } = useUser();
   const [projectId, setProjectId] = useState(item.project_id || "");
   const [deliverableId, setDeliverableId] = useState(item.deliverable_id || "");
   const [deliverables, setDeliverables] = useState([]);
+  // what the matcher read from the line; the manager can change it or set it
+  const [deliverableType, setDeliverableType] = useState(item.deliverable_type || "");
   const [busy, setBusy] = useState(false);
   const [openSelect, setOpenSelect] = useState(null);
   // A line under a "Team" heading (or any name PMT does not know) has nobody to
@@ -50,7 +52,8 @@ function HeldRow({ item, projects, onDone }) {
   const toggle = (id) => setChosen((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   // the first person picked owns the task; the rest of the team are its collaborators
   const addWholeTeam = () => setChosen((cur) => [...cur, ...people.map((p) => p.id).filter((id) => !cur.includes(id))]);
-  const ready = !!projectId && (!needsAssignee || chosen.length > 0);
+  // Work with no project (hiring, interviews) is placed by its type alone.
+  const ready = (!!projectId || !!deliverableType) && (!needsAssignee || chosen.length > 0);
 
   useEffect(() => {
     if (!projectId) {
@@ -69,7 +72,7 @@ function HeldRow({ item, projects, onDone }) {
   const confirm = async () => {
     setBusy(true);
     try {
-      const body = { project_id: projectId, deliverable_id: deliverableId || null };
+      const body = { project_id: projectId || null, deliverable_id: deliverableId || null, deliverable_type: deliverableType || null };
       if (needsAssignee) {
         body.assignee_user_id = chosen[0];
         body.collaborator_user_ids = chosen.slice(1);
@@ -115,7 +118,7 @@ function HeldRow({ item, projects, onDone }) {
           onOpenChange={(o) => setOpenSelect(o ? "project" : null)}
           value={projectId}
           onValueChange={(v) => { setProjectId(v); setDeliverableId(""); }}
-          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+          options={[{ value: "", label: "No project (hiring, meetings…)" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           placeholder="Choose a project…"
           searchPlaceholder="Search project..."
           emptyText="No projects found"
@@ -135,6 +138,19 @@ function HeldRow({ item, projects, onDone }) {
           disabled={!projectId}
           className={TRIGGER}
           triggerProps={{ "aria-label": "Deliverable" }}
+          contentClassName="w-[400px] p-0"
+        />
+        <SearchableSelect
+          open={openSelect === "type"}
+          onOpenChange={(o) => setOpenSelect(o ? "type" : null)}
+          value={deliverableType}
+          onValueChange={setDeliverableType}
+          options={[{ value: "", label: "No type chosen" }, ...types.map((t) => ({ value: t, label: t }))]}
+          placeholder="Deliverable type…"
+          searchPlaceholder="Search type..."
+          emptyText="No types found"
+          className={TRIGGER}
+          triggerProps={{ "aria-label": "Deliverable type" }}
           contentClassName="w-[400px] p-0"
         />
       </div>
@@ -183,6 +199,7 @@ export default function HeldTasksPanel() {
   const [projects, setProjects] = useState([]);
   // The project list is large, so it is only fetched once the panel is opened.
   const [opened, setOpened] = useState(false);
+  const [types, setTypes] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,6 +214,7 @@ export default function HeldTasksPanel() {
   useEffect(() => {
     if (!opened || !items || items.length === 0 || !currentUser?.id) return undefined;
     let cancelled = false;
+    getDeliverableTypes().then((rows) => !cancelled && setTypes(Array.isArray(rows) ? rows : [])).catch(() => !cancelled && setTypes([]));
     getProjects(currentUser.id, { include_deliverables: false })
       .then((rows) => !cancelled && setProjects((Array.isArray(rows) ? rows : []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))))
       .catch(() => !cancelled && setProjects([]));
@@ -217,7 +235,7 @@ export default function HeldTasksPanel() {
         <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 2 }}>
           <h2 style={{ margin: 0, fontSize: 15, lineHeight: "20px", fontWeight: 600, color: "var(--neutral-900)" }}>Held tasklist items</h2>
           <span style={{ fontSize: 12, lineHeight: "16px", color: "var(--neutral-500)" }}>
-            WhatsApp lines that could not be placed with confidence. Nobody receives these until you pick the project, or reject the line.
+            WhatsApp lines that could not be placed with confidence. Nobody receives these until you pick the project (or, for work with no project such as hiring, the deliverable type), or reject the line.
           </span>
         </div>
         <span style={{ padding: "2px 8px", borderRadius: 9999, background: "var(--warning-100)", color: "rgb(146,64,14)", font: "600 11px/16px var(--font-ui)" }}>
@@ -225,7 +243,7 @@ export default function HeldTasksPanel() {
         </span>
       </summary>
       {items.map((item) => (
-        <HeldRow key={item.id} item={item} projects={projects} onDone={done} />
+        <HeldRow key={item.id} item={item} projects={projects} types={types} onDone={done} />
       ))}
     </details>
   );

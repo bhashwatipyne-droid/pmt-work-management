@@ -129,10 +129,18 @@
     min-height: 28px;
     padding: 1px 4px;
   }
-  .sheet-mode .sheet-cell button.h-8,
-  .sheet-mode .sheet-cell input.h-8,
-  .sheet-mode .sheet-cell textarea.h-8 {
+  .sheet-mode .sheet-cell:not(.sheet-cell-wrap) button.h-8,
+  .sheet-mode .sheet-cell:not(.sheet-cell-wrap) input.h-8,
+  .sheet-mode .sheet-cell:not(.sheet-cell-wrap) textarea.h-8 {
     height: 26px !important;
+    min-height: 26px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  /* A wrapped column keeps the height its text needs (the textarea sets it
+     itself); only the padding is tightened. */
+  .sheet-mode .sheet-cell-wrap button.h-8,
+  .sheet-mode .sheet-cell-wrap textarea.h-8 {
     min-height: 26px !important;
     padding-top: 2px !important;
     padding-bottom: 2px !important;

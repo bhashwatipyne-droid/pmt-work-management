@@ -116,6 +116,10 @@ export function ProjectPicker({
     const sharesClientWord = (name) => clientWords(name).some((w) => rowClientWords.has(w));
 
     projects.forEach((project) => {
+      // Only projects in the Kanban's "Active" column are offered (and so only
+      // their deliverables). The row's own project always stays listed, so an
+      // existing row never loses the project it is already on.
+      if (project.status && project.status !== "Active" && String(project.id) !== String(value)) return;
       const ownClient = clientNameOf(project.client_id);
       const projectHit = matchProject(project.name, ownClient, project.description);
       const hits = q
@@ -177,7 +181,7 @@ export function ProjectPicker({
     });
     lastOptionsRef.current = next;
     return next;
-  }, [open, search, projects, deliverablesByProject, clientId, clientName, clientNameOf, isRecent]);
+  }, [open, search, projects, deliverablesByProject, clientId, clientName, clientNameOf, isRecent, value]);
 
   const shown = options.slice(0, MAX_OPTIONS);
   const hiddenCount = options.length - shown.length;

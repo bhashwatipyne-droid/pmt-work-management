@@ -695,6 +695,7 @@ export const WorkSheetRow = memo(function WorkSheetRow(props) {
       commit,
       commitTime,
       commitWorkDate,
+      currentUser,
       deliverableMissing,
       deliverableName,
       deliverablesByProject,

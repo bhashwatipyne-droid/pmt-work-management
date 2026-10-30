@@ -58,6 +58,7 @@ export function ProjectPicker({
   lookalikes,
   deliverablesByProject = {},
   disabled = false,
+  showAllStatuses = false,
   open = false,
   onOpenChange,
   onPick,
@@ -117,9 +118,10 @@ export function ProjectPicker({
 
     projects.forEach((project) => {
       // Only projects in the Kanban's "Active" column are offered (and so only
-      // their deliverables). The row's own project always stays listed, so an
-      // existing row never loses the project it is already on.
-      if (project.status && project.status !== "Active" && String(project.id) !== String(value)) return;
+      // their deliverables). Admins (showAllStatuses) see every project, so they
+      // can backfill older months. The row's own project always stays listed, so
+      // an existing row never loses the project it is already on.
+      if (!showAllStatuses && project.status && project.status !== "Active" && String(project.id) !== String(value)) return;
       const ownClient = clientNameOf(project.client_id);
       const projectHit = matchProject(project.name, ownClient, project.description);
       const hits = q
@@ -181,7 +183,7 @@ export function ProjectPicker({
     });
     lastOptionsRef.current = next;
     return next;
-  }, [open, search, projects, deliverablesByProject, clientId, clientName, clientNameOf, isRecent, value]);
+  }, [open, search, projects, deliverablesByProject, clientId, clientName, clientNameOf, isRecent, value, showAllStatuses]);
 
   const shown = options.slice(0, MAX_OPTIONS);
   const hiddenCount = options.length - shown.length;

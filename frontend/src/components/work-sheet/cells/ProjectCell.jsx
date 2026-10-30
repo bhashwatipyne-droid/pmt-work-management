@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 // The "Project" cell of a Work Sheet row. `r` carries the row state and helpers.
 export function renderProjectCell(r) {
-  const { canEditRow, cellProps, clientNameOf, deliverablesByProject, effectiveClientId, isRecentProject, item, lookalikes, noDeliverables, onUpdate, openSelect, options, projects, renderFillHandle, setOpenSelect, sheetCell } = r;
+  const { canEditRow, cellProps, clientNameOf, currentUser, deliverablesByProject, effectiveClientId, isRecentProject, item, lookalikes, noDeliverables, onUpdate, openSelect, options, projects, renderFillHandle, setOpenSelect, sheetCell } = r;
   return (
 <TableCell {...cellProps(2)}>
   <ProjectPicker
@@ -50,6 +50,7 @@ export function renderProjectCell(r) {
       }
     }}
     disabled={!canEditRow}
+    showAllStatuses={currentUser?.role === "admin"}
     triggerProps={sheetCell(2)}
     data-testid={`worksheet-project-select-${item.id}`}
   />

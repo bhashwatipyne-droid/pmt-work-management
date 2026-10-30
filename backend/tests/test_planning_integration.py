@@ -270,6 +270,18 @@ def test_a_matched_deliverable_keeps_its_own_type_over_the_listeners_reading(env
     assert row["deliverable_type"] == "Newsletters"
 
 
+def test_a_matched_deliverable_with_no_type_of_its_own_takes_the_type_the_listener_read(env):
+    """"... > Campaign Ideation" matched to a PMT deliverable saved with an empty
+    type: the row used to come out with no type at all, though the line said it."""
+    run(server.db.deliverables.update_one({"id": PHARMA_DELIVERABLE}, {"$set": {"type": ""}}))
+    env.set_item(1, deliverable_type="Carousel", type_source="line")
+    card = env.get("/planning/my-tasks", "manager-hp").json()[0]
+    assert env.post(f"/planning/my-tasks/{card['id']}/accept", "manager-hp").status_code == 200
+    (row,) = env.work_items(creator_id="manager-hp")
+    assert row["deliverable_id"] == PHARMA_DELIVERABLE
+    assert row["deliverable_type"] == "Carousel"
+
+
 def test_accepting_twice_makes_one_row(env):
     card = env.get("/planning/my-tasks", "member-rb").json()[0]
     first = env.post(f"/planning/my-tasks/{card['id']}/accept", "member-rb").json()

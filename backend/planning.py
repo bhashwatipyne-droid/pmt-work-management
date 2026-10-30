@@ -822,14 +822,16 @@ def create_planning_router(
 
         title = task_title(item)
         # The matched deliverable's own type wins. With no deliverable of that name
-        # in PMT yet (an article title from a tasklist), the listener's reading of
-        # the line's closing word ("... > Carousel") fills the type, so the Work
-        # Sheet row still gets its type, category and time per unit.
+        # in PMT yet (an article title from a tasklist), or one that has no type
+        # of its own (many generic deliverables, e.g. "Market Research & Analysis",
+        # are saved with an empty type), the listener's reading of the line's
+        # closing word ("... > Carousel") fills the type, so the Work Sheet row
+        # still gets its type, category and time per unit.
         d_type = (
             item.get("deliverable_type") if item.get("deliverable_type_corrected") else None
         ) or (
             (deliverable or {}).get("type")
-            or (None if deliverable else item.get("deliverable_type"))
+            or item.get("deliverable_type")
             or ""
         )
         remarks = f"WhatsApp task from {item.get('assigned_by_name') or 'your manager'}: {item.get('raw_line') or title}"

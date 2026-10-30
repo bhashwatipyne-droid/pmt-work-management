@@ -201,7 +201,12 @@ export default function DashboardPage() {
 
   const actionsInCat = h.actions.filter((a) => cat === "all" || a.cat === cat);
   const shownActions = showAllActions ? actionsInCat : actionsInCat.slice(0, 6);
-  const shownProjects = showAllProjects ? h.portfolio : h.portfolio.slice(0, 10);
+  // Portfolio health lists the projects with work still open or waiting for
+  // review in the month by default, so it matches the Active deliverables card.
+  // Projects whose scoped deliverables are all billed / completed sit behind
+  // "Show all".
+  const activePortfolio = h.portfolio.filter((p) => p.active > 0 || p.review > 0);
+  const shownProjects = showAllProjects ? h.portfolio : activePortfolio;
   const delayTotal = h.delayAll.length;
 
   // ---- filters ----
@@ -316,6 +321,7 @@ export default function DashboardPage() {
     showAllProjects,
     shownActions,
     shownProjects,
+    activeProjectCount: activePortfolio.length,
     team,
     today,
     trend,

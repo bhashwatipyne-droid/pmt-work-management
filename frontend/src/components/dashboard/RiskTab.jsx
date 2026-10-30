@@ -4,7 +4,7 @@ import { C, CARD, HEAD_ROW, LEVEL_BADGE, LINK_BTN, PORT_GRID, ROW_DIVIDER, STAGE
 import { Fragment } from "react";
 
 export function RiskTab(ctx) {
-  const { delayTotal, goProject, h, navigate, setCat, setShowAllProjects, setTeam, showAllProjects, shownProjects, team } = ctx;
+  const { activeProjectCount, delayTotal, goProject, h, navigate, setCat, setShowAllProjects, setTeam, showAllProjects, shownProjects, team } = ctx;
   return (
     <>
     <>
@@ -83,7 +83,7 @@ export function RiskTab(ctx) {
 
       <Block title="Where is risk concentrated?">
         <section className={`${CARD} flex min-w-0 flex-col`}>
-          <SectionHead title="Portfolio health" sub="Compare projects at a glance. Click one to open it.">
+          <SectionHead title="Portfolio health" sub="Projects with active work in this view. Click one to open it.">
             <button type="button" onClick={() => navigate("/projects")} className={LINK_BTN}>
               All projects
               <ArrowRight className="h-4 w-4" />
@@ -124,14 +124,19 @@ export function RiskTab(ctx) {
                   <span><Badge color={LEVEL_BADGE[p.level]}>{p.level}</Badge></span>
                 </button>
               ))}
-              {h.portfolio.length > 10 && (
+              {h.portfolio.length > activeProjectCount && (
                 <button
                   type="button"
                   onClick={() => setShowAllProjects((s) => !s)}
                   className="h-10 w-full bg-white text-[13px] font-semibold text-[rgb(43,43,181)] hover:bg-[rgb(240,240,253)]"
                 >
-                  {showAllProjects ? "Show fewer" : `Show all ${h.portfolio.length} projects`}
+                  {showAllProjects
+                    ? "Show only projects with active work"
+                    : `Show all ${h.portfolio.length} projects (${h.portfolio.length - activeProjectCount} with no active work)`}
                 </button>
+              )}
+              {activeProjectCount === 0 && !showAllProjects && h.portfolio.length > 0 && (
+                <Empty>No project has active work in this view.</Empty>
               )}
               {h.portfolio.length === 0 && <Empty>No projects match the current filters.</Empty>}
             </div>

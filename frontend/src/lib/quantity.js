@@ -24,8 +24,12 @@ export const MULTI_DELIVERABLE_TYPE_PREFIXES = [MULTI_DELIVERABLE_TYPE_PREFIX, "
 export const isMultiDeliverableType = (type) =>
   MULTI_DELIVERABLE_TYPE_PREFIXES.some((prefix) => String(type || "").startsWith(prefix));
 
+// A team review covers several deliverables in one sitting, on every team's sheet.
+export const MULTI_DELIVERABLE_ANY_STAGE_TYPES = ["Team Reviews and Feedback"];
+
 export const isMultiDeliverableRow = (item) =>
-  item?.stage === MULTI_DELIVERABLE_STAGE && isMultiDeliverableType(item?.deliverable_type);
+  MULTI_DELIVERABLE_ANY_STAGE_TYPES.includes(item?.deliverable_type) ||
+  (item?.stage === MULTI_DELIVERABLE_STAGE && isMultiDeliverableType(item?.deliverable_type));
 
 // The fields to send when a row's Deliverable Type changes. The category follows
 // the type, and anything the new type can't carry is cleared: the ticked

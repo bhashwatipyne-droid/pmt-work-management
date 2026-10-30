@@ -130,11 +130,20 @@ MULTI_DELIVERABLE_TYPE_PREFIX = "Campaign Ideation Plan"
 MULTI_DELIVERABLE_TYPE_PREFIXES = (MULTI_DELIVERABLE_TYPE_PREFIX, "Data Research and Analysis")
 
 
+# A team review covers several deliverables in one sitting, in every team.
+MULTI_DELIVERABLE_ANY_STAGE_TYPES = ("Team Reviews and Feedback",)
+
+
 def is_multi_deliverable_row(row: dict) -> bool:
-    """True for a Content row whose type lets it cover several deliverables."""
-    return row.get("stage") == MULTI_DELIVERABLE_STAGE and str(
-        row.get("deliverable_type") or ""
-    ).startswith(MULTI_DELIVERABLE_TYPE_PREFIXES)
+    """True for a row whose type lets it cover several deliverables: a Content
+    row of a Campaign Ideation Plan / Data Research type, or a Team Reviews and
+    Feedback row on any team's sheet."""
+    deliverable_type = str(row.get("deliverable_type") or "")
+    if deliverable_type in MULTI_DELIVERABLE_ANY_STAGE_TYPES:
+        return True
+    return row.get("stage") == MULTI_DELIVERABLE_STAGE and deliverable_type.startswith(
+        MULTI_DELIVERABLE_TYPE_PREFIXES
+    )
 
 
 def _clean_ids(raw) -> list:
@@ -253,7 +262,7 @@ def apply_deliverable_list_rules(existing: dict, update_fields: dict) -> None:
         if len(_clean_ids(update_fields.get("deliverable_ids"))) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="Several deliverables can be ticked on Campaign Ideation Plan and Data Research and Analysis rows only.",
+                detail="Several deliverables can be ticked on Campaign Ideation Plan, Data Research and Analysis (Content) and Team Reviews and Feedback rows only.",
             )
         if was_multi:
             # Back to an ordinary row: the deliverable list and the time for

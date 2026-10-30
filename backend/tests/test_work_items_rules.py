@@ -80,6 +80,12 @@ def test_data_research_rows_on_the_content_sheet_cover_several_deliverables_too(
     assert not rules.is_multi_deliverable_row({"stage": stage, "deliverable_type": "Data Updation"})
 
 
+def test_team_reviews_cover_several_deliverables_on_every_teams_sheet():
+    for stage in ("Content", "Design", "Animate"):
+        assert rules.is_multi_deliverable_row({"stage": stage, "deliverable_type": "Team Reviews and Feedback"})
+    assert not rules.is_multi_deliverable_row({"stage": "Design", "deliverable_type": "Changes"})
+
+
 # ------------------------------------------------------- shared constants wiring
 def test_server_still_exposes_the_moved_names_with_the_same_objects():
     """Other modules and tests reach these as server.<name>; they must be the very

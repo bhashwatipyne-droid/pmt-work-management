@@ -147,7 +147,7 @@ export const getGroupInitials = (name) => {
 // rowObserver below), because a few cells can make a row taller; rows that have
 // not been on screen yet are positioned with an estimate (ESTIMATED_ROW_HEIGHT
 // until some rows have been measured, then their average) until they are.
-export const ESTIMATED_ROW_HEIGHT = 42;
+export const ESTIMATED_ROW_HEIGHT = 30;
 export const GROUP_HEADER_HEIGHT = 40;
 export const MIN_HEADER_HEIGHT = 40;
 export const OVERSCAN = 20;

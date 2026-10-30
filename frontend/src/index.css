@@ -121,6 +121,35 @@
     vertical-align: middle;
   }
 
+  /* Compact rows, like Google Sheets: a one-line row is ~28px instead of ~41px.
+     The controls inside the cells (dropdowns, text inputs) were a fixed 32px
+     (h-8) with 5px of padding of their own, so they are shrunk here too. The
+     utilities layer wins over this one, hence !important. */
+  .sheet-mode .sheet-cell {
+    min-height: 28px;
+    padding: 1px 4px;
+  }
+  .sheet-mode .sheet-cell button.h-8,
+  .sheet-mode .sheet-cell input.h-8,
+  .sheet-mode .sheet-cell textarea.h-8 {
+    height: 26px !important;
+    min-height: 26px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  .sheet-mode .sheet-cell-wrap button.h-8 {
+    height: auto !important;
+  }
+  .sheet-mode .cell-plain {
+    padding: 3px 4px;
+  }
+  .sheet-mode .row-num {
+    padding-top: 4px;
+  }
+  .sheet-mode tbody .checkbox-cell {
+    padding-top: 6px !important;
+  }
+
   .sheet-cell:hover {
     background: #fafbff;
   }

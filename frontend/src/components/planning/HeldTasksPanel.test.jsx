@@ -9,6 +9,7 @@ jest.mock("@/services/api", () => ({ getProjects: jest.fn(), getDeliverables: je
 jest.mock("@/services/planningApi", () => ({
   getReviewQueue: jest.fn(),
   getAssignable: jest.fn(),
+  getDeliverableTypes: jest.fn(),
   resolveReviewItem: jest.fn(),
   rejectReviewItem: jest.fn(),
 }));
@@ -23,6 +24,7 @@ beforeEach(() => {
   api.getReviewQueue.mockResolvedValue([
     { id: "t1", raw_line: "BBNPP > Balanced Hybrid Fund Animation", assignee_name: "Tejas", assignee_user_id: "tp1", team: "animation", work_date: "2026-10-28", project_id: "p1", review_reasons: ["Client was guessed, please confirm"] },
   ]);
+  api.getDeliverableTypes.mockResolvedValue(["Video", "Hiring"]);
   api.resolveReviewItem.mockResolvedValue({});
   api.rejectReviewItem.mockResolvedValue({});
 });
@@ -64,35 +66,35 @@ async function mount() {
 const click = (el) => act(async () => { el.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
 const byText = (host, text) => [...host.querySelectorAll("button")].find((b) => b.textContent === text);
 
-test("shows a held line with its guessed project and confirms it", async () => {
+test("shows a held line with its guessed project and sends it", async () => {
   const host = await mount();
-  // the project list is not fetched until the panel is opened
-  expect(base.getProjects).not.toHaveBeenCalled();
-  await act(async () => {
-    const d = host.querySelector("details");
-    d.open = true;
-    d.dispatchEvent(new Event("toggle"));
-  });
-  await flush();
-  await flush();
   expect(base.getProjects).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("BBNPP > Balanced Hybrid Fund Animation");
   expect(host.textContent).toContain("Client was guessed, please confirm");
+  expect(host.textContent).toContain("1 of 1 ready");
   expect(host.querySelector('button[aria-label="Project"]').textContent).toContain("BNP Balanced Hybrid NFO Shoot Video");
   await click(host.querySelector('button[aria-label="Deliverable"]'));
   await flush();
   const option = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.includes("Fund Animation"));
   await click(option);
   expect(host.querySelector('button[aria-label="Deliverable"]').textContent).toContain("Fund Animation");
-  await click(byText(host, "Confirm and send"));
+  await click(byText(host, "Send 1 line"));
   await flush();
-  expect(api.resolveReviewItem).toHaveBeenCalledWith("t1", { project_id: "p1", deliverable_id: "d1" });
+  expect(api.resolveReviewItem).toHaveBeenCalledWith("t1", { project_id: "p1", deliverable_id: "d1", deliverable_type: null });
   expect(host.querySelector('[data-testid="held-tasks"]')).toBeNull();
 });
 
-test("Reject removes the line", async () => {
+test("a line taken out of the send is not resolved", async () => {
   const host = await mount();
-  await click(byText(host, "Reject"));
+  await click(host.querySelector('[role="checkbox"]'));
+  expect(host.textContent).toContain("Pick a project (or type) on each line");
+  expect(byText(host, "Send").disabled).toBe(true);
+  expect(api.resolveReviewItem).not.toHaveBeenCalled();
+});
+
+test("Reject line removes the line", async () => {
+  const host = await mount();
+  await click(byText(host, "Reject line"));
   await flush();
   expect(api.rejectReviewItem).toHaveBeenCalledWith("t1");
   expect(host.querySelector('[data-testid="held-tasks"]')).toBeNull();
@@ -104,14 +106,7 @@ test("a Team line: the first person owns it and the whole team can be added as c
     { id: "t9", raw_line: "- FT > 30 Years > Brand Film > Campaign Ideation", assignee_name: "Team", assignee_user_id: null, team: "content", work_date: "2026-10-29", project_id: "p1", review_reasons: [] },
   ]);
   const host = await mount();
-  await act(async () => {
-    const d = host.querySelector("details");
-    d.open = true;
-    d.dispatchEvent(new Event("toggle"));
-  });
-  await flush();
-  await flush();
-  const confirmBtn = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Confirm and send");
+  const confirmBtn = () => [...host.querySelectorAll("button")].find((b) => b.textContent.startsWith("Send"));
   const inPicker = (text) => [...host.querySelectorAll('[data-testid="held-assignees"] button')].find((b) => b.textContent.startsWith(text));
   expect(host.querySelector('[data-testid="held-assignees"]')).not.toBeNull();
   expect(confirmBtn().disabled).toBe(true);                 // nobody owns it yet
@@ -122,7 +117,7 @@ test("a Team line: the first person owns it and the whole team can be added as c
   await act(async () => inPicker("Add the whole team").click());
   expect(confirmBtn().disabled).toBe(false);
   await act(async () => confirmBtn().click());
-  expect(api.resolveReviewItem).toHaveBeenCalledWith("t9", { project_id: "p1", deliverable_id: null, assignee_user_id: "u2", collaborator_user_ids: ["u1", "u3"] });
+  expect(api.resolveReviewItem).toHaveBeenCalledWith("t9", { project_id: "p1", deliverable_id: null, deliverable_type: null, assignee_user_id: "u2", collaborator_user_ids: ["u1", "u3"] });
 });
 
 test("a Team line is preselected to the manager who posted it", async () => {
@@ -131,15 +126,8 @@ test("a Team line is preselected to the manager who posted it", async () => {
     { id: "t8", raw_line: "- FT > Brand Film", assignee_name: "Team", assignee_user_id: null, assigned_by_user_id: "u2", team: "content", work_date: "2026-10-29", project_id: "p1", review_reasons: [] },
   ]);
   const host = await mount();
-  await act(async () => {
-    const d = host.querySelector("details");
-    d.open = true;
-    d.dispatchEvent(new Event("toggle"));
-  });
-  await flush();
-  await flush();
   const owner = [...host.querySelectorAll('[data-testid="held-assignees"] button')].find((b) => b.textContent.startsWith("Sakshi Agrawal"));
   expect(owner.textContent).toContain("owner");
-  const confirm = [...host.querySelectorAll("button")].find((b) => b.textContent === "Confirm and send");
+  const confirm = [...host.querySelectorAll("button")].find((b) => b.textContent.startsWith("Send"));
   expect(confirm.disabled).toBe(false);
 });

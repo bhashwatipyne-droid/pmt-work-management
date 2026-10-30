@@ -140,3 +140,21 @@ describe("taskCardInfo", () => {
     expect(taskCardInfo({ ...t, status: "done" }, { ctx }).canReassign).toBe(false);
   });
 });
+
+test("the same deliverable on several rows for one person is flagged as possible rework", () => {
+  const people = toPeopleRows(apiPeople);
+  const row = (id, d, over = {}) => ({ id, who: "Ratnesh Bor", task: "Blog", proj: "Contra", project_id: "p1", deliverable: "Investing blog", deliverable_id: "d1", deliverable_type: "Blog", d0: d, d1: d, est: 1, cat: "new", note: "", sh: 9.5, status: "todo", ...over });
+  const rework = (tasks, dismissed = {}) =>
+    computePlan(tasks, { period: "week", people, ctx, dismissed }).insights.find((i) => i.icon === "repeat");
+
+  const hit = rework([row("a", 2), row("b", 4)]);
+  expect(hit.title).toBe("Check for rework on “Investing blog”");
+  expect(hit.factors[0]).toBe("2 rows · 2 days");
+  expect(rework([row("a", 4), row("b", 4)]).factors[0]).toBe("2 rows · same day");
+
+  expect(rework([row("a", 2)])).toBeUndefined();                                  // one row is normal
+  expect(rework([row("a", 2), row("b", 4, { deliverable_type: "Reel" })])).toBeUndefined(); // different type
+  expect(rework([row("a", 2), row("b", 4, { who: "New Joiner" })])).toBeUndefined();        // different person
+  expect(rework([row("a", 2, { deliverable: "" }), row("b", 4, { deliverable: "" })])).toBeUndefined();
+  expect(rework([row("a", 2), row("b", 4)], { [hit.key]: true })).toBeUndefined();
+});

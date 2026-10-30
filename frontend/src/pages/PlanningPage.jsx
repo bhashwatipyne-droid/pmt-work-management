@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Hourglass, MessageSquare, Shuffle, UserPlus, X, Check } from "lucide-react";
+import { Hourglass, MessageSquare, Repeat2, Shuffle, UserPlus, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -28,6 +28,7 @@ const INSIGHT_ICONS = {
   hourglass: Hourglass,
   "user-plus": UserPlus,
   message: MessageSquare,
+  repeat: Repeat2,
 };
 
 const CARD = {

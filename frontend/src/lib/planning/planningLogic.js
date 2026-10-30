@@ -336,6 +336,41 @@ export function computePlan(
         act: null,
       });
     });
+  // The same deliverable showing up on several rows for one person, on one day or
+  // across days, usually means it is being redone. Looks at every row the plan
+  // holds (not just the period in view), so a repeat from earlier in the week counts.
+  const repeats = new Map();
+  tasks
+    .filter((t) => t.deliverable && names.has(t.who))
+    .forEach((t) => {
+      const k = [t.who, t.project_id || t.proj, t.deliverable_id || t.deliverable, t.deliverable_type || ""].join("|");
+      if (!repeats.has(k)) repeats.set(k, []);
+      repeats.get(k).push(t);
+    });
+  [...repeats.entries()]
+    .filter(([, rows]) => rows.length > 1)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 2)
+    .forEach(([k, rows]) => {
+      const key = "rw" + k;
+      if (dismissed[key]) return;
+      const t = rows[0];
+      const days = new Set(rows.map((r) => r.d0)).size;
+      ins.push({
+        key,
+        icon: "repeat",
+        tone: "var(--warning-100)",
+        toneFg: "var(--warning-500)",
+        title: "Check for rework on “" + t.deliverable + "”",
+        body:
+          first(t.who) + " has " + rows.length + " rows for this deliverable on " + t.proj +
+          (days > 1 ? ", across " + days + " days" : ", all on the same day") +
+          ". Repeats like this often mean the work is being redone; a quick look at the brief or a review before sending may help.",
+        factors: [rows.length + " rows" + (days > 1 ? " · " + days + " days" : " · same day"), t.deliverable_type || "No deliverable type", t.proj],
+        action: "",
+        act: null,
+      });
+    });
   if (
     names.has("Aniket Bangal") &&
     !dismissed.cfAniket &&

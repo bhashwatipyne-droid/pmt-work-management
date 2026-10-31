@@ -9,6 +9,7 @@ PMT brings project execution and operational visibility into a centralized appli
 ## Table of Contents
 
 - [Overview](#overview)
+- [Recent Changes](#recent-changes)
 - [Core Modules](#core-modules)
 - [Technology Stack](#technology-stack)
 - [Application Architecture](#application-architecture)
@@ -39,22 +40,64 @@ The application consists of two primary components:
 
 The frontend communicates with the backend over HTTP. The backend handles application APIs, data access, authentication, and business logic.
 
-Optional integrations support product analytics, push notifications, and email delivery.
+Integrations around the core application:
+
+- **WhatsApp tasklist listener** (separate repository, `task_assignment_automation`): reads managers' daily tasklists from WhatsApp groups, matches each line to a client, project and deliverable, and writes `tasklist_items` that PMT's Planning page and task cards consume. See `docs/whatsapp-task-integration.md`.
+- **Google Calendar** feeds the Meetings page (`docs/google-calendar-setup.md`).
+- **TFP Premium Content Planner sheet** pushes new rows into PMT through an Apps Script (`integrations/premium_sheet_sync.gs`).
+- **Project sharing** turns a project into a link that previews in WhatsApp (`docs/project-sharing.md`).
+- Optional product analytics (PostHog), browser push notifications (Firebase), and email delivery (Brevo or SMTP).
+
+A public **demo mode** at `/demo` runs the whole interface on sample data in the browser, with no account and no backend calls.
+
+> **Last updated: 2026-10-31.** Recent additions are listed in [Recent Changes](#recent-changes).
+
+## Recent Changes
+
+Changes since the previous README update (2026-10-23), newest first. See `git log` for the full history.
+
+**2026-10-31**
+- Public demo mode at `/demo` with in-browser sample data, including sample Planning and Meetings screens.
+- A 76-second PMT product film for the portfolio, kept in `portfolio-video/`.
+
+**2026-10-30**
+- Planning: redesigned held tasklist items (filter tabs, per-line include checkbox, bulk Send, match score); held items let you pick the deliverable type and confirm work that has no project (such as hiring) by its type.
+- Planning insights flag a deliverable repeated across rows for one person as possible rework.
+- Work Sheet: compact Google-Sheets-style rows (about 28px), a row you just edited stays visible under a filter until the filter changes, and the project picker offers only projects in the Kanban's Active column (admins see every project).
+- Team Reviews and Feedback rows, and Content rows of type Data Research and Analysis (SMI/Web), can cover several deliverables.
+- Home: Portfolio health lists only projects with active work; the rest are behind Show all.
+
+**2026-10-29**
+- Held tasklist lines: a "Team" line becomes one task with the posting manager as owner and the team as collaborators; lines with nobody named let you choose one or several people; released held tasks keep their original date on the Work Sheet.
+- Planning card: edit project, deliverable and type, and the matcher learns from the edit.
+- Projects and deliverables require start and end dates.
+- Home chart splits each bar into spilled-over and started-in-month work.
+
+**2026-10-28**
+- Home: 12-month chart ending at the current month; Planning: task card on bar click and a "Held tasklist items" panel with the matcher's learned rules (with an off switch).
+- Team: remove people who have left (deactivates login, hides from Team, keeps history).
+- Hiring and Interviews is a Core activity; admins can edit and delete every Work Sheet row.
+
+**2026-10-27**
+- Work Sheet: Client column filter, per-column Wrap text, spillover from earlier months counted on Home.
+- Import infers the closest deliverable type (for example Video → Long Video).
+- Premium sheet sync: status is optional, and `PMT_URL` points at the Singapore backend.
 
 ## Core Modules
 
-### 1. Dashboard
+### 1. Home Dashboard
 
 Provides a high-level overview of project and production activity.
 
 Key capabilities include:
 
-- Project and deliverable summaries.
+- Project and deliverable summaries for a chosen month, including work spilled over from earlier months.
+- A 12-month chart (`backend/home_monthly.py`) whose bars match the numbers in each month's header.
+- Portfolio health, limited to projects with active work.
 - Approval and work-status visibility.
-- Key performance indicators.
 - Team activity and operational reporting.
 
-Dashboard APIs are implemented in `backend/home_dashboard.py`.
+Home APIs are implemented in `backend/home_dashboard.py` and `backend/home_monthly.py`; the page is `frontend/src/pages/DashboardPage.jsx` with components under `frontend/src/components/dashboard/`.
 
 ### 2. Projects and Deliverables
 
@@ -85,15 +128,22 @@ Key capabilities include:
 
 - Log work against projects and deliverables.
 - Track work dates, categories, time, ownership, and status.
-- Filter worksheet records.
+- Filter worksheet records, including by client, with per-column Wrap text; rows are compact, like Google Sheets.
+- Pick a project and deliverable from searchable dropdowns. Only projects in the Kanban's Active column (and their deliverables) are offered; admins see every project and deliverable.
+- Log one row against several deliverables for types that allow it (Team Reviews and Feedback, and Data Research and Analysis for Content).
+- Receive rows created automatically when a person accepts a WhatsApp task card (`source=whatsapp_task`).
 - Support task-level review and approval workflows.
 - Maintain work history where supported by the implementation.
+
+Admins can edit and delete every row; other roles are limited by `backend/work_items_rules.py` and `frontend/src/lib/worksheetPermissions.js`.
+
+The **Projects** tab of the Work Sheet is a separate follow-up list for the Projects team (`backend/project_tasks.py`, routes under `/api/project-tasks`). A task is one row that stays open until it is marked Done, and each day's changes are kept as an update note instead of copying the list to a new date block.
 
 Primary frontend file:
 
 `frontend/src/pages/WorkSheetPage.jsx`
 
-Additional worksheet rules and helpers are located in `frontend/src/lib/`.
+Additional worksheet rules and helpers are located in `frontend/src/lib/` (the `worksheet*.js` files) and `frontend/src/components/work-sheet/`.
 
 ### 4. Approvals
 
@@ -121,6 +171,7 @@ Key capabilities include:
 - Maintain client records.
 - Manage client contacts and points of contact.
 - Manage team members and application access.
+- Remove people who have left: the dustbin deactivates their login and hides them from Team while keeping their history.
 - Associate people with relevant projects and work.
 
 Relevant frontend pages include `ClientsPage.jsx` and `TeamPage.jsx` under `frontend/src/pages/`.
@@ -148,14 +199,29 @@ The frontend pages and components are located under:
 
 ### 7. Planning
 
-Provides planning and task-dashboard functionality, including timeline-related views.
+Connects the WhatsApp tasklist listener to the people doing the work. The listener parses each manager's daily tasklist and stores one `tasklist_items` document per task line; PMT only serves, validates and moves those documents (`backend/planning.py`, routes under `/api/planning`). Nothing is assigned by guesswork: a line is `pending` only when the matcher was certain and every ID was re-checked against live data.
+
+```text
+needs_review --resolve--> pending --accept--> accepted   (Work Sheet row created)
+     |                       |  \--decline--> declined --reassign--> pending
+     \--reject--> rejected    \--reassign--> pending (another person)
+```
+
+- **Team members** see "Task assigned to you" cards and can accept (adds the row to their Work Sheet), decline with a reason, or ask a question. A card nobody answers is accepted for the person after `PLANNING_AUTO_ACCEPT_MINUTES` (default 60; `0` turns it off), counted from when it became visible to them (posted, released from review, or reassigned). Only today's cards are auto-accepted; cards left over from earlier days are not.
+- **Managers (own department) and admins** see the Planning overview for Content, Design and Animation, reassign tasks, and work through **Held tasklist items**: filter tabs, a per-line include checkbox, bulk Send, a match score, searchable project and deliverable pickers, a deliverable type, and a choice of who a line is for (one or several people). A "Team" line becomes one task owned by the posting manager with the rest of the team as collaborators.
+- Editing a card or resolving a held line teaches the matcher; the rules it learned are listed and can be switched off (`/api/planning/learned-rules`).
+- Weekends and the days in `PLANNING_HOLIDAYS` are not planned; each task is planned at `PLANNING_DEFAULT_ESTIMATE_MINUTES` until a person changes it.
+- Planning insights flag a deliverable repeated across rows for one person as possible rework.
 
 Relevant files:
 
+- `backend/planning.py`
 - `frontend/src/pages/PlanningPage.jsx`
+- `frontend/src/components/planning/`
 - `frontend/src/services/planningApi.js`
+- `docs/whatsapp-task-integration.md`
 
-Some planning capabilities may depend on backend integration and deployment configuration. Verify the current implementation before assuming all planning features are fully connected.
+The listener lives in the separate `task_assignment_automation` repository. Without it running, the Planning page works but receives no new WhatsApp tasks.
 
 ### 8. Invoicing
 
@@ -184,6 +250,32 @@ Relevant files:
 - `frontend/src/lib/push.js`
 - `frontend/src/analytics.js`
 
+A background scan creates overdue and reminder notices every `NOTIFICATION_SCAN_INTERVAL_MINUTES` (default 360). Helpers live in `backend/notifications.py`.
+
+### 10. Meetings
+
+Shows the Google Calendar events of the company calendars (`CALENDAR_IDS`). A background sweep (`CALENDAR_SYNC_MINUTES`, default 10) reads each calendar through the Google Calendar API, read-only, and keeps a copy in `calendar_events`, so the page never waits on Google and keeps working if Google is down. Access uses a Google Workspace service account with domain-wide delegation; a Workspace super admin does the one-time setup described in `docs/google-calendar-setup.md`.
+
+Relevant files: `backend/meetings.py` (routes under `/api/meetings`), `frontend/src/pages/MeetingsPage.jsx`, `frontend/src/components/meetings/`.
+
+### 11. Project Sharing
+
+The **Share** button on a project page (managers and admins) creates one link for the project. Pasted into WhatsApp it unfurls into a card with the project name, "N of M deliverables done" and an image of the deliverables table; opened, it shows the full read-only list. The link can be stopped at any time.
+
+Relevant files: `backend/project_share.py`, `frontend/api/share-preview.js` and `frontend/api/share-image.js` (Vercel functions), the `/share/:token` rewrite in `frontend/vercel.json`, and `docs/project-sharing.md`.
+
+### 12. Premium Content Sheet Sync
+
+Pushes rows from the "Premium Content" tab of the TFP Premium Content Planner Google Sheet into PMT. An Apps Script (`integrations/premium_sheet_sync.gs`) posts the rows to `POST /api/integrations/premium-sheet/sync` with the `X-Sync-Token` header (`SHEET_SYNC_TOKEN`). Each row that PMT does not have yet becomes a deliverable in that month's project (for example "TFP Oct-26" under the Thefinpedia client, created if missing). The sync is append-only: rows already in PMT are skipped and nothing is edited or deleted, so running it twice is harmless. Status is optional, and only months from `PREMIUM_SHEET_FROM_MONTH` onward are sent.
+
+Relevant files: `backend/premium_sheet_sync.py`, `integrations/premium_sheet_sync.gs`, `tests/test_premium_sheet_sync.py`.
+
+### 13. Public Demo Mode
+
+Opening `/demo` on the deployed site turns on demo mode for that browser tab only. Every API call is answered in the browser from made-up sample data, so a visitor can click through the app without an account and without touching the real backend or database. The flag lives in `sessionStorage`, so a normal visit or a real sign-in in another tab is never affected.
+
+Relevant files: `frontend/src/demo/` (`demoMode.js`, `adapter.js`, `seed.js`, `server.js`, plus sample Planning and Meetings data). `portfolio-video/` holds a short product film for the portfolio.
+
 ---
 
 ## Technology Stack
@@ -206,6 +298,10 @@ Relevant files:
 | Password security | Password hashing |
 | Notifications | Firebase integration where configured |
 | Product analytics | PostHog, optional |
+| Calendar | Google Calendar API through a service account |
+| Share cards | Pillow (1200 × 630 preview image) and Vercel serverless functions in `frontend/api/` |
+| Frontend hosting | Vercel (`frontend/vercel.json`) |
+| Backend hosting | Render |
 | Backend testing | Pytest |
 | Frontend tooling | Create React App with CRACO |
 
@@ -256,31 +352,39 @@ Optional services, including Firebase, PostHog, and email delivery providers, op
 ## Repository Structure
 
 ```text
-Pmt-main/
+pmt-work-management/
 ├── backend/
-│   ├── server.py
-│   ├── efficiency.py
-│   ├── home_dashboard.py
-│   ├── invoicing.py
-│   ├── deliverable_import.py
-│   ├── project_duplicates.py
-│   ├── requirements.txt
-│   ├── .env.example
+│   ├── server.py              # app setup, core routes, router registration
+│   ├── planning.py            # WhatsApp tasks → Planning page and task cards
+│   ├── approvals.py, approval_helpers.py
+│   ├── deliverables.py, deliverable_import.py, project_*.py
+│   ├── work_items_routes.py, work_items_rules.py, project_tasks.py
+│   ├── efficiency.py, invoicing.py, home_dashboard.py, home_monthly.py
+│   ├── meetings.py            # Google Calendar sync
+│   ├── premium_sheet_sync.py  # Premium Content sheet → PMT
+│   ├── notifications.py, notification_routes.py
+│   ├── security.py, auth_routes.py, users.py, clients.py
+│   ├── requirements.txt, .env.example
 │   └── tests/
 │
 ├── frontend/
-│   ├── package.json
-│   ├── craco.config.js
+│   ├── api/                   # Vercel functions for project-share cards
+│   ├── vercel.json
+│   ├── package.json, craco.config.js
 │   ├── public/
 │   └── src/
 │       ├── App.js
 │       ├── pages/
 │       ├── components/
-│       ├── context/
-│       ├── hooks/
-│       ├── lib/
-│       └── services/
+│       ├── demo/              # /demo mode with in-browser sample data
+│       ├── context/, hooks/, lib/, services/
 │
+├── docs/                      # calendar setup, project sharing, WhatsApp integration
+├── integrations/              # Apps Script for the Premium Content sheet
+├── portfolio-video/           # product film and render tools
+├── tests/                     # sheet-sync test
+├── memory/PRD.md              # product requirements notes
+├── import_projects_sheet.mongosh.js, backfill_management_stakeholders.mongosh.js
 └── README.md
 ```
 
@@ -291,9 +395,16 @@ This is a high-level representation of the repository. Additional files and modu
 | File | Responsibility |
 |---|---|
 | `backend/server.py` | Main FastAPI application and core API |
+| `backend/planning.py` | Planning overview, task cards, held-item review, learned rules |
+| `backend/approvals.py` | Review queue, approval board, approve / move / hide |
 | `backend/efficiency.py` | Efficiency and capacity APIs |
-| `backend/home_dashboard.py` | Dashboard endpoints |
+| `backend/home_dashboard.py`, `backend/home_monthly.py` | Home dashboard and the 12-month chart |
 | `backend/invoicing.py` | Invoicing functionality |
+| `backend/meetings.py` | Google Calendar sync and Meetings API |
+| `backend/premium_sheet_sync.py` | Premium Content sheet sync |
+| `backend/project_share.py` | Shareable project links and preview cards |
+| `backend/project_tasks.py` | Projects-team follow-up sheet |
+| `backend/work_items_rules.py` | Work Sheet validation and role-based edit limits |
 | `backend/deliverable_import.py` | Deliverable import functionality |
 | `backend/project_duplicates.py` | Project duplicate detection |
 | `frontend/src/App.js` | Frontend application and routing |
@@ -326,11 +437,9 @@ Check the dependency files before selecting or upgrading runtime versions.
 ### 1. Clone the Repository
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
-cd Pmt-main
+git clone https://github.com/bhashwatipyne-droid/pmt-work-management.git
+cd pmt-work-management
 ```
-
-Replace `<YOUR_REPOSITORY_URL>` with the actual GitHub repository URL.
 
 ### 2. Configure the Backend
 
@@ -474,6 +583,26 @@ Configure these in `backend/.env` locally or through the hosting provider's envi
 | `SMTP_STARTTLS` | SMTP STARTTLS configuration |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Optional Firebase service-account configuration |
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | Optional Firebase service-account file path |
+| `READ_CACHE_SECONDS` | Short-lived cache for polled read endpoints and heavy dashboard reads, dropped on every write; default 30, `0` turns it off |
+| `LOGIN_MAX_FAILS_PER_IP`, `LOGIN_MAX_FAILS_PER_LOGIN`, `LOGIN_FAIL_WINDOW_SECONDS` | Login throttling limits |
+| `REVIEW_AUTO_CLOSE_HOURS` | Work Sheet rows waiting for a manager's review longer than this are approved automatically by the system (rows assigned to admins are not touched); default 24, `0` turns it off |
+| `STALE_ROW_AUTO_CLOSE_HOURS` | Open Work Sheet rows untouched for this long are closed by a background sweep, except On Hold rows; default 2, `0` turns it off |
+| `MGMT_TASK_AUTO_CLOSE_HOURS` | Open Projects-team tasks untouched for this long are marked Done; any edit restarts the clock; default 48, `0` turns it off |
+| `PLANNING_AUTO_ACCEPT_MINUTES` | Minutes before an unanswered task card is accepted for the person; default 60, `0` disables |
+| `PLANNING_DEFAULT_ESTIMATE_MINUTES` | Estimate given to every WhatsApp task until changed; default 60 |
+| `PLANNING_HOLIDAYS` | Days nobody is planned for, for example `2026-11-08:Diwali,2026-12-25:Christmas` |
+| `NOTIFICATION_SCAN_INTERVAL_MINUTES` | How often overdue and reminder notices are created; default 360 |
+| `CALENDAR_IDS` | Calendars shown on the Meetings page |
+| `CALENDAR_SYNC_MINUTES` | Calendar sync interval; default 10 |
+| `GOOGLE_CALENDAR_SERVICE_ACCOUNT` | Service-account credentials for the Calendar API; when unset, calendar sync is off |
+| `CALENDAR_ICAL_URLS` | Optional, no Google Cloud needed: comma-separated `mailbox=iCal-link` pairs |
+| `SHEET_SYNC_TOKEN` | Shared secret the Premium Content Apps Script sends as `X-Sync-Token` |
+| `PREMIUM_SHEET_CLIENT_NAME` | Client the monthly Premium projects belong to; default `Thefinpedia` |
+| `PREMIUM_SHEET_FROM_MONTH` | First month synced from the sheet; default `2026-10` |
+| `PUBLIC_API_URL` | Optional public https address of this API, used for Google's calendar change notifications; defaults to `RENDER_EXTERNAL_URL` |
+| `RENDER_EXTERNAL_URL` | Set by Render; the fallback for `PUBLIC_API_URL` |
+
+`MONGO_URL` and `DB_NAME` are the names this backend reads; the WhatsApp listener repository uses `MONGODB_URI` and `MONGODB_DB` for the same cluster and database.
 
 Database connection strings, JWT secrets, email passwords, and service-account credentials must remain private.
 
@@ -494,6 +623,7 @@ Configure these in `frontend/.env` when the corresponding features are enabled.
 | `REACT_APP_POSTHOG_KEY` | Optional PostHog project key |
 | `REACT_APP_POSTHOG_HOST` | Optional PostHog host |
 | `REACT_APP_TASK_CARDS_DISABLED` | Task-card feature flag |
+| `BACKEND_URL` | Read by the Vercel functions in `frontend/api/` (project-share cards); falls back to `REACT_APP_BACKEND_URL` |
 
 `PUBLIC_URL` may also be used for frontend asset paths.
 
@@ -519,6 +649,9 @@ Common collections referenced by the backend include:
 - `approval_workflows`
 - `approval_items`
 - `approval_history`
+- `tasklist_items`, `nlp_match_logs`, `nlp_learned_rules` (written by the WhatsApp listener; PMT serves and moves them, and changes only `disabled` on learned rules)
+- `calendar_events` (the Meetings page's copy of Google Calendar)
+- `efficiency_capacity`, `efficiency_employee_targets`
 
 ### Application IDs vs. MongoDB ObjectIds
 
@@ -622,9 +755,15 @@ Additional functionality is organized into separate modules:
 | Module | Responsibility |
 |---|---|
 | `backend/server.py` | Core application routes and shared backend functionality |
-| `backend/home_dashboard.py` | Dashboard endpoints |
-| `backend/efficiency.py` | Efficiency and capacity endpoints |
-| `backend/invoicing.py` | Invoicing endpoints |
+| `backend/home_dashboard.py`, `backend/home_monthly.py` | Home dashboard endpoints |
+| `backend/efficiency.py` | Efficiency and capacity endpoints (`/api/efficiency`) |
+| `backend/invoicing.py` | Invoicing endpoints (`/api/invoicing`) |
+| `backend/planning.py` | Planning, task cards, held-item review, learned rules (`/api/planning`) |
+| `backend/approvals.py` | Review queue and approvals (`/api/approvals`, `/api/bulk-review`, `/api/approval-items/...`) |
+| `backend/meetings.py` | Calendar events and the Google change webhook (`/api/meetings`) |
+| `backend/project_tasks.py` | Projects-team follow-up tasks (`/api/project-tasks`) |
+| `backend/project_share.py` | Share links (`/api/projects/{id}/share`, `/api/share/p/{token}`) |
+| `backend/premium_sheet_sync.py` | Sheet sync (`POST /api/integrations/premium-sheet/sync`) |
 | `backend/deliverable_import.py` | Deliverable import functionality |
 | `backend/project_duplicates.py` | Project duplicate detection |
 | `frontend/src/services/api.js` | Main frontend API client |
@@ -656,7 +795,7 @@ Alternatively, from the backend directory:
 python -m pytest tests -q
 ```
 
-The test suite covers areas such as authentication, permissions, worksheet behavior, dashboard actions, role handling, and project duplicate handling.
+The suite (33 test files under `backend/tests/`) covers areas such as authentication and login throttling, permissions, Work Sheet rules, approvals, dashboards and the monthly chart, efficiency, invoicing, meetings, project sharing and duplicates, planning and tasklist items, notifications, and startup. The Premium Content sheet sync has its own test in `tests/test_premium_sheet_sync.py` at the repository root.
 
 Check `backend/pytest.ini` for project-specific test configuration.
 
@@ -667,6 +806,8 @@ From the frontend directory:
 ```bash
 npm test
 ```
+
+There are 41 frontend test files, covering pages, the Work Sheet helpers in `src/lib/`, planning logic, and the demo server in `src/demo/`.
 
 ### Production Build
 
@@ -717,6 +858,16 @@ Verify the working directory and import path for the selected hosting environmen
 3. Add optional client integrations if required.
 4. Run the production build.
 5. Deploy the generated frontend assets using the configured hosting platform.
+
+The frontend is deployed on Vercel. `frontend/vercel.json` rewrites `/share/:token` to the `api/share-preview` function (so shared project links unfurl in WhatsApp) and sends every other path to `index.html`, which also serves `/demo`. The backend is deployed on Render.
+
+### Connected Services
+
+After a deployment, check the services that talk to PMT:
+
+- **WhatsApp listener** (`task_assignment_automation`): uses the same MongoDB cluster and database as this backend. Point its `OUTBOX_DIR` at a persistent disk if you want queued tasks to survive a redeploy.
+- **Premium Content sheet:** the Apps Script's `PMT_URL` must be the backend's `/api` address and its `SYNC_TOKEN` must equal `SHEET_SYNC_TOKEN` on the backend.
+- **Google Calendar:** `GOOGLE_CALENDAR_SERVICE_ACCOUNT` and `CALENDAR_IDS` are set, or Meetings stays empty.
 
 ### Production Checklist
 

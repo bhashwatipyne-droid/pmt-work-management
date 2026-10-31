@@ -1,0 +1,12 @@
+{
+  "name": "pmt-film-tools",
+  "private": true,
+  "description": "Renders pmt-film.html to an MP4 and synthesises its soundtrack",
+  "scripts": {
+    "score": "node score.js score.wav && ffmpeg -y -i score.wav -af loudnorm=I=-16:TP=-1.5:LRA=11 -ar 48000 -c:a aac -b:a 192k ../pmt-film-score.m4a",
+    "render": "node render.js 60 3"
+  },
+  "dependencies": {
+    "puppeteer-core": "23.11.1"
+  }
+}

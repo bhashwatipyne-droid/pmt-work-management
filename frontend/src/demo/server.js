@@ -7,6 +7,7 @@ import { DEPARTMENT_TO_STAGE, OPTIONS, STAGE_TO_DEPARTMENT, CORE_TYPES } from ".
 import { DEMO_ROLES, exitDemo, getDemoRole } from "./demoMode";
 import { buildSeed, DEMO_LOGIN, dayOffset, todayIso } from "./seed";
 import { handlePlanning } from "./planning";
+import { handleMeetings } from "./meetings";
 
 export class HttpError extends Error {
   constructor(status, detail) {
@@ -1606,9 +1607,6 @@ const ROUTES = [
   route("POST", "/notifications/:id/add-row", () => ({ ok: true })),
   route("POST", "/push/register", () => ({ ok: true })),
   route("POST", "/push/unregister", () => ({ ok: true })),
-  route("GET", "/meetings/status", () => ({ connected: false, configured: false, last_synced_at: null })),
-  route("GET", "/meetings", () => ({ meetings: [], items: [] })),
-  route("POST", "/meetings/sync", () => ({ synced: 0 })),
 ];
 
 // ---------------------------------------------------------------- entry point
@@ -1624,7 +1622,18 @@ export const handleDemoRequest = ({ method, path, query, body }) => {
     });
     return r.handler({ params, query: query || {}, body: body || {} });
   }
-  const planned = handlePlanning({ method: verb, path, query: query || {}, body: body || {}, db: db(), actingUser: actingUser(), HttpError });
+  const meetings = handleMeetings({ method: verb, path, query: query || {}, body: body || {} });
+  if (meetings !== undefined) return meetings;
+  const planned = handlePlanning({
+    method: verb,
+    path,
+    query: query || {},
+    body: body || {},
+    db: db(),
+    actingUser: actingUser(),
+    HttpError,
+    helpers: { newWorkItemFrom },
+  });
   if (planned !== undefined) return planned;
   // Anything not modelled answers with an empty, harmless result so a screen
   // that asks for it still renders.

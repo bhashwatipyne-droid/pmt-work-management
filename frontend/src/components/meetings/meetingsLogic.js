@@ -8,6 +8,12 @@ export const CALENDARS = {
   "product@finace.co": { label: "Product", dot: "#e08a00", bg: "#fdf0d9", text: "#7a4a00" },
   "animate@finace.co": { label: "Animation", dot: "#8b4fd8", bg: "#f1e8fd", text: "#4f2588" },
   "info@finace.co": { label: "Info", dot: "#d6336c", bg: "#fde7ef", text: "#8a1f47" },
+  // the public demo's sample calendars (src/demo/meetings.js)
+  "content@demo.pmt.example": { label: "Content", dot: "#2b6de8", bg: "#e7efff", text: "#123a8c" },
+  "projects@demo.pmt.example": { label: "Projects", dot: "#0f9d6b", bg: "#e2f5ec", text: "#0b5a3e" },
+  "product@demo.pmt.example": { label: "Product", dot: "#e08a00", bg: "#fdf0d9", text: "#7a4a00" },
+  "animate@demo.pmt.example": { label: "Animation", dot: "#8b4fd8", bg: "#f1e8fd", text: "#4f2588" },
+  "info@demo.pmt.example": { label: "Info", dot: "#d6336c", bg: "#fde7ef", text: "#8a1f47" },
 };
 export const FALLBACK = { dot: "#64748b", bg: "#eef1f6", text: "#334155" };
 export const calStyle = (c) => CALENDARS[c] || { ...FALLBACK, label: c.split("@")[0] };

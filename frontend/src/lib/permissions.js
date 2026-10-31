@@ -19,7 +19,6 @@
 // The backend enforces the same rules (server.py / efficiency.py); this file
 // only decides what the UI shows.
 
-import { isDemoMode } from "@/demo/demoMode";
 
 export const ROLE_LABELS = {
   admin: "Admin",
@@ -38,9 +37,6 @@ export const getAccess = (user) => {
   // production roles.
   const staff = admin || manager || member;
   const signedIn = staff || hr;
-  // The public demo has no live task feed or calendar behind it, so those two
-  // screens stay out of it.
-  const demo = isDemoMode();
 
   return {
     role,
@@ -51,8 +47,8 @@ export const getAccess = (user) => {
     canViewProjects: staff,
     canViewApprovals: staff,
     canViewEfficiency: staff,
-    canViewPlanning: (admin || manager) && !demo,
-    canViewMeetings: staff && !demo,
+    canViewPlanning: admin || manager,
+    canViewMeetings: staff,
     canViewInvoicing: hr || admin,
     canViewClients: admin,
     canViewTeam: admin,

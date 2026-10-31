@@ -48,7 +48,16 @@ describe("demo server", () => {
     expect(after.MANAGER.find((i) => i.id === item.id)).toBeUndefined();
   });
 
-  it("answers planning routes without error", () => {
-    expect(call("GET", "/planning/my-tasks")).toEqual([]);
+  it("plans the week and lists the meetings", () => {
+    const plan = call("GET", "/planning/overview");
+    expect(plan.tasks.length).toBeGreaterThan(10);
+    expect(plan.people.length).toBeGreaterThan(5);
+    expect(plan.ctx.days).toHaveLength(5);
+
+    const today = new Date();
+    const from = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const to = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().slice(0, 10);
+    expect(call("GET", "/meetings", { query: { start: from, end: to } }).length).toBeGreaterThan(20);
+    expect(call("GET", "/meetings/status").configured).toBe(true);
   });
 });

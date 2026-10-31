@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { trackEvent } from "@/analytics";
 import { useUser } from "@/context/UserContext";
+import { isDemoMode } from "@/demo/demoMode";
 import { isPushSupported } from "@/lib/firebase";
 import { PROMPT_DISMISSED_KEY, syncPushToken } from "@/lib/push";
 
@@ -31,7 +32,8 @@ export default function PushNotifications() {
   const userId = currentUser?.id;
 
   useEffect(() => {
-    if (!isAuthenticated || !userId) return;
+    // The public demo never asks for notification permission.
+    if (!isAuthenticated || !userId || isDemoMode()) return;
 
     let cancelled = false;
 

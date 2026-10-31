@@ -12,6 +12,8 @@ import { BulkReviewButton } from "./BulkReviewButton";
 import TaskCardHost from "@/components/tasks/TaskCardHost";
 import { useUser } from "@/context/UserContext";
 import { showTaskCards } from "@/lib/planning/featureFlags";
+import { isDemoMode } from "@/demo/demoMode";
+import { DemoBanner } from "@/demo/DemoBanner";
 
 const KBD =
   "inline-flex h-[18px] items-center rounded px-[5px] text-[10px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(234,238,244,1)]";
@@ -32,6 +34,7 @@ export const AppLayout = ({ children }) => {
         <Sidebar counts={counts} />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {isDemoMode() && <DemoBanner />}
           <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-[#eaeef4] bg-white px-3 pt-[env(safe-area-inset-top)] max-md:h-[calc(52px+env(safe-area-inset-top))] md:px-5">
             {/* phone: the sidebar is hidden, so the logo mark and bell live here */}
             <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] bg-[#2b2bb5] text-xs font-bold tracking-tight text-white md:hidden">

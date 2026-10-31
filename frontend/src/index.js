@@ -7,6 +7,13 @@ import App from "@/App";
 import { prefetchForPath } from "@/services/prefetch";
 import { initAnalytics } from "@/analytics";
 import { installApiTelemetry } from "@/services/apiTelemetry";
+import { bootDemoFromUrl, isDemoMode } from "@/demo/demoMode";
+import { installDemoAdapter } from "@/demo/adapter";
+
+// /demo turns on the public demo: the API is answered from sample data in the
+// browser (see src/demo). Must run before anything asks the backend for data.
+bootDemoFromUrl();
+if (isDemoMode()) installDemoAdapter();
 
 // PostHog loads after first paint (see analytics.js); events are queued until
 // then. The API telemetry goes in first so it also sees the prefetches below.

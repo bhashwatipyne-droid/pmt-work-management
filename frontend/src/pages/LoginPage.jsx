@@ -414,6 +414,15 @@ export default function LoginPage({ onResetDone, onResetCancel } = {}) {
         </form>
         )}
 
+        {view === "signin" && (
+          <p className="mt-4 text-center text-[12px] text-muted-foreground">
+            Just looking?{" "}
+            <a href="/demo" className="font-medium text-primary hover:underline" data-testid="try-demo-link">
+              Explore the live demo
+            </a>
+          </p>
+        )}
+
         <p className="mt-5 text-center text-[11px] text-muted-foreground">
           PMT · Work Management
         </p>

@@ -2,7 +2,10 @@ import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import { useSessionState } from "@/hooks/useSessionState";
 import { MonthlyChart } from "./MonthlyChart";
 import { Badge, Block, Dot, Empty, Pill, SectionHead, StatTile } from "./dashboardParts";
-import { C, CARD, NEXT_BADGE, ROW_DIVIDER, STAGE_DOT } from "./dashboardTheme";
+import { C, CARD, HEAD_ROW, NEXT_BADGE, ROW_DIVIDER, STAGE_DOT } from "./dashboardTheme";
+
+const DELIV_GRID = "grid grid-cols-[minmax(280px,2.2fr)_minmax(150px,1fr)_96px_72px_64px] gap-x-4";
+const STATUS_BADGE = { "Ready for Review": "Info", "Changes Requested": "Warning", "In Progress": "Neutral", "Not Started": "Neutral", Blocked: "Error" };
 import { addDays, fmtDay, fmtWeekday, pc } from "@/lib/homeDashboard";
 
 export function OverviewTab(ctx) {
@@ -63,7 +66,7 @@ export function OverviewTab(ctx) {
         </div>
 
         {picked && (
-          <section className={`${CARD} mt-3 overflow-x-auto`} data-testid="kpi-deliverables">
+          <section className={`${CARD} mt-3 flex flex-col`} data-testid="kpi-deliverables">
             <SectionHead title={picked.label} sub={`${pickedRows.length} deliverable${pickedRows.length === 1 ? "" : "s"}. Click one to open its project.`}>
               <button
                 type="button"
@@ -79,40 +82,38 @@ export function OverviewTab(ctx) {
             {!open ? null : pickedRows.length === 0 ? (
               <Empty>No deliverables here for this view.</Empty>
             ) : (
-              <table className="w-full min-w-[640px] text-left text-[13px]">
-                <thead>
-                  <tr className="text-[12px] text-[rgb(84,100,144)]">
-                    <th className="px-4 py-2 font-medium">Deliverable</th>
-                    <th className="px-4 py-2 font-medium">Project</th>
-                    <th className="px-4 py-2 font-medium">Stage</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                    <th className="px-4 py-2 font-medium">Due</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <div className="overflow-x-auto">
+                <div className="min-w-[760px]">
+                  <div className={`${DELIV_GRID} ${HEAD_ROW}`}>
+                    <span>Deliverable / project</span><span>Status</span><span>Due</span><span>Late by</span><span />
+                  </div>
                   {pickedRows.map((r) => (
-                    <tr
+                    <button
                       key={r.id}
+                      type="button"
                       onClick={() => goProject(r.project_id)}
-                      className="cursor-pointer shadow-[inset_0_1px_0_rgb(243,244,246)] hover:bg-[rgb(249,250,251)]"
+                      className={`${DELIV_GRID} min-h-[60px] w-full items-center bg-white px-4 py-2.5 text-left ${ROW_DIVIDER} hover:bg-[rgb(249,250,251)]`}
                     >
-                      <td className="px-4 py-2.5 font-medium text-[rgb(13,27,62)]">{r.name}</td>
-                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">{projects[r.project_id]?.name || "—"}</td>
-                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">
-                        <span className="flex items-center gap-1.5">
+                      <span className="flex min-w-0 flex-col gap-[3px]">
+                        <span className="truncate text-[14px] font-medium text-[rgb(13,27,62)]" title={r.name}>{r.name}</span>
+                        <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-[rgb(84,100,144)]">
                           <Dot color={STAGE_DOT[r.stage]} size={6} />
-                          {r.stage}
+                          <span className="truncate" title={projects[r.project_id]?.name}>
+                            {r.stage} · {projects[r.project_id]?.name || "—"}
+                          </span>
                         </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">{r.stage_status}</td>
-                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">
-                        {r.due ? fmtDay(r.due) : "—"}
-                        {r.days_late > 0 && <span className="ml-1.5 text-[12px] text-[rgb(220,38,38)]">{r.days_late}d late</span>}
-                      </td>
-                    </tr>
+                      </span>
+                      <span><Badge color={STATUS_BADGE[r.stage_status] || "Neutral"}>{r.stage_status}</Badge></span>
+                      <span className="text-[13px] font-medium text-[rgb(13,27,62)]">{r.due ? fmtDay(r.due) : "—"}</span>
+                      <span className={`text-[13px] ${r.days_late > 0 ? "font-medium text-[rgb(220,38,38)]" : "text-[rgb(84,100,144)]"}`}>{r.days_late > 0 ? `${r.days_late}d` : "—"}</span>
+                      <span className="flex items-center justify-end gap-0.5 text-[13px] font-semibold text-[rgb(43,43,181)]">
+                        Open
+                        <ChevronRight className="h-4 w-4" />
+                      </span>
+                    </button>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
             )}
           </section>
         )}

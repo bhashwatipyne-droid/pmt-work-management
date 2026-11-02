@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { dismissLookalike, isLookalikeDismissed } from "@/lib/lookalikeDismiss";
 import { AlertCircle, ArrowLeft, Check, ChevronDown, Pencil, Share2, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -9,6 +10,10 @@ import { PROJECT_STATUSES } from "@/constants/projectPalette";
 
 export function ProjectHeader({ canManage, currentUser, handleStatusChange, lookalikes, navigate, project, setDeleteProjectOpen, setEditProjectOpen, setShareOpen, statusDot }) {
   const [, setTick] = useState(0);
+  // Opened from Home (or another page that passes `from`): go back there.
+  const { state: fromState } = useLocation();
+  const backTo = fromState?.from || "/projects";
+  const backLabel = fromState?.from ? `Back to ${fromState.fromLabel || "previous page"}` : "All projects";
   const warningHidden = isLookalikeDismissed(project.id);
   const dismissWarning = () => {
     dismissLookalike(project.id);
@@ -20,11 +25,11 @@ export function ProjectHeader({ canManage, currentUser, handleStatusChange, look
     <div className="flex flex-col gap-2.5">
       <button
         type="button"
-        onClick={() => navigate("/projects")}
+        onClick={() => navigate(backTo)}
         className="-ml-1 flex h-7 items-center gap-1.5 self-start rounded-[7px] pl-1 pr-2 text-[13px] font-medium text-[rgb(84,100,144)] hover:bg-[rgb(249,250,251)] hover:text-[rgb(13,27,62)]"
       >
         <ArrowLeft className="h-4 w-4" />
-        All projects
+        {backLabel}
       </button>
 
       <div className="flex flex-wrap items-start gap-4">

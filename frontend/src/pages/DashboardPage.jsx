@@ -26,7 +26,9 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { currentUser, users, loading: userLoading } = useUser();
 
-  const [month, setMonth] = useState(currentMonth);
+  // Kept for the tab session, like the tab and filters, so coming back from a
+  // project lands on the same month and team instead of resetting to this month.
+  const [month, setMonth] = useSessionState("dashboard-month", currentMonth);
   const [data, setData] = useState(null);
   const [eff, setEff] = useState(null);
   const [effTrend, setEffTrend] = useState([]);
@@ -37,7 +39,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [team, setTeam] = useState("All");
+  const [team, setTeam] = useSessionState("dashboard-team", "All");
   const [tab, setTab] = useSessionState("dashboard-tab", "overview");
   const [cat, setCat] = useSessionState("dashboard-cat", "all");
   const [showAllActions, setShowAllActions] = useState(false);
@@ -136,7 +138,9 @@ export default function DashboardPage() {
   const delayDelta =
     cur.delay_rate != null && prev.delay_rate != null ? cur.delay_rate - prev.delay_rate : null;
 
-  const goProject = (id) => navigate(id ? `/projects/${id}` : "/");
+  // `from` lets the project page offer "Back to Home" instead of only "All projects".
+  const goProject = (id) =>
+    navigate(id ? `/projects/${id}` : "/", id ? { state: { from: "/dashboard", fromLabel: "Home" } } : undefined);
   const openActions = (k) => {
     setCat(k);
     setShowAllActions(false);

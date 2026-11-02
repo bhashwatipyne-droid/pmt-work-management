@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { ChevronRight } from "lucide-react";
+import { useSessionState } from "@/hooks/useSessionState";
 import { MonthlyChart } from "./MonthlyChart";
 import { Badge, Block, Dot, Empty, Pill, SectionHead, StatTile } from "./dashboardParts";
 import { C, CARD, NEXT_BADGE, ROW_DIVIDER, STAGE_DOT } from "./dashboardTheme";
@@ -7,8 +7,10 @@ import { addDays, fmtDay, fmtWeekday, pc } from "@/lib/homeDashboard";
 
 export function OverviewTab(ctx) {
   const { cats, critCount, data, goProject, h, kpis, month, nextDue, openActions, projects, setMonth, today, userName } = ctx;
-  // The card whose deliverables are listed under the cards (click again to hide).
-  const [sel, setSel] = useState(null);
+  // The card whose deliverables are listed under the cards. Active deliverables
+  // is open by default; click a card again to hide it ("" = none). Kept for the
+  // tab session so it is still open after coming back from a project.
+  const [sel, setSel] = useSessionState("dashboard-kpi", "Active deliverables");
   const picked = kpis.find((k) => k.label === sel);
   const pickedRows = picked
     ? [...picked.rows].sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")))
@@ -24,7 +26,7 @@ export function OverviewTab(ctx) {
             <button
               key={k.label}
               type="button"
-              onClick={() => setSel(sel === k.label ? null : k.label)}
+              onClick={() => setSel(sel === k.label ? "" : k.label)}
               aria-pressed={sel === k.label}
               className={`${CARD} flex min-w-0 flex-col gap-2 p-4 text-left transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_rgb(144,144,236)] ${sel === k.label ? "shadow-[inset_0_0_0_2px_rgb(79,70,229)]" : ""}`}
             >

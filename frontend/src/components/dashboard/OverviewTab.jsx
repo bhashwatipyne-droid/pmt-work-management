@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { MonthlyChart } from "./MonthlyChart";
 import { Badge, Block, Dot, Empty, Pill, SectionHead, StatTile } from "./dashboardParts";
@@ -6,6 +7,12 @@ import { addDays, fmtDay, fmtWeekday, pc } from "@/lib/homeDashboard";
 
 export function OverviewTab(ctx) {
   const { cats, critCount, data, goProject, h, kpis, month, nextDue, openActions, projects, setMonth, today, userName } = ctx;
+  // The card whose deliverables are listed under the cards (click again to hide).
+  const [sel, setSel] = useState(null);
+  const picked = kpis.find((k) => k.label === sel);
+  const pickedRows = picked
+    ? [...picked.rows].sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")))
+    : [];
   return (
     <>
     <>
@@ -17,8 +24,9 @@ export function OverviewTab(ctx) {
             <button
               key={k.label}
               type="button"
-              onClick={k.go}
-              className={`${CARD} flex min-w-0 flex-col gap-2 p-4 text-left transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_rgb(144,144,236)]`}
+              onClick={() => setSel(sel === k.label ? null : k.label)}
+              aria-pressed={sel === k.label}
+              className={`${CARD} flex min-w-0 flex-col gap-2 p-4 text-left transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_rgb(144,144,236)] ${sel === k.label ? "shadow-[inset_0_0_0_2px_rgb(79,70,229)]" : ""}`}
             >
               <span className="flex items-center gap-2 text-[13px] font-medium text-[rgb(74,88,120)]">
                 <Dot color={k.dot} />
@@ -43,6 +51,50 @@ export function OverviewTab(ctx) {
             </button>
           ))}
         </div>
+
+        {picked && (
+          <section className={`${CARD} mt-3 overflow-x-auto`} data-testid="kpi-deliverables">
+            <SectionHead title={picked.label} sub={`${pickedRows.length} deliverable${pickedRows.length === 1 ? "" : "s"}. Click one to open its project.`} />
+            {pickedRows.length === 0 ? (
+              <Empty>No deliverables here for this view.</Empty>
+            ) : (
+              <table className="w-full min-w-[640px] text-left text-[13px]">
+                <thead>
+                  <tr className="text-[12px] text-[rgb(84,100,144)]">
+                    <th className="px-4 py-2 font-medium">Deliverable</th>
+                    <th className="px-4 py-2 font-medium">Project</th>
+                    <th className="px-4 py-2 font-medium">Stage</th>
+                    <th className="px-4 py-2 font-medium">Status</th>
+                    <th className="px-4 py-2 font-medium">Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pickedRows.map((r) => (
+                    <tr
+                      key={r.id}
+                      onClick={() => goProject(r.project_id)}
+                      className="cursor-pointer shadow-[inset_0_1px_0_rgb(243,244,246)] hover:bg-[rgb(249,250,251)]"
+                    >
+                      <td className="px-4 py-2.5 font-medium text-[rgb(13,27,62)]">{r.name}</td>
+                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">{projects[r.project_id]?.name || "—"}</td>
+                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">
+                        <span className="flex items-center gap-1.5">
+                          <Dot color={STAGE_DOT[r.stage]} size={6} />
+                          {r.stage}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">{r.stage_status}</td>
+                      <td className="px-4 py-2.5 text-[rgb(74,88,120)]">
+                        {r.due ? fmtDay(r.due) : "—"}
+                        {r.days_late > 0 && <span className="ml-1.5 text-[12px] text-[rgb(220,38,38)]">{r.days_late}d late</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        )}
       </Block>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] items-start gap-4">

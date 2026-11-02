@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import { useSessionState } from "@/hooks/useSessionState";
 import { MonthlyChart } from "./MonthlyChart";
 import { Badge, Block, Dot, Empty, Pill, SectionHead, StatTile } from "./dashboardParts";
@@ -8,9 +8,11 @@ import { addDays, fmtDay, fmtWeekday, pc } from "@/lib/homeDashboard";
 export function OverviewTab(ctx) {
   const { cats, critCount, data, goProject, h, kpis, month, nextDue, openActions, projects, setMonth, today, userName } = ctx;
   // The card whose deliverables are listed under the cards. Active deliverables
-  // is open by default; click a card again to hide it ("" = none). Kept for the
+  // is open by default; the Collapse button (or clicking the card again) folds it. Kept for the
   // tab session so it is still open after coming back from a project.
   const [sel, setSel] = useSessionState("dashboard-kpi", "Active deliverables");
+  // The table body can be collapsed with the header button; the header stays.
+  const [open, setOpen] = useSessionState("dashboard-kpi-open", true);
   const picked = kpis.find((k) => k.label === sel);
   const pickedRows = picked
     ? [...picked.rows].sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")))
@@ -26,9 +28,15 @@ export function OverviewTab(ctx) {
             <button
               key={k.label}
               type="button"
-              onClick={() => setSel(sel === k.label ? "" : k.label)}
-              aria-pressed={sel === k.label}
-              className={`${CARD} flex min-w-0 flex-col gap-2 p-4 text-left transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_rgb(144,144,236)] ${sel === k.label ? "shadow-[inset_0_0_0_2px_rgb(79,70,229)]" : ""}`}
+              onClick={() => {
+                if (sel === k.label) setOpen(!open);
+                else {
+                  setSel(k.label);
+                  setOpen(true);
+                }
+              }}
+              aria-pressed={sel === k.label && open}
+              className={`${CARD} flex min-w-0 flex-col gap-2 p-4 text-left transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_rgb(144,144,236)] ${sel === k.label && open ? "shadow-[inset_0_0_0_2px_rgb(79,70,229)]" : ""}`}
             >
               <span className="flex items-center gap-2 text-[13px] font-medium text-[rgb(74,88,120)]">
                 <Dot color={k.dot} />
@@ -56,8 +64,19 @@ export function OverviewTab(ctx) {
 
         {picked && (
           <section className={`${CARD} mt-3 overflow-x-auto`} data-testid="kpi-deliverables">
-            <SectionHead title={picked.label} sub={`${pickedRows.length} deliverable${pickedRows.length === 1 ? "" : "s"}. Click one to open its project.`} />
-            {pickedRows.length === 0 ? (
+            <SectionHead title={picked.label} sub={`${pickedRows.length} deliverable${pickedRows.length === 1 ? "" : "s"}. Click one to open its project.`}>
+              <button
+                type="button"
+                onClick={() => setOpen(!open)}
+                aria-expanded={open}
+                data-testid="kpi-deliverables-toggle"
+                className="flex h-7 items-center gap-1 rounded-[7px] px-2 text-[13px] font-medium text-[rgb(84,100,144)] hover:bg-[rgb(249,250,251)] hover:text-[rgb(13,27,62)]"
+              >
+                {open ? "Collapse" : "Expand"}
+                {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+            </SectionHead>
+            {!open ? null : pickedRows.length === 0 ? (
               <Empty>No deliverables here for this view.</Empty>
             ) : (
               <table className="w-full min-w-[640px] text-left text-[13px]">

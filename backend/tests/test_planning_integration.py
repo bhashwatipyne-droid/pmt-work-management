@@ -574,7 +574,7 @@ def test_todays_bars_are_stacked_from_the_start_of_the_day():
     rows = planning.build_plan_rows([
         item(seq=1, est_minutes=90), item(seq=2, est_minutes=60), item(seq=3, assignee_pmt_name="Other"),
     ], {}, NOW)
-    assert [r["sh"] for r in rows] == [9.5, 11.0, 9.5]
+    assert [r["sh"] for r in rows] == [10.0, 11.5, 10.0]
     assert rows[0]["est"] == 1.5
 
 

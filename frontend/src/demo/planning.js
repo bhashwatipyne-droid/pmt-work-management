@@ -4,7 +4,7 @@
 
 import { todayIso, dayOffset } from "./seed";
 
-const DAY_START = 9.5;
+const DAY_START = 10;
 const DAY_END = 18;
 const STAGE_DEPT = { Content: "Content", Design: "Design", Animate: "Animation" };
 const MEMBERS = {

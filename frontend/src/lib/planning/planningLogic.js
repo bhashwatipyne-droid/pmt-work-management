@@ -156,7 +156,7 @@ export function computePlan(
         : ["var(--warning-500)", "rgb(146,64,14)", "Under-used"];
 
   // ---- schedule (gantt) ----
-  const lo = week ? 0 : 9.5;
+  const lo = week ? 0 : 10;
   const hi = week ? 5 : 18;
   const pos = (x) => ((Math.max(lo, Math.min(hi, x)) - lo) / (hi - lo)) * 100;
   const ticks = week

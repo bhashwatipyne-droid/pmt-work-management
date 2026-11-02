@@ -61,7 +61,7 @@ PLAN_DEPARTMENTS = ("Content", "Design", "Animation")
 # department in PLAN_DEPARTMENTS needs an entry: a task for a team that is not
 # listed here is stored but never shown to anyone.
 TEAM_DEPARTMENT = {"content": "Content", "design": "Design", "animation": "Animation"}
-DAY_START = 9.5
+DAY_START = 10.0
 DAY_END = 18.0
 
 # Days nobody is planned for. Weekends always count; add public holidays with

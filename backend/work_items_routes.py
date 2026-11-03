@@ -25,6 +25,13 @@ from pydantic import BaseModel  # noqa: F401
 from pymongo import UpdateOne  # noqa: F401
 from pymongo.errors import DuplicateKeyError  # noqa: F401
 
+try:
+    from domain_constants import category_override
+    from work_items_rules import apply_category_override
+except ImportError:  # run as backend.server from the repo root
+    from backend.domain_constants import category_override
+    from backend.work_items_rules import apply_category_override
+
 
 class ExpandUnitsPayload(BaseModel):
     count: int
@@ -473,6 +480,7 @@ def create_work_items_router(
         work_date = tpl.pop("work_date", None) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
         validate_work_date(work_date)
         month = work_date[:7]
+        apply_category_override({}, tpl)
         apply_quantity_rules({}, tpl)
         await apply_time_rules(user, {}, tpl, creator_id=user.id)
         docs = []
@@ -547,6 +555,7 @@ def create_work_items_router(
         base["deliverable_type"] = deliverable_type
         base["status"] = "Not Started"
         base["version"] = existing.get("version") or ""
+        apply_category_override({}, base)
 
         # Each unit starts with the person's own benchmark time, like picking the
         # type on a single row.
@@ -609,7 +618,11 @@ def create_work_items_router(
             deliverable_name=source.get("deliverable_name") or "",
             deliverable_type=deliverable_type,
             deliverable_link=source.get("deliverable_link") or "",
-            work_category=source.get("work_category") or "Core",
+            work_category=(
+                category_override(source.get("stage"), deliverable_type)
+                or source.get("work_category")
+                or "Core"
+            ),
             version=source.get("version") or "",
             time_taken_minutes=benchmark or 0,
             time_source="auto" if benchmark else "manual",

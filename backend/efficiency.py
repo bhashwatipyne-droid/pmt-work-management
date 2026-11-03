@@ -29,6 +29,11 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel, Field, ConfigDict
 
+try:
+    from domain_constants import DEPARTMENT_TO_STAGE, category_override
+except ImportError:  # run as backend.server from the repo root
+    from backend.domain_constants import DEPARTMENT_TO_STAGE, category_override
+
 # A work row counts as finished when it is Closed or Scrap (Scrap is treated
 # the same as Closed - keep in step with DONE_STATUSES in server.py).
 DONE_STATUSES = ("Closed", "Scrap")
@@ -366,6 +371,7 @@ def create_efficiency_router(
             {"month": month, "creator_id": {"$in": user_ids}},
             {
                 "_id": 0, "id": 1, "creator_id": 1, "work_category": 1, "deliverable_type": 1,
+                "stage": 1,
                 "deliverable_name": 1, "status": 1, "time_taken_minutes": 1, "work_date": 1,
                 "project_id": 1, "client_id": 1,
                 # A Design/Animate row can stand for many units (23 slides).
@@ -374,6 +380,9 @@ def create_efficiency_router(
         ).to_list(20000)
 
     def _category_of(item: dict) -> str:
+        override = category_override(item.get("stage"), item.get("deliverable_type"))
+        if override:
+            return override
         explicit = item.get("work_category")
         if explicit in {"Core", "Non-Core"}:
             return explicit
@@ -407,6 +416,14 @@ def create_efficiency_router(
         items: List[dict],
         targets: List[dict],
     ) -> dict:
+        # A team can treat an activity as Non-Core (Animation: Data Updation), so a
+        # potential set for it earlier is no longer one of that person's Core
+        # targets - it would otherwise show 0% against work that is Non-Core now.
+        stage = DEPARTMENT_TO_STAGE.get(user_doc.get("department") or "")
+        targets = [
+            t for t in targets
+            if category_override(stage, t.get("activity_name")) != "Non-Core"
+        ]
         non_core_minutes = 0.0
         non_core_by_type: Dict[str, float] = {}
         closed_by_type: Dict[str, float] = {}
@@ -530,6 +547,7 @@ def create_efficiency_router(
                 {"month": {"$in": missing}, "creator_id": {"$in": user_ids}},
                 {
                     "_id": 0, "id": 1, "creator_id": 1, "month": 1, "work_category": 1,
+                    "stage": 1,
                     "deliverable_type": 1, "deliverable_name": 1, "status": 1,
                     "time_taken_minutes": 1, "work_date": 1, "project_id": 1,
                     "client_id": 1, "quantity": 1,
@@ -933,7 +951,7 @@ def create_efficiency_router(
             {"month": month, "creator_id": user_id, "status": {"$in": list(DONE_STATUSES)}},
             {"_id": 0, "id": 1, "deliverable_name": 1, "deliverable_type": 1,
              "work_category": 1, "work_date": 1, "time_taken_minutes": 1, "project_id": 1,
-             "quantity": 1},
+             "quantity": 1, "stage": 1},
         ).sort("work_date", 1).to_list(5000)
 
         return {

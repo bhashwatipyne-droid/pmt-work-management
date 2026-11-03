@@ -2,6 +2,7 @@ import { MAX_QUANTITY, deliverableIdsOf, deliverableListPatch, durationPatch, is
 import { NOT_AVAILABLE_LABEL } from "@/lib/deliverableRules";
 import { STAGES, noDeliverablesFor } from "@/components/work-sheet/workSheetTableConfig";
 import { parseTimeInput } from "@/lib/timeRules";
+import { categoryForType } from "@/lib/categoryRules";
 
 // Turns text pasted into a Work Sheet cell into the field change it means
 // (or null when the text is not valid for that column). Pure: everything it
@@ -120,7 +121,11 @@ export const resolvePasteValue = (
       if (!match) return null;
       return {
         deliverable_type: match,
-        work_category: options.deliverable_type_categories?.[match] || "",
+        work_category: categoryForType(
+          options.deliverable_type_categories,
+          match,
+          targetItem?.stage
+        ),
       };
     }
     // Category is derived from Type, not directly editable anywhere

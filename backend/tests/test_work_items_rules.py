@@ -62,6 +62,89 @@ def test_category_falls_back_to_the_deliverable_type():
     assert status_of(rules.validate_work_category_rules, {"deliverable_type": non_core_type, "status": "Closed"}) == 400
 
 
+# --------------------------------- team-specific categories: Animation / Data Updation
+def test_data_updation_is_non_core_for_the_animation_team_only():
+    def category(stage):
+        return rules.resolve_work_category(
+            {"stage": stage, "deliverable_type": "Data Updation", "work_category": "Core"}
+        )
+
+    assert category("Animate") == "Non-Core"
+    # every other team keeps it as a Core activity
+    for stage in ("Content", "Design", None, ""):
+        assert category(stage) == "Core"
+    # the shared type table itself is unchanged
+    assert server.DELIVERABLE_TYPE_CATEGORIES["Data Updation"] == "Core"
+
+
+def test_only_data_updation_on_the_animate_stage_is_overridden():
+    assert rules.category_override("Animate", "Data Updation") == "Non-Core"
+    assert rules.category_override("Animate", "Poster") is None
+    assert rules.category_override("Design", "Data Updation") is None
+    assert rules.category_override(None, None) is None
+
+
+def test_animation_data_updation_needs_time_before_it_can_close_but_other_teams_do_not():
+    animate = {
+        "stage": "Animate", "deliverable_type": "Data Updation", "work_category": "Core",
+        "status": "Closed", "time_taken_minutes": 0,
+    }
+    assert status_of(rules.validate_work_category_rules, animate) == 400
+    assert status_of(rules.validate_work_category_rules, {**animate, "time_taken_minutes": 30}) is None
+    assert status_of(rules.validate_work_category_rules, {**animate, "stage": "Design"}) is None
+    assert status_of(rules.validate_work_category_rules, {**animate, "stage": "Content"}) is None
+
+
+def test_animation_data_updation_no_longer_needs_a_deliverable_but_other_teams_still_do():
+    row = {"project_id": "p1", "stage": "Animate", "deliverable_type": "Data Updation", "work_category": "Core"}
+    assert not rules.deliverable_required_for(row)
+    assert rules.deliverable_required_for({**row, "stage": "Design"})
+    assert rules.deliverable_required_for({**row, "stage": "Content"})
+    assert rules.deliverable_required_for({**row, "deliverable_type": "Poster"})
+
+
+def test_a_new_animation_data_updation_row_is_saved_as_non_core_whatever_the_client_sent():
+    for sent in ("Core", "", None):
+        data = {"stage": "Animate", "deliverable_type": "Data Updation", "work_category": sent}
+        rules.apply_category_override({}, data)
+        assert data["work_category"] == "Non-Core"
+
+    other_team = {"stage": "Design", "deliverable_type": "Data Updation", "work_category": "Core"}
+    rules.apply_category_override({}, other_team)
+    assert other_team["work_category"] == "Core"
+
+
+def test_editing_an_animation_row_into_data_updation_makes_it_non_core():
+    existing = {"stage": "Animate", "deliverable_type": "Poster", "work_category": "Core"}
+    changes = {"deliverable_type": "Data Updation", "work_category": "Core"}
+    rules.apply_category_override(existing, changes)
+    assert changes["work_category"] == "Non-Core"
+
+
+def test_a_row_moved_out_of_the_override_goes_back_to_its_types_category():
+    existing = {"stage": "Animate", "deliverable_type": "Data Updation", "work_category": "Non-Core"}
+
+    new_type = {"deliverable_type": "Poster"}
+    rules.apply_category_override(existing, new_type)
+    assert new_type["work_category"] == "Core"
+
+    new_stage = {"stage": "Design"}
+    rules.apply_category_override(existing, new_stage)
+    assert new_stage["work_category"] == "Core"
+
+
+def test_an_unrelated_edit_does_not_rewrite_the_category():
+    existing = {"stage": "Animate", "deliverable_type": "Data Updation", "work_category": "Non-Core"}
+    changes = {"remarks": "updated the chart"}
+    rules.apply_category_override(existing, changes)
+    assert "work_category" not in changes
+
+    plain = {"stage": "Design", "deliverable_type": "Poster", "work_category": "Core"}
+    changes = {"remarks": "x"}
+    rules.apply_category_override(plain, changes)
+    assert "work_category" not in changes
+
+
 # ------------------------------------------------------- multi-deliverable rows
 def test_only_content_rows_of_the_multi_type_cover_several_deliverables():
     prefix = rules.MULTI_DELIVERABLE_TYPE_PREFIX

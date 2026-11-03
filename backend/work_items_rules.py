@@ -19,6 +19,8 @@ try:
         DONE_STATUSES,
         MEMBER_EDITABLE_FIELDS,
         STAGES,
+        category_override,
+        resolve_work_category,
     )
 except ImportError:  # imported as backend.work_items_rules (uvicorn backend.server:app)
     from backend.db_client import db
@@ -28,6 +30,8 @@ except ImportError:  # imported as backend.work_items_rules (uvicorn backend.ser
         DONE_STATUSES,
         MEMBER_EDITABLE_FIELDS,
         STAGES,
+        category_override,
+        resolve_work_category,
     )
 
 if TYPE_CHECKING:  # annotation only; avoids importing server.py from here
@@ -43,9 +47,7 @@ def validate_work_category_rules(merged: dict):
     Non-Core -> time_taken_minutes is mandatory and must be > 0 before the row
                 can be closed. Blank draft rows stay editable.
     """
-    category = merged.get("work_category")
-    if not category:
-        category = DELIVERABLE_TYPE_CATEGORIES.get(merged.get("deliverable_type") or "")
+    category = resolve_work_category(merged)
 
     if category == "Non-Core" and merged.get("status") in DONE_STATUSES:
         minutes = merged.get("time_taken_minutes") or 0
@@ -54,6 +56,24 @@ def validate_work_category_rules(merged: dict):
                 status_code=400,
                 detail="Non-core work needs time taken (in minutes) before it can be closed",
             )
+
+
+def apply_category_override(existing: dict, update_fields: dict) -> None:
+    """Keep work_category in step with the team-specific categories
+    (STAGE_CATEGORY_OVERRIDES): a row whose stage and type have an override
+    always carries that category, whatever the client sent, and a row moved out
+    of an override (another stage or another type) goes back to its type's own
+    category. Mutates update_fields; `existing` is {} when creating."""
+    merged = {**existing, **update_fields}
+    override = category_override(merged.get("stage"), merged.get("deliverable_type"))
+    if override:
+        if merged.get("work_category") != override:
+            update_fields["work_category"] = override
+        return
+    if category_override(existing.get("stage"), existing.get("deliverable_type")):
+        own = DELIVERABLE_TYPE_CATEGORIES.get(merged.get("deliverable_type") or "")
+        if own and merged.get("work_category") != own:
+            update_fields["work_category"] = own
 
 
 # ---------------- Time taken: mandatory, auto-filled, always safe ----------------
@@ -661,10 +681,7 @@ def deliverable_required_for(merged: dict) -> bool:
     have no deliverable list to choose from, so they are exempt."""
     if not merged.get("project_id"):
         return False
-    category = merged.get("work_category")
-    if not category:
-        category = DELIVERABLE_TYPE_CATEGORIES.get(merged.get("deliverable_type") or "")
-    return category != "Non-Core"
+    return resolve_work_category(merged) != "Non-Core"
 
 
 def apply_deliverable_rules(existing: dict, update_fields: dict) -> None:
@@ -808,6 +825,7 @@ async def scoped_update_fields(
     if "stage" in update_fields and update_fields["stage"] and update_fields["stage"] not in STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
+    apply_category_override(existing, update_fields)
     apply_deliverable_rules(existing, update_fields)
     apply_quantity_rules(existing, update_fields)
     await apply_time_rules(user, existing, update_fields)

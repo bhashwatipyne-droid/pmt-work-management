@@ -50,6 +50,11 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
+try:
+    from domain_constants import category_override
+except ImportError:  # run as backend.server from the repo root
+    from backend.domain_constants import category_override
+
 IST = timezone(timedelta(hours=5, minutes=30))
 
 ITEMS = "tasklist_items"
@@ -1331,10 +1336,16 @@ def create_planning_router(
         summary = f"{(project or {}).get('name') or 'no project'} / {(deliverable or {}).get('name') or 'no deliverable'} / {d_type or 'no type'}"
 
         if item["status"] == "accepted" and item.get("work_item_id"):
+            # A team can treat a type differently (e.g. Animation: Data Updation is
+            # Non-Core), so the category depends on the row's own stage.
+            row_doc = await db.work_items.find_one(
+                {"id": item["work_item_id"]}, {"_id": 0, "stage": 1}
+            )
             row_changes = {
                 "deliverable_id": (deliverable or {}).get("id"),
                 "deliverable_type": d_type,
-                "work_category": deliverable_type_categories.get(d_type, "Core"),
+                "work_category": category_override((row_doc or {}).get("stage"), d_type)
+                or deliverable_type_categories.get(d_type, "Core"),
                 "deliverable_not_available": False,
             }
             if project and client:

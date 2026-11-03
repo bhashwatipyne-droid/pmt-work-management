@@ -5,6 +5,8 @@
 // Mirrors apply_quantity_rules in backend/server.py, which is the source of
 // truth - these only let the sheet explain a problem before a request is made.
 
+import { categoryForType } from "@/lib/categoryRules";
+
 export const QUANTITY_STAGES = ["Design", "Animate"];
 export const MAX_QUANTITY = 200;
 export const MAX_UNIT_MINUTES = 1440;
@@ -35,9 +37,13 @@ export const isMultiDeliverableRow = (item) =>
 // the type, and anything the new type can't carry is cleared: the ticked
 // deliverables once a row stops being a Campaign Ideation Plan one, and the
 // quantity once the type no longer takes one (a Non-Core activity).
-// `categories` is options.deliverable_type_categories.
+// `categories` is options.deliverable_type_categories. The category also depends
+// on the row's stage (Data Updation is Non-Core on the Animation team's sheet).
 export const typeChangePatch = (item, nextType, categories = {}) => {
-  const patch = { deliverable_type: nextType, work_category: categories?.[nextType] || "" };
+  const patch = {
+    deliverable_type: nextType,
+    work_category: categoryForType(categories, nextType, item?.stage),
+  };
   const next = { ...item, ...patch };
   if (isMultiDeliverableRow(item) && !isMultiDeliverableRow(next)) {
     // The ticked deliverables and the time for each only mean something on a

@@ -3,6 +3,7 @@ import { trackEvent } from "../../analytics";
 import { getTimeDefaults } from "@/services/api";
 import { clearQuickLogPreset, peekQuickLogPreset } from "@/lib/appActions";
 import { lowTimeMessage } from "@/lib/timeRules";
+import { categoryForType, categoryOverride } from "@/lib/categoryRules";
 import { NOT_AVAILABLE_OPTION, emptyDraft, formatDuration, fuzzyMatches } from "./quickLoggerLogic";
 import { useQuickLoggerDerived } from "./useQuickLoggerDerived";
 import { QuickLoggerFooter } from "./QuickLoggerFooter";
@@ -292,7 +293,7 @@ export default function QuickLoggerModal({
           resolvedDeliverable?.deliverable_name ||
           "",
       deliverable_type: resolvedType,
-      work_category: deliverableTypeCategories[resolvedType] || "",
+      work_category: categoryForType(deliverableTypeCategories, resolvedType, stage),
       stage: stage || null,
       remarks: draft.remarks || "",
       time_taken_minutes: parsedDuration,
@@ -389,6 +390,7 @@ export default function QuickLoggerModal({
         deliverable_name: entry.deliverable_name || "",
         deliverable_type: entry.deliverable_type,
         work_category:
+          categoryOverride(entry.stage || stage, entry.deliverable_type) ||
           entry.work_category ||
           deliverableTypeCategories[entry.deliverable_type] ||
           "",

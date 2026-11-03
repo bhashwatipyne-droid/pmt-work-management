@@ -58,6 +58,34 @@ DELIVERABLE_TYPE_CATEGORIES = {
     "Follow Up (Over 10-15 mins)": "Non-Core",
 }
 
+# Team-specific categories. A deliverable type normally has the one category
+# listed above, but a team can treat a type differently. Keyed by the row's
+# stage: a member can only log rows on their own department's stage, so the
+# stage is the team.
+#   Animate -> Data Updation is Non-Core work for the Animation team only
+#              (Content and Design keep it as Core).
+# Keep in step with STAGE_CATEGORY_OVERRIDES in frontend/src/lib/categoryRules.js.
+STAGE_CATEGORY_OVERRIDES = {
+    "Animate": {"Data Updation": "Non-Core"},
+}
+
+
+def category_override(stage, deliverable_type):
+    """The team-specific category for this type on this stage, or None."""
+    return STAGE_CATEGORY_OVERRIDES.get(stage or "", {}).get(deliverable_type or "")
+
+
+def resolve_work_category(row, default=None):
+    """A row's category: the team override first, then the category stored on
+    the row, then the one its deliverable type normally has."""
+    override = category_override(row.get("stage"), row.get("deliverable_type"))
+    if override:
+        return override
+    return row.get("work_category") or DELIVERABLE_TYPE_CATEGORIES.get(
+        row.get("deliverable_type") or "", default
+    )
+
+
 DEPARTMENT_TO_STAGE = {
     "Content": "Content",
     "Design": "Design",

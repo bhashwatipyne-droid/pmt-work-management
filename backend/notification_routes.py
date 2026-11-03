@@ -15,6 +15,11 @@ from pymongo.errors import DuplicateKeyError
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+try:
+    from domain_constants import category_override
+except ImportError:  # run as backend.server from the repo root
+    from backend.domain_constants import category_override
+
 
 # Names of deliverables for notifications that were saved before the name was
 # stored on them. Looking them up cost one extra database round trip on EVERY
@@ -242,7 +247,8 @@ def create_notification_router(
             month=work_date[:7],
             deliverable_name=deliverable.get("name", ""),
             deliverable_type=deliverable.get("type", ""),
-            work_category=DELIVERABLE_TYPE_CATEGORIES.get(
+            work_category=category_override(stage, deliverable.get("type"))
+            or DELIVERABLE_TYPE_CATEGORIES.get(
                 deliverable.get("type") or "",
                 "Core",
             ),

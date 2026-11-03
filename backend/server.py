@@ -224,6 +224,7 @@ try:
         _minutes_label,
         _time_worker_ids,
         _valid_minutes,
+        apply_category_override,
         apply_deliverable_list_rules,
         apply_deliverable_rules,
         apply_quantity_rules,
@@ -431,6 +432,7 @@ except ImportError:
         _minutes_label,
         _time_worker_ids,
         _valid_minutes,
+        apply_category_override,
         apply_deliverable_list_rules,
         apply_deliverable_rules,
         apply_quantity_rules,
@@ -558,6 +560,7 @@ async def _create_work_item_as(user: User, payload: WorkItemCreate, extra_fields
     await validate_deliverable_ids(data)
 
     data["deliverable_not_available"] = bool(data.get("deliverable_not_available"))
+    apply_category_override({}, data)
     apply_deliverable_rules({}, data)
     apply_quantity_rules({}, data)
     await apply_time_rules(user, {}, data, creator_id=data.get("creator_id"))

@@ -2,6 +2,8 @@
 // (backend/server.py). The backend is the source of truth; these helpers only
 // let the worksheet flag a missing deliverable and skip a doomed request.
 
+import { categoryOverride } from "@/lib/categoryRules";
+
 // Value used by the worksheet's Deliverable dropdown for "Not available".
 // It is never sent to the API: choosing it saves deliverable_not_available.
 export const NOT_AVAILABLE_VALUE = "__not_available__";
@@ -20,7 +22,10 @@ export const DELIVERABLE_REQUIRED_MESSAGE =
 export const isDeliverableRequired = (item, typeCategories = {}) => {
   if (!item?.project_id) return false;
   const category =
-    item.work_category || typeCategories?.[item.deliverable_type] || "";
+    categoryOverride(item.stage, item.deliverable_type) ||
+    item.work_category ||
+    typeCategories?.[item.deliverable_type] ||
+    "";
   return category !== "Non-Core";
 };
 

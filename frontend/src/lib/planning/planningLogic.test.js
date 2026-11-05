@@ -18,7 +18,7 @@ const apiPeople = [
 ];
 const apiTasks = [
   { id: "t-1", who: "Ratnesh Bor", task: "Investing blog", proj: "Contra", d0: 4, d1: 4, est: 1, cat: "new", note: "Assigned today", sh: 9.5, status: "todo" },
-  { id: "t-2", who: "Ratnesh Bor", task: "Old script", proj: "Contra", d0: 2, d1: 4, est: 2, cat: "rolled", note: "From Wed · 2d late", sh: 10.5, status: "wip" },
+  { id: "t-2", who: "Ratnesh Bor", task: "Old script", proj: "Contra", d0: 2, d1: 4, est: 2, cat: "hold", note: "On hold · since Wed 7", sh: 10.5, status: "wip" },
   { id: "t-3", who: "Someone Else", task: "Not in the team list", proj: "X", d0: 4, d1: 4, est: 1, cat: "new", note: "", sh: 9.5, status: "todo" },
 ];
 
@@ -94,7 +94,7 @@ test("work waiting on a reviewer and work sent back get their own tiles", () => 
   const tiles = Object.fromEntries(computePlan(tasks, { period: "today", people, ctx }).tiles.map((t) => [t.key, t]));
   expect(tiles.review).toMatchObject({ label: "Stuck in review", n: 1 });
   expect(tiles.changes).toMatchObject({ label: "Changes requested", n: 1 });
-  expect(tiles.rolled.n).toBe(1);
+  expect(tiles.hold).toMatchObject({ label: "On hold", n: 1 });
   expect(tiles.resched).toBeUndefined();
 });
 
@@ -107,7 +107,7 @@ test("on a holiday nothing is planned and nobody has a load", () => {
 
 describe("taskCardInfo", () => {
   const { taskCardInfo, clock } = require("./planningLogic");
-  const t = { id: "t-2", who: "Ratnesh Bor", task: "Old script", proj: "Contra", d0: 2, d1: 4, est: 6, cat: "rolled", note: "From Wed · 2d late", sh: 9.5, status: "wip" };
+  const t = { id: "t-2", who: "Ratnesh Bor", task: "Old script", proj: "Contra", d0: 2, d1: 4, est: 6, cat: "hold", note: "On hold · since Wed 7", sh: 9.5, status: "wip" };
 
   test("clock reads like the design", () => {
     expect(clock(9.5)).toBe("9:30am");
@@ -120,8 +120,8 @@ describe("taskCardInfo", () => {
     expect(c.when).toBe("Fri 9 · 9:30am – 11:30am");
     expect(c.span).toBe("Spans 3 days · 2h per day");
     expect(c.load).toBe("2h today");
-    expect(c.change).toBe("From Wed · 2d late");
-    expect(c.tags.map((x) => x.l)).toEqual(["Rolled over / delayed", "In progress", "Content"]);
+    expect(c.change).toBe("On hold · since Wed 7");
+    expect(c.tags.map((x) => x.l)).toEqual(["On hold", "In progress", "Content"]);
     expect(c.canReassign).toBe(true);
   });
 

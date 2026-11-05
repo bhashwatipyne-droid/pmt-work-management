@@ -439,8 +439,9 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
                     f"{verb} " + (_day_label(created.astimezone(IST).date()) if created else _day_label(date.fromisoformat(work_date)))
                 )
         # Work waiting on someone else is not "late", it is stuck: finished and
-        # sent for review, or sent back with changes. These win over "rolled over"
-        # so a delay chart is only about work that is still the person's to do.
+        # sent for review, or sent back with changes. These (and On Hold, which
+        # is paused work) win over "rolled over" so a delay chart is only about
+        # work that is still the person's to do.
         sheet_status = work_status.get(item.get("work_item_id") or "") if item.get("status") == "accepted" else ""
         stuck = (
             "review" if sheet_status == "Ready for Review"
@@ -451,6 +452,12 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             cat = stuck
             since = f" · since {_day_label(date.fromisoformat(work_date))}" if rolled else ""
             note = ("Waiting for review" if stuck == "review" else "Changes requested") + since
+        elif sheet_status == "On Hold":
+            # Paused on purpose: the auto-close sweep leaves On Hold rows open, so
+            # they would otherwise roll forward as "late" every single day.
+            cat = "hold"
+            since = f" · since {_day_label(date.fromisoformat(work_date))}" if rolled else ""
+            note = "On hold" + since
         if item.get("plan_note"):
             note = item["plan_note"]
         if item.get("status") == "pending":

@@ -227,14 +227,14 @@ export function computePlan(
   const tileLbl = {
     new: week ? "Assigned this week" : "Assigned today",
     planned: week ? "Extra work this week" : "Extra work today",
-    rolled: "Rolled over / delayed",
+    hold: "On hold",
     review: "Stuck in review",
     changes: "Changes requested",
   };
   const tileSub = {
     new: "Tasks assigned through WhatsApp",
     planned: "Added in the Work Sheet, beyond assigned tasks",
-    rolled: week ? "Carried from last week or late" : "Carried from yesterday or late",
+    hold: "Paused on purpose, kept open until resumed",
     review: "Done by the person, waiting for a reviewer",
     changes: "Sent back to the person to fix",
   };
@@ -279,7 +279,7 @@ export function computePlan(
       const cands = tasks
         // Rows the person typed into their own Work Sheet are theirs to move
         // (there is no WhatsApp task to reassign), so they are never suggested.
-        .filter((t) => t.who === o.p[0] && inP(t) && t.status !== "done" && t.cat !== "rolled" && t.src !== "worksheet")
+        .filter((t) => t.who === o.p[0] && inP(t) && t.status !== "done" && t.cat !== "rolled" && t.cat !== "hold" && t.src !== "worksheet")
         .sort((a, b) => hrs(a) - hrs(b));
       for (const t of cands) {
         const key = "mv" + t.id;
@@ -390,7 +390,7 @@ export function computePlan(
   }
 
   // ---- task list ----
-  const rank = (t) => P_ORDER.indexOf(t.cat === "rolled" ? "changes" : t.cat);
+  const rank = (t) => P_ORDER.indexOf(t.cat === "rolled" || t.cat === "hold" ? "changes" : t.cat);
   const listed = (cat === "all" ? all : all.filter((t) => t.cat === cat))
     .slice()
     .sort((a, b) => rank(b) - rank(a) || a.who.localeCompare(b.who));

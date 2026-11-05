@@ -730,6 +730,17 @@ def test_work_waiting_on_a_reviewer_is_stuck_in_review_not_late():
     assert rows["Still theirs and late"]["cat"] == "rolled"
 
 
+def test_on_hold_work_is_on_hold_not_late():
+    rows = {r["task"]: r for r in planning.build_plan_rows([
+        item(deliverable_name="Paused since Wed", work_date="2026-10-07", status="accepted", work_item_id="h1"),
+        item(deliverable_name="Paused today", status="accepted", work_item_id="h2"),
+    ], {"h1": "On Hold", "h2": "On Hold"}, NOW)}
+    old = rows["Paused since Wed"]
+    assert old["cat"] == "hold" and old["note"] == "On hold · since Wed 7"
+    assert (old["d0"], old["d1"]) == (2, 4)               # the bar still runs up to today
+    assert rows["Paused today"]["cat"] == "hold" and rows["Paused today"]["note"] == "On hold"
+
+
 def test_a_typed_row_waiting_for_review_is_stuck_in_review(env):
     row = sheet_row(status="Ready for Review")
     add_sheet_rows(row)

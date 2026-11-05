@@ -84,7 +84,7 @@ test("work the person typed into their own Work Sheet is drawn but never suggest
   expect(move.act.taskId).toBe("t-w");
 });
 
-test("work waiting on a reviewer and work sent back get their own tiles", () => {
+test("work sent back gets its own tile; there is no review tile because reviews auto-close", () => {
   const people = toPeopleRows(apiPeople);
   const tasks = [
     { ...apiTasks[0], id: "r", cat: "review", note: "Waiting for review" },
@@ -92,7 +92,7 @@ test("work waiting on a reviewer and work sent back get their own tiles", () => 
     { ...apiTasks[1] },
   ];
   const tiles = Object.fromEntries(computePlan(tasks, { period: "today", people, ctx }).tiles.map((t) => [t.key, t]));
-  expect(tiles.review).toMatchObject({ label: "Stuck in review", n: 1 });
+  expect(tiles.review).toBeUndefined();
   expect(tiles.changes).toMatchObject({ label: "Changes requested", n: 1 });
   expect(tiles.hold).toMatchObject({ label: "On hold", n: 1 });
   expect(tiles.resched).toBeUndefined();

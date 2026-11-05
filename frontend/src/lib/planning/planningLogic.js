@@ -229,7 +229,6 @@ export function computePlan(
     planned: week ? "Extra work this week" : "Extra work today",
     admin: "Held for admin",
     hold: "On hold",
-    review: "Stuck in review",
     changes: "Changes requested",
   };
   const tileSub = {
@@ -237,7 +236,6 @@ export function computePlan(
     planned: "Added in the Work Sheet, beyond assigned tasks",
     admin: "Waited for an admin to confirm it, so not late",
     hold: "Paused on purpose, kept open until resumed",
-    review: "Done by the person, waiting for a reviewer",
     changes: "Sent back to the person to fix",
   };
   const tiles = [

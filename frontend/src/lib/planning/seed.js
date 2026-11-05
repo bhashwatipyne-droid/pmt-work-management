@@ -62,6 +62,6 @@ export const P_CATS = {
   planned: ['Extra work', 'var(--neutral-100)', 'var(--neutral-700)', 'inset 0 0 0 1px var(--neutral-200)', 'var(--neutral-400)'],
 };
 
-export const P_ORDER = ['new', 'planned', 'admin', 'hold', 'review', 'changes'];
+export const P_ORDER = ['new', 'planned', 'admin', 'hold', 'changes'];
 
 export const NOTE_REASONS = ['Workload is full', 'Need more details', 'Deadline not possible', 'Not my skill area', 'Other'];

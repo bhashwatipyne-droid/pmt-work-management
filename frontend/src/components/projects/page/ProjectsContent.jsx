@@ -14,7 +14,7 @@ export function ProjectsContent(ctx) {
         a "100vh - Npx" constant - it just gets whatever space is left.
         The list sits 1px lower than the board, per the design. */}
     <div
-      className={`min-h-0 flex-1 overflow-auto ${view === "list" ? "mt-[17px]" : "mt-4"}`}
+      className={`min-h-0 flex-1 overflow-auto ${view === "chart" ? "flex flex-col" : ""} ${view === "list" ? "mt-[17px]" : "mt-4"}`}
     >
       {loading || (filtered.length === 0 && searchPending) ? (
         view === "chart" ? (
@@ -39,7 +39,7 @@ export function ProjectsContent(ctx) {
       ) : view === "chart" ? (
         <>
           {hiddenStatuses.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5">
               <span className="text-[11.5px] text-[#98a1af]">Hidden columns:</span>
               {hiddenStatuses.map((status) => (
                 <button
@@ -55,11 +55,13 @@ export function ProjectsContent(ctx) {
             </div>
           )}
 
-          {/* Horizontal scroll only - the board's own height is whatever
-              its tallest column needs; the Content wrapper above supplies
-              the vertical scrollbar, at the page's actual available
-              height rather than a guessed one. */}
-          <div className="pmt-hscroll overflow-x-auto pb-4 max-md:snap-x max-md:snap-mandatory">
+          {/* The board scrolls both ways inside the space the Content wrapper
+              gives it (flex-1 of the page's available height, no guessed
+              "100vh - N"). Being the vertical scroller is what lets each
+              column's header stay pinned (position: sticky) while the cards
+              scroll, and keeps the horizontal scrollbar at the bottom of the
+              screen instead of the bottom of the tallest column. */}
+          <div className="pmt-hscroll min-h-0 flex-1 overflow-x-auto overflow-y-auto pb-4 max-md:snap-x max-md:snap-mandatory">
             <div className="flex items-start gap-[10px]" style={{ minWidth: boardWidth }}>
               {visibleStatuses.map((status) => {
                 const columnProjects = byStatus[status] || [];

@@ -64,7 +64,11 @@ export const KanbanColumn = ({
       style={{ width: COLUMN_WIDTH, minWidth: COLUMN_WIDTH }}
       className="flex shrink-0 flex-col max-md:snap-start"
     >
-      {/* Header pill */}
+      {/* Header pill. Sticky: the board scrolls vertically inside its own box
+          (ProjectsContent), so the status and count stay in view while the
+          admin scrolls a long column. The wrapper carries the page colour so
+          cards slide under it cleanly, and the 7px gap below the pill. */}
+      <div className="sticky top-0 z-10 bg-[#f7f9fc] pb-[7px]">
       <div
         className="group flex h-[37px] items-center gap-2 rounded-[8px] border pl-3 pr-3"
         style={{ background: s.headBg, borderColor: s.headBorder }}
@@ -104,11 +108,12 @@ export const KanbanColumn = ({
           </span>
         </span>
       </div>
+      </div>
 
       {/* Cards */}
       <div
         data-testid={COLUMN_TESTIDS[status]}
-        className={`mt-[7px] flex min-h-[200px] flex-1 flex-col gap-[7px] rounded-[10px] transition-colors ${
+        className={`flex min-h-[200px] flex-1 flex-col gap-[7px] rounded-[10px] transition-colors ${
           isDropTarget ? "bg-[#eef1f6]" : ""
         }`}
       >

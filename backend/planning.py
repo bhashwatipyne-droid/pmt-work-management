@@ -302,6 +302,16 @@ def plan_deliverable_type(item: dict) -> str:
     )
 
 
+def released_from_hold_today(item: dict, today_iso: str) -> bool:
+    """A line that sat on the held list and an admin confirmed today. It keeps
+    the day it was assigned, so without this it would show as days late for a
+    delay that was the admin's, not the person's."""
+    if not (item.get("from_review") or "resolved_reasons" in item):
+        return False
+    resolved = _parse_dt(item.get("resolved_at"))
+    return bool(resolved and resolved.astimezone(IST).date().isoformat() == today_iso)
+
+
 def row_work_date(item: dict, today_iso: str) -> str:
     """The date on the Work Sheet row made from a task. A task a manager had to
     release from the held list keeps the day it was assigned, so resolving an old
@@ -458,6 +468,13 @@ def build_plan_rows(items: List[dict], work_status: Dict[str, str], now: datetim
             cat = "hold"
             since = f" · since {_day_label(date.fromisoformat(work_date))}" if rolled else ""
             note = "On hold" + since
+        elif rolled and released_from_hold_today(item, today_iso):
+            # Not late: the line was waiting on an admin to confirm it. The note
+            # keeps the real assigned day, the bar sits on today, and nothing
+            # claims the work happened on a different day.
+            cat = "admin"
+            d0 = d1 = today_idx
+            note = f"Held for admin · assigned {_day_label(date.fromisoformat(work_date))}"
         if item.get("plan_note"):
             note = item["plan_note"]
         if item.get("status") == "pending":

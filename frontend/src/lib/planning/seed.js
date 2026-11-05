@@ -54,6 +54,7 @@ export const P_NOW = 13.67;
 
 export const P_CATS = {
   rolled: ['Rolled over / delayed', 'var(--error-50)', 'rgb(153,27,27)', 'inset 0 0 0 1px rgb(252,165,165)', 'var(--error-500)'],
+  admin: ['Held for admin', 'var(--brand-50)', 'var(--brand-700)', 'inset 0 0 0 1px var(--brand-200)', 'var(--brand-300)'],
   hold: ['On hold', 'var(--neutral-100)', 'var(--neutral-700)', 'inset 0 0 0 1px var(--neutral-300)', 'var(--neutral-500)'],
   review: ['Stuck in review', 'var(--info-100)', 'rgb(30,64,175)', 'inset 0 0 0 1px rgb(147,197,253)', 'var(--info-500)'],
   changes: ['Changes requested', 'var(--warning-100)', 'rgb(146,64,14)', 'inset 0 0 0 1px rgb(252,211,77)', 'var(--warning-500)'],
@@ -61,6 +62,6 @@ export const P_CATS = {
   planned: ['Extra work', 'var(--neutral-100)', 'var(--neutral-700)', 'inset 0 0 0 1px var(--neutral-200)', 'var(--neutral-400)'],
 };
 
-export const P_ORDER = ['new', 'planned', 'hold', 'review', 'changes'];
+export const P_ORDER = ['new', 'planned', 'admin', 'hold', 'review', 'changes'];
 
 export const NOTE_REASONS = ['Workload is full', 'Need more details', 'Deadline not possible', 'Not my skill area', 'Other'];

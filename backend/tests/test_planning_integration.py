@@ -741,6 +741,25 @@ def test_on_hold_work_is_on_hold_not_late():
     assert rows["Paused today"]["cat"] == "hold" and rows["Paused today"]["note"] == "On hold"
 
 
+def test_a_line_an_admin_released_today_is_held_for_admin_not_late():
+    released = "2026-10-09T08:00:00+00:00"          # NOW's day, in IST
+    rows = {r["task"]: r for r in planning.build_plan_rows([
+        item(deliverable_name="Held then confirmed", work_date="2026-10-07", status="pending",
+             from_review=True, resolved_reasons=["Client was guessed, please confirm"], resolved_at=released),
+        item(deliverable_name="Held then confirmed and accepted", work_date="2026-10-07", status="accepted",
+             work_item_id="a1", from_review=True, resolved_reasons=["x"], resolved_at=released),
+        item(deliverable_name="Never held, still late", work_date="2026-10-07", status="accepted", work_item_id="a2"),
+        item(deliverable_name="Confirmed on an earlier day", work_date="2026-10-06", status="accepted", work_item_id="a3",
+             from_review=True, resolved_reasons=["x"], resolved_at="2026-10-07T08:00:00+00:00"),
+    ], {"a1": "Ongoing", "a2": "Ongoing", "a3": "Ongoing"}, NOW)}
+    held = rows["Held then confirmed"]
+    assert held["cat"] == "admin" and held["note"].startswith("Held for admin · assigned Wed 7")
+    assert held["d0"] == held["d1"] == 4            # on today, not stretched back over the held days
+    assert rows["Held then confirmed and accepted"]["cat"] == "admin"
+    assert rows["Never held, still late"]["cat"] == "rolled"
+    assert rows["Confirmed on an earlier day"]["cat"] == "rolled"   # after that day it is the person's again
+
+
 def test_a_typed_row_waiting_for_review_is_stuck_in_review(env):
     row = sheet_row(status="Ready for Review")
     add_sheet_rows(row)

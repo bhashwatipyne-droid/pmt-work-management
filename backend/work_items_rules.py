@@ -357,9 +357,14 @@ async def validate_deliverable_ids(update_fields: dict, existing: Optional[dict]
         return
     ids = _clean_ids(update_fields["deliverable_ids"])
     update_fields["deliverable_ids"] = ids
-    update_fields["deliverable_id"] = ids[0] if ids else None
     if not ids:
+        # An empty list does not clear the row's deliverable: it is also what
+        # the sheet sends when the Deliverable Type changes away from a
+        # multi-deliverable type, and the single deliverable must survive that
+        # (apply_deliverable_list_rules empties deliverable_id itself when the
+        # list of a multi-deliverable row is emptied).
         return
+    update_fields["deliverable_id"] = ids[0]
     if len(ids) > MAX_QUANTITY:
         raise HTTPException(
             status_code=400,

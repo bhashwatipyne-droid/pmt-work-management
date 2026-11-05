@@ -62,7 +62,11 @@ export function ProjectsContent(ctx) {
               scroll, and keeps the horizontal scrollbar at the bottom of the
               screen instead of the bottom of the tallest column. */}
           <div className="pmt-hscroll min-h-0 flex-1 overflow-x-auto overflow-y-auto pb-4 max-md:snap-x max-md:snap-mandatory">
-            <div className="flex items-start gap-[10px]" style={{ minWidth: boardWidth }}>
+            {/* No items-start: every column stretches to the tallest one, so a
+                short column's sticky header stays pinned for as long as the
+                tallest column scrolls (a sticky header can only travel as far
+                as its own column is tall). */}
+            <div className="flex gap-[10px]" style={{ minWidth: boardWidth }}>
               {visibleStatuses.map((status) => {
                 const columnProjects = byStatus[status] || [];
                 const allColumnProjectsSelected =

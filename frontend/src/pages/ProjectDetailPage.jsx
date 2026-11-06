@@ -366,7 +366,7 @@ export default function ProjectDetailPage() {
       className="flex-1 overflow-auto bg-white font-['Inter',sans-serif] text-[rgb(13,27,62)] antialiased"
     >
       <div className="mx-auto flex max-w-[1240px] flex-col gap-4 px-4 pb-16 pt-3 md:gap-5 md:px-6 md:pt-4">
-        <ProjectHeader canManage={canManage} currentUser={currentUser} handleStatusChange={handleStatusChange} lookalikes={lookalikes} navigate={navigate} project={project} setDeleteProjectOpen={setDeleteProjectOpen} setEditProjectOpen={setEditProjectOpen} setShareOpen={setShareOpen} statusDot={statusDot} />
+        <ProjectHeader canManage={canManage} currentUser={currentUser} onInvoiceSaved={(_, invoiceNumber) => setProject((p) => (p ? { ...p, invoice_number: invoiceNumber } : p))} handleStatusChange={handleStatusChange} lookalikes={lookalikes} navigate={navigate} project={project} setDeleteProjectOpen={setDeleteProjectOpen} setEditProjectOpen={setEditProjectOpen} setShareOpen={setShareOpen} statusDot={statusDot} />
 
         <ProjectStats done={done} loggedMinutes={loggedMinutes} pct={pct} segments={segments} setStageFilter={setStageFilter} setTab={setTab} stageFilter={stageFilter} statsRef={statsRef} tiles={tiles} total={total} />
 

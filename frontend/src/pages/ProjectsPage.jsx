@@ -423,6 +423,12 @@ export default function ProjectsPage() {
   const stableHideProject = useStableCallback(handleHideProject);
   const stableUnhideProject = useStableCallback(handleUnhideProject);
   const stableDeleteProject = useStableCallback((project) => setDeleteTarget(project));
+  // Invoice no. typed on a card / list row: keep the loaded list in step.
+  const stableInvoiceSaved = useStableCallback((projectId, invoiceNumber) =>
+    setProjects((current) =>
+      current.map((p) => (p.id === projectId ? { ...p, invoice_number: invoiceNumber } : p))
+    )
+  );
   const stableOpenProject = useStableCallback((project) => {
     trackEvent("project_opened", {
       project_id: project.id,
@@ -497,6 +503,7 @@ export default function ProjectsPage() {
     stableDragStart,
     stableDrop,
     stableHideProject,
+    stableInvoiceSaved,
     stableOpenProject,
     stableSelectColumn,
     stableSelectProject,

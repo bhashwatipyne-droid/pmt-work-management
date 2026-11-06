@@ -5,7 +5,7 @@ import { ProjectListTable } from "@/components/projects/ProjectListTable";
 import { ProjectsBoardSkeleton, SettingsTableSkeleton } from "@/components/skeletons/Skeletons";
 
 export function ProjectsContent(ctx) {
-  const { boardWidth, byStatus, canManage, dragOverProjectId, dragOverStatus, filtered, handleHideProject, handleUnhideProject, hiddenStatuses, listPage, loading, loadingMore, lookalikeTextById, projects, searchPending, selectPage, selectedProjects, selectionMode, setDeleteTarget, setListPage, setModalOpen, sortedFiltered, stableColumnDragOver, stableColumnDrop, stableDeleteProject, stableDragEnd, stableDragOver, stableDragStart, stableDrop, stableHideProject, stableOpenProject, stableSelectColumn, stableSelectProject, stableToggleColumn, stableUnhideProject, toggleColumnVisibility, toggleProjectSelection, view, visibleStatuses } = ctx;
+  const { boardWidth, byStatus, canManage, dragOverProjectId, dragOverStatus, filtered, handleHideProject, handleUnhideProject, hiddenStatuses, listPage, loading, loadingMore, lookalikeTextById, projects, searchPending, selectPage, selectedProjects, selectionMode, setDeleteTarget, setListPage, setModalOpen, sortedFiltered, stableColumnDragOver, stableColumnDrop, stableDeleteProject, stableDragEnd, stableDragOver, stableDragStart, stableDrop, stableHideProject, stableInvoiceSaved, stableOpenProject, stableSelectColumn, stableSelectProject, stableToggleColumn, stableUnhideProject, toggleColumnVisibility, toggleProjectSelection, view, visibleStatuses } = ctx;
   return (
     <>
     {/* Content: fills the rest of the page's fixed height (the flex column
@@ -98,6 +98,8 @@ export function ProjectsContent(ctx) {
                     dragOverProjectId={dragOverProjectId}
                     isDropTarget={dragOverStatus === status}
                     readOnly={!canManage || loadingMore}
+                    canEditInvoice={canManage}
+                    onInvoiceSaved={stableInvoiceSaved}
                   />
                 );
               })}
@@ -120,6 +122,8 @@ export function ProjectsContent(ctx) {
           page={listPage}
           setPage={setListPage}
           readOnly={!canManage || loadingMore}
+          canEditInvoice={canManage}
+          onInvoiceSaved={stableInvoiceSaved}
         />
       )}
     </div>

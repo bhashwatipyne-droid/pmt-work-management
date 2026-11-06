@@ -4,6 +4,7 @@ import { AlertCircle, ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2, X } f
 
 import { STAGE_HEX, clientDotColor } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
+import { InvoiceNumberField } from "./InvoiceNumberField";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +53,9 @@ const ProjectCardBase = ({
   isDragTarget = false,
   // View-only: no selection, no dragging, no hide/delete.
   readOnly = false,
+  // Admins can type the invoice number on Ready / Raised Invoice cards.
+  canEditInvoice = false,
+  onInvoiceSaved,
 }) => {
   const s = statusStyle(project.status);
   const handleOpen = () => onOpen?.(project);
@@ -227,6 +231,16 @@ const ProjectCardBase = ({
           </button>
         </span>
       )}
+
+      {/* Invoice no. (Ready for Invoice / Raised Invoice only) */}
+      <div className="mt-[8px] flex empty:hidden">
+        <InvoiceNumberField
+          project={project}
+          canEdit={canEditInvoice}
+          onSaved={onInvoiceSaved}
+          variant="card"
+        />
+      </div>
 
       {/* Client */}
       <div className="mt-[6px] flex items-center gap-[7px]">

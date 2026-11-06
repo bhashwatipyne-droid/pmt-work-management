@@ -62,6 +62,8 @@ export const KanbanColumn = ({
   dragOverProjectId,
   isDropTarget = false,
   readOnly = false,
+  canEditInvoice = false,
+  onInvoiceSaved,
 }) => {
   const s = statusStyle(status);
   // Darker status colours for the column and its header.
@@ -163,6 +165,8 @@ export const KanbanColumn = ({
             onDrop={onDropProject}
             isDragTarget={dragOverProjectId === project.id}
             readOnly={readOnly}
+            canEditInvoice={canEditInvoice}
+            onInvoiceSaved={onInvoiceSaved}
           />
         ))}
 

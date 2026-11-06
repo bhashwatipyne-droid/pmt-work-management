@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Eye, EyeOff, Trash2, ArrowRight } from "luci
 
 import { STAGE_HEX } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
+import { InvoiceNumberField } from "./InvoiceNumberField";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +24,7 @@ const STAGES = Object.keys(STAGE_HEX);
 // Column widths from the Figma list frame (Campaign · Client · Status ·
 // Deliverables · Stages · Deadline), plus a narrow slot for the row menu.
 const GRID =
-  "grid grid-cols-[minmax(250px,1fr)_195px_167px_125px_204px_145px_28px] items-center";
+  "grid grid-cols-[minmax(250px,1fr)_195px_167px_125px_204px_170px_145px_28px] items-center";
 
 const MENU_ITEM =
   "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]";
@@ -45,6 +46,8 @@ export const ProjectListTable = ({
   setPage,
   // View-only: no checkboxes, no hide / delete, no "New project" row.
   readOnly = false,
+  canEditInvoice = false,
+  onInvoiceSaved,
 }) => {
   const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -56,7 +59,7 @@ export const ProjectListTable = ({
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e7e9ee] bg-white">
       <div className="pmt-hscroll overflow-x-auto">
-        <div className="min-w-[1130px]">
+        <div className="min-w-[1300px]">
           {/* Header */}
           <div
             className={`${GRID} group h-[48px] border-b-2 border-[#edeff3] bg-[#fafbfc] px-[17px] text-[11px] font-medium uppercase leading-[13px] tracking-[0.07em] text-[#98a1af]`}
@@ -83,6 +86,7 @@ export const ProjectListTable = ({
               <span className="w-[64px] text-[#7c5cf6]">Design</span>
               <span className="w-[64px] text-[#e08a0b]">Animate</span>
             </span>
+            <span>Invoice no.</span>
             <span>Deadline</span>
             <span />
           </div>
@@ -184,6 +188,15 @@ export const ProjectListTable = ({
                       </span>
                     );
                   })}
+                </span>
+
+                <span className="pr-4" onClick={(e) => e.stopPropagation()}>
+                  <InvoiceNumberField
+                    project={project}
+                    canEdit={canEditInvoice}
+                    onSaved={onInvoiceSaved}
+                    variant="row"
+                  />
                 </span>
 
                 <span className={`text-[12px] ${overdue ? "text-[#b42318]" : "text-[#6b7280]"}`}>

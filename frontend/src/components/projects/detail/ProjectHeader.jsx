@@ -7,8 +7,9 @@ import { Dot } from "@/components/projects/detail/parts";
 import { BRAND_500, ICON_BTN, MENU, MENU_ITEM, PROJECT_STATUS_DOT, fmtRange } from "@/components/projects/detail/projectDetailView";
 import { Building, Calendar, User as UserIcon } from "lucide-react";
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
+import { InvoiceNumberField, hasInvoiceSlot } from "@/components/projects/InvoiceNumberField";
 
-export function ProjectHeader({ canManage, currentUser, handleStatusChange, lookalikes, navigate, project, setDeleteProjectOpen, setEditProjectOpen, setShareOpen, statusDot }) {
+export function ProjectHeader({ canManage, currentUser, handleStatusChange, lookalikes, navigate, onInvoiceSaved, project, setDeleteProjectOpen, setEditProjectOpen, setShareOpen, statusDot }) {
   const [, setTick] = useState(0);
   // Opened from Home (or another page that passes `from`): go back there.
   const { state: fromState } = useLocation();
@@ -82,6 +83,18 @@ export function ProjectHeader({ canManage, currentUser, handleStatusChange, look
               </span>
             ))}
           </div>
+          {/* Invoice no.: admins type it here once the project is Ready for
+              Invoice or Raised Invoice; others see it once it is set. */}
+          {hasInvoiceSlot(project) && (canManage || project.invoice_number) && (
+            <div className="pt-1" data-testid="project-detail-invoice-number">
+              <InvoiceNumberField
+                project={project}
+                canEdit={canManage}
+                onSaved={onInvoiceSaved}
+                variant="header"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

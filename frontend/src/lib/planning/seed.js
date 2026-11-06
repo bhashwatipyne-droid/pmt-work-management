@@ -53,7 +53,7 @@ export const P_HPD = 8.5;
 export const P_NOW = 13.67;
 
 export const P_CATS = {
-  rolled: ['Rolled over / delayed', 'var(--error-50)', 'rgb(153,27,27)', 'inset 0 0 0 1px rgb(252,165,165)', 'var(--error-500)'],
+  rolled: ['Delayed', 'var(--error-50)', 'rgb(153,27,27)', 'inset 0 0 0 1px rgb(252,165,165)', 'var(--error-500)'],
   admin: ['Held for admin', 'rgb(255,241,242)', 'rgb(159,18,57)', 'inset 0 0 0 1px rgb(253,164,175)', 'rgb(244,63,94)'],
   hold: ['On hold', 'var(--neutral-100)', 'var(--neutral-700)', 'inset 0 0 0 1px var(--neutral-300)', 'var(--neutral-500)'],
   review: ['Stuck in review', 'var(--info-100)', 'rgb(30,64,175)', 'inset 0 0 0 1px rgb(147,197,253)', 'var(--info-500)'],

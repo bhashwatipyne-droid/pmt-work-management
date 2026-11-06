@@ -227,7 +227,7 @@ export function computePlan(
   const tileLbl = {
     new: week ? "Assigned this week" : "Assigned today",
     planned: week ? "Extra work this week" : "Extra work today",
-    rolled: "Rolled over / delayed",
+    rolled: "Delayed",
     admin: "Held for admin",
     hold: "On hold",
     changes: "Changes requested",

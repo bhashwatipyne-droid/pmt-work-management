@@ -83,10 +83,14 @@ export function ProjectHeader({ canManage, currentUser, handleStatusChange, look
               </span>
             ))}
           </div>
-          {/* Invoice no.: admins type it here once the project is Ready for
-              Invoice or Raised Invoice; others see it once it is set. */}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* Invoice no. - first in the action row, as on the invoicing page.
+              Admins type it once the project is Ready for Invoice or Raised
+              Invoice; others see it once it is set. */}
           {hasInvoiceSlot(project) && (canManage || project.invoice_number) && (
-            <div className="pt-1" data-testid="project-detail-invoice-number">
+            <div data-testid="project-detail-invoice-number" className="flex">
               <InvoiceNumberField
                 project={project}
                 canEdit={canManage}
@@ -95,9 +99,6 @@ export function ProjectHeader({ canManage, currentUser, handleStatusChange, look
               />
             </div>
           )}
-        </div>
-
-        <div className="flex items-center gap-2">
           {/* Managers and admins send the project to a WhatsApp group as a link. */}
           {["admin", "manager"].includes(currentUser?.role) && (
             <button

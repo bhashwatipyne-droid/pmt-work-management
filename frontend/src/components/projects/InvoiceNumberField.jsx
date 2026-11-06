@@ -64,7 +64,7 @@ export function InvoiceNumberField({ project, canEdit, onSaved, variant = "card"
   const sizes = {
     card: "h-9 w-full text-[13px]",
     row: "h-8 w-full text-[12.5px]",
-    header: "h-[34px] w-[260px] max-w-full text-[13px]",
+    header: "h-[34px] w-[282px] max-w-full text-[13px]",
   }[variant];
 
   return (
@@ -75,7 +75,9 @@ export function InvoiceNumberField({ project, canEdit, onSaved, variant = "card"
         e.preventDefault();
         e.stopPropagation();
       }}
-      className={`flex items-center gap-2 rounded-[8px] bg-white px-2.5 shadow-[inset_0_0_0_1px_#d6dbe3] transition-shadow focus-within:shadow-[inset_0_0_0_1px_#2b2bb5,0_0_0_3px_rgba(43,43,181,0.15)] ${sizes} ${
+      className={`flex items-center gap-2 bg-white ${
+        variant === "header" ? "rounded-[7px] px-3 shadow-[inset_0_0_0_1px_rgb(239,240,242)]" : "rounded-[8px] px-2.5 shadow-[inset_0_0_0_1px_#d6dbe3]"
+      } transition-shadow focus-within:shadow-[inset_0_0_0_1px_#2b2bb5,0_0_0_3px_rgba(43,43,181,0.15)] ${sizes} ${
         busy ? "opacity-70" : ""
       }`}
     >

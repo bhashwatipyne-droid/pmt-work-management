@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight, Eye, EyeOff, Trash2, ArrowRight } from "lucide-react";
 
-import { STAGE_HEX } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
 import {
   DropdownMenu,
@@ -18,12 +17,11 @@ import {
 } from "./projectVisuals";
 
 const PAGE_SIZE = 10;
-const STAGES = Object.keys(STAGE_HEX);
 
-// Column widths from the Figma list frame (Campaign · Client · Status ·
-// Deliverables · Stages · Deadline), plus a narrow slot for the row menu.
+// Columns from the redesign (Project · Client · POC · Status · Due ·
+// Deliverables), plus a narrow slot for the row menu.
 const GRID =
-  "grid grid-cols-[minmax(250px,1fr)_195px_167px_125px_204px_145px_28px] items-center";
+  "grid grid-cols-[minmax(260px,2fr)_minmax(180px,1.2fr)_150px_160px_90px_100px_28px] gap-x-4 items-center";
 
 const MENU_ITEM =
   "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]";
@@ -56,10 +54,10 @@ export const ProjectListTable = ({
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e7e9ee] bg-white">
       <div className="pmt-hscroll overflow-x-auto">
-        <div className="min-w-[1130px]">
+        <div className="min-w-[960px]">
           {/* Header */}
           <div
-            className={`${GRID} group h-[48px] border-b-2 border-[#edeff3] bg-[#fafbfc] px-[17px] text-[11px] font-medium uppercase leading-[13px] tracking-[0.07em] text-[#98a1af]`}
+            className={`${GRID} group h-[38px] border-b border-[#e2e8f0] bg-[#f8fafc] px-5 text-[12px] font-semibold leading-4 text-[#334155]`}
           >
             <span className="flex items-center gap-2">
               {!readOnly && (
@@ -76,21 +74,16 @@ export const ProjectListTable = ({
               Project
             </span>
             <span>Client</span>
+            <span>POC</span>
             <span>Status</span>
+            <span>Due</span>
             <span>Deliverables</span>
-            <span className="flex items-center whitespace-nowrap">
-              <span className="w-[68px] text-[#3b6ef6]">Content</span>
-              <span className="w-[64px] text-[#7c5cf6]">Design</span>
-              <span className="w-[64px] text-[#e08a0b]">Animate</span>
-            </span>
-            <span>Deadline</span>
             <span />
           </div>
 
           {/* Rows */}
           {pageProjects.map((project) => {
             const selected = selectedProjects.has(project.id);
-            const counts = project.stage_counts || {};
             const overdue = isProjectOverdue(project);
             const showCheckbox = !readOnly;
 
@@ -104,7 +97,7 @@ export const ProjectListTable = ({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") onOpenProject?.(project);
                 }}
-                className={`${GRID} group h-[47px] cursor-pointer border-b-2 border-[#f2f4f7] px-[17px] transition-colors focus:outline-none ${
+                className={`${GRID} group min-h-[52px] cursor-pointer border-b border-[#eaeef4] px-5 py-1.5 transition-colors focus:outline-none ${
                   selected ? "bg-[#f4f7ff]" : "hover:bg-[#fafbfc] focus-visible:bg-[#fafbfc]"
                 }`}
               >
@@ -132,10 +125,13 @@ export const ProjectListTable = ({
                   </span>
                   <span className="ml-[10px] flex min-w-0 flex-col pr-4">
                     <span
-                      className="truncate text-[13.5px] font-semibold text-[#11151c]"
+                      className="truncate text-[14px] font-medium text-[#0f172a]"
                       title={[project.name, project.description].filter(Boolean).join(" · ")}
                     >
                       {project.name}
+                    </span>
+                    <span className="truncate text-[12px] leading-4 text-[#64748b]">
+                      {[project.code || "New", project.description].filter(Boolean).join(" · ")}
                     </span>
                     {lookalikeTextById?.get(project.id) && (
                       <span
@@ -148,46 +144,24 @@ export const ProjectListTable = ({
                   </span>
                 </span>
 
-                <span className="truncate pr-4 text-[12.5px] text-[#374151]" title={project.client_name}>
+                <span className="truncate text-[14px] text-[#334155]" title={project.client_name}>
                   {project.client_name || "—"}
+                </span>
+
+                <span className="truncate text-[14px] text-[#334155]" title={project.client_poc}>
+                  {project.client_poc || "—"}
                 </span>
 
                 <span>
                   <ProjectStatusBadge status={project.status} />
                 </span>
 
-                <span className="text-[12.5px] font-semibold text-[#374151]">
+                <span className={`text-[14px] ${overdue ? "text-[#b42318]" : "text-[#64748b]"}`}>
+                  {project.end_date ? fmtDayMonth(project.end_date) : "—"}
+                </span>
+
+                <span className="text-[14px] text-[#334155]">
                   {project.deliverables_count ?? 0}
-                </span>
-
-                <span className="flex items-center">
-                  {STAGES.map((stage) => {
-                    const n = counts[stage] ?? 0;
-                    return (
-                      <span
-                        key={stage}
-                        className={`flex items-center gap-1 whitespace-nowrap ${
-                          stage === "Content" ? "w-[68px]" : "w-[64px]"
-                        }`}
-                        title={`${stage} ${n}`}
-                      >
-                        <span
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{ background: n ? STAGE_HEX[stage] : "#e3e6ec" }}
-                        />
-                        <span
-                          className="text-[11px] font-semibold"
-                          style={{ color: n ? STAGE_HEX[stage] : "#c3c8d2" }}
-                        >
-                          {n}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </span>
-
-                <span className={`text-[12px] ${overdue ? "text-[#b42318]" : "text-[#6b7280]"}`}>
-                  {fmtDayMonth(project.end_date)}
                 </span>
 
                 {/* Row menu, shown on hover */}

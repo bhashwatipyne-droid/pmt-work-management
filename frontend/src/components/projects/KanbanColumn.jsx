@@ -3,7 +3,7 @@ import { EyeOff } from "lucide-react";
 
 import { PROJECTS } from "@/constants/testIds";
 import { ProjectCard } from "./ProjectCard";
-import { statusStyle } from "./projectVisuals";
+import { columnTint } from "./projectVisuals";
 
 const COLUMN_TESTIDS = {
   Active: PROJECTS.columnActive,
@@ -15,8 +15,9 @@ const COLUMN_TESTIDS = {
   Scrapped: PROJECTS.columnScrapped,
 };
 
-// Column width from the design (the same 4-up grid as the metric cards).
-export const COLUMN_WIDTH = 279.5;
+// Column width and gap from the redesign.
+export const COLUMN_WIDTH = 320;
+export const COLUMN_GAP = 14;
 
 // How many cards a column renders at first, and how many more each "Show
 // more" click adds. Rendering every project at once (800+ in total, roughly
@@ -50,7 +51,7 @@ export const KanbanColumn = ({
   isDropTarget = false,
   readOnly = false,
 }) => {
-  const s = statusStyle(status);
+  const t = columnTint(status);
 
   const [limit, setLimit] = useState(INITIAL_VISIBLE);
   const shownProjects =
@@ -58,30 +59,36 @@ export const KanbanColumn = ({
   const hiddenCount = projects.length - shownProjects.length;
 
   return (
-    <div
+    <section
+      aria-label={status}
       onDragOver={readOnly ? undefined : (event) => onDragOverColumn?.(event, status)}
       onDrop={readOnly ? undefined : (event) => onDropColumn?.(event, status)}
-      style={{ width: COLUMN_WIDTH, minWidth: COLUMN_WIDTH }}
-      className="flex shrink-0 flex-col max-md:snap-start"
+      style={{
+        width: COLUMN_WIDTH,
+        minWidth: COLUMN_WIDTH,
+        background: t.tint,
+        boxShadow: `inset 0 0 0 1px ${t.edge}`,
+      }}
+      className="flex shrink-0 flex-col rounded-[14px] px-[10px] pb-[10px] max-md:snap-start"
     >
-      {/* Header pill. Sticky: the board scrolls vertically inside its own box
-          (ProjectsContent), so the status and count stay in view while the
-          admin scrolls a long column. The wrapper carries the page colour so
-          cards slide under it cleanly, and the 7px gap below the pill. */}
-      <div className="sticky top-0 z-10 bg-[#f7f9fc] pb-[7px]">
+      {/* Header. Sticky: the board scrolls vertically inside its own box
+          (ProjectsContent), so the status and count stay in view while a
+          long column scrolls. The wrapper carries the column tint so cards
+          slide under it cleanly. */}
+      <div className="sticky top-0 z-10 rounded-t-[14px] pb-[10px] pt-[10px]" style={{ background: t.tint }}>
       <div
-        className="group flex h-[37px] items-center gap-2 rounded-[8px] border pl-3 pr-3"
-        style={{ background: s.headBg, borderColor: s.headBorder }}
+        className="group flex h-11 items-center gap-[10px] rounded-[10px] px-3"
+        style={{ background: t.head, boxShadow: `inset 0 0 0 1px ${t.edge}` }}
       >
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.dot }} />
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.dot }} />
         <span
-          className="truncate text-[12.5px] font-semibold leading-none"
-          style={{ color: s.dot }}
+          className="min-w-0 flex-1 truncate text-[14px] font-bold leading-none"
+          style={{ color: t.ink }}
         >
           {status}
         </span>
 
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+        <span className="flex shrink-0 items-center gap-1.5">
           {selectionMode && !readOnly && projects.length > 0 && (
             <input
               type="checkbox"
@@ -96,13 +103,13 @@ export const KanbanColumn = ({
             onClick={() => onToggleVisibility?.(status)}
             title={`Hide ${status} column`}
             aria-label={`Hide ${status} column`}
-            className="hidden h-5 w-5 items-center justify-center rounded text-[#98a1af] hover:bg-white/70 hover:text-[#4b5563] focus-visible:flex group-hover:flex"
+            className="hidden h-6 w-6 items-center justify-center rounded text-[#64748b] hover:bg-white/70 hover:text-[#334155] focus-visible:flex group-hover:flex"
           >
             <EyeOff className="h-3.5 w-3.5" />
           </button>
           <span
-            className="text-[11.5px] font-medium leading-none"
-            style={{ color: s.dot, opacity: 0.75 }}
+            className="h-6 min-w-[28px] rounded-full bg-white px-[9px] text-center text-[13px] font-bold leading-6"
+            style={{ color: t.ink, boxShadow: `inset 0 0 0 1px ${t.edge}` }}
           >
             {projects.length}
           </span>
@@ -113,8 +120,8 @@ export const KanbanColumn = ({
       {/* Cards */}
       <div
         data-testid={COLUMN_TESTIDS[status]}
-        className={`flex min-h-[200px] flex-1 flex-col gap-[7px] rounded-[10px] transition-colors ${
-          isDropTarget ? "bg-[#eef1f6]" : ""
+        className={`flex min-h-[120px] flex-1 flex-col gap-[10px] rounded-[10px] p-0.5 transition-colors ${
+          isDropTarget ? "bg-white/60" : ""
         }`}
       >
         {shownProjects.map((project) => (
@@ -139,8 +146,14 @@ export const KanbanColumn = ({
         ))}
 
         {projects.length === 0 && (
-          <div className="flex h-[120px] items-center justify-center rounded-[10px] border border-dashed border-[#dde1e7] text-[12px] text-[#98a1af]">
-            {readOnly ? "No projects" : "Drop a project here"}
+          <div
+            className="flex min-h-[110px] flex-col items-center justify-center gap-1 rounded-[10px] border-[1.5px] border-dashed p-3 text-center text-[13px] text-[#64748b]"
+            style={{ borderColor: t.edge }}
+          >
+            <span className="font-semibold text-[#334155]">No projects here</span>
+            <span className="text-[12px]">
+              {readOnly ? "Nothing in this stage yet" : "Drop a project here"}
+            </span>
           </div>
         )}
 
@@ -148,12 +161,13 @@ export const KanbanColumn = ({
           <button
             type="button"
             onClick={() => setLimit((current) => current + VISIBLE_STEP)}
-            className="h-9 rounded-[10px] border border-dashed border-[#dde1e7] bg-white/60 text-[12px] font-medium text-[#3b6ef6] hover:bg-white"
+            style={{ borderColor: t.edge }}
+            className="h-9 rounded-[10px] border border-dashed bg-white/60 text-[12px] font-medium text-[#3b6ef6] hover:bg-white"
           >
             Show {Math.min(VISIBLE_STEP, hiddenCount)} more ({hiddenCount} not shown)
           </button>
         )}
       </div>
-    </div>
+    </section>
   );
 };

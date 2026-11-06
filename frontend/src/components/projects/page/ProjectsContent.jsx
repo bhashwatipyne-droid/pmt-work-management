@@ -66,7 +66,7 @@ export function ProjectsContent(ctx) {
                 short column's sticky header stays pinned for as long as the
                 tallest column scrolls (a sticky header can only travel as far
                 as its own column is tall). */}
-            <div className="flex gap-[10px]" style={{ minWidth: boardWidth }}>
+            <div className="flex gap-[14px]" style={{ minWidth: boardWidth }}>
               {visibleStatuses.map((status) => {
                 const columnProjects = byStatus[status] || [];
                 const allColumnProjectsSelected =

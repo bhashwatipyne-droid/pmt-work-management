@@ -2,18 +2,14 @@ import { SORT_OPTIONS } from "@/lib/projectSort";
 import { X } from "lucide-react";
 
 export function ProjectsFilterChips(ctx) {
-  const { clearFilters, clientFilter, clientOptions, dateFrom, dateTo, handleVisibilityChange, pocFilter, setClientFilter, setDateFrom, setDateTo, setPocFilter, setSearch, setSortBy, sortBy, visibility } = ctx;
+  const { clearFilters, dateFrom, dateTo, handleVisibilityChange, pocFilter, setDateFrom, setDateTo, setPocFilter, setSearch, setSortBy, sortBy, visibility } = ctx;
   return (
     <>
-    {/* Active filter chips (only when something from the filter panel is on) */}
-    {(pocFilter || clientFilter || dateFrom || dateTo || visibility !== "visible" || sortBy) && (
+    {/* Active filter chips (only when something from the filter panel is on;
+        the client has its own chip row above) */}
+    {(pocFilter || dateFrom || dateTo || visibility !== "visible" || sortBy) && (
       <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1.5">
         {[
-          clientFilter && {
-            key: "client",
-            label: `Client: ${clientOptions.find((c) => c.id === clientFilter)?.name || clientFilter}`,
-            clear: () => setClientFilter(""),
-          },
           pocFilter && { key: "poc", label: `POC: ${pocFilter}`, clear: () => setPocFilter("") },
           (dateFrom || dateTo) && {
             key: "due",

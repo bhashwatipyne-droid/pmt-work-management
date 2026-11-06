@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { dismissLookalike } from "@/lib/lookalikeDismiss";
-import { AlertCircle, ArrowRight, Eye, EyeOff, Phone, SquareCheck, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowRight, CalendarDays, Eye, EyeOff, Receipt, SquareCheck, Trash2, User, X } from "lucide-react";
 
-import { STAGE_HEX, clientDotColor } from "@/constants/projectPalette";
+import { STAGE_HEX } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
 import {
   DropdownMenu,
@@ -13,17 +13,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   MoreDots,
-  ProjectStatusBadge,
+  clientInitials,
+  clientTile,
   fmtDayMonth,
   isProjectOverdue,
   statusStyle,
 } from "./projectVisuals";
 
 const STAGES = Object.keys(STAGE_HEX);
-
-// Two rows of unit squares fit a card (12 per row); beyond that the last
-// slot says how many more there are.
-const MAX_SQUARES = 24;
 
 const MENU_ITEM =
   "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[12.5px] text-[#11151c] focus:bg-[#f4f5f7]";
@@ -82,12 +79,10 @@ const ProjectCardBase = ({
   };
 
   const counts = project.stage_counts || {};
-  const squares = STAGES.flatMap((stage) =>
-    Array.from({ length: counts[stage] ?? 0 }, () => STAGE_HEX[stage])
-  );
-  const overflow = squares.length > MAX_SQUARES;
-  const shownSquares = overflow ? squares.slice(0, MAX_SQUARES - 1) : squares;
+  const stageMix = STAGES.filter((stage) => (counts[stage] ?? 0) > 0);
   const overdue = isProjectOverdue(project);
+  const tile = clientTile(project.client_name || "");
+  const deliverables = project.deliverables_count ?? 0;
 
   return (
     <div
@@ -112,24 +107,25 @@ const ProjectCardBase = ({
       }}
       onDragOver={(event) => onDragOver?.(event, project)}
       onDrop={(event) => onDrop?.(event, project)}
+      style={{
+        "--card-edge": s.dot,
+        // 4px status edge on the left, as in the redesign.
+        boxShadow: `inset 4px 0 0 ${s.dot}, ${
+          selected || isDragTarget
+            ? "0 0 0 2px #3b6ef6"
+            : "0 1px 3px 0 rgba(13,28,61,0.10), 0 0 0 1px rgba(13,28,61,0.04)"
+        }`,
+      }}
       className={[
-        "group/card relative w-full rounded-[10px] border bg-white px-[18px] pb-3 pt-4 text-left transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]",
+        "group/card relative flex w-full flex-col gap-[10px] rounded-[12px] bg-white pb-3 pl-[18px] pr-[14px] pt-[14px] text-left transition-[box-shadow,transform] duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]",
         // Off-screen cards skip layout and paint until scrolled near.
-        "[content-visibility:auto] [contain-intrinsic-size:auto_262px]",
+        "[content-visibility:auto] [contain-intrinsic-size:auto_200px]",
         holding ? "cursor-grabbing" : "cursor-pointer",
-        selected || isDragTarget ? "border-[#3b6ef6]" : "border-[#e7e9ee]",
-        isDragTarget ? "ring-2 ring-[#cfddfc]" : "hover:shadow-[0_2px_8px_rgba(17,21,28,0.06)]",
+        isDragTarget || selected ? "" : "hover:-translate-y-px hover:!shadow-[inset_4px_0_0_var(--card-edge),0_6px_16px_0_rgba(13,28,61,0.14),0_0_0_1px_#c7d2fe]",
       ].join(" ")}
     >
-      {/* 3px status edge, 1px in from the border, as in the design */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-px left-px top-px w-[3px] rounded-l-[8px]"
-        style={{ background: s.dot }}
-      />
-
-      {/* Code · status · more */}
-      <div className="flex h-[22px] items-center gap-[10px]">
+      {/* Client tile · client · code · more */}
+      <div className="flex items-center gap-2">
         {!readOnly && selectionMode && (
           <input
             type="checkbox"
@@ -137,11 +133,23 @@ const ProjectCardBase = ({
             onChange={() => onSelect?.(project.id)}
             onClick={(e) => e.stopPropagation()}
             draggable={false}
-            className="-mr-1 h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-[#c3c8d2] accent-[#3b6ef6]"
+            className="h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-[#c3c8d2] accent-[#3b6ef6]"
             aria-label={`Select ${project.name}`}
           />
         )}
-        <ProjectStatusBadge status={project.status} />
+        <span
+          aria-hidden="true"
+          className="h-6 w-6 shrink-0 rounded-[7px] text-center text-[11px] font-bold leading-6"
+          style={{ background: tile.bg, color: tile.fg }}
+        >
+          {clientInitials(project.client_name || "")}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[#334155]">
+          {project.client_name || "—"}
+        </span>
+        <span className="shrink-0 text-[11px] font-medium leading-4 text-[#64748b]">
+          {project.code || "New"}
+        </span>
 
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
@@ -150,7 +158,7 @@ const ProjectCardBase = ({
               draggable={false}
               onClick={(e) => e.stopPropagation()}
               aria-label={`More actions for ${project.name}`}
-              className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] hover:bg-[#f4f5f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]"
+              className="-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] hover:bg-[#f4f5f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#cfddfc]"
             >
               <MoreDots />
             </button>
@@ -196,12 +204,20 @@ const ProjectCardBase = ({
       </div>
 
       {/* Name */}
-      <div className="mt-[13px] block w-full text-left text-[15px] font-bold leading-[18px] text-[#11151c] line-clamp-2 group-hover/card:text-[#3b6ef6]">
+      <div className="line-clamp-2 text-[15px] font-bold leading-5 text-[#0f172a] [text-wrap:pretty] group-hover/card:text-[#2b2bb5]">
         {project.name}
       </div>
 
+      {/* Invoice raised (finance has billed it) */}
+      {project.status === "Raised Invoice" && (
+        <span className="inline-flex items-center gap-1.5 self-start rounded-[8px] bg-[#e0f2fe] px-2.5 py-1 text-[12px] font-bold leading-4 tracking-[0.02em] text-[#075985]">
+          <Receipt className="h-[13px] w-[13px]" />
+          Invoice raised
+        </span>
+      )}
+
       {project.description && (
-        <div className="mt-[5px] text-[12px] leading-4 text-[#374151] line-clamp-2">
+        <div className="line-clamp-2 text-[13px] leading-[18px] text-[#475569] [text-wrap:pretty]">
           {project.description}
         </div>
       )}
@@ -209,7 +225,7 @@ const ProjectCardBase = ({
       {lookalikeText && (
         <span
           title="Similar names confuse people when they log time. Consider renaming one, or add a description."
-          className="mt-[6px] inline-flex max-w-full items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium leading-4 text-amber-800"
+          className="inline-flex max-w-full items-center gap-1 self-start rounded-full bg-amber-100 px-2 py-[3px] text-[11px] font-semibold leading-4 text-amber-800"
         >
           <AlertCircle className="h-3 w-3 shrink-0" />
           <span className="truncate">{lookalikeText}</span>
@@ -228,74 +244,38 @@ const ProjectCardBase = ({
         </span>
       )}
 
-      {/* Client */}
-      <div className="mt-[6px] flex items-center gap-[7px]">
-        <span
-          className="h-[6px] w-[6px] shrink-0 rounded-[2px]"
-          style={{ background: clientDotColor(project.client_name) }}
-        />
-        <span className="truncate text-[12.5px] leading-[15px] text-[#6b7280]">
-          {project.client_name || "—"}
-        </span>
-      </div>
-
-      {/* POC */}
-      <div className="mt-[5px] flex items-center gap-[6px]">
-        <Phone className="h-3 w-3 shrink-0 text-[#98a1af]" strokeWidth={2} />
-        <span className="truncate text-[12px] leading-[15px] text-[#6b7280]">
-          {project.client_poc || "Unassigned"}
-        </span>
-      </div>
-
-      {/* One square per deliverable, coloured by its current stage. Two
-          rows tall at least, filled from the bottom, so the legend sits at
-          the same height on every card. */}
-      <div className="mt-[13px] flex min-h-[36px] flex-wrap content-end gap-1">
-        {shownSquares.map((color, i) => (
-          <span
-            key={i}
-            className="h-4 w-4 rounded-[4px]"
-            style={{ background: color }}
-          />
-        ))}
-        {overflow && (
-          <span className="flex h-4 min-w-4 items-center justify-center rounded-[4px] bg-[#f0f2f5] px-1 text-[9.5px] font-semibold text-[#6b7280]">
-            +{squares.length - shownSquares.length}
-          </span>
-        )}
-      </div>
-
-      {/* Stage legend */}
-      <div className="mt-[10px] grid grid-cols-3 gap-x-2">
-        {STAGES.map((stage) => {
-          const n = counts[stage] ?? 0;
-          return (
-            <span key={stage} className="flex min-w-0 items-center gap-[5px] whitespace-nowrap">
-              <span
-                className="h-[9px] w-[9px] shrink-0 rounded-[2px]"
-                style={{ background: n ? STAGE_HEX[stage] : "#dde1e7" }}
-              />
-              <span
-                className={`truncate text-[10.5px] leading-[13px] ${
-                  n ? "font-medium text-[#4b5563]" : "text-[#a9b0bd]"
-                }`}
-              >
-                {stage} {n}
-              </span>
+      {/* Deliverables per stage, e.g. "Content 12" "Design 10" */}
+      {stageMix.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {stageMix.map((stage) => (
+            <span
+              key={stage}
+              className="rounded-[6px] bg-[#f1f5f9] px-2 py-0.5 text-[11px] font-semibold leading-4 text-[#334155]"
+            >
+              {stage} <span className="text-[#0f172a]">{counts[stage]}</span>
             </span>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="mt-3 h-[2px] bg-[#f0f2f5]" />
-
-      {/* Deadline */}
-      <div className="mt-[9px] flex h-7 items-center">
+      {/* Due · POC · deliverables */}
+      <div className="flex items-center gap-2 border-t border-[#eef1f6] pt-[10px] text-[12px] text-[#475569]">
         <span
-          className={`text-[12px] ${overdue ? "text-[#b42318]" : "text-[#6b7280]"}`}
+          className={`flex shrink-0 items-center gap-[5px] rounded-[6px] px-2 py-[3px] font-semibold ${
+            overdue ? "bg-[#fef3f2] text-[#b42318]" : "bg-[#f1f5f9] text-[#1e293b]"
+          }`}
           title={overdue ? "Past its deadline" : undefined}
         >
-          {fmtDayMonth(project.end_date)}
+          <CalendarDays className="h-3 w-3" />
+          {project.end_date ? `Due ${fmtDayMonth(project.end_date)}` : "No deadline"}
+        </span>
+        <span className="flex-1" />
+        <span className="flex min-w-0 items-center gap-[5px]" title="Client POC">
+          <User className="h-3 w-3 shrink-0" />
+          <span className="truncate">{project.client_poc || "—"}</span>
+        </span>
+        <span className="shrink-0 font-semibold text-[#1e293b]">
+          {deliverables} deliv.
         </span>
       </div>
     </div>

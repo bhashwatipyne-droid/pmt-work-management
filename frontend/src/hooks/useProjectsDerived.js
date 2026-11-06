@@ -6,7 +6,22 @@ import { buildLookalikeIndex } from "@/lib/lookalikes";
 import { makeMatcher } from "@/lib/search";
 
 // What the Projects board and list show: search/filter results, look-alike hints and the sorted columns.
-export function useProjectsDerived({ projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, sortBy }) {
+// "2026-09" -> is this project in that month? In = due that month, or running
+// through it (started on/before the month ends and due on/after it starts).
+// Projects with no dates at all are left out once a month is picked.
+export function projectInMonth(p, month) {
+  if (!month) return true;
+  const start = (p.start_date || "").slice(0, 10);
+  const end = (p.end_date || "").slice(0, 10);
+  if (!start && !end) return false;
+  const first = `${month}-01`;
+  const last = `${month}-31`;
+  if (end && end.slice(0, 7) === month) return true;
+  if (start && start.slice(0, 7) === month) return true;
+  return Boolean(start && end && start <= last && end >= first);
+}
+
+export function useProjectsDerived({ projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, monthFilter = "", sortBy }) {
   const filtered = useMemo(() => {
     const match = makeMatcher(deferredSearch);
 
@@ -15,6 +30,8 @@ export function useProjectsDerived({ projects, deferredSearch, deliverableNamesB
         if (statusFilter && p.status !== statusFilter) return false;
 
         if (clientFilter && p.client_id !== clientFilter) return false;
+
+        if (!projectInMonth(p, monthFilter)) return false;
 
         if (
           pocFilter &&
@@ -39,7 +56,7 @@ export function useProjectsDerived({ projects, deferredSearch, deliverableNamesB
     // Filtering only here — the active "Sort by" choice is applied once,
     // below, and reused for both the list rows and the Kanban columns so
     // the two views never disagree about the order.
-  }, [projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo]);
+  }, [projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, monthFilter]);
 
 
   // "Looks like …" on cards and list rows: names people confuse when they

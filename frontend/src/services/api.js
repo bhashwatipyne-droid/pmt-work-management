@@ -734,8 +734,19 @@ export const editInvoiceLine = (projectId, workItemId, patch) =>
     .put(`${API}/invoicing/projects/${projectId}/lines/${workItemId}`, patch)
     .then((r) => r.data);
 
-export const raiseInvoice = (id) =>
-  axios.post(`${API}/invoicing/projects/${id}/raise`).then((r) => r.data);
+// invoiceNumber is optional; when given it is saved with the raise.
+export const raiseInvoice = (id, invoiceNumber) =>
+  axios
+    .post(
+      `${API}/invoicing/projects/${id}/raise`,
+      invoiceNumber === undefined ? undefined : { invoice_number: invoiceNumber }
+    )
+    .then((r) => r.data);
+
+export const setInvoiceNumber = (id, invoiceNumber) =>
+  axios
+    .put(`${API}/invoicing/projects/${id}/invoice-number`, { invoice_number: invoiceNumber })
+    .then((r) => r.data);
 
 export const undoRaiseInvoice = (id) =>
   axios.post(`${API}/invoicing/projects/${id}/undo`).then((r) => r.data);

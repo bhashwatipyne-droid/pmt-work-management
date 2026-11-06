@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { initials } from "@/lib/planning/planningLogic";
 import { hm, shortDate, waitText } from "@/lib/planning/invoiceLogic";
-import { editInvoiceLine, getInvoiceProject, getOptions, raiseInvoice, undoRaiseInvoice } from "@/services/api";
+import { editInvoiceLine, getInvoiceProject, getOptions, raiseInvoice, setInvoiceNumber, undoRaiseInvoice } from "@/services/api";
 import { Avatar, CAT_ICONS, FIELD, LINE_COLS, errText, toCats } from "./invoicingShared";
 
 export function InvoiceDetail({ projectId, onBack, onChanged }) {
@@ -12,6 +12,9 @@ export function InvoiceDetail({ projectId, onBack, onChanged }) {
   const [lines, setLines] = useState([]);
   const [typeOptions, setTypeOptions] = useState([]);
   const [linkEditing, setLinkEditing] = useState(null);
+  // Invoice no.: what's typed, and what the server last saved.
+  const [invNo, setInvNo] = useState("");
+  const [savedInvNo, setSavedInvNo] = useState("");
   const pending = useRef({});
   const timers = useRef({});
 
@@ -22,6 +25,8 @@ export function InvoiceDetail({ projectId, onBack, onChanged }) {
         if (cancelled) return;
         setDetail(d);
         setLines(d.lines);
+        setInvNo(d.invoice_number || "");
+        setSavedInvNo(d.invoice_number || "");
       })
       .catch((err) => {
         toast.error(errText(err, "Could not load this project"));
@@ -78,10 +83,28 @@ export function InvoiceDetail({ projectId, onBack, onChanged }) {
     timers.current[id] = setTimeout(() => flush(id), 700);
   };
 
+  // Saves the invoice number when the field loses focus or Enter is pressed.
+  const saveInvNo = async () => {
+    const next = invNo.trim();
+    if (next === savedInvNo) {
+      if (next !== invNo) setInvNo(next);
+      return;
+    }
+    try {
+      const res = await setInvoiceNumber(project.id, next);
+      setInvNo(res.invoice_number ?? next);
+      setSavedInvNo(res.invoice_number ?? next);
+      toast.success(next ? "Invoice no. saved" : "Invoice no. cleared");
+      onChanged();
+    } catch (err) {
+      toast.error(errText(err, "Could not save the invoice number"));
+    }
+  };
+
   const raise = async () => {
     try {
       flushAll();
-      await raiseInvoice(project.id);
+      await raiseInvoice(project.id, invNo.trim());
       toast.success("Invoice raised for " + project.name);
       onChanged();
       onBack();
@@ -105,6 +128,7 @@ export function InvoiceDetail({ projectId, onBack, onChanged }) {
       ["Project", project.name],
       ["Client", project.client],
       ["Point of contact", project.poc],
+      ["Invoice no.", invNo.trim()],
       [],
       ["Category", "Deliverable", "Type", "Qty", "Duration (s)", "Time", "Made by", "Link"],
     ];
@@ -159,6 +183,30 @@ export function InvoiceDetail({ projectId, onBack, onChanged }) {
           </span>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label
+            className="pp-focus-within"
+            style={{ display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 12px", borderRadius: 7, background: "#fff", boxShadow: "inset 0 0 0 1px var(--neutral-200)", cursor: "text" }}
+          >
+            <Receipt size={14} style={{ color: "var(--neutral-700)", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--neutral-900)", whiteSpace: "nowrap" }}>Invoice no.</span>
+            <input
+              aria-label="Invoice number"
+              data-testid="invoice-number-input"
+              value={invNo}
+              maxLength={64}
+              placeholder="e.g. INV-2026-0142"
+              onChange={(e) => setInvNo(e.target.value)}
+              onBlur={saveInvNo}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") {
+                  setInvNo(savedInvNo);
+                  e.currentTarget.blur();
+                }
+              }}
+              style={{ width: 160, minWidth: 0, border: "none", outline: "none", background: "transparent", font: "400 14px/18px var(--font-core)", color: "var(--neutral-900)" }}
+            />
+          </label>
           <button
             type="button"
             className="pp-hv-n50"

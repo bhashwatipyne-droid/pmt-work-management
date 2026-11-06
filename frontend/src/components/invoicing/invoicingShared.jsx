@@ -13,6 +13,8 @@ export const seg = (on) => ({
 });
 
 export const LIST_COLS = "minmax(0,1fr) 100px 76px 76px 76px 160px 104px 24px";
+// "Invoice raised" tab: the same, plus an Invoice no. column.
+export const RAISED_LIST_COLS = "minmax(0,1fr) 100px 76px 76px 76px 160px 180px 104px 24px";
 export const LINE_COLS = "minmax(220px,1fr) 160px 72px 80px 80px 190px 170px";
 
 export const Avatar = ({ text, size, fontSize }) => (
@@ -78,6 +80,7 @@ export const rowOf = (p, raised) => {
     sub: [p.client, p.code].filter(Boolean).join(" · "),
     client: p.client,
     code: p.code,
+    invoiceNo: p.invoice_number || "",
     done: shortDate(p.status_changed_at),
     c: p.counts.Content,
     d: p.counts.Design,

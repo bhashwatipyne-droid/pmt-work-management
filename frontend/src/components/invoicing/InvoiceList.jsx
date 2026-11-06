@@ -1,13 +1,60 @@
 import { makeMatcher } from "@/lib/search";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Clock, FileText, Film, LayoutGrid, List, Palette, Search } from "lucide-react";
+import { ChevronRight, Clock, FileText, Film, LayoutGrid, List, Palette, Receipt, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Bone, SkeletonScreen } from "@/components/skeletons/Skeletons";
 
 import { hm } from "@/lib/planning/invoiceLogic";
-import { getInvoiceProjects } from "@/services/api";
+import { getInvoiceProjects, setInvoiceNumber } from "@/services/api";
 import { consumePrefetch } from "@/services/prefetch";
-import { Avatar, FIELD, LIST_COLS, STAT_VALUE, countPill, errText, rowOf, seg, segWrap } from "./invoicingShared";
+import { Avatar, FIELD, LIST_COLS, RAISED_LIST_COLS, STAT_VALUE, countPill, errText, rowOf, seg, segWrap } from "./invoicingShared";
+
+// Invoice no. typed straight into a row of the "Invoice raised" tab. Saves when
+// the field loses focus or Enter is pressed; Escape puts the old value back.
+function InvoiceNumberCell({ projectId, value, onSaved }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+
+  const save = async () => {
+    const next = text.trim();
+    if (next === value) {
+      if (next !== text) setText(next);
+      return;
+    }
+    try {
+      const res = await setInvoiceNumber(projectId, next);
+      const saved = res.invoice_number ?? next;
+      setText(saved);
+      onSaved(projectId, saved);
+      toast.success(saved ? "Invoice no. saved" : "Invoice no. cleared");
+    } catch (err) {
+      toast.error(errText(err, "Could not save the invoice number"));
+      setText(value);
+    }
+  };
+
+  return (
+    <input
+      aria-label="Invoice number"
+      value={text}
+      maxLength={64}
+      placeholder="Add invoice no."
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setText(value);
+          setTimeout(() => e.target.blur(), 0);
+        }
+      }}
+      className="pp-edit pp-focus"
+      style={{ ...FIELD, height: 32, padding: "0 10px", fontSize: 13, fontWeight: 600, background: "#fff", boxShadow: "inset 0 0 0 1px var(--neutral-200)" }}
+    />
+  );
+}
 
 export function InvoiceList({ onOpen, refreshKey }) {
   const [tab, setTab] = useState("ready");
@@ -55,13 +102,21 @@ export function InvoiceList({ onOpen, refreshKey }) {
     };
   }, [tab, data.raised, refreshKey]);
 
+  const isRaisedTab = tab === "raised";
+  const cols = isRaisedTab ? RAISED_LIST_COLS : LIST_COLS;
+  const onInvoiceNoSaved = (id, number) =>
+    setData((d) => ({
+      ...d,
+      raised: (d.raised || []).map((p) => (p.id === id ? { ...p, invoice_number: number } : p)),
+    }));
+
   const list = useMemo(() => {
     const ready = (data.ready || []).map((p) => rowOf(p, false));
     const raised = (data.raised || []).map((p) => rowOf(p, true));
     const q = query.trim();
     const match = makeMatcher(q);
     const shown = (tab === "ready" ? ready : raised).filter((r) =>
-      match(r.name, r.client, r.code)
+      match(r.name, r.client, r.code, r.invoiceNo)
     );
     const sum = (k) => ready.reduce((a, r) => a + r[k], 0);
     return {
@@ -108,7 +163,7 @@ export function InvoiceList({ onOpen, refreshKey }) {
             aria-label="Search projects"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search project, client or code"
+            placeholder={tab === "raised" ? "Search project, client or invoice no." : "Search project, client or code"}
             className="pp-focus"
             style={{ ...FIELD, background: "#fff", boxShadow: "inset 0 0 0 1px var(--neutral-200)", fontSize: 13, padding: "0 10px 0 32px", height: 36 }}
           />
@@ -175,11 +230,11 @@ export function InvoiceList({ onOpen, refreshKey }) {
 
         {view === "table" && list.rows.length > 0 && (
           <div style={{ overflowX: "auto" }}>
-            <div style={{ minWidth: 860 }}>
+            <div style={{ minWidth: isRaisedTab ? 1040 : 860 }}>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: LIST_COLS,
+                  gridTemplateColumns: cols,
                   columnGap: 12,
                   alignItems: "center",
                   height: 36,
@@ -197,19 +252,25 @@ export function InvoiceList({ onOpen, refreshKey }) {
                 <span style={{ textAlign: "center" }}>Design</span>
                 <span style={{ textAlign: "center" }}>Animation</span>
                 <span>Point of contact</span>
-                <span>Waiting</span>
+                {isRaisedTab && <span>Invoice no.</span>}
+                <span>{isRaisedTab ? "Raised" : "Waiting"}</span>
                 <span />
               </div>
               {list.rows.map((r) => (
-                <button
+                <div
                   key={r.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className="pp-hv-b50"
                   onClick={() => onOpen(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.target === e.currentTarget && e.key === "Enter") onOpen(r.id);
+                  }}
                   style={{
                     width: "100%",
+                    boxSizing: "border-box",
                     display: "grid",
-                    gridTemplateColumns: LIST_COLS,
+                    gridTemplateColumns: cols,
                     columnGap: 12,
                     alignItems: "center",
                     minHeight: 60,
@@ -234,11 +295,14 @@ export function InvoiceList({ onOpen, refreshKey }) {
                     <Avatar text={r.pocIni} size={24} fontSize={10} />
                     <span style={{ fontSize: 13, color: "var(--neutral-900)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.pocName}</span>
                   </span>
+                  {isRaisedTab && (
+                    <InvoiceNumberCell projectId={r.id} value={r.invoiceNo} onSaved={onInvoiceNoSaved} />
+                  )}
                   <span style={{ justifySelf: "start", padding: "2px 8px", borderRadius: 9999, background: r.waitBg, color: r.waitFg, font: "600 12px/16px var(--font-ui)", whiteSpace: "nowrap" }}>
                     {r.wait}
                   </span>
                   <ChevronRight size={16} style={{ color: "var(--neutral-400)" }} />
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -267,6 +331,12 @@ export function InvoiceList({ onOpen, refreshKey }) {
                   <span style={{ fontSize: 12, lineHeight: "16px", color: "var(--neutral-500)" }}>
                     {r.code} · Completed {r.done} · {r.logged}
                   </span>
+                  {isRaisedTab && (
+                    <span style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 8, background: r.invoiceNo ? "var(--info-100)" : "var(--neutral-100)", color: r.invoiceNo ? "rgb(7,89,133)" : "var(--neutral-500)", font: "700 12px/16px var(--font-ui)", letterSpacing: "0.02em" }}>
+                      <Receipt size={13} />
+                      {r.invoiceNo || "No invoice no. yet"}
+                    </span>
+                  )}
                 </span>
                 <span style={{ display: "flex", margin: "0 16px", borderRadius: 10, background: "var(--neutral-50)" }}>
                   {[

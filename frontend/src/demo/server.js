@@ -865,6 +865,7 @@ const invoiceMeta = (p) => {
     status_changed_at: changed,
     waiting_days: Math.max(0, diffDays(todayIso(), String(changed).slice(0, 10))),
     invoice_raised_at: p.invoice_raised_at || null,
+    invoice_number: p.invoice_number || "",
   };
 };
 const invoiceLines = (projectId) =>
@@ -1489,9 +1490,18 @@ const ROUTES = [
       }),
     };
   }),
-  route("POST", "/invoicing/projects/:id/raise", ({ params }) => {
+  route("PUT", "/invoicing/projects/:id/invoice-number", ({ params, body }) => {
+    const p = db().projects.find((x) => x.id === params.id);
+    const number = String(body?.invoice_number || "").trim().slice(0, 64);
+    if (p) p.invoice_number = number;
+    return { ok: true, invoice_number: number };
+  }),
+  route("POST", "/invoicing/projects/:id/raise", ({ params, body }) => {
     const p = db().projects.find((x) => x.id === params.id);
     if (p) {
+      if (body && body.invoice_number !== undefined) {
+        p.invoice_number = String(body.invoice_number || "").trim().slice(0, 64);
+      }
       p.status = "Raised Invoice";
       p.status_changed_at = nowIso();
       p.invoice_raised_at = nowIso();

@@ -64,3 +64,17 @@ def test_detail_shows_deliverable_lines(client):
     _seed(db)
     d = c.get("/invoicing/projects/p-old").json()
     assert sorted(l["name"] for l in d["lines"]) == ["LargeCap video", "Poster"]
+
+
+def test_invoice_number_is_saved_trimmed_and_listed(client):
+    db, c = client
+    _seed(db)
+    r = c.put("/invoicing/projects/p-old/invoice-number", json={"invoice_number": "  INV-2026-0142 "})
+    assert r.status_code == 200 and r.json()["invoice_number"] == "INV-2026-0142"
+    rows = {p["id"]: p for p in c.get("/invoicing/projects?tab=raised").json()["projects"]}
+    assert rows["p-old"]["invoice_number"] == "INV-2026-0142"
+    assert rows["p-new"]["invoice_number"] == ""
+    assert c.get("/invoicing/projects/p-old").json()["invoice_number"] == "INV-2026-0142"
+    # clearing it works too
+    c.put("/invoicing/projects/p-old/invoice-number", json={"invoice_number": ""})
+    assert c.get("/invoicing/projects/p-old").json()["invoice_number"] == ""

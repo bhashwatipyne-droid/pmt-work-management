@@ -48,6 +48,11 @@ class LineEdit(BaseModel):
     link: Optional[str] = None
 
 
+class InvoiceNumber(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    invoice_number: Optional[str] = None
+
+
 def _days_since(iso: Optional[str]) -> int:
     if not iso:
         return 0
@@ -176,6 +181,7 @@ def create_invoicing_router(
             "status_changed_at": changed,
             "waiting_days": _days_since(changed),
             "invoice_raised_at": project.get("invoice_raised_at"),
+            "invoice_number": project.get("invoice_number") or "",
         }
 
     async def _clients_for(projects: List[dict]) -> Dict[str, dict]:
@@ -315,9 +321,38 @@ def create_invoicing_router(
         )
         return {"ok": True, "status": target, "status_changed_at": stamp}
 
-    @router.post("/projects/{project_id}/raise")
-    async def raise_invoice(project_id: str, request: Request):
+    async def _save_invoice_number(project: dict, value: Optional[str], user) -> str:
+        number = (value or "").strip()[:64]
+        if number == (project.get("invoice_number") or ""):
+            return number
+        await db.projects.update_one(
+            {"id": project["id"]},
+            {"$set": {"invoice_number": number, "updated_at": now_iso()}},
+        )
+        await log_activity(
+            collection_name="project_activity_log",
+            entity_id=project["id"],
+            entity_field="project_id",
+            action="INVOICE_NUMBER_SET",
+            changed_by=user.id,
+            old_value=project.get("invoice_number") or "",
+            new_value=number,
+        )
+        return number
+
+    @router.put("/projects/{project_id}/invoice-number")
+    async def set_invoice_number(project_id: str, payload: InvoiceNumber, request: Request):
         user = await require_invoicing(request)
+        project = await _project_or_404(project_id)
+        number = await _save_invoice_number(project, payload.invoice_number, user)
+        return {"ok": True, "invoice_number": number}
+
+    @router.post("/projects/{project_id}/raise")
+    async def raise_invoice(project_id: str, request: Request, payload: Optional[InvoiceNumber] = None):
+        user = await require_invoicing(request)
+        if payload is not None and payload.invoice_number is not None:
+            project = await _project_or_404(project_id)
+            await _save_invoice_number(project, payload.invoice_number, user)
         return await _set_status(project_id, user, READY, RAISED, "INVOICE_RAISED")
 
     @router.post("/projects/{project_id}/undo")

@@ -227,6 +227,7 @@ export function computePlan(
   const tileLbl = {
     new: week ? "Assigned this week" : "Assigned today",
     planned: week ? "Extra work this week" : "Extra work today",
+    rolled: "Rolled over / delayed",
     admin: "Held for admin",
     hold: "On hold",
     changes: "Changes requested",
@@ -234,6 +235,7 @@ export function computePlan(
   const tileSub = {
     new: "Tasks assigned through WhatsApp",
     planned: "Added in the Work Sheet, beyond assigned tasks",
+    rolled: week ? "Carried from last week or late" : "Carried from yesterday or late",
     admin: "Waited for an admin to confirm it, so not late",
     hold: "Paused on purpose, kept open until resumed",
     changes: "Sent back to the person to fix",

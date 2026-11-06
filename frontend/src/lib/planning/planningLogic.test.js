@@ -84,6 +84,19 @@ test("work the person typed into their own Work Sheet is drawn but never suggest
   expect(move.act.taskId).toBe("t-w");
 });
 
+test("late work gets its own Rolled over / delayed tile, separate from On hold", () => {
+  const people = toPeopleRows(apiPeople);
+  const tasks = [
+    { ...apiTasks[0], id: "d", cat: "rolled", note: "From Wed · 1d late" },
+    { ...apiTasks[1], id: "h", cat: "hold", note: "On hold" },
+  ];
+  const tiles = computePlan(tasks, { period: "today", people, ctx }).tiles;
+  const byKey = Object.fromEntries(tiles.map((t) => [t.key, t]));
+  expect(byKey.rolled).toMatchObject({ label: "Rolled over / delayed", n: 1 });
+  expect(byKey.hold).toMatchObject({ label: "On hold", n: 1 });
+  expect(tiles.map((t) => t.key).indexOf("rolled")).toBeLessThan(tiles.map((t) => t.key).indexOf("hold"));
+});
+
 test("work sent back gets its own tile; there is no review tile because reviews auto-close", () => {
   const people = toPeopleRows(apiPeople);
   const tasks = [

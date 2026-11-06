@@ -130,9 +130,11 @@ export const ProjectListTable = ({
                     >
                       {project.name}
                     </span>
-                    <span className="truncate text-[12px] leading-4 text-[#64748b]">
-                      {[project.code || "New", project.description].filter(Boolean).join(" · ")}
-                    </span>
+                    {project.description && (
+                      <span className="truncate text-[12px] leading-4 text-[#64748b]">
+                        {project.description}
+                      </span>
+                    )}
                     {lookalikeTextById?.get(project.id) && (
                       <span
                         className="truncate text-[11px] leading-[14px] text-amber-800"

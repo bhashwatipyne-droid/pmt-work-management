@@ -124,7 +124,7 @@ const ProjectCardBase = ({
         isDragTarget || selected ? "" : "hover:-translate-y-px hover:!shadow-[inset_4px_0_0_var(--card-edge),0_6px_16px_0_rgba(13,28,61,0.14),0_0_0_1px_#c7d2fe]",
       ].join(" ")}
     >
-      {/* Client tile · client · code · more */}
+      {/* Client tile · client · more */}
       <div className="flex items-center gap-2">
         {!readOnly && selectionMode && (
           <input
@@ -146,9 +146,6 @@ const ProjectCardBase = ({
         </span>
         <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[#334155]">
           {project.client_name || "—"}
-        </span>
-        <span className="shrink-0 text-[11px] font-medium leading-4 text-[#64748b]">
-          {project.code || "New"}
         </span>
 
         <DropdownMenu modal={false}>

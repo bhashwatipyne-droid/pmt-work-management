@@ -211,7 +211,7 @@ export default function PlanningPage() {
         </div>
 
         {/* Summary tiles */}
-        <div style={{ opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease", pointerEvents: planLoading ? "none" : "auto", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
+        <div style={{ opacity: planLoading ? 0.5 : 1, transition: "opacity 120ms ease", pointerEvents: planLoading ? "none" : "auto", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(128px,1fr))", gap: 8 }}>
           {plan.tiles.map((c) => (
             <button
               key={c.key}
@@ -223,8 +223,9 @@ export default function PlanningPage() {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "flex-start",
-                gap: 6,
-                padding: 14,
+                gap: 4,
+                minWidth: 0,
+                padding: "10px 12px",
                 border: "none",
                 borderRadius: 12,
                 background: c.sel ? "var(--brand-50)" : "#fff",
@@ -234,15 +235,16 @@ export default function PlanningPage() {
                 transition: "background 120ms ease, box-shadow 120ms ease",
               }}
             >
-              <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, lineHeight: "16px", fontWeight: 600, color: "var(--neutral-900)" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: "100%", fontSize: 13, lineHeight: "16px", fontWeight: 600, color: "var(--neutral-900)", whiteSpace: "nowrap" }}>
                 <span style={{ width: 8, height: 8, flexShrink: 0, borderRadius: 9999, background: c.dot }} />
-                {c.label}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={c.label}>
+                {c.label}</span>
               </span>
               <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                 <span style={{ font: "var(--type-heading-md)", color: "var(--neutral-900)", fontVariantNumeric: "tabular-nums" }}>{c.n}</span>
                 <span style={{ fontSize: 12, color: "var(--neutral-500)" }}>{c.hrs}</span>
               </span>
-              <span style={{ fontSize: 12, lineHeight: "16px", color: "var(--neutral-500)", textWrap: "pretty" }}>{c.sub}</span>
+              <span style={{ fontSize: 11.5, lineHeight: "15px", color: "var(--neutral-500)", textWrap: "pretty" }}>{c.sub}</span>
             </button>
           ))}
         </div>

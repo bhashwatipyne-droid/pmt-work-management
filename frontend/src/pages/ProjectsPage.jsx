@@ -396,11 +396,12 @@ export default function ProjectsPage() {
     handleBulkDelete,
   } = useProjectsBulkActions({ currentUserId, pushUndo, fetchAll, projects, selectedProjects, setSelectedProjects, clearSelection, setDeleteTarget });
 
-  // Status (list view), client (chip row) and month have their own controls,
-  // so the panel's badge counts what's inside the panel: the other filters
-  // and the sort.
+  // Status (list view) and month have their own controls, so the panel's
+  // badge counts what's inside the panel: client, the other filters and the
+  // sort.
   const activeFilterCount =
     Number(Boolean(sortBy)) +
+    Number(Boolean(clientFilter)) +
     Number(Boolean(pocFilter)) +
     Number(Boolean(dateFrom || dateTo)) +
     Number(visibility !== "visible");

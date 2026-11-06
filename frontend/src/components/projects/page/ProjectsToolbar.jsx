@@ -263,41 +263,34 @@ export function ProjectsToolbar(ctx) {
       </div>
     </div>
 
-    {/* Client chips - one tap filters the board and list to a client. */}
-    {clientChips.length > 0 && (
-      <div
-        role="group"
-        aria-label="Filter by client"
-        data-testid="projects-client-chips"
-        className="-mx-3 flex shrink-0 flex-wrap items-center gap-2 border-b border-[#eaeef4] bg-white px-3 py-3 md:-mx-5 md:px-5"
-      >
-        <span className="mr-0.5 text-[12px] font-semibold text-[#64748b]">Client</span>
-        {[{ id: "", name: "All clients", count: projects.length }, ...clientChips].map((c) => {
-          const on = (clientFilter || "") === c.id;
-          return (
-            <button
-              key={c.id || "all"}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setClientFilter(on ? "" : c.id)}
-              className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-full pl-3 pr-1.5 text-[13px] font-semibold outline-none transition-shadow focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20 ${
-                on
-                  ? "bg-[#f0f0fd] text-[#23239a] shadow-[inset_0_0_0_2px_#2b2bb5]"
-                  : "bg-white text-[#1e293b] shadow-[inset_0_0_0_1px_#e2e8f0] hover:shadow-[inset_0_0_0_1px_#a5a5e8]"
-              }`}
-            >
-              {c.name}
-              <span
-                className={`h-5 min-w-[22px] rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 ${
-                  on ? "bg-[#2b2bb5] text-white" : "bg-[#f1f5f9] text-[#334155]"
-                }`}
-              >
-                {c.count}
-              </span>
-            </button>
-          );
-        })}
-        {clientFilter && (
+    {/* Selected client: shown only once a client is picked in Filters. */}
+    {clientFilter && (() => {
+      const picked =
+        clientChips.find((c) => c.id === clientFilter) || {
+          id: clientFilter,
+          name: clientOptions.find((c) => c.id === clientFilter)?.name || clientFilter,
+          count: 0,
+        };
+      return (
+        <div
+          role="group"
+          aria-label="Client filter"
+          data-testid="projects-client-chips"
+          className="-mx-3 flex shrink-0 flex-wrap items-center gap-2 border-b border-[#eaeef4] bg-white px-3 py-3 md:-mx-5 md:px-5"
+        >
+          <span className="mr-0.5 text-[12px] font-semibold text-[#64748b]">Client</span>
+          <button
+            type="button"
+            aria-pressed="true"
+            title="Remove client filter"
+            onClick={() => setClientFilter("")}
+            className="flex h-8 items-center gap-2 whitespace-nowrap rounded-full bg-[#f0f0fd] pl-3 pr-1.5 text-[13px] font-semibold text-[#23239a] shadow-[inset_0_0_0_2px_#2b2bb5] outline-none focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20"
+          >
+            {picked.name}
+            <span className="h-5 min-w-[22px] rounded-full bg-[#2b2bb5] px-1.5 text-center text-[11px] font-semibold leading-5 text-white">
+              {picked.count}
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => setClientFilter("")}
@@ -306,9 +299,9 @@ export function ProjectsToolbar(ctx) {
             <X className="h-3.5 w-3.5" />
             Clear filter
           </button>
-        )}
-      </div>
-    )}
+        </div>
+      );
+    })()}
     </>
   );
 }

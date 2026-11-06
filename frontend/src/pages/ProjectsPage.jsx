@@ -24,7 +24,7 @@ import {
 
 import { PROJECT_STATUSES } from "@/constants/projectPalette";
 import { PROJECTS } from "@/constants/testIds";
-import { COLUMN_GAP, COLUMN_WIDTH } from "@/components/projects/KanbanColumn";
+import { COLUMN_WIDTH } from "@/components/projects/KanbanColumn";
 import { DEFAULT_SORT } from "@/lib/projectSort";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import ConfirmDeleteModal from "@/components/ui/ConfirmDeleteModal";
@@ -86,8 +86,6 @@ export default function ProjectsPage() {
   const [pocFilter, setPocFilter] = useSessionState("projects-poc", "");
   const [dateFrom, setDateFrom] = useSessionState("projects-date-from", "");
   const [dateTo, setDateTo] = useSessionState("projects-date-to", "");
-  // "YYYY-MM" from the month switcher; "" = every month.
-  const [monthFilter, setMonthFilter] = useSessionState("projects-month", "");
   const [visibility, setVisibility] = useSessionState("projects-visibility", "visible");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useSessionState("projects-view", "chart");
@@ -289,27 +287,7 @@ export default function ProjectsPage() {
     lookalikeTextById,
     sortedFiltered,
     byStatus,
-  } = useProjectsDerived({
-    projects,
-    deferredSearch,
-    deliverableNamesByProject,
-    // The board's columns already split projects by status, so the status
-    // menu (list view only) doesn't narrow the board.
-    statusFilter: view === "list" ? statusFilter : "",
-    clientFilter, pocFilter, dateFrom, dateTo, monthFilter, sortBy });
-
-  // Client chips above the board: every client that has a project here,
-  // with how many, busiest first.
-  const clientChips = useMemo(() => {
-    const byId = new Map();
-    projects.forEach((p) => {
-      if (!p.client_id) return;
-      const entry = byId.get(p.client_id) || { id: p.client_id, name: p.client_name || p.client_id, count: 0 };
-      entry.count += 1;
-      byId.set(p.client_id, entry);
-    });
-    return [...byId.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [projects]);
+  } = useProjectsDerived({ projects, deferredSearch, deliverableNamesByProject, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, sortBy });
 
   // The sort itself is applied below, once sortContext (which needs the
   // look-alike index) exists, and shared by the list rows and the board.
@@ -350,7 +328,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     setListPage(1);
-  }, [search, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, monthFilter, visibility]);
+  }, [search, statusFilter, clientFilter, pocFilter, dateFrom, dateTo, visibility]);
 
   const toggleColumnVisibility = (status) => {
     setHiddenColumns((current) => {
@@ -396,9 +374,8 @@ export default function ProjectsPage() {
     handleBulkDelete,
   } = useProjectsBulkActions({ currentUserId, pushUndo, fetchAll, projects, selectedProjects, setSelectedProjects, clearSelection, setDeleteTarget });
 
-  // Status (list view) and month have their own controls, so the panel's
-  // badge counts what's inside the panel: client, the other filters and the
-  // sort.
+  // Status has its own toolbar control, so the panel's badge counts what's
+  // inside the panel: the other filters and the sort.
   const activeFilterCount =
     Number(Boolean(sortBy)) +
     Number(Boolean(clientFilter)) +
@@ -409,7 +386,6 @@ export default function ProjectsPage() {
   const clearFilters = () => {
     setStatusFilter("");
     setClientFilter("");
-    setMonthFilter("");
     setPocFilter("");
     setDateFrom("");
     setDateTo("");
@@ -460,7 +436,7 @@ export default function ProjectsPage() {
 
   const selectionMode = selectedProjects.size > 0;
   const boardWidth =
-    visibleStatuses.length * COLUMN_WIDTH + Math.max(0, visibleStatuses.length - 1) * COLUMN_GAP;
+    visibleStatuses.length * COLUMN_WIDTH + Math.max(0, visibleStatuses.length - 1) * 10;
 
   const ctx = {
     activeFilterCount,
@@ -469,7 +445,6 @@ export default function ProjectsPage() {
     canManage,
     clearFilters,
     clearSelection,
-    clientChips,
     clientFilter,
     clientOptions,
     dateFrom,
@@ -491,7 +466,6 @@ export default function ProjectsPage() {
     loadingMore,
     lookalikeTextById,
     metrics,
-    monthFilter,
     pocFilter,
     pocOptions,
     projects,
@@ -508,7 +482,6 @@ export default function ProjectsPage() {
     setFiltersOpen,
     setListPage,
     setModalOpen,
-    setMonthFilter,
     setPocFilter,
     setSearch,
     setSortBy,
@@ -540,7 +513,7 @@ export default function ProjectsPage() {
   return (
     <div
       data-testid={PROJECTS.page}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f8fafc] px-3 pb-6 pt-[21px] md:px-5"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f6f6f9] px-3 pb-6 pt-[21px] md:px-5"
     >
       <ProjectsToolbar {...ctx} />
 

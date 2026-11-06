@@ -1,4 +1,4 @@
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List, Plus, Search, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, LayoutGrid, List, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ExportIconButton } from "@/components/ui/ExportIconButton";
 import { PROJECTS } from "@/constants/testIds";
@@ -6,28 +6,8 @@ import { PROJECT_STATUSES, PROJECT_STATUS_STYLE } from "@/constants/projectPalet
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ProjectFilterPanel } from "@/components/projects/ProjectFilterPanel";
 
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
-const thisMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
-// "2026-09" moved by `delta` months.
-const shiftMonth = (month, delta) => {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
-const monthLabel = (month) => {
-  if (!month) return "All months";
-  const [y, m] = month.split("-").map(Number);
-  return `${MONTH_NAMES[m - 1]} ${y}`;
-};
-
 export function ProjectsToolbar(ctx) {
-  const { clientChips, monthFilter, setMonthFilter, activeFilterCount, canManage, clearFilters, clientFilter, clientOptions, dateFrom, dateTo, filtersOpen, handleExport, handleVisibilityChange, loading, loadingMore, metrics, pocFilter, pocOptions, projects, search, setClientFilter, setDateFrom, setDateTo, setFiltersOpen, setModalOpen, setPocFilter, setSearch, setSortBy, setStatusFilter, setView, sortBy, sortedFiltered, statusFilter, view, visibility } = ctx;
+  const { activeFilterCount, canManage, clearFilters, clientFilter, clientOptions, dateFrom, dateTo, filtersOpen, handleExport, handleVisibilityChange, loading, loadingMore, metrics, pocFilter, pocOptions, projects, search, setClientFilter, setDateFrom, setDateTo, setFiltersOpen, setModalOpen, setPocFilter, setSearch, setSortBy, setStatusFilter, setView, sortBy, sortedFiltered, statusFilter, view, visibility } = ctx;
   return (
     <>
     {/* Title + toolbar - a white band under the top bar, as in the redesign:
@@ -47,49 +27,6 @@ export function ProjectsToolbar(ctx) {
             <span data-testid={PROJECTS.metricRework}>{metrics?.in_rework ?? 0}</span> in rework
             {loadingMore && " · loading the rest…"}
           </span>
-        </div>
-
-        {/* Month: shows projects due in, or running through, that month.
-            Arrows step from this month; the × goes back to all months. */}
-        <div
-          role="group"
-          aria-label="Month"
-          className="flex h-8 items-center rounded-[7px] bg-white shadow-[inset_0_0_0_1px_#e2e8f0]"
-        >
-          <button
-            type="button"
-            aria-label="Previous month"
-            onClick={() => setMonthFilter(shiftMonth(monthFilter || thisMonth(), monthFilter ? -1 : 0))}
-            className="flex h-8 w-8 items-center justify-center rounded-l-[7px] text-[#334155] hover:bg-[#f8fafc]"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span
-            data-testid="projects-month-label"
-            className="flex min-w-[150px] items-center justify-center gap-1.5 px-1 text-[13px] font-medium text-[#0f172a]"
-          >
-            <CalendarDays className="h-3.5 w-3.5" />
-            {monthLabel(monthFilter)}
-            {monthFilter && (
-              <button
-                type="button"
-                aria-label="Show all months"
-                title="Show all months"
-                onClick={() => setMonthFilter("")}
-                className="flex h-4 w-4 items-center justify-center rounded-full text-[#94a3b8] hover:bg-[#f1f5f9] hover:text-[#334155]"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </span>
-          <button
-            type="button"
-            aria-label="Next month"
-            onClick={() => setMonthFilter(shiftMonth(monthFilter || thisMonth(), monthFilter ? 1 : 0))}
-            className="flex h-8 w-8 items-center justify-center rounded-r-[7px] text-[#334155] hover:bg-[#f8fafc]"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
         </div>
 
         {/* Board / List */}
@@ -139,7 +76,7 @@ export function ProjectsToolbar(ctx) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search projects or clients"
+            placeholder="Search projects or deliverables…"
             className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-[#11151c] outline-none placeholder:text-[#a2aab6]"
           />
           {search && (
@@ -154,10 +91,8 @@ export function ProjectsToolbar(ctx) {
           )}
         </label>
 
-        {/* Status - list view only (on the board the columns are the
-            statuses). A menu rather than a native select so the button is
-            only as wide as the current choice. */}
-        {view === "list" && (
+        {/* Status - a menu rather than a native select so the button is
+            only as wide as the current choice, as in the design */}
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
@@ -197,7 +132,6 @@ export function ProjectsToolbar(ctx) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        )}
 
         {/* More filters + sort (not in the design, kept compact) */}
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
@@ -256,52 +190,8 @@ export function ProjectsToolbar(ctx) {
           disabled={loading || sortedFiltered.length === 0}
           className="h-8 w-8 rounded-[7px] border-[#eff0f2] text-[#4a5878] hover:bg-[#f9fafb]"
         />
-
-        <span className="hidden text-[12px] text-[#64748b] md:inline">
-          Click a card to open the project and its deliverables
-        </span>
       </div>
     </div>
-
-    {/* Selected client: shown only once a client is picked in Filters. */}
-    {clientFilter && (() => {
-      const picked =
-        clientChips.find((c) => c.id === clientFilter) || {
-          id: clientFilter,
-          name: clientOptions.find((c) => c.id === clientFilter)?.name || clientFilter,
-          count: 0,
-        };
-      return (
-        <div
-          role="group"
-          aria-label="Client filter"
-          data-testid="projects-client-chips"
-          className="-mx-3 flex shrink-0 flex-wrap items-center gap-2 border-b border-[#eaeef4] bg-white px-3 py-3 md:-mx-5 md:px-5"
-        >
-          <span className="mr-0.5 text-[12px] font-semibold text-[#64748b]">Client</span>
-          <button
-            type="button"
-            aria-pressed="true"
-            title="Remove client filter"
-            onClick={() => setClientFilter("")}
-            className="flex h-8 items-center gap-2 whitespace-nowrap rounded-full bg-[#f0f0fd] pl-3 pr-1.5 text-[13px] font-semibold text-[#23239a] shadow-[inset_0_0_0_2px_#2b2bb5] outline-none focus-visible:ring-[3px] focus-visible:ring-[#2b2bb5]/20"
-          >
-            {picked.name}
-            <span className="h-5 min-w-[22px] rounded-full bg-[#2b2bb5] px-1.5 text-center text-[11px] font-semibold leading-5 text-white">
-              {picked.count}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setClientFilter("")}
-            className="flex h-8 items-center gap-1.5 px-2.5 text-[13px] font-semibold text-[#2b2bb5] hover:underline"
-          >
-            <X className="h-3.5 w-3.5" />
-            Clear filter
-          </button>
-        </div>
-      );
-    })()}
     </>
   );
 }

@@ -106,7 +106,7 @@ test("work sent back gets its own tile; there is no review tile because reviews 
   ];
   const tiles = Object.fromEntries(computePlan(tasks, { period: "today", people, ctx }).tiles.map((t) => [t.key, t]));
   expect(tiles.review).toBeUndefined();
-  expect(tiles.changes).toMatchObject({ label: "Changes requested", n: 1 });
+  expect(tiles.changes).toMatchObject({ label: "Changes", n: 1 });
   expect(tiles.hold).toMatchObject({ label: "On hold", n: 1 });
   expect(tiles.resched).toBeUndefined();
 });

@@ -230,7 +230,7 @@ export function computePlan(
     rolled: "Delayed",
     admin: "Held for admin",
     hold: "On hold",
-    changes: "Changes requested",
+    changes: "Changes",
   };
   const tileSub = {
     new: "Tasks assigned through WhatsApp",
